@@ -87,4 +87,25 @@ Status enums: `AnnualLeaveStatus` (Pending, Approved, Rejected, Cancelled); `Tim
 - **Cloudinary:** Used for profile image and evidence file uploads
 - **Email:** Resend API (`API/appsettings.json` → `Resend:ApiToken`) with SMTP fallback
 - **OAuth:** Google and GitHub OAuth configured in `appsettings.json`; both are optional (skipped if `ClientId` is empty)
-- **CORS:** Allows only `https://localhost:5173`
+## Improvements & Roadmap
+
+The following areas have been identified for future enhancement to improve scalability, security, and developer experience:
+
+### 1. Frontend & Routing
+- **Standardized Routing:** Replace custom hash-based routing with `react-router` for better deep linking and browser history support.
+- **Form Management:** Integrate `react-hook-form` and `zod` for robust client-side validation.
+- **Code Splitting:** Implement `React.lazy` for page-level components.
+
+### 2. API & Backend
+- **Versioning:** Implement API versioning (e.g., `/api/v1`) to manage breaking changes.
+- **Soft Deletes:** Add `IsDeleted` support for `EmployeeProfile` and `Project` entities.
+- **Structured Logging:** Integrate Serilog for better production observability.
+
+### 3. Security & Resilience
+- **Rate Limiting:** Implement built-in ASP.NET Core rate limiting.
+- **Audit Logging:** Add a domain-level audit log to track status changes and sensitive modifications.
+
+### 4. Developer Experience (DX)
+- **Containerization:** Add `Dockerfile` and `docker-compose.yml` for simplified environment setup.
+- **Test Coverage:** Expand unit and integration tests for leave balance logic and timesheet validations.
+- **API Documentation:** Enhance Swagger with XML comments and better DTO descriptions.

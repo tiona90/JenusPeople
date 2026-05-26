@@ -1,11 +1,13 @@
 using API.DTOs;
-using CloudinaryDotNet;
-using CloudinaryDotNet.Actions;
+using Application.Accounts.DTOs;
+using AccountCommands = Application.Accounts.Commands;
 using Domain;
+using Domain.Interfaces;
 using Infrastructure.Configuration;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -24,161 +26,41 @@ public class AccountController(
     IConfiguration configuration,
     IOptions<AppUrlOptions> appUrlOptions,
     IResend resend,
+    IFileUploadService fileUploadService,
     ILogger<AccountController> logger) : BaseApiController
 {
     [AllowAnonymous]
+    [EnableRateLimiting("auth-strict")]
     [HttpPost("register")]
     public async Task<ActionResult> Register(RegisterDto request)
     {
-        if (await userManager.FindByEmailAsync(request.Email) is not null)
+        var apiBaseUrl = appUrlOptions.Value.ApiBaseUrl;
+        if (string.IsNullOrWhiteSpace(apiBaseUrl))
         {
-            return BadRequest(new { message = "Email is already registered." });
+            apiBaseUrl = $"{Request.Scheme}://{Request.Host.Value}";
         }
 
-        using var transaction = await context.Database.BeginTransactionAsync();
-        try
+        var result = await Mediator.Send(new AccountCommands.RegisterUser.Command
         {
-            var user = new User
-            {
-                UserName = request.Email,
-                Email = request.Email,
-                DisplayName = request.DisplayName,
-                EmailConfirmed = false
-            };
+            Request = request,
+            ApiBaseUrl = apiBaseUrl
+        });
 
-            var result = await userManager.CreateAsync(user, request.Password);
-            if (!result.Succeeded)
-            {
-                return BadRequest(new
-                {
-                    message = "Registration failed.",
-                    errors = result.Errors.Select(e => e.Description)
-                });
-            }
-
-            var addToRoleResult = await userManager.AddToRoleAsync(user, AppRoles.Employee);
-            if (!addToRoleResult.Succeeded)
-            {
-                await userManager.DeleteAsync(user);
-                return BadRequest(new
-                {
-                    message = "Failed to assign role.",
-                    errors = addToRoleResult.Errors.Select(e => e.Description)
-                });
-            }
-
-            var departmentExists = await context.Departments
-                .AnyAsync(d => d.Id == request.DepartmentId && d.IsActive);
-
-            if (!departmentExists)
-            {
-                await userManager.DeleteAsync(user);
-                return BadRequest(new
-                {
-                    message = "Registration failed because the selected department is invalid or inactive."
-                });
-            }
-
-            EmployeeProfile employeeProfile;
-            try
-            {
-                employeeProfile = await CreateEmployeeProfileAsync(user.Id, request.DepartmentId, "Employee");
-            }
-            catch
-            {
-                await userManager.DeleteAsync(user);
-                throw;
-            }
-
-            var verificationEmailSent = await SendVerificationEmailAsync(user);
-            if (!verificationEmailSent)
-            {
-                // Rollback transaction so user and profile are not saved
-                await transaction.RollbackAsync();
-                return StatusCode((int)HttpStatusCode.InternalServerError, new
-                {
-                    message = "Registration failed: could not send verification email. Please try again later.",
-                    emailVerificationRequired = true,
-                    verificationEmailSent = false
-                });
-            }
-
-            await transaction.CommitAsync();
-
-            return Ok(new
-            {
-                message = "User registered successfully. Please check your email to verify your account.",
-                role = AppRoles.Employee,
-                employeeProfileId = employeeProfile.Id,
-                emailVerificationRequired = true,
-                verificationEmailSent = true
-            });
-        }
-        catch
-        {
-            await transaction.RollbackAsync();
-            throw;
-        }
+        return HandleResult(result);
     }
 
     [AllowAnonymous]
     [HttpGet("verify-email")]
     public async Task<ActionResult> VerifyEmail([FromQuery] string userId, [FromQuery] string token)
     {
-        if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(token))
+        var result = await Mediator.Send(new AccountCommands.VerifyEmail.Command
         {
-            return RenderVerificationPage(
-                "Verification link invalid",
-                "We could not verify your email because the link is incomplete or invalid.",
-                false);
-        }
+            UserId = userId,
+            Token = token
+        });
 
-        var user = await userManager.FindByIdAsync(userId);
-        if (user is null)
-        {
-            return RenderVerificationPage(
-                "Verification failed",
-                "This verification link is no longer valid or the account could not be found.",
-                false);
-        }
-
-        if (user.EmailConfirmed)
-        {
-            return RenderVerificationPage(
-                "Email already confirmed",
-                "Your email address has already been verified. You can sign in to your account.",
-                true);
-        }
-
-        string decodedToken;
-        try
-        {
-            decodedToken = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(token));
-        }
-        catch (Exception)
-        {
-            return RenderVerificationPage(
-                "Verification token invalid",
-                "The confirmation token could not be read. Please request a new verification email.",
-                false);
-        }
-
-        var result = await userManager.ConfirmEmailAsync(user, decodedToken);
-        if (!result.Succeeded)
-        {
-            var errorMessage = result.Errors.Select(e => e.Description).FirstOrDefault()
-                ?? "Email verification failed.";
-
-            return RenderVerificationPage(
-                "Verification failed",
-                errorMessage,
-                false);
-        }
-
-        return RenderVerificationPage(
-            "Email confirmed",
-            "Thanks for confirming your email address. Your account is now active and you can log in.",
-            true);
+        var outcome = result.Value!;
+        return RenderVerificationPage(outcome.Title, outcome.Message, outcome.IsConfirmed);
     }
 
     [AllowAnonymous]
@@ -370,6 +252,7 @@ public class AccountController(
     }
 
     [AllowAnonymous]
+    [EnableRateLimiting("auth-strict")]
     [HttpPost("login")]
     public async Task<ActionResult> Login(LoginDto request)
     {
@@ -516,44 +399,15 @@ public class AccountController(
             return Unauthorized(new { message = "User is not authenticated." });
         }
 
-        var cloudName = configuration["Cloudinary:CloudName"];
-        var apiKey = configuration["Cloudinary:ApiKey"];
-        var apiSecret = configuration["Cloudinary:ApiSecret"];
-
-        if (string.IsNullOrWhiteSpace(cloudName)
-            || string.IsNullOrWhiteSpace(apiKey)
-            || string.IsNullOrWhiteSpace(apiSecret))
-        {
-            return BadRequest(new { message = "Cloudinary is not configured." });
-        }
-
-        var account = new Account(cloudName, apiKey, apiSecret);
-        var cloudinary = new Cloudinary(account)
-        {
-            Api = { Secure = true }
-        };
-
         await using var stream = file.OpenReadStream();
-        var uploadParams = new ImageUploadParams
-        {
-            File = new FileDescription(file.FileName, stream),
-            Folder = "annualleave/users",
-            PublicId = $"user-{user.Id}-{DateTime.UtcNow:yyyyMMddHHmmss}",
-            UseFilename = false,
-            UniqueFilename = true,
-            Overwrite = true
-        };
+        var uploadResult = await fileUploadService.UploadProfileImageAsync(user.Id, stream, file.FileName);
 
-        var uploadResult = await cloudinary.UploadAsync(uploadParams);
-        if (uploadResult.Error is not null || uploadResult.SecureUrl is null)
+        if (!uploadResult.IsSuccess)
         {
-            return BadRequest(new
-            {
-                message = uploadResult.Error?.Message ?? "Failed to upload image."
-            });
+            return BadRequest(new { message = uploadResult.ErrorMessage ?? "Failed to upload image." });
         }
 
-        user.ImageUrl = uploadResult.SecureUrl.ToString();
+        user.ImageUrl = uploadResult.Url;
         await userManager.UpdateAsync(user);
 
         return Ok(new { imageUrl = user.ImageUrl });
@@ -918,63 +772,4 @@ public class AccountController(
         }
     }
 
-    private async Task<bool> SendVerificationEmailAsync(User user)
-    {
-        if (string.IsNullOrWhiteSpace(user.Email))
-        {
-            logger.LogWarning("Verification email was skipped because the user email is missing for user {UserId}.", user.Id);
-            return false;
-        }
-
-        var fromEmail = configuration["Resend:FromEmail"];
-        if (string.IsNullOrWhiteSpace(fromEmail))
-        {
-            logger.LogWarning("Verification email was skipped because Resend:FromEmail is not configured.");
-            return false;
-        }
-
-        var token = await userManager.GenerateEmailConfirmationTokenAsync(user);
-        var encodedToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
-
-        var baseUrl = appUrlOptions.Value.ApiBaseUrl;
-        if (string.IsNullOrWhiteSpace(baseUrl))
-        {
-            baseUrl = $"{Request.Scheme}://{Request.Host.Value}";
-        }
-
-        baseUrl = baseUrl.TrimEnd('/');
-        var verificationUrl = $"{baseUrl}/api/account/verify-email?userId={Uri.EscapeDataString(user.Id)}&token={Uri.EscapeDataString(encodedToken)}";
-        var displayName = string.IsNullOrWhiteSpace(user.DisplayName) ? user.Email : user.DisplayName;
-        var fromName = configuration["Resend:FromName"];
-
-        var emailMessage = new EmailMessage
-        {
-            From = string.IsNullOrWhiteSpace(fromName)
-                ? fromEmail
-                : $"{fromName} <{fromEmail}>",
-            Subject = "Verify your Annual Leave account",
-            TextBody = $"Hello {displayName},\n\nWelcome to Annual Leave. Please confirm your email address using the secure link below:\n{verificationUrl}\n\nIf you did not create this account, you can safely ignore this email.",
-            HtmlBody = BuildEmailBody(
-                "Verify your Annual Leave account",
-                "Confirm your email address",
-                displayName,
-                "Welcome to Annual Leave. Please confirm your email address to activate your account and complete sign-in access.",
-                "Verify email address",
-                verificationUrl,
-                "If you did not create this account, you can safely ignore this email.")
-        };
-
-        emailMessage.To.Add(user.Email);
-
-        try
-        {
-            await resend.EmailSendAsync(emailMessage);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to send verification email for user {UserId}.", user.Id);
-            return false;
-        }
-    }
 }

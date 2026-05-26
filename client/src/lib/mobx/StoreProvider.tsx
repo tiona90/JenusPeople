@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- intentional: provider and useStore hook ship together */
 import { createContext, useContext, useState, type PropsWithChildren } from 'react'
 import RootStore from './rootStore'
 

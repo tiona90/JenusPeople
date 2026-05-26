@@ -1,0 +1,32 @@
+# .NET build artifacts
+**/bin
+**/obj
+
+# Test project
+WorkTrack.Tests/
+
+# Node
+**/node_modules
+client/dist
+client/.vite
+
+# IDE / OS
+.vscode/
+.idea/
+.vs/
+.DS_Store
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Compose-related
+docker-compose*.yml
+.env
+.env.*
+
+# Docs / misc
+*.md
+CLAUDE.md
+Logs/

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { HubConnectionBuilder, LogLevel } from '@microsoft/signalr'
 import { observer } from 'mobx-react-lite'
@@ -9,297 +10,298 @@ import Container from '@mui/material/Container'
 import Snackbar from '@mui/material/Snackbar'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import { AuthPage, DashboardHome, MyLeavePage, ApplyLeavePage, TeamLeavePage, AllLeaveAdminPage, TeamTimesheetPage, MyTimesheetPage, NewTimesheetPage, AttendancePage, TeamAttendancePage, CompanyAttendancePage, AllTimesheetsPage } from './components'
+import {
+    AllLeaveAdminPage,
+    AllTimesheetsPage,
+    ApplyLeavePage,
+    AttendancePage,
+    AuthPage,
+    CompanyAttendancePage,
+    DashboardHome,
+    MyLeavePage,
+    MyTimesheetPage,
+    NewTimesheetPage,
+    TeamAttendancePage,
+    TeamLeavePage,
+    TeamTimesheetPage,
+} from './components'
+import ProtectedRoute from './components/auth/ProtectedRoute'
 import { API_ERROR_EVENT } from './lib/api/error-events'
 import { apiBaseUrl } from './lib/api/client'
 import { useStore } from './lib/mobx'
-import type { MyLeaveSection } from './lib/mobx/uiStore'
 import Sidebar from './components/layout/Sidebar'
 import Topbar from './components/layout/Topbar'
 
-function getSectionFromHash(hash: string): MyLeaveSection | null {
-  if (hash === '#apply-for-leave') return 'apply'
-  if (hash === '#my-requests') return 'requests'
-  if (hash === '#leave-balance') return 'balance'
-  if (hash === '#other-leaves') return 'other'
-  if (hash === '#leave-history') return 'history'
-  return null
-}
-
-function isTeamLeaveHash(hash: string) {
-  return hash === '#team-leave' || hash === '#team-leave-approvals'
-}
-
-function getAdminSectionFromHash(hash: string) {
-  if (hash === '#admin-settings') return 'leave-types' as const
-  if (hash === '#admin-leave') return 'leave-types' as const
-  if (hash === '#admin-leave-types') return 'leave-types' as const
-  if (hash === '#admin-departments') return 'departments' as const
-  if (hash === '#admin-users') return 'users' as const
-  if (hash === '#admin-projects') return 'projects' as const
-  return null
-}
-
 function getAuthViewFromHash(hash: string): 'login' | 'register' | 'forgot-password' | 'reset-password' {
-  const [route] = hash.split('?')
+    const [route] = hash.split('?')
 
-  if (route === '#register') return 'register'
-  if (route === '#forgot-password') return 'forgot-password'
-  if (route === '#reset-password') return 'reset-password'
+    if (route === '#register') return 'register'
+    if (route === '#forgot-password') return 'forgot-password'
+    if (route === '#reset-password') return 'reset-password'
 
-  return 'login'
+    return 'login'
 }
 
-const App = observer(function App() {
-  const { authStore, uiStore } = useStore()
-  const queryClient = useQueryClient()
-  const [authView, setAuthView] = useState<'login' | 'register' | 'forgot-password' | 'reset-password'>(() => getAuthViewFromHash(window.location.hash))
-  const [authNotice, setAuthNotice] = useState<{ severity: 'success' | 'info' | 'error'; message: string } | null>(null)
-  const [apiErrorOpen, setApiErrorOpen] = useState(false)
-  const [apiErrorMessage, setApiErrorMessage] = useState('')
+const AuthGate = observer(function AuthGate() {
+    const { authStore } = useStore()
+    const location = useLocation()
+    const navigate = useNavigate()
 
-  useEffect(() => {
-    void authStore.hydrateUser()
-  }, [authStore])
-
-  useEffect(() => {
-    if (authStore.user) {
-      return
-    }
-
-    const syncAuthViewFromHash = () => {
-      setAuthView(getAuthViewFromHash(window.location.hash))
-    }
-
-    syncAuthViewFromHash()
-    window.addEventListener('hashchange', syncAuthViewFromHash)
-
-    return () => {
-      window.removeEventListener('hashchange', syncAuthViewFromHash)
-    }
-  }, [authStore.user])
-
-  useEffect(() => {
-    if (authStore.user) {
-      return
-    }
-
-    const params = new URLSearchParams(window.location.search)
-    const authStatus = params.get('authStatus')
-    const authMessage = params.get('authMessage')?.trim()
-
-    if (!authStatus && !authMessage) {
-      return
-    }
-
-    setAuthNotice({
-      severity: authStatus === 'error' ? 'error' : authStatus === 'info' ? 'info' : 'success',
-      message: authMessage || 'Your account status has been updated. You can now continue.',
-    })
-
-    params.delete('authStatus')
-    params.delete('authMessage')
-    const query = params.toString()
-    const cleanUrl = `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`
-    window.history.replaceState({}, document.title, cleanUrl)
-  }, [authStore.user])
-
-  useEffect(() => {
-    if (!authStore.user) {
-      return
-    }
-
-    const syncFromHash = () => {
-      if (window.location.hash === '#dashboard') {
-        uiStore.navigateToDashboard()
-        return
-      }
-
-      if (isTeamLeaveHash(window.location.hash)) {
-        uiStore.navigateToTeamLeave()
-        return
-      }
-
-      const adminSection = getAdminSectionFromHash(window.location.hash)
-
-      if (adminSection) {
-        uiStore.navigateToAdminSection(adminSection)
-        return
-      }
-
-      const section = getSectionFromHash(window.location.hash)
-
-      if (section) {
-        const isAdminUser = authStore.user?.roles?.includes('Admin') ?? false
-
-        if (section === 'apply' && isAdminUser) {
-          uiStore.navigateToMyLeave('requests')
-          window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#my-requests`)
-          return
-        }
-
-        uiStore.navigateToMyLeave(section)
-        return
-      }
-
-      uiStore.navigateToDashboard()
-    }
-
-    syncFromHash()
-    window.addEventListener('hashchange', syncFromHash)
-
-    return () => {
-      window.removeEventListener('hashchange', syncFromHash)
-    }
-  }, [authStore.user, uiStore])
-
-  useEffect(() => {
-    let lastMessage = ''
-    let lastAt = 0
-
-    const compactMessage = (message: string) => {
-      const firstSentence = message.split('. ')[0]?.trim() ?? message.trim()
-      const normalized = firstSentence.endsWith('.') ? firstSentence : `${firstSentence}.`
-      return normalized.length > 120 ? `${normalized.slice(0, 117)}...` : normalized
-    }
-
-    const onApiError = (event: Event) => {
-      const customEvent = event as CustomEvent<{ message?: string }>
-      const message = customEvent.detail?.message?.trim()
-
-      if (!message) {
-        return
-      }
-
-      const compact = compactMessage(message)
-
-      const now = Date.now()
-      if (compact === lastMessage && now - lastAt < 2000) {
-        return
-      }
-
-      lastMessage = compact
-      lastAt = now
-      setApiErrorMessage(compact)
-      setApiErrorOpen(true)
-    }
-
-    window.addEventListener(API_ERROR_EVENT, onApiError as EventListener)
-    return () => window.removeEventListener(API_ERROR_EVENT, onApiError as EventListener)
-  }, [])
-
-  useEffect(() => {
-    if (!authStore.user) {
-      return
-    }
-
-    const hubBaseUrl = apiBaseUrl.endsWith('/api') ? apiBaseUrl.slice(0, -4) : apiBaseUrl
-    const connection = new HubConnectionBuilder()
-      .withUrl(`${hubBaseUrl}/hubs/notifications`, { withCredentials: true })
-      .withAutomaticReconnect()
-      .configureLogging(LogLevel.Warning)
-      .build()
-
-    connection.on('notificationsUpdated', () => {
-      void queryClient.invalidateQueries({ queryKey: ['leaveStatusHistories'] })
-      void queryClient.invalidateQueries({ queryKey: ['annualLeaves'] })
-      void queryClient.invalidateQueries({ queryKey: ['teamAwayThisWeekCount'] })
-    })
-
-    void connection.start().catch(() => {
-      // Keep polling as fallback if realtime connect fails.
-    })
-
-    return () => {
-      connection.off('notificationsUpdated')
-      void connection.stop()
-    }
-  }, [authStore.user, queryClient])
-
-  const isAdminSettingsPage = Boolean(
-    authStore.user
-    && uiStore.currentPage === 'dashboard'
-    && ['settings', 'leave', 'leave-types', 'departments', 'users', 'projects'].includes(uiStore.adminSection)
-  )
-
-  if (!authStore.hasCheckedAuth && authStore.isLoadingUser) {
-    return (
-      <Box
-        sx={{
-          minHeight: '100vh',
-          display: 'grid',
-          placeItems: 'center',
-          bgcolor: 'background.default',
-        }}
-      >
-        <Stack spacing={2} alignItems="center">
-          <CircularProgress />
-          <Typography color="text.secondary">Loading your workspace...</Typography>
-        </Stack>
-      </Box>
+    const [authView, setAuthView] = useState<'login' | 'register' | 'forgot-password' | 'reset-password'>(
+        () => getAuthViewFromHash(window.location.hash)
     )
-  }
+    const [authNotice, setAuthNotice] = useState<{ severity: 'success' | 'info' | 'error'; message: string } | null>(null)
 
-  return (
-    <Box sx={{ minHeight: '100vh', bgcolor: 'background.default', display: 'flex' }}>
-      {authStore.user && <Sidebar />}
-      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-        {authStore.user && <Topbar />}
-        {authStore.user ? (
-          <Container
-            component="main"
-            maxWidth="lg"
-            sx={{ pt: 3, pb: 4 }}
-          >
-            {uiStore.currentPage === 'my-leave' && <MyLeavePage user={authStore.user} />}
-            {uiStore.currentPage === 'apply-leave' && <ApplyLeavePage user={authStore.user} />}
-            {uiStore.currentPage === 'team-leave' && (
-                authStore.user.roles.includes('Admin')
-                    ? <AllLeaveAdminPage user={authStore.user} />
-                    : <TeamLeavePage user={authStore.user} />
-            )}
-            {uiStore.currentPage === 'dashboard' && <DashboardHome user={authStore.user} />}
-            {uiStore.currentPage === 'timesheets' && (
-                authStore.user.roles.includes('Admin')
-                    ? <TeamTimesheetPage user={authStore.user} />
-                    : <MyTimesheetPage user={authStore.user} />
-            )}
-            {uiStore.currentPage === 'team-timesheets' && (
-                authStore.user.roles.includes('Admin')
-                    ? <AllTimesheetsPage />
-                    : <TeamTimesheetPage user={authStore.user} />
-            )}
-            {uiStore.currentPage === 'new-timesheet' && <NewTimesheetPage user={authStore.user} />}
-            {uiStore.currentPage === 'attendance' && <AttendancePage />}
-            {uiStore.currentPage === 'team-attendance' && <TeamAttendancePage />}
-            {uiStore.currentPage === 'company-attendance' && <CompanyAttendancePage />}
-          </Container>
-        ) : (
-          <AuthPage
+    useEffect(() => {
+        if (authStore.user) return
+
+        const syncAuthViewFromHash = () => setAuthView(getAuthViewFromHash(window.location.hash))
+        syncAuthViewFromHash()
+        window.addEventListener('hashchange', syncAuthViewFromHash)
+        return () => window.removeEventListener('hashchange', syncAuthViewFromHash)
+    }, [authStore.user])
+
+    useEffect(() => {
+        if (authStore.user) return
+
+        const params = new URLSearchParams(window.location.search)
+        const authStatus = params.get('authStatus')
+        const authMessage = params.get('authMessage')?.trim()
+
+        if (!authStatus && !authMessage) return
+
+        setAuthNotice({
+            severity: authStatus === 'error' ? 'error' : authStatus === 'info' ? 'info' : 'success',
+            message: authMessage || 'Your account status has been updated. You can now continue.',
+        })
+
+        params.delete('authStatus')
+        params.delete('authMessage')
+        const query = params.toString()
+        const cleanUrl = `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`
+        window.history.replaceState({}, document.title, cleanUrl)
+    }, [authStore.user])
+
+    if (authStore.user) {
+        const from = (location.state as { from?: { pathname: string } } | null)?.from?.pathname
+        return <Navigate to={from ?? '/dashboard'} replace />
+    }
+
+    return (
+        <AuthPage
             authView={authView}
             authNotice={authNotice}
             onClearNotice={() => setAuthNotice(null)}
-            onSwitchToLogin={() => { setAuthView('login'); window.location.hash = '#login' }}
-            onSwitchToRegister={() => { setAuthView('register'); window.location.hash = '#register' }}
-            onForgotPassword={() => { setAuthView('forgot-password'); window.location.hash = '#forgot-password' }}
-            onBackToLogin={() => { setAuthView('login'); window.location.hash = '#login' }}
-            onRequestNewLink={() => { setAuthView('forgot-password'); window.location.hash = '#forgot-password' }}
-          />
-        )}
-
-        <Snackbar
-          open={apiErrorOpen}
-          autoHideDuration={4500}
-          onClose={() => setApiErrorOpen(false)}
-          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-        >
-          <Alert onClose={() => setApiErrorOpen(false)} severity="error" variant="filled" sx={{ width: '100%' }}>
-            {apiErrorMessage}
-          </Alert>
-        </Snackbar>
-      </Box>
-    </Box>
-  )
+            onSwitchToLogin={() => { setAuthView('login'); navigate('/login') }}
+            onSwitchToRegister={() => { setAuthView('register'); navigate('/register') }}
+            onForgotPassword={() => { setAuthView('forgot-password'); navigate('/forgot-password') }}
+            onBackToLogin={() => { setAuthView('login'); navigate('/login') }}
+            onRequestNewLink={() => { setAuthView('forgot-password'); navigate('/forgot-password') }}
+        />
+    )
 })
 
-export default App
+const AppShell = observer(function AppShell() {
+    const { authStore } = useStore()
+
+    if (!authStore.user) return null
+
+    return (
+        <Box sx={{ minHeight: '100vh', bgcolor: 'background.default', display: 'flex' }}>
+            <Sidebar />
+            <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                <Topbar />
+                <Container component="main" maxWidth="lg" sx={{ pt: 3, pb: 4 }}>
+                    <Outlet />
+                </Container>
+            </Box>
+        </Box>
+    )
+})
+
+/**
+ * Element wrappers that read the current user from `authStore` so we can declare
+ * routes without ferrying the user prop through every Route element. AppShell
+ * has already gated rendering on a non-null user.
+ */
+const MyLeaveRoute = observer(() => {
+    const { authStore } = useStore()
+    return authStore.user ? <MyLeavePage user={authStore.user} /> : null
+})
+
+const ApplyLeaveRoute = observer(() => {
+    const { authStore } = useStore()
+    return authStore.user ? <ApplyLeavePage user={authStore.user} /> : null
+})
+
+const TeamLeaveRoute = observer(() => {
+    const { authStore } = useStore()
+    const user = authStore.user
+    if (!user) return null
+    return user.roles.includes('Admin')
+        ? <AllLeaveAdminPage user={user} />
+        : <TeamLeavePage user={user} />
+})
+
+const TimesheetsRoute = observer(() => {
+    const { authStore } = useStore()
+    const user = authStore.user
+    if (!user) return null
+    return user.roles.includes('Admin')
+        ? <TeamTimesheetPage user={user} />
+        : <MyTimesheetPage user={user} />
+})
+
+const TeamTimesheetsRoute = observer(() => {
+    const { authStore } = useStore()
+    const user = authStore.user
+    if (!user) return null
+    return user.roles.includes('Admin')
+        ? <AllTimesheetsPage />
+        : <TeamTimesheetPage user={user} />
+})
+
+const NewTimesheetRoute = observer(() => {
+    const { authStore } = useStore()
+    return authStore.user ? <NewTimesheetPage user={authStore.user} /> : null
+})
+
+const AppInner = observer(function AppInner() {
+    const { authStore, uiStore } = useStore()
+    const queryClient = useQueryClient()
+    const navigate = useNavigate()
+
+    const [apiErrorOpen, setApiErrorOpen] = useState(false)
+    const [apiErrorMessage, setApiErrorMessage] = useState('')
+
+    useEffect(() => {
+        uiStore.setNavigate(navigate)
+    }, [uiStore, navigate])
+
+    useEffect(() => {
+        void authStore.hydrateUser()
+    }, [authStore])
+
+    useEffect(() => {
+        let lastMessage = ''
+        let lastAt = 0
+
+        const compactMessage = (message: string) => {
+            const firstSentence = message.split('. ')[0]?.trim() ?? message.trim()
+            const normalized = firstSentence.endsWith('.') ? firstSentence : `${firstSentence}.`
+            return normalized.length > 120 ? `${normalized.slice(0, 117)}...` : normalized
+        }
+
+        const onApiError = (event: Event) => {
+            const customEvent = event as CustomEvent<{ message?: string }>
+            const message = customEvent.detail?.message?.trim()
+            if (!message) return
+
+            const compact = compactMessage(message)
+            const now = Date.now()
+            if (compact === lastMessage && now - lastAt < 2000) return
+
+            lastMessage = compact
+            lastAt = now
+            setApiErrorMessage(compact)
+            setApiErrorOpen(true)
+        }
+
+        window.addEventListener(API_ERROR_EVENT, onApiError as EventListener)
+        return () => window.removeEventListener(API_ERROR_EVENT, onApiError as EventListener)
+    }, [])
+
+    useEffect(() => {
+        if (!authStore.user) return
+
+        const hubBaseUrl = apiBaseUrl.endsWith('/api') ? apiBaseUrl.slice(0, -4) : apiBaseUrl
+        const connection = new HubConnectionBuilder()
+            .withUrl(`${hubBaseUrl}/hubs/notifications`, { withCredentials: true })
+            .withAutomaticReconnect()
+            .configureLogging(LogLevel.Warning)
+            .build()
+
+        connection.on('notificationsUpdated', () => {
+            void queryClient.invalidateQueries({ queryKey: ['leaveStatusHistories'] })
+            void queryClient.invalidateQueries({ queryKey: ['annualLeaves'] })
+            void queryClient.invalidateQueries({ queryKey: ['teamAwayThisWeekCount'] })
+            void queryClient.invalidateQueries({ queryKey: ['timesheets'] })
+            void queryClient.invalidateQueries({ queryKey: ['timesheetStatusHistories'] })
+        })
+
+        void connection.start().catch(() => { /* polling fallback */ })
+
+        return () => {
+            connection.off('notificationsUpdated')
+            void connection.stop()
+        }
+    }, [authStore.user, queryClient])
+
+    if (!authStore.hasCheckedAuth && authStore.isLoadingUser) {
+        return (
+            <Box sx={{ minHeight: '100vh', display: 'grid', placeItems: 'center', bgcolor: 'background.default' }}>
+                <Stack spacing={2} alignItems="center">
+                    <CircularProgress />
+                    <Typography color="text.secondary">Loading your workspace...</Typography>
+                </Stack>
+            </Box>
+        )
+    }
+
+    return (
+        <>
+            <Routes>
+                {/* Public auth routes */}
+                <Route path="/login" element={<AuthGate />} />
+                <Route path="/register" element={<AuthGate />} />
+                <Route path="/forgot-password" element={<AuthGate />} />
+                <Route path="/reset-password" element={<AuthGate />} />
+
+                {/* Protected app shell with layout-route + Outlet */}
+                <Route element={<ProtectedRoute />}>
+                    <Route element={<AppShell />}>
+                        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                        <Route path="/dashboard" element={<DashboardHome />} />
+                        <Route path="/my-leave" element={<Navigate to="/my-leave/requests" replace />} />
+                        <Route path="/my-leave/:section" element={<MyLeaveRoute />} />
+                        <Route path="/apply-leave" element={<ApplyLeaveRoute />} />
+                        <Route path="/team-leave" element={<TeamLeaveRoute />} />
+                        <Route path="/timesheets" element={<TimesheetsRoute />} />
+                        <Route path="/team-timesheets" element={<TeamTimesheetsRoute />} />
+                        <Route path="/new-timesheet" element={<NewTimesheetRoute />} />
+                        <Route path="/attendance" element={<AttendancePage />} />
+                        <Route path="/team-attendance" element={<TeamAttendancePage />} />
+                        <Route path="/company-attendance" element={<CompanyAttendancePage />} />
+
+                        {/* Admin-only nested routes — gated by role inside ProtectedRoute */}
+                        <Route element={<ProtectedRoute roles={['Admin']} />}>
+                            <Route path="/admin" element={<Navigate to="/admin/users" replace />} />
+                            <Route path="/admin/:section" element={<DashboardHome />} />
+                        </Route>
+
+                        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                    </Route>
+                </Route>
+            </Routes>
+
+            <Snackbar
+                open={apiErrorOpen}
+                autoHideDuration={4500}
+                onClose={() => setApiErrorOpen(false)}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            >
+                <Alert onClose={() => setApiErrorOpen(false)} severity="error" variant="filled" sx={{ width: '100%' }}>
+                    {apiErrorMessage}
+                </Alert>
+            </Snackbar>
+        </>
+    )
+})
+
+export default function App() {
+    return (
+        <BrowserRouter>
+            <AppInner />
+        </BrowserRouter>
+    )
+}

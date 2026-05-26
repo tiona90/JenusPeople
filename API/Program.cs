@@ -1,22 +1,26 @@
-using API.Middleware;
+﻿using API.Middleware;
 using API.Extensions;
 using API.Models;
 using API.Hubs;
 using Application.Core;
-using Application.Annualleaves.Queries;
+using Application.AnnualLeaves.Queries;
 using Application.Holidays;
 using Application.LeaveTypes.Commands;
 using Application.LeaveTypes.DTOs;
+using Asp.Versioning;
 using AspNet.Security.OAuth.GitHub;
 using Domain;
 using FluentValidation;
 using Infrastructure;
 using MediatR;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Persistence;
 using System.Text.Json.Serialization;
+using System.Threading.RateLimiting;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -66,8 +70,76 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
     };
 });
 builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddApiVersioning(options =>
+{
+    options.DefaultApiVersion = new ApiVersion(1, 0);
+    options.AssumeDefaultVersionWhenUnspecified = true;
+    options.ReportApiVersions = true;
+    options.ApiVersionReader = ApiVersionReader.Combine(
+        new UrlSegmentApiVersionReader(),
+        new HeaderApiVersionReader("api-version"),
+        new QueryStringApiVersionReader("api-version"));
+})
+.AddMvc()
+.AddApiExplorer(options =>
+{
+    options.GroupNameFormat = "'v'VVV";
+    options.SubstituteApiVersionInUrl = true;
+});
+
+// Names referenced by [EnableRateLimiting] attributes on controller actions.
+const string AuthStrictPolicy = "auth-strict";
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+        {
+            context.HttpContext.Response.Headers.RetryAfter =
+                ((int)retryAfter.TotalSeconds).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+        context.HttpContext.Response.ContentType = "application/json";
+        await context.HttpContext.Response.WriteAsync(
+            "{\"message\":\"Too many requests. Please slow down and try again shortly.\"}",
+            cancellationToken);
+    };
+
+    // Global fixed-window: 100 req/min per client IP.
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+    {
+        var partitionKey = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 100,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            AutoReplenishment = true,
+        });
+    });
+
+    // Stricter sliding-window for credential endpoints: 5 attempts per minute per IP,
+    // split into 6 segments (~10s) so the cap glides instead of resetting at the minute mark.
+    options.AddPolicy(AuthStrictPolicy, context =>
+    {
+        var partitionKey = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetSlidingWindowLimiter(partitionKey, _ => new SlidingWindowRateLimiterOptions
+        {
+            PermitLimit = 5,
+            Window = TimeSpan.FromMinutes(1),
+            SegmentsPerWindow = 6,
+            QueueLimit = 0,
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            AutoReplenishment = true,
+        });
+    });
+});
+
 builder.Services.AddSwaggerDocumentation();
 builder.Services.AddSignalR();
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddInfrastructureServices(builder.Configuration);
 builder.Services.AddDbContext<AppDbContext>(opt =>
 {
@@ -94,7 +166,7 @@ builder.Services.AddCors(options =>
     });
 });
 builder.Services.AddMediatR(x =>
-x.RegisterServicesFromAssemblyContaining<GetAnnualleaveList.Handler>());
+x.RegisterServicesFromAssemblyContaining<GetAnnualLeaveList.Handler>());
 
 builder.Services.AddHttpClient<NagerHolidayClient>(client =>
 {
@@ -188,15 +260,14 @@ if (app.Environment.IsDevelopment())
 }
 
 // Configure the HTTP request pipeline.
-app.UseMiddleware<ExceptionHandlingMiddleware>();
-app.UseMiddleware<ValidationExceptionMiddleware>();
-app.UseMiddleware<RequestValidationMiddleware>();
+app.UseMiddleware<GlobalExceptionMiddleware>();
 app.UseCors("ClientPolicy");
 app.UseCookiePolicy(new CookiePolicyOptions
 {
     MinimumSameSitePolicy = SameSiteMode.Lax,
     Secure = CookieSecurePolicy.SameAsRequest,
 });
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 

@@ -1,12 +1,11 @@
 using System.Security.Claims;
+using Application.Timesheets.Commands;
+using Application.Timesheets.DTOs;
+using Application.Timesheets.Queries;
 using Domain;
-using Domain.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Application.Timesheets.DTOs;
-using Application.Timesheets.Queries;
-using MediatR;
 using Persistence;
 
 namespace API.Controllers
@@ -17,21 +16,13 @@ namespace API.Controllers
         public DateTime PeriodEnd { get; set; }
     }
 
-    [ApiController]
-    [Route("api/[controller]")]
-    public class TimesheetsController : ControllerBase
+    public class TimesheetsController : BaseApiController
     {
         private readonly AppDbContext _context;
-        private readonly IMediator _mediator;
-        private readonly IEmailService _emailService;
-        private readonly ILogger<TimesheetsController> _logger;
 
-        public TimesheetsController(AppDbContext context, IMediator mediator, IEmailService emailService, ILogger<TimesheetsController> logger)
+        public TimesheetsController(AppDbContext context)
         {
             _context = context;
-            _mediator = mediator;
-            _emailService = emailService;
-            _logger = logger;
         }
 
         // GET: api/timesheets
@@ -39,14 +30,11 @@ namespace API.Controllers
         [Authorize]
         public async Task<ActionResult<List<TimesheetDto>>> GetTimesheets([FromQuery] bool myOnly = false)
         {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                         ?? User.FindFirstValue("sub")
-                         ?? User.Identity?.Name
-                         ?? string.Empty;
-            var isAdmin = User.IsInRole("Admin");
-            var isManager = User.IsInRole("Manager");
+            var userId = ResolveUserId();
+            var isAdmin = User.IsInRole(AppRoles.Admin);
+            var isManager = User.IsInRole(AppRoles.Manager);
 
-            return await _mediator.Send(new GetTimesheetList.Query
+            return await Mediator.Send(new GetTimesheetList.Query
             {
                 RequestingUserId = userId,
                 IsAdmin = !myOnly && isAdmin,
@@ -71,49 +59,14 @@ namespace API.Controllers
         [Authorize]
         public async Task<ActionResult<TimesheetDto>> CreateTimesheet(CreateTimesheetRequest request)
         {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                         ?? User.FindFirstValue("sub")
-                         ?? User.Identity?.Name
-                         ?? string.Empty;
-
-            var employeeProfile = await _context.EmployeeProfiles
-                .FirstOrDefaultAsync(ep => ep.UserId == userId);
-
-            if (employeeProfile == null)
-                return BadRequest("No employee profile found for the current user.");
-
-            var timesheet = new Timesheet
+            var result = await Mediator.Send(new CreateTimesheet.Command
             {
-                Id = Guid.NewGuid().ToString(),
-                EmployeeId = employeeProfile.Id,
-                DepartmentId = employeeProfile.DepartmentId,
+                RequestingUserId = ResolveUserId(),
                 PeriodStart = request.PeriodStart,
                 PeriodEnd = request.PeriodEnd,
-                Status = TimesheetStatus.Draft,
-                TotalHours = 0,
-                CreatedAt = DateTime.UtcNow,
-            };
+            });
 
-            _context.Timesheets.Add(timesheet);
-            await _context.SaveChangesAsync();
-
-            var user = await _context.Users.FindAsync(userId);
-            var dto = new TimesheetDto
-            {
-                Id = timesheet.Id,
-                EmployeeId = timesheet.EmployeeId,
-                EmployeeName = user?.DisplayName ?? user?.UserName ?? timesheet.EmployeeId,
-                DepartmentId = timesheet.DepartmentId,
-                PeriodStart = timesheet.PeriodStart,
-                PeriodEnd = timesheet.PeriodEnd,
-                TotalHours = timesheet.TotalHours,
-                Status = timesheet.Status.ToString(),
-                SubmittedAt = timesheet.SubmittedAt,
-                ApprovedAt = timesheet.ApprovedAt,
-                CreatedAt = timesheet.CreatedAt,
-            };
-
-            return CreatedAtAction(nameof(GetTimesheet), new { id = timesheet.Id }, dto);
+            return HandleResult(result);
         }
 
         // DELETE: api/timesheets/{id}
@@ -130,10 +83,7 @@ namespace API.Controllers
             if (timesheet.Status != TimesheetStatus.Draft)
                 return BadRequest("Only Draft timesheets can be deleted.");
 
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                         ?? User.FindFirstValue("sub")
-                         ?? User.Identity?.Name
-                         ?? string.Empty;
+            var userId = ResolveUserId();
 
             var employeeProfile = await _context.EmployeeProfiles
                 .FirstOrDefaultAsync(ep => ep.UserId == userId);
@@ -151,100 +101,48 @@ namespace API.Controllers
         [Authorize]
         public async Task<IActionResult> SubmitTimesheet(string id)
         {
-            var timesheet = await _context.Timesheets
-                .Include(t => t.Employee).ThenInclude(e => e!.User)
-                .FirstOrDefaultAsync(t => t.Id == id);
-            if (timesheet == null) return NotFound();
-
-            var isResubmission = timesheet.Status == TimesheetStatus.Rejected;
-            timesheet.Status = isResubmission ? TimesheetStatus.Resubmitted : TimesheetStatus.Submitted;
-            timesheet.SubmittedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
-
-            // Notify the employee's manager (mirrors Apply Leave flow)
-            if (timesheet.Employee == null)
+            var result = await Mediator.Send(new SubmitTimesheet.Command
             {
-                _logger.LogWarning("Timesheet {Id}: Employee not loaded, skipping manager notification", timesheet.Id);
-            }
-            else if (string.IsNullOrWhiteSpace(timesheet.Employee.ManagerId))
-            {
-                _logger.LogInformation("Timesheet {Id}: Employee {EmployeeId} has no ManagerId set, skipping notification", timesheet.Id, timesheet.EmployeeId);
-            }
-            else
-            {
-                var managerProfile = await _context.EmployeeProfiles
-                    .Include(mp => mp.User)
-                    .FirstOrDefaultAsync(mp => mp.Id == timesheet.Employee.ManagerId);
+                Id = id,
+                RequestingUserId = ResolveUserId(),
+                IsAdmin = User.IsInRole(AppRoles.Admin),
+            });
 
-                if (managerProfile == null)
-                {
-                    _logger.LogWarning("Timesheet {Id}: Manager profile {ManagerId} not found", timesheet.Id, timesheet.Employee.ManagerId);
-                }
-                else if (managerProfile.User == null || string.IsNullOrWhiteSpace(managerProfile.User.Email))
-                {
-                    _logger.LogWarning("Timesheet {Id}: Manager {ManagerId} has no email", timesheet.Id, timesheet.Employee.ManagerId);
-                }
-                else
-                {
-                    var employeeName = timesheet.Employee.User?.DisplayName
-                                       ?? timesheet.Employee.User?.Email
-                                       ?? "Employee";
-                    var period = $"{timesheet.PeriodStart:dd MMM yyyy} to {timesheet.PeriodEnd:dd MMM yyyy}";
-                    var verb = isResubmission ? "resubmitted" : "submitted";
-                    var subject = $"Timesheet {verb} by {employeeName}";
-                    var htmlBody = $"""
-            <p>Hello {managerProfile.User.DisplayName ?? managerProfile.User.Email},</p>
-            <p><strong>{employeeName}</strong> has {verb} a timesheet for <strong>{period}</strong> ({timesheet.TotalHours:0.##} hours).</p>
-            <p>Please log in to WorkTrack to review and take action.</p>
-            """;
-                    var textBody = $"""
-            Hello {managerProfile.User.DisplayName ?? managerProfile.User.Email},
-            {employeeName} has {verb} a timesheet for {period} ({timesheet.TotalHours:0.##} hours).
-            Please log in to WorkTrack to review and take action.
-            """;
-
-                    try
-                    {
-                        await _emailService.SendEmailAsync(
-                            managerProfile.User.Email,
-                            subject,
-                            htmlBody,
-                            textBody);
-                        _logger.LogInformation("Timesheet {Id}: notification email sent to manager {Email}", timesheet.Id, managerProfile.User.Email);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Timesheet {Id}: failed to send notification email to {Email}", timesheet.Id, managerProfile.User.Email);
-                    }
-                }
-            }
-
-            return NoContent();
+            return HandleResult(result);
         }
 
         // PATCH: api/timesheets/{id}/approve
         [HttpPatch("{id}/approve")]
-        [Authorize(Roles = "Admin,Manager")]
+        [Authorize(Roles = AppRoles.Admin + "," + AppRoles.Manager)]
         public async Task<IActionResult> ApproveTimesheet(string id)
         {
-            var timesheet = await _context.Timesheets.FindAsync(id);
-            if (timesheet == null) return NotFound();
-            timesheet.Status = TimesheetStatus.Approved;
-            timesheet.ApprovedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
-            return NoContent();
+            var result = await Mediator.Send(new UpdateTimesheetStatus.Command
+            {
+                Id = id,
+                NewStatus = TimesheetStatus.Approved,
+                RequestingUserId = ResolveUserId(),
+                IsAdmin = User.IsInRole(AppRoles.Admin),
+                IsManager = User.IsInRole(AppRoles.Manager),
+            });
+
+            return HandleResult(result);
         }
 
         // PATCH: api/timesheets/{id}/reject
         [HttpPatch("{id}/reject")]
-        [Authorize(Roles = "Admin,Manager")]
+        [Authorize(Roles = AppRoles.Admin + "," + AppRoles.Manager)]
         public async Task<IActionResult> RejectTimesheet(string id)
         {
-            var timesheet = await _context.Timesheets.FindAsync(id);
-            if (timesheet == null) return NotFound();
-            timesheet.Status = TimesheetStatus.Rejected;
-            await _context.SaveChangesAsync();
-            return NoContent();
+            var result = await Mediator.Send(new UpdateTimesheetStatus.Command
+            {
+                Id = id,
+                NewStatus = TimesheetStatus.Rejected,
+                RequestingUserId = ResolveUserId(),
+                IsAdmin = User.IsInRole(AppRoles.Admin),
+                IsManager = User.IsInRole(AppRoles.Manager),
+            });
+
+            return HandleResult(result);
         }
 
         // GET: api/timesheets/{id}/history
@@ -264,7 +162,7 @@ namespace API.Controllers
         [HttpGet("/api/admin/timesheets/history")]
         [ProducesResponseType(typeof(IEnumerable<TimesheetStatusHistory>), 200)]
         [ProducesResponseType(403)]
-        [Authorize(Roles = "Admin")]
+        [Authorize(Roles = AppRoles.Admin)]
         public async Task<ActionResult<IEnumerable<TimesheetStatusHistory>>> GetAllStatusHistories(
             [FromQuery] string? employeeId,
             [FromQuery] int? departmentId,
@@ -303,7 +201,7 @@ namespace API.Controllers
         [Authorize]
         public async Task<ActionResult<IEnumerable<TimesheetStatusHistory>>> GetEmployeeStatusHistories(string employeeId)
         {
-            var isAdmin = User.IsInRole("Admin");
+            var isAdmin = User.IsInRole(AppRoles.Admin);
             var userId = User.Identity?.Name;
 
             if (!isAdmin && userId != employeeId)
@@ -315,5 +213,11 @@ namespace API.Controllers
                 .ToListAsync();
             return Ok(histories);
         }
+
+        private string ResolveUserId() =>
+            User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? User.FindFirstValue("sub")
+            ?? User.Identity?.Name
+            ?? string.Empty;
     }
 }

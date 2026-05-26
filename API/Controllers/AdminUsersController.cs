@@ -1,4 +1,4 @@
-using API.DTOs;
+using Application.AdminUsers.DTOs;
 using Domain;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;

@@ -1,10 +1,9 @@
-using Application.Annualleaves.Commands;
-using Application.Annualleaves.DTOs;
-using Application.Annualleaves.Queries;
+﻿using Application.AnnualLeaves.Commands;
+using Application.AnnualLeaves.DTOs;
+using Application.AnnualLeaves.Queries;
 using API.Hubs;
-using CloudinaryDotNet;
-using CloudinaryDotNet.Actions;
 using Domain;
+using Domain.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
@@ -15,12 +14,12 @@ namespace API.Controllers;
 public class AnnualLeavesController : BaseApiController
 {
     private readonly IHubContext<NotificationsHub> _notificationsHub;
-    private readonly IConfiguration _configuration;
+    private readonly IFileUploadService _fileUploadService;
 
-    public AnnualLeavesController(IHubContext<NotificationsHub> notificationsHub, IConfiguration configuration)
+    public AnnualLeavesController(IHubContext<NotificationsHub> notificationsHub, IFileUploadService fileUploadService)
     {
         _notificationsHub = notificationsHub;
-        _configuration = configuration;
+        _fileUploadService = fileUploadService;
     }
 
     // Visibility is role-scoped: Admin all, Manager by assigned departments, Employee own requests.
@@ -28,7 +27,7 @@ public class AnnualLeavesController : BaseApiController
     [Authorize(Policy = "AnnualLeaveRead")]
     public async Task<ActionResult<List<AnnualLeaveDto>>> GetAnnualLeaves()
     {
-        return await Mediator.Send(new GetAnnualleaveList.Query
+        return await Mediator.Send(new GetAnnualLeaveList.Query
         {
             RequestingUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty,
             IsAdmin = User.IsInRole(AppRoles.Admin),
@@ -99,64 +98,17 @@ public class AnnualLeavesController : BaseApiController
             return BadRequest(new { message = "Supported evidence files are PDF, JPG, PNG, DOC, and DOCX." });
         }
 
-        var cloudName = _configuration["Cloudinary:CloudName"];
-        var apiKey = _configuration["Cloudinary:ApiKey"];
-        var apiSecret = _configuration["Cloudinary:ApiSecret"];
-
-        if (string.IsNullOrWhiteSpace(cloudName)
-            || string.IsNullOrWhiteSpace(apiKey)
-            || string.IsNullOrWhiteSpace(apiSecret))
-        {
-            return BadRequest(new { message = "Cloudinary is not configured." });
-        }
-
-        var cloudinary = new Cloudinary(new Account(cloudName, apiKey, apiSecret))
-        {
-            Api = { Secure = true }
-        };
-
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "anonymous";
 
         await using var stream = file.OpenReadStream();
+        var uploadResult = await _fileUploadService.UploadEvidenceAsync(userId, stream, file.FileName, file.ContentType);
 
-        if (file.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+        if (!uploadResult.IsSuccess)
         {
-            var imageUpload = new ImageUploadParams
-            {
-                File = new FileDescription(file.FileName, stream),
-                Folder = "annualleave/evidence",
-                PublicId = $"leave-evidence-{userId}-{DateTime.UtcNow:yyyyMMddHHmmssfff}",
-                UseFilename = true,
-                UniqueFilename = true,
-                Overwrite = false
-            };
-
-            var imageResult = await cloudinary.UploadAsync(imageUpload);
-            if (imageResult.Error is not null || imageResult.SecureUrl is null)
-            {
-                return BadRequest(new { message = imageResult.Error?.Message ?? "Failed to upload evidence." });
-            }
-
-            return Ok(new { evidenceUrl = imageResult.SecureUrl.ToString(), fileName = file.FileName });
+            return BadRequest(new { message = uploadResult.ErrorMessage ?? "Failed to upload evidence." });
         }
 
-        var rawUpload = new RawUploadParams
-        {
-            File = new FileDescription(file.FileName, stream),
-            Folder = "annualleave/evidence",
-            PublicId = $"leave-evidence-{userId}-{DateTime.UtcNow:yyyyMMddHHmmssfff}",
-            UseFilename = true,
-            UniqueFilename = true,
-            Overwrite = false
-        };
-
-        var rawResult = await cloudinary.UploadAsync(rawUpload);
-        if (rawResult.Error is not null || rawResult.SecureUrl is null)
-        {
-            return BadRequest(new { message = rawResult.Error?.Message ?? "Failed to upload evidence." });
-        }
-
-        return Ok(new { evidenceUrl = rawResult.SecureUrl.ToString(), fileName = file.FileName });
+        return Ok(new { evidenceUrl = uploadResult.Url, fileName = uploadResult.FileName });
     }
 
     // Admin can edit all leaves; Employee can edit own leaves; Manager can edit own and managed-department leaves.

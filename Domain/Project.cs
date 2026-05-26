@@ -26,5 +26,6 @@ public class Project
     public int TargetWeeklyHours { get; set; }
     public int TargetMonthlyHours { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public bool IsDeleted { get; set; }
     public ICollection<TimesheetEntry> TimesheetEntries { get; set; } = new List<TimesheetEntry>();
 }

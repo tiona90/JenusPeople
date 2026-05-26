@@ -12,6 +12,7 @@
   "dependencies": {
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
+    "@hookform/resolvers": "^5.4.0",
     "@microsoft/signalr": "^10.0.0",
     "@mui/icons-material": "^7.3.9",
     "@mui/material": "^7.3.9",
@@ -23,7 +24,10 @@
     "mobx-react-lite": "^4.1.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "sweetalert2": "^11.26.24"
+    "react-hook-form": "^7.76.1",
+    "react-router-dom": "^7.15.1",
+    "sweetalert2": "^11.26.24",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

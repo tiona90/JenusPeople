@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
@@ -8,7 +11,20 @@ import { getApiErrorMessage } from '../../lib/api/error-utils'
 import { useStore } from '../../lib/mobx'
 import type { LeaveType, UserInfo } from '../../lib/types'
 
-type Duration = 'full' | 'half-am' | 'half-pm'
+const applyLeaveSchema = z
+    .object({
+        leaveTypeId: z.number().int().positive('Choose a leave type to continue.'),
+        duration: z.enum(['full', 'half-am', 'half-pm']),
+        startDate: z.string().min(1, 'Pick a start date on the calendar.'),
+        endDate: z.string().min(1, 'Pick an end date on the calendar.'),
+        reason: z.string().max(500, 'Reason must be 500 characters or fewer.').optional(),
+    })
+    .refine((data) => !data.startDate || !data.endDate || data.endDate >= data.startDate, {
+        message: 'End date must be on or after the start date.',
+        path: ['endDate'],
+    })
+
+type ApplyLeaveFormValues = z.infer<typeof applyLeaveSchema>
 type FileKind = 'pdf' | 'img' | 'doc' | 'other'
 
 interface StagedFile {
@@ -142,11 +158,29 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
     const queryClient = useQueryClient()
     const today = new Date()
 
-    const [leaveTypeId, setLeaveTypeId] = useState<number>(0)
-    const [duration, setDuration] = useState<Duration>('full')
-    const [startDate, setStartDate] = useState('')
-    const [endDate, setEndDate] = useState('')
-    const [reason, setReason] = useState('')
+    const {
+        watch,
+        setValue,
+        handleSubmit,
+        formState: { errors },
+    } = useForm<ApplyLeaveFormValues>({
+        resolver: zodResolver(applyLeaveSchema),
+        mode: 'onChange',
+        defaultValues: {
+            leaveTypeId: 0,
+            duration: 'full',
+            startDate: '',
+            endDate: '',
+            reason: '',
+        },
+    })
+
+    const leaveTypeId = watch('leaveTypeId')
+    const duration = watch('duration')
+    const startDate = watch('startDate')
+    const endDate = watch('endDate')
+    const reason = watch('reason') ?? ''
+
     const [calMonth, setCalMonth] = useState<number>(today.getMonth())
     const [calYear, setCalYear] = useState<number>(today.getFullYear())
     const [attachment, setAttachment] = useState<StagedFile | null>(null)
@@ -197,12 +231,12 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
     }, [allLeaves, user.id])
 
     // Pick a sensible default leave type once data loads
-    useMemo(() => {
+    useEffect(() => {
         if (leaveTypeId === 0 && activeLeaveTypes.length > 0) {
             const annual = activeLeaveTypes.find((lt) => lt.name.toLowerCase().includes('annual')) ?? activeLeaveTypes[0]
-            setLeaveTypeId(annual.id)
+            setValue('leaveTypeId', annual.id, { shouldValidate: true })
         }
-    }, [activeLeaveTypes, leaveTypeId])
+    }, [activeLeaveTypes, leaveTypeId, setValue])
 
     const selectedType = activeLeaveTypes.find((lt) => lt.id === leaveTypeId)
     const selectedAffectsBalance = selectedType?.affectsBalance ?? true
@@ -270,7 +304,7 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
     })
 
     const submitMutation = useMutation({
-        mutationFn: async () => {
+        mutationFn: async (values: ApplyLeaveFormValues) => {
             let evidenceUrl: string | undefined
             if (attachment) {
                 const result = await uploadMutation.mutateAsync(attachment.file)
@@ -278,10 +312,10 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
             }
             return createAnnualLeave({
                 employeeId: user.id,
-                leaveTypeId,
-                startDate,
-                endDate,
-                reason: reason.trim() || '—',
+                leaveTypeId: values.leaveTypeId,
+                startDate: values.startDate,
+                endDate: values.endDate,
+                reason: (values.reason ?? '').trim() || '—',
                 evidenceUrl,
             })
         },
@@ -289,6 +323,11 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
             void queryClient.invalidateQueries({ queryKey: ['annualLeaves'] })
             uiStore.navigateToMyLeave('requests')
         },
+    })
+
+    const onSubmit = handleSubmit((values) => {
+        if (isInsufficient) return
+        submitMutation.mutate(values)
     })
 
     const isPending = uploadMutation.isPending || submitMutation.isPending
@@ -334,14 +373,15 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
     }
 
     function pickDate(iso: string) {
+        const opts = { shouldValidate: true, shouldDirty: true } as const
         if (!startDate || (startDate && endDate)) {
-            setStartDate(iso)
-            setEndDate('')
+            setValue('startDate', iso, opts)
+            setValue('endDate', '', opts)
         } else if (iso < startDate) {
-            setStartDate(iso)
-            setEndDate('')
+            setValue('startDate', iso, opts)
+            setValue('endDate', '', opts)
         } else {
-            setEndDate(iso)
+            setValue('endDate', iso, opts)
         }
     }
 
@@ -364,12 +404,17 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
     const summaryBig = workingDays === 0 ? '—' : `${daysDeducted} ${daysDeducted === 1 ? 'day' : 'days'}`
 
     return (
-        <Box sx={{
-            display: 'grid',
-            gridTemplateColumns: { xs: '1fr', md: '1fr 340px' },
-            gap: '18px',
-            maxWidth: 1100,
-        }}>
+        <Box
+            component="form"
+            onSubmit={onSubmit}
+            noValidate
+            sx={{
+                display: 'grid',
+                gridTemplateColumns: { xs: '1fr', md: '1fr 340px' },
+                gap: '18px',
+                maxWidth: 1100,
+            }}
+        >
             {/* LEFT COLUMN */}
             <Box>
                 {/* Step 1: Leave type */}
@@ -391,10 +436,13 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
                                 selected={lt.id === leaveTypeId}
                                 entitlement={entitlement}
                                 used={usedDays}
-                                onSelect={() => setLeaveTypeId(lt.id)}
+                                onSelect={() => setValue('leaveTypeId', lt.id, { shouldValidate: true, shouldDirty: true })}
                             />
                         ))}
                     </Box>
+                    {errors.leaveTypeId && (
+                        <FieldError id="leaveTypeId-error">{errors.leaveTypeId.message}</FieldError>
+                    )}
                 </Box>
 
                 {/* Step 2: Dates */}
@@ -409,9 +457,9 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
 
                     {/* Duration toggle */}
                     <Box sx={{ display: 'flex', gap: '4px', p: '3px', bgcolor: '#F4F5F7', borderRadius: '8px', width: 'fit-content', mb: '14px' }}>
-                        <DurationButton active={duration === 'full'} onClick={() => setDuration('full')}>Full day(s)</DurationButton>
-                        <DurationButton active={duration === 'half-am'} onClick={() => setDuration('half-am')}>Half day (AM)</DurationButton>
-                        <DurationButton active={duration === 'half-pm'} onClick={() => setDuration('half-pm')}>Half day (PM)</DurationButton>
+                        <DurationButton active={duration === 'full'} onClick={() => setValue('duration', 'full', { shouldDirty: true })}>Full day(s)</DurationButton>
+                        <DurationButton active={duration === 'half-am'} onClick={() => setValue('duration', 'half-am', { shouldDirty: true })}>Half day (AM)</DurationButton>
+                        <DurationButton active={duration === 'half-pm'} onClick={() => setValue('duration', 'half-pm', { shouldDirty: true })}>Half day (PM)</DurationButton>
                     </Box>
 
                     {/* Mini calendar */}
@@ -480,6 +528,11 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
                             <Legend swatch="#F4F5F7" label="Weekend" />
                         </Box>
                     </Box>
+                    {(errors.startDate || errors.endDate) && (
+                        <FieldError id="date-error">
+                            {errors.endDate?.message ?? errors.startDate?.message}
+                        </FieldError>
+                    )}
                 </Box>
 
                 {/* Step 3: Coverage (optional / placeholder) */}
@@ -520,16 +573,19 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
                         component="textarea"
                         value={reason}
                         maxLength={500}
-                        onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setReason(e.target.value)}
+                        onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                            setValue('reason', e.target.value, { shouldDirty: true, shouldValidate: true })
+                        }
                         placeholder="e.g. Family trip to Greece — booked months ago"
                         sx={{
                             width: '100%', minHeight: 80, p: '10px 12px', fontSize: 13,
-                            border: `1px solid ${C_BORDER}`, borderRadius: '8px', fontFamily: 'inherit',
+                            border: `1px solid ${errors.reason ? '#FCA5A5' : C_BORDER}`, borderRadius: '8px', fontFamily: 'inherit',
                             resize: 'vertical', outline: 'none', color: C_HEADING, lineHeight: 1.5,
                             '&:focus': { borderColor: C_BLUE, boxShadow: '0 0 0 3px rgba(79,142,247,0.1)' },
                         }}
                     />
                     <Box sx={{ fontSize: 11, color: '#9CA3AF', textAlign: 'right', mt: '4px' }}>{reason.length} / 500</Box>
+                    {errors.reason && <FieldError id="reason-error">{errors.reason.message}</FieldError>}
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '6px', mt: '8px' }}>
                         <Box sx={{ fontSize: 11, color: '#9CA3AF', alignSelf: 'center' }}>Quick:</Box>
                         {QUICK_REASONS.map((text, i) => (
@@ -537,7 +593,7 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
                                 key={text}
                                 component="button"
                                 type="button"
-                                onClick={() => setReason(text)}
+                                onClick={() => setValue('reason', text, { shouldDirty: true, shouldValidate: true })}
                                 sx={{
                                     bgcolor: '#F4F5F7', border: '1px solid transparent', color: C_MUTED,
                                     p: '5px 12px', borderRadius: '14px', fontSize: 11, cursor: 'pointer',
@@ -793,9 +849,8 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
                     <Box sx={{ p: '14px 18px', bgcolor: '#FAFBFC', borderTop: `1px solid ${C_BORDER}`, display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <Box
                             component="button"
-                            type="button"
+                            type="submit"
                             disabled={!canSubmit || isPending}
-                            onClick={() => submitMutation.mutate()}
                             sx={{
                                 bgcolor: C_BLUE, color: '#fff', border: 'none', p: '11px',
                                 borderRadius: '8px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
@@ -921,6 +976,24 @@ function CalNavBtn({ onClick, children }: { onClick: () => void; children: React
             }}
         >
             {children}
+        </Box>
+    )
+}
+
+function FieldError({ id, children }: { id?: string; children: React.ReactNode }) {
+    return (
+        <Box
+            id={id}
+            role="alert"
+            sx={{
+                mt: '10px', p: '8px 12px', bgcolor: '#FEE2E2',
+                border: '1px solid #FCA5A5', borderRadius: '6px',
+                fontSize: 11, color: '#991B1B',
+                display: 'flex', alignItems: 'center', gap: '6px',
+            }}
+        >
+            <Box component="span">⚠️</Box>
+            <Box component="span">{children}</Box>
         </Box>
     )
 }

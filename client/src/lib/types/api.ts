@@ -2,7 +2,7 @@ export interface ApiMessageResponse {
     message: string;
     emailVerificationRequired?: boolean;
     verificationEmailSent?: boolean;
-    [key: string]: any;
+    [key: string]: unknown;
 }
 
 export interface ApiErrorResponse {

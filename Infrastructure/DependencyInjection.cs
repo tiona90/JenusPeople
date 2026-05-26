@@ -13,7 +13,10 @@ public static class DependencyInjection
     {
         services.AddOptions();
         services.Configure<AppUrlOptions>(configuration.GetSection(AppUrlOptions.SectionName));
+        services.Configure<CloudinaryOptions>(configuration.GetSection(CloudinaryOptions.SectionName));
         services.AddScoped<IEmailService, EmailService>();
+        services.AddScoped<IFileUploadService, CloudinaryFileUploadService>();
+        services.AddScoped<ICurrentUserAccessor, CurrentUserAccessor>();
         services.AddHttpClient<ResendClient>();
         services.Configure<ResendClientOptions>(options =>
         {

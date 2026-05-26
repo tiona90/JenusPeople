@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { observer } from 'mobx-react-lite'
 import CircleRoundedIcon from '@mui/icons-material/CircleRounded'
+import DarkModeRoundedIcon from '@mui/icons-material/DarkModeRounded'
+import LightModeRoundedIcon from '@mui/icons-material/LightModeRounded'
 import NotificationsNoneRoundedIcon from '@mui/icons-material/NotificationsNoneRounded'
 import Badge from '@mui/material/Badge'
 import Box from '@mui/material/Box'
@@ -51,6 +54,7 @@ function scrollToId(id: string) {
 
 const Topbar = observer(function Topbar() {
     const { authStore, uiStore } = useStore()
+    const location = useLocation()
     const isAdminUser = authStore.user?.roles?.includes('Admin') ?? false
     const isManagerUser = authStore.user?.roles?.includes('Manager') ?? false
     const shouldUseManagerNotifications = isManagerUser && !isAdminUser
@@ -186,23 +190,24 @@ const Topbar = observer(function Topbar() {
     }
 
     let pageTitle = 'Dashboard'
-    if (uiStore.currentPage === 'my-leave') pageTitle = 'My Leave'
-    else if (uiStore.currentPage === 'apply-leave') pageTitle = 'Apply for Leave'
-    else if (uiStore.currentPage === 'team-leave') pageTitle = isAdminUser ? 'All Leave Requests' : 'Team Leave'
-    else if (uiStore.currentPage === 'timesheets') pageTitle = isAdminUser ? 'All Timesheets' : 'My Timesheets'
-    else if (uiStore.currentPage === 'team-timesheets') pageTitle = isAdminUser ? 'All Timesheets' : 'Team Timesheets'
-    else if (uiStore.currentPage === 'new-timesheet') pageTitle = 'Apply Timesheet'
-    else if (uiStore.currentPage === 'attendance') pageTitle = 'My Attendance'
-    else if (uiStore.currentPage === 'team-attendance') pageTitle = 'Team Attendance'
-    else if (uiStore.currentPage === 'company-attendance') pageTitle = 'Company Attendance'
-    else if (uiStore.currentPage === 'dashboard') {
-        const s = uiStore.adminSection
+    const path = location.pathname
+    if (path.startsWith('/my-leave')) pageTitle = 'My Leave'
+    else if (path.startsWith('/apply-leave')) pageTitle = 'Apply for Leave'
+    else if (path.startsWith('/team-leave')) pageTitle = isAdminUser ? 'All Leave Requests' : 'Team Leave'
+    else if (path.startsWith('/team-timesheets')) pageTitle = isAdminUser ? 'All Timesheets' : 'Team Timesheets'
+    else if (path.startsWith('/timesheets')) pageTitle = isAdminUser ? 'All Timesheets' : 'My Timesheets'
+    else if (path.startsWith('/new-timesheet')) pageTitle = 'Apply Timesheet'
+    else if (path.startsWith('/team-attendance')) pageTitle = 'Team Attendance'
+    else if (path.startsWith('/company-attendance')) pageTitle = 'Company Attendance'
+    else if (path.startsWith('/attendance')) pageTitle = 'My Attendance'
+    else if (path.startsWith('/admin/')) {
+        const s = path.split('/')[2]
         if (s === 'users') pageTitle = 'User Management'
         else if (s === 'departments') pageTitle = 'Departments'
         else if (s === 'leave-types' || s === 'leave') pageTitle = 'Leave Types'
         else if (s === 'projects') pageTitle = 'Projects'
         else if (s === 'settings') pageTitle = 'Leave Settings'
-        else pageTitle = 'Dashboard'
+        else pageTitle = 'Administration'
     }
 
     return (
@@ -212,8 +217,9 @@ const Topbar = observer(function Topbar() {
                 position: 'sticky',
                 top: 0,
                 zIndex: 1100,
-                bgcolor: '#fff',
-                borderBottom: '1px solid #E4E6EA',
+                bgcolor: 'background.paper',
+                borderBottom: 1,
+                borderColor: 'divider',
                 height: 56,
                 display: 'flex',
                 alignItems: 'center',
@@ -222,12 +228,17 @@ const Topbar = observer(function Topbar() {
                 flexShrink: 0,
             }}
         >
-            <Typography sx={{ fontSize: 16, fontWeight: 600, color: '#1A1A2E' }}>
+            <Typography sx={{ fontSize: 16, fontWeight: 600, color: 'text.primary' }}>
                 {pageTitle}
             </Typography>
 
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                 <AttendanceWidget enabled={!!authStore.user && !isAdminUser} />
+                <Tooltip title={uiStore.themeMode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
+                    <IconButton size="small" onClick={() => uiStore.toggleThemeMode()} aria-label="Toggle color mode">
+                        {uiStore.themeMode === 'dark' ? <LightModeRoundedIcon /> : <DarkModeRoundedIcon />}
+                    </IconButton>
+                </Tooltip>
                 <Tooltip title="Notifications">
                     <IconButton size="small" onClick={(e) => setAnchorEl(e.currentTarget)}>
                         <Badge badgeContent={unreadCount} color="error">

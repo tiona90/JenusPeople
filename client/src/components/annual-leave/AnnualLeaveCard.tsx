@@ -1,5 +1,4 @@
 import { useMemo, useState, type MouseEvent } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
@@ -22,7 +21,7 @@ import {
     Edit as EditIcon,
     MoreVert as MoreVertIcon,
 } from '@mui/icons-material'
-import { deleteAnnualLeave, getLeaveTypes, updateLeaveStatus } from '../../lib/api'
+import { useDeleteAnnualLeave, useLeaveTypes, useUpdateLeaveStatus } from '../../lib/hooks'
 import type { AnnualLeave, AnnualLeaveStatus, UserInfo } from '../../lib/types'
 import AnnualLeaveForm from './AnnualLeaveForm'
 
@@ -49,7 +48,6 @@ interface AnnualLeaveCardProps {
 }
 
 function AnnualLeaveCard({ leave, user }: AnnualLeaveCardProps) {
-    const queryClient = useQueryClient()
     const [editOpen, setEditOpen] = useState(false)
     const [deleteOpen, setDeleteOpen] = useState(false)
     const [rejectOpen, setRejectOpen] = useState(false)
@@ -60,10 +58,7 @@ function AnnualLeaveCard({ leave, user }: AnnualLeaveCardProps) {
     const isManager = user.roles.includes('Manager')
     const isOwnLeave = leave.employeeId === user.id
 
-    const { data: leaveTypes = [] } = useQuery({
-        queryKey: ['leaveTypes'],
-        queryFn: getLeaveTypes,
-    })
+    const { data: leaveTypes = [] } = useLeaveTypes()
 
     const leaveTypeName = useMemo(() => {
         if (leave.leaveTypeId == null) {
@@ -102,26 +97,8 @@ function AnnualLeaveCard({ leave, user }: AnnualLeaveCardProps) {
         setActionsAnchorEl(null)
     }
 
-    const invalidateLeaves = () => void queryClient.invalidateQueries({ queryKey: ['annualLeaves'] })
-
-    const deleteMutation = useMutation({
-        mutationFn: () => deleteAnnualLeave(leave.id),
-        onSuccess: () => {
-            invalidateLeaves()
-            setDeleteOpen(false)
-        },
-    })
-
-    const statusMutation = useMutation({
-        mutationFn: (vars: { status: 'Approved' | 'Rejected'; comment?: string }) =>
-            updateLeaveStatus(leave.id, vars.status, vars.comment),
-        onSuccess: () => {
-            invalidateLeaves()
-            void queryClient.invalidateQueries({ queryKey: ['leaveStatusHistories'] })
-            setRejectOpen(false)
-            setRejectComment('')
-        },
-    })
+    const deleteMutation = useDeleteAnnualLeave()
+    const statusMutation = useUpdateLeaveStatus()
 
     const statusAccentColor =
         leave.status === 'Approved'
@@ -231,7 +208,7 @@ function AnnualLeaveCard({ leave, user }: AnnualLeaveCardProps) {
                                             size="small"
                                             color="success"
                                             disabled={statusMutation.isPending}
-                                            onClick={() => statusMutation.mutate({ status: 'Approved' })}
+                                            onClick={() => statusMutation.mutate({ id: leave.id, status: 'Approved' })}
                                             sx={{ border: '1px solid', borderColor: 'rgba(34,197,94,0.25)', backgroundColor: 'rgba(34,197,94,0.06)' }}
                                         >
                                             {statusMutation.isPending
@@ -409,7 +386,7 @@ function AnnualLeaveCard({ leave, user }: AnnualLeaveCardProps) {
                         sx={dangerBtnSx}
                         disabled={deleteMutation.isPending}
                         startIcon={deleteMutation.isPending ? <CircularProgress size={16} color="inherit" /> : null}
-                        onClick={() => deleteMutation.mutate()}
+                        onClick={() => deleteMutation.mutate(leave.id, { onSuccess: () => setDeleteOpen(false) })}
                     >
                         {deleteMutation.isPending ? 'Cancelling...' : 'Cancel Request'}
                     </Button>
@@ -445,7 +422,10 @@ function AnnualLeaveCard({ leave, user }: AnnualLeaveCardProps) {
                         sx={dangerBtnSx}
                         disabled={statusMutation.isPending}
                         startIcon={statusMutation.isPending ? <CircularProgress size={16} color="inherit" /> : null}
-                        onClick={() => statusMutation.mutate({ status: 'Rejected', comment: rejectComment || undefined })}
+                        onClick={() => statusMutation.mutate(
+                            { id: leave.id, status: 'Rejected', comment: rejectComment || undefined },
+                            { onSuccess: () => { setRejectOpen(false); setRejectComment('') } }
+                        )}
                     >
                         {statusMutation.isPending ? 'Rejecting...' : 'Reject'}
                     </Button>

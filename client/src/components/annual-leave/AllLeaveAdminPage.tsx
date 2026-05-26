@@ -25,8 +25,7 @@ const LEAVE_ICONS: Record<string, string> = {
     maternity: '👶', paternity: '👶', parental: '👶',
 }
 
-const TYPE_KEYS = ['annual', 'sick', 'personal', 'bereavement', 'unpaid', 'maternity', 'other'] as const
-type TypeKey = typeof TYPE_KEYS[number]
+type TypeKey = 'annual' | 'sick' | 'personal' | 'bereavement' | 'unpaid' | 'maternity' | 'other'
 
 const MONTH_NAMES = [
     'January', 'February', 'March', 'April', 'May', 'June',

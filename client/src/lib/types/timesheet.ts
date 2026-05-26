@@ -1,3 +1,4 @@
+import type { TimesheetEntry } from './timesheet-entry';
 import type { TimesheetStatusHistory } from './timesheet-status-history';
 
 export type TimesheetStatus =
@@ -27,7 +28,7 @@ export interface Timesheet {
   submittedAt?: string | null;
   approvedAt?: string | null;
   createdAt: string;
-  entries?: any[];
+  entries?: TimesheetEntry[];
   statusHistory?: TimesheetStatusHistory[];
   projectSummaries?: TimesheetProjectSummary[];
   /** Hours per weekday — index 0 = Monday … 4 = Friday. */

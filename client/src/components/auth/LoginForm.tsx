@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import CircularProgress from '@mui/material/CircularProgress'
 import IconButton from '@mui/material/IconButton'
@@ -13,7 +12,6 @@ import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
 import { apiBaseUrl } from '../../lib/api'
 import { useStore } from '../../lib/mobx'
-import type { LoginRequest } from '../../lib/types'
 
 const socialReturnUrl = encodeURIComponent(`${window.location.origin}/#dashboard`)
 const googleLoginUrl = `${apiBaseUrl}/account/external-login/google?returnUrl=${socialReturnUrl}`

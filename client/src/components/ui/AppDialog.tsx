@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- intentional: dialog component and matching button sx tokens ship together */
 import type { ReactNode } from 'react'
 import type { Breakpoint } from '@mui/material'
 import Dialog from '@mui/material/Dialog'

@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { observer } from 'mobx-react-lite'
 import Box from '@mui/material/Box'
@@ -85,14 +86,19 @@ function minutesToHm(mins: number) {
     return h > 0 ? `${h}h ${m}m` : `${m}m`
 }
 
-const DashboardHome = observer(function DashboardHome({ user }: { user: UserInfo }) {
-    const { uiStore } = useStore()
+const DashboardHome = observer(function DashboardHome() {
+    const { authStore } = useStore()
+    const location = useLocation()
+    const user = authStore.user
+    if (!user) return null
 
     const isAdmin = user.roles.includes('Admin')
     const isManager = user.roles.includes('Manager') && !isAdmin
 
-    // Admin sub-routes
-    const adminSection = uiStore.adminSection
+    // Admin sub-routes are derived from the URL (was: uiStore.adminSection).
+    const adminSection = location.pathname.startsWith('/admin/')
+        ? location.pathname.split('/')[2]
+        : null
     if (isAdmin && adminSection === 'users') return <AdminUsersPanel />
     if (isAdmin && adminSection === 'departments') return <DepartmentsPanel />
     if (isAdmin && (adminSection === 'leave-types' || adminSection === 'leave')) return <LeaveTypesPanel />

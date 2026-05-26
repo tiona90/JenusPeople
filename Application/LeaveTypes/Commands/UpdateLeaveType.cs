@@ -1,6 +1,7 @@
-using Application.Annualleaves.Commands;
+using Application.AnnualLeaves.Commands;
 using Application.Core;
 using Application.LeaveTypes.DTOs;
+using AutoMapper;
 using Domain;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -16,7 +17,7 @@ public class UpdateLeaveType
         public required UpsertLeaveTypeRequest LeaveType { get; set; }
     }
 
-    public class Handler(AppDbContext context) : IRequestHandler<Command, Result<LeaveTypeDto>>
+    public class Handler(AppDbContext context, IMapper mapper) : IRequestHandler<Command, Result<LeaveTypeDto>>
     {
         public async Task<Result<LeaveTypeDto>> Handle(Command request, CancellationToken cancellationToken)
         {
@@ -24,34 +25,9 @@ public class UpdateLeaveType
             if (leaveType is null)
                 return Result<LeaveTypeDto>.Failure("Leave type not found.");
 
-            var normalizedName = request.LeaveType.Name.Trim();
-
-            if (string.IsNullOrWhiteSpace(normalizedName))
-                return Result<LeaveTypeDto>.Failure("Leave type name is required.");
-
-            if (context.LeaveTypes.Any(lt => lt.Id != request.Id && lt.Name.ToLower() == normalizedName.ToLower()))
-                return Result<LeaveTypeDto>.Failure("A leave type with that name already exists.");
-
             var wasRequiringApproval = leaveType.RequiresApproval;
 
-            var dto = request.LeaveType;
-            leaveType.Name = normalizedName;
-            leaveType.RequiresApproval = dto.RequiresApproval;
-            leaveType.IsActive = dto.IsActive;
-            leaveType.AffectsBalance = dto.AffectsBalance;
-            leaveType.Icon = string.IsNullOrWhiteSpace(dto.Icon) ? "🏷️" : dto.Icon.Trim();
-            leaveType.ColorKey = string.IsNullOrWhiteSpace(dto.ColorKey) ? "default" : dto.ColorKey.Trim();
-            leaveType.Description = (dto.Description ?? string.Empty).Trim();
-            leaveType.Paid = dto.Paid;
-            leaveType.AttachmentPolicy = dto.AttachmentPolicy;
-            leaveType.DefaultAllowance = dto.DefaultAllowance;
-            leaveType.AllowanceUnit = string.IsNullOrWhiteSpace(dto.AllowanceUnit) ? "days/year" : dto.AllowanceUnit.Trim();
-            leaveType.AccrualNotes = (dto.AccrualNotes ?? string.Empty).Trim();
-            leaveType.MinNoticeDays = dto.MinNoticeDays;
-            leaveType.MaxConsecutiveDays = dto.MaxConsecutiveDays;
-            leaveType.HalfDayAllowed = dto.HalfDayAllowed;
-            leaveType.EligibilityNotes = string.IsNullOrWhiteSpace(dto.EligibilityNotes) ? "All employees" : dto.EligibilityNotes.Trim();
-            leaveType.EligibilityScope = dto.EligibilityScope;
+            mapper.Map(request.LeaveType, leaveType);
 
             var affectedProfiles = new Dictionary<string, EmployeeProfile>();
 
@@ -107,27 +83,7 @@ public class UpdateLeaveType
                 await context.SaveChangesAsync(cancellationToken);
             }
 
-            return Result<LeaveTypeDto>.Success(new LeaveTypeDto
-            {
-                Id = leaveType.Id,
-                Name = leaveType.Name,
-                RequiresApproval = leaveType.RequiresApproval,
-                IsActive = leaveType.IsActive,
-                AffectsBalance = leaveType.AffectsBalance,
-                Icon = leaveType.Icon,
-                ColorKey = leaveType.ColorKey,
-                Description = leaveType.Description,
-                Paid = leaveType.Paid,
-                AttachmentPolicy = leaveType.AttachmentPolicy,
-                DefaultAllowance = leaveType.DefaultAllowance,
-                AllowanceUnit = leaveType.AllowanceUnit,
-                AccrualNotes = leaveType.AccrualNotes,
-                MinNoticeDays = leaveType.MinNoticeDays,
-                MaxConsecutiveDays = leaveType.MaxConsecutiveDays,
-                HalfDayAllowed = leaveType.HalfDayAllowed,
-                EligibilityNotes = leaveType.EligibilityNotes,
-                EligibilityScope = leaveType.EligibilityScope
-            });
+            return Result<LeaveTypeDto>.Success(mapper.Map<LeaveTypeDto>(leaveType));
         }
     }
 }

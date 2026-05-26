@@ -17,7 +17,7 @@ import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { getAppSettings, getEmployeeProfiles, getHolidayCountries, updateAppSettings } from '../../lib/api'
+import { getAppSettings, getDepartments, getEmployeeProfiles, getHolidayCountries, updateAppSettings } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
 import type { AppSettings, HolidayCountry } from '../../lib/types'
 
@@ -110,6 +110,11 @@ export default function AppSettingsPanel() {
 
     const { data: saved, isLoading } = useQuery({ queryKey: ['appSettings'], queryFn: getAppSettings })
     const { data: profiles = [] } = useQuery({ queryKey: ['employeeProfiles'], queryFn: getEmployeeProfiles })
+    const { data: departments = [] } = useQuery({ queryKey: ['departments'], queryFn: getDepartments })
+    const departmentNameById = useMemo(
+        () => new Map(departments.map((d) => [d.id, d.name])),
+        [departments],
+    )
     const { data: countries = [], isLoading: isLoadingCountries } = useQuery({
         queryKey: ['holidayCountries'],
         queryFn: getHolidayCountries,
@@ -172,10 +177,10 @@ export default function AppSettingsPanel() {
                 const carryover = Math.min(closing, form.maxCarryoverDays)
                 const expires = Math.max(0, closing - form.maxCarryoverDays)
                 const newBalance = carryover + form.defaultAnnualEntitlement
-                return { name: p.displayName, dept: p.departmentName ?? '—', closing, carryover, expires, newBalance }
+                return { name: p.displayName, dept: departmentNameById.get(p.departmentId) ?? '—', closing, carryover, expires, newBalance }
             })
             .sort((a, b) => a.name.localeCompare(b.name)),
-        [profiles, form.maxCarryoverDays, form.defaultAnnualEntitlement])
+        [profiles, departmentNameById, form.maxCarryoverDays, form.defaultAnnualEntitlement])
 
     const isDirty = JSON.stringify(form) !== JSON.stringify(saved ?? DEFAULT)
 

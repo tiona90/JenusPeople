@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { observer } from 'mobx-react-lite'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
@@ -12,7 +11,7 @@ import Select from '@mui/material/Select'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
 import { Add as AddIcon, Assignment as AssignmentIcon } from '@mui/icons-material'
-import { getAnnualLeaves, getLeaveTypes } from '../../lib/api'
+import { useAnnualLeaves, useLeaveTypes } from '../../lib/hooks'
 import { useStore } from '../../lib/mobx'
 import type { AnnualLeave, AnnualLeaveStatus, UserInfo } from '../../lib/types'
 import AnnualLeaveCard from './AnnualLeaveCard'
@@ -53,15 +52,8 @@ const AnnualLeaveList = observer(function AnnualLeaveList({
     const selectedYear = controlledSelectedYear ?? internalSelectedYear
     const setSelectedYear = onSelectedYearChange ?? setInternalSelectedYear
 
-    const { data: leaves, isLoading, isError } = useQuery({
-        queryKey: ['annualLeaves'],
-        queryFn: getAnnualLeaves,
-    })
-
-    const { data: leaveTypes = [] } = useQuery({
-        queryKey: ['leaveTypes'],
-        queryFn: getLeaveTypes,
-    })
+    const { data: leaves, isLoading, isError } = useAnnualLeaves()
+    const { data: leaveTypes = [] } = useLeaveTypes()
 
     const leaveTypeNameById = useMemo(
         () => new Map(leaveTypes.map((leaveType) => [leaveType.id, leaveType.name])),

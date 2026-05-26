@@ -1,13 +1,16 @@
 using Application.Core;
 using API.Models;
+using Asp.Versioning;
 using MediatR;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
 namespace API.Controllers
 {
-    [Route("api/[controller]")]
     [ApiController]
+    [ApiVersion("1.0")]
+    [Route("api/v{version:apiVersion}/[controller]")]
+    [Route("api/[controller]")] // unversioned alias resolves to the default API version (v1)
     public class BaseApiController : ControllerBase
     {
         private IMediator? _mediator;

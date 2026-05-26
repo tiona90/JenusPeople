@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { observer } from 'mobx-react-lite'
 import Alert from '@mui/material/Alert'
@@ -89,12 +89,6 @@ const MyLeavePage = observer(function MyLeavePage({ user }: { user: UserInfo }) 
     const [statusFilter, setStatusFilter] = useState<StatusFilter>('All')
     const [viewLeave, setViewLeave] = useState<AnnualLeave | null>(null)
     const [apiError, setApiError] = useState('')
-
-    useEffect(() => {
-        if (uiStore.myLeaveSection === 'apply') {
-            uiStore.navigateToApplyLeave()
-        }
-    }, [uiStore, uiStore.myLeaveSection])
 
     const { data: allLeaves = [], isLoading } = useQuery({ queryKey: ['annualLeaves'], queryFn: getAnnualLeaves })
     const { data: leaveTypes = [] } = useQuery({ queryKey: ['leaveTypes'], queryFn: getLeaveTypes })
