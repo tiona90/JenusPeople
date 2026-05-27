@@ -1,4 +1,7 @@
 import { useState } from 'react'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import Box from '@mui/material/Box'
 import CircularProgress from '@mui/material/CircularProgress'
@@ -16,6 +19,12 @@ import { useStore } from '../../lib/mobx'
 const socialReturnUrl = encodeURIComponent(`${window.location.origin}/#dashboard`)
 const googleLoginUrl = `${apiBaseUrl}/account/external-login/google?returnUrl=${socialReturnUrl}`
 const githubLoginUrl = `${apiBaseUrl}/account/external-login/github?returnUrl=${socialReturnUrl}`
+
+const loginSchema = z.object({
+    email: z.string().min(1, 'Email is required.').email('Enter a valid email address.'),
+    password: z.string().min(1, 'Password is required.'),
+})
+type LoginValues = z.infer<typeof loginSchema>
 
 const inputSx = {
     '& .MuiOutlinedInput-root': {
@@ -58,24 +67,25 @@ interface LoginFormProps {
 function LoginForm({ onForgotPassword, onSwitchToRegister }: LoginFormProps) {
     const { authStore } = useStore()
     const queryClient = useQueryClient()
-    const [email, setEmail] = useState('')
-    const [password, setPassword] = useState('')
     const [showPassword, setShowPassword] = useState(false)
+
+    const { register, handleSubmit, formState: { errors } } = useForm<LoginValues>({
+        resolver: zodResolver(loginSchema),
+        defaultValues: { email: '', password: '' },
+    })
 
     const mutation = useMutation({ mutationFn: authStore.signIn })
 
-    async function handleSubmit(e: React.FormEvent) {
-        e.preventDefault()
+    const onSubmit = handleSubmit(async (values) => {
         mutation.reset()
-        await mutation.mutateAsync({ email, password, rememberMe: false })
+        await mutation.mutateAsync({ email: values.email, password: values.password, rememberMe: false })
         await queryClient.cancelQueries()
         queryClient.clear()
-        window.location.hash = '#dashboard'
         window.location.reload()
-    }
+    })
 
     return (
-        <Box component="form" onSubmit={handleSubmit} noValidate>
+        <Box component="form" onSubmit={onSubmit} noValidate>
             <Typography sx={{ fontSize: 22, fontWeight: 700, color: '#1A1A2E', mb: 0.75 }}>Welcome back</Typography>
             <Typography sx={{ fontSize: 13, color: '#6B7280', mb: 3 }}>Sign in to your WorkFlow account</Typography>
 
@@ -119,10 +129,10 @@ function LoginForm({ onForgotPassword, onSwitchToRegister }: LoginFormProps) {
                 <TextField
                     label="Email address"
                     type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    {...register('email')}
+                    error={!!errors.email}
+                    helperText={errors.email?.message}
                     placeholder="you@company.com"
-                    required
                     fullWidth
                     disabled={mutation.isPending}
                     autoComplete="email"
@@ -135,10 +145,10 @@ function LoginForm({ onForgotPassword, onSwitchToRegister }: LoginFormProps) {
                 <TextField
                     label="Password"
                     type={showPassword ? 'text' : 'password'}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    {...register('password')}
+                    error={!!errors.password}
+                    helperText={errors.password?.message}
                     placeholder="Enter your password"
-                    required
                     fullWidth
                     disabled={mutation.isPending}
                     autoComplete="current-password"

@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Persistence;
+using Asp.Versioning;
 
 namespace API.Controllers
 {
@@ -15,6 +16,8 @@ namespace API.Controllers
         public DateTime PeriodStart { get; set; }
         public DateTime PeriodEnd { get; set; }
     }
+
+    [ApiVersion("1.0")]
 
     public class TimesheetsController : BaseApiController
     {

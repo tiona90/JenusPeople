@@ -1,6 +1,8 @@
+using Domain.Interfaces;
+
 namespace Domain;
 
-public class EmployeeProfile
+public class EmployeeProfile : ISoftDeletable, IAuditable
 {
     public string Id { get; set; } = Guid.NewGuid().ToString();
 

@@ -483,6 +483,7 @@ $RECYCLE.BIN/
 # Vim temporary swap files
 *.swp
 API/appsettings.json
+API/appsettings.Development.json
 
 # Claude Code local state
 .claude/

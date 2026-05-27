@@ -1,4 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { Controller, useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
 import { useLocation } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { observer } from 'mobx-react-lite'
@@ -38,6 +41,17 @@ import { getDepartments, updateProfile, uploadProfileImage } from '../../lib/api
 import { getApiErrorMessage } from '../../lib/api/error-utils'
 import type { Department } from '../../lib/types'
 import { useStore } from '../../lib/mobx'
+
+function buildProfileSchema(requireDepartment: boolean) {
+    return z.object({
+        displayName: z.string().trim().min(1, 'Display name is required.'),
+        email: z.string().trim().min(1, 'Email is required.').email('Enter a valid email address.'),
+        departmentId: requireDepartment
+            ? z.number().int().positive('Department is required.')
+            : z.number().int().nonnegative(),
+    })
+}
+type ProfileFormValues = z.infer<ReturnType<typeof buildProfileSchema>>
 
 // Design tokens
 const BG = '#1A1A2E'
@@ -82,14 +96,16 @@ const Sidebar = observer(function Sidebar() {
     // Profile menu
     const [profileAnchorEl, setProfileAnchorEl] = useState<null | HTMLElement>(null)
 
-    // Edit profile state
+    // Edit profile dialog
     const [isEditOpen, setIsEditOpen] = useState(false)
-    const [profileDisplayName, setProfileDisplayName] = useState('')
-    const [profileNameError, setProfileNameError] = useState('')
-    const [profileEmail, setProfileEmail] = useState('')
-    const [profileEmailError, setProfileEmailError] = useState('')
-    const [profileDepartmentId, setProfileDepartmentId] = useState(0)
-    const [profileDepartmentError, setProfileDepartmentError] = useState('')
+    const profileSchema = useMemo(
+        () => buildProfileSchema(shouldShowDepartmentField),
+        [shouldShowDepartmentField],
+    )
+    const { control, register, handleSubmit, reset, formState: { errors } } = useForm<ProfileFormValues>({
+        resolver: zodResolver(profileSchema),
+        defaultValues: { displayName: '', email: '', departmentId: 0 },
+    })
 
     const { data: departments = [], isLoading: isLoadingDepartments, isError: isDepartmentsError } = useQuery({
         queryKey: ['departments'],
@@ -118,35 +134,35 @@ const Sidebar = observer(function Sidebar() {
     })
 
     const handleEditClick = () => {
-        setProfileDisplayName(authStore.user?.displayName ?? '')
-        setProfileEmail(authStore.user?.email ?? '')
-        setProfileDepartmentId(authStore.user?.departmentId ?? 0)
-        setProfileNameError('')
-        setProfileEmailError('')
-        setProfileDepartmentError('')
+        reset({
+            displayName: authStore.user?.displayName ?? '',
+            email: authStore.user?.email ?? '',
+            departmentId: authStore.user?.departmentId ?? 0,
+        })
         updateProfileMutation.reset()
         setIsEditOpen(true)
         setProfileAnchorEl(null)
     }
 
-    const handleEditSubmit = async () => {
-        const name = profileDisplayName.trim()
-        const email = profileEmail.trim()
-        const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    // Re-sync defaults when the user object updates while the dialog is open.
+    useEffect(() => {
+        if (!isEditOpen) return
+        reset({
+            displayName: authStore.user?.displayName ?? '',
+            email: authStore.user?.email ?? '',
+            departmentId: authStore.user?.departmentId ?? 0,
+        })
+        // We intentionally re-init only when the dialog opens — reset is stable.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isEditOpen])
 
-        if (!name) { setProfileNameError('Display name is required.'); return }
-        if (!email) { setProfileEmailError('Email is required.'); return }
-        if (!emailPattern.test(email)) { setProfileEmailError('Enter a valid email address.'); return }
-        if (shouldShowDepartmentField && !profileDepartmentId) {
-            setProfileDepartmentError('Department is required.')
-            return
-        }
-
-        setProfileNameError('')
-        setProfileEmailError('')
-        setProfileDepartmentError('')
-        await updateProfileMutation.mutateAsync({ displayName: name, email, departmentId: profileDepartmentId })
-    }
+    const onEditSubmit = handleSubmit(async (values) => {
+        await updateProfileMutation.mutateAsync({
+            displayName: values.displayName.trim(),
+            email: values.email.trim(),
+            departmentId: values.departmentId,
+        })
+    })
 
     const handleImageSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0]
@@ -379,10 +395,9 @@ const Sidebar = observer(function Sidebar() {
 
                         <TextField
                             label="Display name"
-                            value={profileDisplayName}
-                            onChange={(e) => { setProfileDisplayName(e.target.value); setProfileNameError('') }}
-                            error={Boolean(profileNameError)}
-                            helperText={profileNameError}
+                            {...register('displayName')}
+                            error={!!errors.displayName}
+                            helperText={errors.displayName?.message}
                             required
                             fullWidth
                         />
@@ -390,31 +405,37 @@ const Sidebar = observer(function Sidebar() {
                         <TextField
                             label="Email"
                             type="email"
-                            value={profileEmail}
-                            onChange={(e) => { setProfileEmail(e.target.value); setProfileEmailError('') }}
-                            error={Boolean(profileEmailError)}
-                            helperText={profileEmailError}
+                            {...register('email')}
+                            error={!!errors.email}
+                            helperText={errors.email?.message}
                             required
                             fullWidth
                         />
 
                         {shouldShowDepartmentField && (
                             <>
-                                <TextField
-                                    select
-                                    label="Department"
-                                    value={profileDepartmentId ? String(profileDepartmentId) : ''}
-                                    onChange={(e) => { setProfileDepartmentId(Number(e.target.value)); setProfileDepartmentError('') }}
-                                    error={Boolean(profileDepartmentError)}
-                                    helperText={profileDepartmentError || (isLoadingDepartments ? 'Loading departments...' : 'Select your department.')}
-                                    disabled={isLoadingDepartments || activeDepartments.length === 0}
-                                    required
-                                    fullWidth
-                                >
-                                    {activeDepartments.map((d: Department) => (
-                                        <MenuItem key={d.id} value={d.id}>{d.name}</MenuItem>
-                                    ))}
-                                </TextField>
+                                <Controller
+                                    name="departmentId"
+                                    control={control}
+                                    render={({ field }) => (
+                                        <TextField
+                                            select
+                                            label="Department"
+                                            {...field}
+                                            value={field.value ? String(field.value) : ''}
+                                            onChange={(e) => field.onChange(Number(e.target.value))}
+                                            error={!!errors.departmentId}
+                                            helperText={errors.departmentId?.message ?? (isLoadingDepartments ? 'Loading departments...' : 'Select your department.')}
+                                            disabled={isLoadingDepartments || activeDepartments.length === 0}
+                                            required
+                                            fullWidth
+                                        >
+                                            {activeDepartments.map((d: Department) => (
+                                                <MenuItem key={d.id} value={d.id}>{d.name}</MenuItem>
+                                            ))}
+                                        </TextField>
+                                    )}
+                                />
                                 {isDepartmentsError && (
                                     <Alert severity="error">Unable to load departments. Please refresh and try again.</Alert>
                                 )}
@@ -434,7 +455,7 @@ const Sidebar = observer(function Sidebar() {
                     </Button>
                     <Button
                         variant="contained"
-                        onClick={() => void handleEditSubmit()}
+                        onClick={() => void onEditSubmit()}
                         sx={saveBtnSx}
                         disabled={updateProfileMutation.isPending || (shouldShowDepartmentField && (isLoadingDepartments || activeDepartments.length === 0))}
                         startIcon={updateProfileMutation.isPending ? <CircularProgress size={16} color="inherit" /> : null}

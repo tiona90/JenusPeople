@@ -1,4 +1,7 @@
 import { useMemo, useState } from 'react'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
 import { useMutation } from '@tanstack/react-query'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
@@ -12,6 +15,16 @@ import VisibilityOffRoundedIcon from '@mui/icons-material/VisibilityOffRounded'
 import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded'
 import { resetPassword } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
+
+const resetPasswordSchema = z.object({
+    email: z.string().min(1, 'Email is required.').email('Enter a valid email address.'),
+    newPassword: z.string().min(6, 'Use at least 6 characters.'),
+    confirmPassword: z.string().min(1, 'Please confirm your password.'),
+}).refine((data) => data.newPassword === data.confirmPassword, {
+    message: 'Passwords do not match.',
+    path: ['confirmPassword'],
+})
+type ResetPasswordValues = z.infer<typeof resetPasswordSchema>
 
 const inputSx = {
     '& .MuiOutlinedInput-root': {
@@ -36,15 +49,15 @@ function ResetPasswordForm({ onBackToLogin, onRequestNewLink }: ResetPasswordFor
     const searchParams = useMemo(() => new URLSearchParams(window.location.search), [])
     const initialEmail = searchParams.get('email') ?? ''
     const initialToken = searchParams.get('token') ?? ''
+    const hasValidLink = Boolean(initialEmail && initialToken)
 
-    const [email, setEmail] = useState(initialEmail)
-    const [newPassword, setNewPassword] = useState('')
-    const [confirmPassword, setConfirmPassword] = useState('')
     const [showNew, setShowNew] = useState(false)
     const [showConfirm, setShowConfirm] = useState(false)
 
-    const hasValidLink = Boolean(initialEmail && initialToken)
-    const pwMismatch = confirmPassword.length > 0 && newPassword !== confirmPassword
+    const { register, handleSubmit, formState: { errors } } = useForm<ResetPasswordValues>({
+        resolver: zodResolver(resetPasswordSchema),
+        defaultValues: { email: initialEmail, newPassword: '', confirmPassword: '' },
+    })
 
     const mutation = useMutation({
         mutationFn: resetPassword,
@@ -53,15 +66,19 @@ function ResetPasswordForm({ onBackToLogin, onRequestNewLink }: ResetPasswordFor
         },
     })
 
-    async function handleSubmit(e: React.FormEvent) {
-        e.preventDefault()
-        if (!hasValidLink || pwMismatch) return
+    const onSubmit = handleSubmit(async (values) => {
+        if (!hasValidLink) return
         mutation.reset()
-        await mutation.mutateAsync({ email: email.trim(), token: initialToken.trim(), newPassword, confirmPassword })
-    }
+        await mutation.mutateAsync({
+            email: values.email.trim(),
+            token: initialToken.trim(),
+            newPassword: values.newPassword,
+            confirmPassword: values.confirmPassword,
+        })
+    })
 
     return (
-        <Box component="form" onSubmit={handleSubmit} noValidate>
+        <Box component="form" onSubmit={onSubmit} noValidate>
             <Typography sx={{ fontSize: 22, fontWeight: 700, color: '#1A1A2E', mb: 0.75 }}>Choose a new password</Typography>
             <Typography sx={{ fontSize: 13, color: '#6B7280', mb: 2.5 }}>
                 Set a new password for your WorkFlow account
@@ -87,9 +104,9 @@ function ResetPasswordForm({ onBackToLogin, onRequestNewLink }: ResetPasswordFor
                 <TextField
                     label="Email address"
                     type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
+                    {...register('email')}
+                    error={!!errors.email}
+                    helperText={errors.email?.message}
                     fullWidth
                     disabled={mutation.isSuccess}
                     autoComplete="email"
@@ -102,14 +119,13 @@ function ResetPasswordForm({ onBackToLogin, onRequestNewLink }: ResetPasswordFor
                 <TextField
                     label="New password"
                     type={showNew ? 'text' : 'password'}
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
+                    {...register('newPassword')}
+                    error={!!errors.newPassword}
+                    helperText={errors.newPassword?.message ?? 'Use at least 6 characters.'}
                     placeholder="Create a strong password"
-                    required
                     fullWidth
                     disabled={!hasValidLink || mutation.isSuccess}
                     autoComplete="new-password"
-                    helperText="Use at least 6 characters."
                     InputProps={{
                         startAdornment: <InputAdornment position="start"><Typography sx={{ fontSize: 15, lineHeight: 1 }}>🔒</Typography></InputAdornment>,
                         endAdornment: (
@@ -126,15 +142,13 @@ function ResetPasswordForm({ onBackToLogin, onRequestNewLink }: ResetPasswordFor
                 <TextField
                     label="Confirm new password"
                     type={showConfirm ? 'text' : 'password'}
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    {...register('confirmPassword')}
+                    error={!!errors.confirmPassword}
+                    helperText={errors.confirmPassword?.message}
                     placeholder="Repeat your password"
-                    required
                     fullWidth
                     disabled={!hasValidLink || mutation.isSuccess}
                     autoComplete="new-password"
-                    error={pwMismatch}
-                    helperText={pwMismatch ? 'Passwords do not match' : undefined}
                     InputProps={{
                         startAdornment: <InputAdornment position="start"><Typography sx={{ fontSize: 15, lineHeight: 1 }}>🔒</Typography></InputAdornment>,
                         endAdornment: (
@@ -152,7 +166,7 @@ function ResetPasswordForm({ onBackToLogin, onRequestNewLink }: ResetPasswordFor
             <Box
                 component="button"
                 type="submit"
-                disabled={mutation.isPending || !hasValidLink || mutation.isSuccess || pwMismatch}
+                disabled={mutation.isPending || !hasValidLink || mutation.isSuccess}
                 sx={{ width: '100%', py: '11px', borderRadius: '8px', fontSize: 14, fontWeight: 600, cursor: mutation.isPending ? 'not-allowed' : 'pointer', border: 'none', bgcolor: '#4F8EF7', color: '#fff', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, mb: 2, transition: 'all 0.15s', '&:hover:not(:disabled)': { bgcolor: '#3A7AE4', transform: 'translateY(-1px)', boxShadow: '0 4px 12px rgba(79,142,247,0.3)' }, '&:disabled': { opacity: 0.7 } }}
             >
                 {mutation.isPending ? <><CircularProgress size={16} sx={{ color: '#fff' }} /> Resetting...</> : 'Reset Password'}

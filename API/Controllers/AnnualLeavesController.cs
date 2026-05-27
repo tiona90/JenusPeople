@@ -1,25 +1,74 @@
-﻿using Application.AnnualLeaves.Commands;
+using Application.AnnualLeaves.Commands;
 using Application.AnnualLeaves.DTOs;
 using Application.AnnualLeaves.Queries;
 using API.Hubs;
 using Domain;
 using Domain.Interfaces;
+using Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
+using Persistence;
 using System.Security.Claims;
+using Asp.Versioning;
 
 namespace API.Controllers;
+
+[ApiVersion("1.0")]
 
 public class AnnualLeavesController : BaseApiController
 {
     private readonly IHubContext<NotificationsHub> _notificationsHub;
     private readonly IFileUploadService _fileUploadService;
+    private readonly AppDbContext _context;
 
-    public AnnualLeavesController(IHubContext<NotificationsHub> notificationsHub, IFileUploadService fileUploadService)
+    public AnnualLeavesController(
+        IHubContext<NotificationsHub> notificationsHub,
+        IFileUploadService fileUploadService,
+        AppDbContext context)
     {
         _notificationsHub = notificationsHub;
         _fileUploadService = fileUploadService;
+        _context = context;
+    }
+
+    // Audience for a leave event = the employee whose leave it is +
+    // managers of the leave's department + all admins. Admins are not
+    // department-scoped in this app, so they're notified for every event;
+    // managers receive only events for departments they own.
+    private async Task NotifyLeaveAudienceAsync(string employeeUserId, int? departmentId, CancellationToken cancellationToken = default)
+    {
+        var dispatch = new List<Task>
+        {
+            _notificationsHub.Clients.User(employeeUserId).SendAsync("notificationsUpdated", cancellationToken),
+            _notificationsHub.Clients.Group(NotificationsHub.AdminGroup).SendAsync("notificationsUpdated", cancellationToken),
+        };
+
+        if (departmentId.HasValue)
+        {
+            dispatch.Add(_notificationsHub.Clients
+                .Group(NotificationsHub.DepartmentManagerGroup(departmentId.Value))
+                .SendAsync("notificationsUpdated", cancellationToken));
+        }
+
+        await Task.WhenAll(dispatch);
+    }
+
+    private async Task NotifyForLeaveAsync(string leaveId, CancellationToken cancellationToken = default)
+    {
+        var audience = await _context.AnnualLeaves
+            .AsNoTracking()
+            .Where(l => l.Id == leaveId)
+            .Select(l => new { l.EmployeeId, l.DepartmentId })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (audience is null)
+        {
+            return;
+        }
+
+        await NotifyLeaveAudienceAsync(audience.EmployeeId, audience.DepartmentId, cancellationToken);
     }
 
     // Visibility is role-scoped: Admin all, Manager by assigned departments, Employee own requests.
@@ -77,7 +126,7 @@ public class AnnualLeavesController : BaseApiController
             request.EmployeeId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
 
         var createdId = await Mediator.Send(new CreateAnnualLeave.Command { AnnualLeave = request });
-        await _notificationsHub.Clients.All.SendAsync("notificationsUpdated");
+        await NotifyForLeaveAsync(createdId);
         return createdId;
     }
 
@@ -91,16 +140,22 @@ public class AnnualLeavesController : BaseApiController
             return BadRequest(new { message = "Please select an evidence file." });
         }
 
-        var allowedExtensions = new[] { ".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx" };
-        var extension = Path.GetExtension(file.FileName);
-        if (string.IsNullOrWhiteSpace(extension) || !allowedExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase))
-        {
-            return BadRequest(new { message = "Supported evidence files are PDF, JPG, PNG, DOC, and DOCX." });
-        }
-
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "anonymous";
 
         await using var stream = file.OpenReadStream();
+
+        var allowed = new[]
+        {
+            FileSignatureValidator.FileKind.Jpeg,
+            FileSignatureValidator.FileKind.Png,
+            FileSignatureValidator.FileKind.Pdf,
+        };
+        var detected = await FileSignatureValidator.DetectAsync(stream, allowed);
+        if (detected is null)
+        {
+            return BadRequest(new { message = "Supported evidence files are real JPG, PNG, or PDF." });
+        }
+
         var uploadResult = await _fileUploadService.UploadEvidenceAsync(userId, stream, file.FileName, file.ContentType);
 
         if (!uploadResult.IsSuccess)
@@ -123,7 +178,7 @@ public class AnnualLeavesController : BaseApiController
             IsAdmin = User.IsInRole(AppRoles.Admin),
             IsManager = User.IsInRole(AppRoles.Manager)
         });
-        await _notificationsHub.Clients.All.SendAsync("notificationsUpdated");
+        await NotifyForLeaveAsync(request.Id);
         return NoContent();
     }
 
@@ -140,7 +195,7 @@ public class AnnualLeavesController : BaseApiController
             IsAdmin = User.IsInRole(AppRoles.Admin),
             IsManager = User.IsInRole(AppRoles.Manager),
         });
-        await _notificationsHub.Clients.All.SendAsync("notificationsUpdated");
+        await NotifyForLeaveAsync(id);
         return NoContent();
     }
 
@@ -149,6 +204,14 @@ public class AnnualLeavesController : BaseApiController
     [Authorize(Policy = "AnnualLeaveDelete")]
     public async Task<ActionResult> DeleteAnnualLeave(string id)
     {
+        // Resolve audience before the delete — once the row is gone we lose
+        // the employee/department fix-up the notifier needs.
+        var audience = await _context.AnnualLeaves
+            .AsNoTracking()
+            .Where(l => l.Id == id)
+            .Select(l => new { l.EmployeeId, l.DepartmentId })
+            .FirstOrDefaultAsync();
+
         await Mediator.Send(new DeleteAnnualLeave.Command
         {
             Id = id,
@@ -156,7 +219,12 @@ public class AnnualLeavesController : BaseApiController
             IsAdmin = User.IsInRole(AppRoles.Admin),
             IsManager = User.IsInRole(AppRoles.Manager)
         });
-        await _notificationsHub.Clients.All.SendAsync("notificationsUpdated");
+
+        if (audience is not null)
+        {
+            await NotifyLeaveAudienceAsync(audience.EmployeeId, audience.DepartmentId);
+        }
+
         return Ok();
     }
 }

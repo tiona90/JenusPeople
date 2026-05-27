@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Domain.Interfaces;
 
 namespace Domain;
 
@@ -10,7 +11,7 @@ public enum ProjectStatus
     Inactive = 2
 }
 
-public class Project
+public class Project : ISoftDeletable, IAuditable
 {
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;

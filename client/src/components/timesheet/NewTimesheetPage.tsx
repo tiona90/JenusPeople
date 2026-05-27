@@ -15,6 +15,7 @@ import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded'
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
+import LockRoundedIcon from '@mui/icons-material/LockRounded'
 import {
     createTimesheet,
     createTimesheetEntry,
@@ -106,10 +107,12 @@ function formatWeekRange(weekStart: Date): string {
 
 function buildEmptyBuckets(weekStart: Date, todayIso: string): Record<string, DayBucket> {
     const out: Record<string, DayBucket> = {}
-    const weekHasToday = Array.from({ length: 7 }, (_, i) => isoDate(addDays(weekStart, i))).includes(todayIso)
+    const keys = Array.from({ length: 7 }, (_, i) => isoDate(addDays(weekStart, i)))
+    const weekHasToday = keys.includes(todayIso)
     for (let i = 0; i < 7; i++) {
-        const key = isoDate(addDays(weekStart, i))
-        const open = weekHasToday ? key === todayIso : i === 0
+        const key = keys[i]
+        const isFuture = key > todayIso
+        const open = isFuture ? false : weekHasToday ? key === todayIso : i === 0
         out[key] = newDayBucket(open)
     }
     return out
@@ -484,6 +487,7 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
                         if (!bucket) return null
                         const isWeekend = i >= 5
                         const isToday = key === todayIso
+                        const isFuture = key > todayIso
                         const dayTotal = bucket.tasks.reduce((s, t) => {
                             const h = parseFloat(t.hours)
                             return s + (isNaN(h) ? 0 : h)
@@ -505,17 +509,18 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
                                 dayName={FULL_DOW[i]}
                                 isToday={isToday}
                                 isWeekend={isWeekend}
-                                isOpen={bucket.open}
+                                isFuture={isFuture}
+                                isOpen={bucket.open && !isFuture}
                                 tasks={bucket.tasks}
                                 dayTotal={dayTotal}
                                 taskCount={taskCount}
                                 activeProjects={activeProjects}
-                                onToggle={() => toggleDay(key)}
+                                onToggle={() => { if (!isFuture) toggleDay(key) }}
                                 onAddTask={() => addTask(key)}
                                 onRemoveTask={(taskId) => removeTask(key, taskId)}
                                 onUpdateTask={(taskId, field, value) => updateTask(key, taskId, field, value)}
-                                disabled={isBusy || !isEditable}
-                                readOnly={!isEditable}
+                                disabled={isBusy || !isEditable || isFuture}
+                                readOnly={!isEditable || isFuture}
                                 banner={showBanner ? (
                                     <AutoFillBanner
                                         text={`Hours from your check-in at ${formatTime12(attendanceToday!.checkInAt!)} — ${bannerSuffix}.`}
@@ -680,6 +685,7 @@ type DayCardProps = {
     dayName: string
     isToday: boolean
     isWeekend: boolean
+    isFuture: boolean
     isOpen: boolean
     tasks: Task[]
     dayTotal: number
@@ -738,25 +744,27 @@ function AutoFillBanner({ text, onAutoFill }: { text: string; onAutoFill: () => 
 }
 
 function DayCard({
-    dow, dom, dayName, isToday, isWeekend, isOpen,
+    dow, dom, dayName, isToday, isWeekend, isFuture, isOpen,
     tasks, dayTotal, taskCount,
     activeProjects,
     onToggle, onAddTask, onRemoveTask, onUpdateTask,
     disabled, readOnly, banner,
 }: DayCardProps) {
     const hasEntries = dayTotal > 0
-    const isEmptyWeekday = !isWeekend && dayTotal === 0
+    const isEmptyWeekday = !isWeekend && !isFuture && dayTotal === 0
 
     const leftAccent = hasEntries ? GREEN : isEmptyWeekday ? AMBER : null
-    const metaText = isWeekend
-        ? 'Weekend · optional'
-        : taskCount === 0 ? 'Nothing logged yet'
-            : taskCount === 1 ? '1 task' : `${taskCount} tasks`
+    const metaText = isFuture
+        ? 'Locked · future date'
+        : isWeekend
+            ? 'Weekend · optional'
+            : taskCount === 0 ? 'Nothing logged yet'
+                : taskCount === 1 ? '1 task' : `${taskCount} tasks`
     const metaColor = isEmptyWeekday ? '#92400E' : C_MUTED
 
     return (
         <Box sx={{
-            bgcolor: isWeekend ? '#FAFBFC' : '#fff',
+            bgcolor: isFuture ? '#FAFBFC' : isWeekend ? '#FAFBFC' : '#fff',
             border: `1px solid ${isToday ? BLUE : C_BORDER}`,
             borderLeftWidth: leftAccent ? 3 : 1,
             borderLeftColor: leftAccent ?? (isToday ? BLUE : C_BORDER),
@@ -766,20 +774,20 @@ function DayCard({
             boxShadow: isToday ? '0 0 0 3px rgba(79,142,247,0.08)' : 'none',
         }}>
             <Box
-                onClick={onToggle}
+                onClick={isFuture ? undefined : onToggle}
                 sx={{
                     p: '12px 16px',
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    cursor: 'pointer',
+                    cursor: isFuture ? 'not-allowed' : 'pointer',
                     userSelect: 'none',
-                    '&:hover': { bgcolor: isWeekend ? C_BG : '#FAFBFC' },
+                    '&:hover': isFuture ? {} : { bgcolor: isWeekend ? C_BG : '#FAFBFC' },
                 }}
             >
                 <Stack direction="row" alignItems="center" spacing={1.75}>
                     <Box sx={{
                         width: 44, height: 44, borderRadius: '8px',
-                        bgcolor: isToday ? BLUE : isWeekend ? '#EBEDF0' : C_BG,
-                        opacity: isWeekend && !isToday ? 0.7 : 1,
+                        bgcolor: isToday ? BLUE : (isWeekend || isFuture) ? '#EBEDF0' : C_BG,
+                        opacity: (isWeekend || isFuture) && !isToday ? 0.7 : 1,
                         display: 'flex', flexDirection: 'column',
                         alignItems: 'center', justifyContent: 'center',
                         flexShrink: 0,
@@ -804,7 +812,7 @@ function DayCard({
                         <Stack direction="row" alignItems="center" spacing={0.75}>
                             <Typography sx={{
                                 fontSize: 13, fontWeight: 600,
-                                color: isWeekend ? '#9CA3AF' : C_HEADING,
+                                color: (isWeekend || isFuture) ? '#9CA3AF' : C_HEADING,
                             }}>
                                 {dayName}
                             </Typography>
@@ -832,12 +840,16 @@ function DayCard({
                     }}>
                         {dayTotal.toFixed(1)} hrs
                     </Typography>
-                    <ExpandMoreRoundedIcon sx={{
-                        fontSize: 18,
-                        color: '#9CA3AF',
-                        transition: 'transform 0.2s',
-                        transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-                    }} />
+                    {isFuture ? (
+                        <LockRoundedIcon sx={{ fontSize: 16, color: '#9CA3AF' }} />
+                    ) : (
+                        <ExpandMoreRoundedIcon sx={{
+                            fontSize: 18,
+                            color: '#9CA3AF',
+                            transition: 'transform 0.2s',
+                            transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                        }} />
+                    )}
                 </Stack>
             </Box>
 

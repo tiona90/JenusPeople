@@ -6,10 +6,12 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Persistence;
 using System.Security.Claims;
+using Asp.Versioning;
 
 namespace API.Controllers;
 
 [Authorize(Roles = AppRoles.Admin)]
+[ApiVersion("1.0")]
 public class AdminUsersController(
     UserManager<User> userManager,
     RoleManager<Role> roleManager,

@@ -32,13 +32,12 @@ import { useStore } from './lib/mobx'
 import Sidebar from './components/layout/Sidebar'
 import Topbar from './components/layout/Topbar'
 
-function getAuthViewFromHash(hash: string): 'login' | 'register' | 'forgot-password' | 'reset-password' {
-    const [route] = hash.split('?')
+type AuthView = 'login' | 'register' | 'forgot-password' | 'reset-password'
 
-    if (route === '#register') return 'register'
-    if (route === '#forgot-password') return 'forgot-password'
-    if (route === '#reset-password') return 'reset-password'
-
+function getAuthViewFromPath(pathname: string): AuthView {
+    if (pathname.startsWith('/register')) return 'register'
+    if (pathname.startsWith('/forgot-password')) return 'forgot-password'
+    if (pathname.startsWith('/reset-password')) return 'reset-password'
     return 'login'
 }
 
@@ -47,19 +46,8 @@ const AuthGate = observer(function AuthGate() {
     const location = useLocation()
     const navigate = useNavigate()
 
-    const [authView, setAuthView] = useState<'login' | 'register' | 'forgot-password' | 'reset-password'>(
-        () => getAuthViewFromHash(window.location.hash)
-    )
+    const authView = getAuthViewFromPath(location.pathname)
     const [authNotice, setAuthNotice] = useState<{ severity: 'success' | 'info' | 'error'; message: string } | null>(null)
-
-    useEffect(() => {
-        if (authStore.user) return
-
-        const syncAuthViewFromHash = () => setAuthView(getAuthViewFromHash(window.location.hash))
-        syncAuthViewFromHash()
-        window.addEventListener('hashchange', syncAuthViewFromHash)
-        return () => window.removeEventListener('hashchange', syncAuthViewFromHash)
-    }, [authStore.user])
 
     useEffect(() => {
         if (authStore.user) return
@@ -92,11 +80,11 @@ const AuthGate = observer(function AuthGate() {
             authView={authView}
             authNotice={authNotice}
             onClearNotice={() => setAuthNotice(null)}
-            onSwitchToLogin={() => { setAuthView('login'); navigate('/login') }}
-            onSwitchToRegister={() => { setAuthView('register'); navigate('/register') }}
-            onForgotPassword={() => { setAuthView('forgot-password'); navigate('/forgot-password') }}
-            onBackToLogin={() => { setAuthView('login'); navigate('/login') }}
-            onRequestNewLink={() => { setAuthView('forgot-password'); navigate('/forgot-password') }}
+            onSwitchToLogin={() => navigate('/login')}
+            onSwitchToRegister={() => navigate('/register')}
+            onForgotPassword={() => navigate('/forgot-password')}
+            onBackToLogin={() => navigate('/login')}
+            onRequestNewLink={() => navigate('/forgot-password')}
         />
     )
 })

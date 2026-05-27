@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Application.Attendance.DTOs;
+using Asp.Versioning;
 using Domain;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -8,10 +9,9 @@ using Persistence;
 
 namespace API.Controllers;
 
-[ApiController]
-[Route("api/[controller]")]
+[ApiVersion("1.0")]
 [Authorize]
-public class AttendanceController : ControllerBase
+public class AttendanceController : BaseApiController
 {
     private readonly AppDbContext _context;
 

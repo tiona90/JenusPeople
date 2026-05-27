@@ -1,4 +1,6 @@
 ﻿using System;
+using Domain.Interfaces;
+using Domain.Services;
 
 namespace Domain;
 
@@ -10,7 +12,7 @@ public enum AnnualLeaveStatus
     Cancelled
 }
 
-public class AnnualLeave
+public class AnnualLeave : IAuditable
 {
     public string Id { get; set; } = Guid.NewGuid().ToString();
     public string EmployeeId { get; set; } = Guid.NewGuid().ToString();
@@ -31,25 +33,12 @@ public class AnnualLeave
     public DateTime CreatedAt { get; set; }
     public DateTime? ApprovedAt { get; set; }
 
-    public int TotalDays
-    {
-        get
-        {
-            var start = StartDate.Date;
-            var end = EndDate.Date;
-
-            if (end < start) return 0;
-
-            var days = 0;
-            for (var date = start; date <= end; date = date.AddDays(1))
-            {
-                if (date.DayOfWeek is not DayOfWeek.Saturday and not DayOfWeek.Sunday)
-                    days++;
-            }
-
-            return days;
-        }
-    }
+    /// <summary>
+    /// Weekend-aware business-day count for this leave request, ignoring public
+    /// holidays. Holiday-aware calculations require external input and should be
+    /// done via <see cref="LeaveCalculationService.CalculateBusinessDays"/> directly.
+    /// </summary>
+    public int TotalDays => LeaveCalculationService.CalculateBusinessDays(StartDate, EndDate);
     public ICollection<LeaveStatusHistory> StatusHistory { get; set; } = new List<LeaveStatusHistory>();
 }
 

@@ -24,7 +24,9 @@ public class DeleteProject
             if (hasEntries)
                 return Result<Unit>.Failure("Cannot delete a project with logged timesheet entries. Set it to Inactive instead.");
 
-            project.IsDeleted = true;
+            // The AuditingSaveChangesInterceptor converts physical deletes on
+            // ISoftDeletable entities to IsDeleted = true and records an audit entry.
+            context.Projects.Remove(project);
             await context.SaveChangesAsync(cancellationToken);
 
             return Result<Unit>.Success(Unit.Value);

@@ -19,6 +19,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Persistence;
+using Persistence.Interceptors;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 
@@ -139,12 +140,24 @@ builder.Services.AddRateLimiter(options =>
 
 builder.Services.AddSwaggerDocumentation();
 builder.Services.AddSignalR();
+
+// HSTS configuration — only emitted in non-Development (see app.UseHsts below).
+// 180 days max-age + IncludeSubDomains is the conservative starting point;
+// move to the 2-year `preload` value once you're ready to submit the domain
+// to the HSTS preload list.
+builder.Services.AddHsts(options =>
+{
+    options.MaxAge = TimeSpan.FromDays(180);
+    options.IncludeSubDomains = true;
+    options.Preload = false;
+});
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddInfrastructureServices(builder.Configuration);
-builder.Services.AddDbContext<AppDbContext>(opt =>
+builder.Services.AddScoped<AuditingSaveChangesInterceptor>();
+builder.Services.AddDbContext<AppDbContext>((sp, opt) =>
 {
-
     opt.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"));
+    opt.AddInterceptors(sp.GetRequiredService<AuditingSaveChangesInterceptor>());
 });
 builder.Services.AddCors(options =>
 {
@@ -168,10 +181,22 @@ builder.Services.AddCors(options =>
 builder.Services.AddMediatR(x =>
 x.RegisterServicesFromAssemblyContaining<GetAnnualLeaveList.Handler>());
 
+// Nager (public-holidays API) is a public, occasionally-flaky third party. The
+// standard resilience handler bundles: per-attempt timeout, retry with
+// exponential backoff + jitter, circuit breaker (opens at 10% failure rate over
+// a 30s window), total request timeout, and a concurrency limiter.
 builder.Services.AddHttpClient<NagerHolidayClient>(client =>
 {
     client.BaseAddress = new Uri("https://date.nager.at/api/v3/");
-    client.Timeout = TimeSpan.FromSeconds(8);
+})
+.AddStandardResilienceHandler(options =>
+{
+    // Per-attempt cap matches the previous HttpClient.Timeout (8s).
+    options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(8);
+    // Cumulative cap across all retries — must exceed AttemptTimeout × (Retry.MaxRetryAttempts + 1).
+    options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(40);
+    // Circuit-breaker sampling window must be at least 2× AttemptTimeout.
+    options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(30);
 });
 
 // Explicit registrations for LeaveType commands to avoid handler resolution issues
@@ -258,6 +283,18 @@ if (app.Environment.IsDevelopment())
 {
     app.UseSwaggerDocumentation();
 }
+else
+{
+    // HSTS only outside Development — browsers cache the header per-host and
+    // accidentally pinning localhost or a staging hostname is painful to
+    // undo. Production traffic should already be on HTTPS by this point.
+    app.UseHsts();
+}
+
+// SecurityHeaders runs first so its OnStarting callback is registered before
+// any downstream middleware can call Response.Clear(); the callback fires on
+// the actual flush, so error responses get the headers too.
+app.UseMiddleware<SecurityHeadersMiddleware>();
 
 // Configure the HTTP request pipeline.
 app.UseMiddleware<GlobalExceptionMiddleware>();

@@ -1,4 +1,7 @@
 import { useState } from 'react'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
 import { useMutation } from '@tanstack/react-query'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
@@ -9,6 +12,11 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { forgotPassword } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
+
+const forgotPasswordSchema = z.object({
+    email: z.string().min(1, 'Email is required.').email('Enter a valid email address.'),
+})
+type ForgotPasswordValues = z.infer<typeof forgotPasswordSchema>
 
 const inputSx = {
     '& .MuiOutlinedInput-root': {
@@ -29,21 +37,24 @@ interface ForgotPasswordFormProps {
 }
 
 function ForgotPasswordForm({ onBackToLogin }: ForgotPasswordFormProps) {
-    const [email, setEmail] = useState('')
     const [submittedEmail, setSubmittedEmail] = useState('')
+
+    const { register, handleSubmit, formState: { errors } } = useForm<ForgotPasswordValues>({
+        resolver: zodResolver(forgotPasswordSchema),
+        defaultValues: { email: '' },
+    })
 
     const mutation = useMutation({ mutationFn: forgotPassword })
 
-    async function handleSubmit(e: React.FormEvent) {
-        e.preventDefault()
+    const onSubmit = handleSubmit(async (values) => {
         mutation.reset()
-        const trimmed = email.trim()
+        const trimmed = values.email.trim()
         await mutation.mutateAsync({ email: trimmed })
         setSubmittedEmail(trimmed)
-    }
+    })
 
     return (
-        <Box component="form" onSubmit={handleSubmit} noValidate>
+        <Box component="form" onSubmit={onSubmit} noValidate>
             <Typography sx={{ fontSize: 22, fontWeight: 700, color: '#1A1A2E', mb: 0.75 }}>Reset password</Typography>
             <Typography sx={{ fontSize: 13, color: '#6B7280', mb: 2.5 }}>
                 Enter your email and we&apos;ll send you a reset link
@@ -71,10 +82,10 @@ function ForgotPasswordForm({ onBackToLogin }: ForgotPasswordFormProps) {
                 <TextField
                     label="Email address"
                     type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    {...register('email')}
+                    error={!!errors.email}
+                    helperText={errors.email?.message}
                     placeholder="you@company.com"
-                    required
                     fullWidth
                     disabled={mutation.isPending || mutation.isSuccess}
                     autoComplete="email"

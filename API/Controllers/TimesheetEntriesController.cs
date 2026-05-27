@@ -1,3 +1,5 @@
+using Application.Timesheets;
+using Asp.Versioning;
 using Domain;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -15,7 +17,9 @@ public class CreateEntryRequest
 }
 
 [ApiController]
-[Route("api/timesheets/{timesheetId}/entries")]
+[ApiVersion("1.0")]
+[Route("api/v{version:apiVersion}/timesheets/{timesheetId}/entries")]
+[Route("api/timesheets/{timesheetId}/entries")] // unversioned alias resolves to the default API version (v1)
 [Authorize]
 public class TimesheetEntriesController : ControllerBase
 {
@@ -53,6 +57,13 @@ public class TimesheetEntriesController : ControllerBase
             Notes = request.Notes,
         };
 
+        var existing = await _context.TimesheetEntries
+            .Where(e => e.TimesheetId == timesheetId)
+            .ToListAsync();
+        var validation = TimesheetEntryValidator.Validate(entry, existing);
+        if (!validation.IsValid)
+            throw new ArgumentException(validation.Error);
+
         _context.TimesheetEntries.Add(entry);
         try
         {
@@ -75,6 +86,14 @@ public class TimesheetEntriesController : ControllerBase
     {
         if (entryId != entry.Id || timesheetId != entry.TimesheetId)
             return BadRequest("Id or TimesheetId mismatch");
+
+        var existing = await _context.TimesheetEntries
+            .AsNoTracking()
+            .Where(e => e.TimesheetId == timesheetId)
+            .ToListAsync();
+        var validation = TimesheetEntryValidator.Validate(entry, existing);
+        if (!validation.IsValid)
+            throw new ArgumentException(validation.Error);
 
         _context.Entry(entry).State = EntityState.Modified;
         try

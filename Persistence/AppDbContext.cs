@@ -1,10 +1,7 @@
-﻿using System.Text.Json;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.ChangeTracking;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Domain;
-using Domain.Interfaces;
 
 namespace Persistence;
 
@@ -18,28 +15,8 @@ public class AppDbContext : IdentityDbContext<
     IdentityRoleClaim<string>,
     IdentityUserToken<string>>
 {
-    private static readonly HashSet<string> AuditedEntities = new(StringComparer.Ordinal)
-    {
-        nameof(AnnualLeave),
-        nameof(Timesheet),
-    };
-
-    private static readonly JsonSerializerOptions AuditJsonOptions = new()
-    {
-        WriteIndented = false,
-        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
-    };
-
-    private readonly ICurrentUserAccessor? _currentUserAccessor;
-
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options)
     {
-    }
-
-    public AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUserAccessor currentUserAccessor)
-        : base(options)
-    {
-        _currentUserAccessor = currentUserAccessor;
     }
 
     public DbSet<AuditLog> AuditLogs { get; set; }
@@ -289,85 +266,5 @@ public class AppDbContext : IdentityDbContext<
                 .HasForeignKey(a => a.UserId)
                 .OnDelete(DeleteBehavior.SetNull);
         });
-    }
-
-    public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
-    {
-        var auditEntries = CaptureAuditEntries();
-        var result = await base.SaveChangesAsync(cancellationToken);
-
-        if (auditEntries.Count > 0)
-        {
-            AuditLogs.AddRange(auditEntries);
-            await base.SaveChangesAsync(cancellationToken);
-        }
-
-        return result;
-    }
-
-    private List<AuditLog> CaptureAuditEntries()
-    {
-        var entries = new List<AuditLog>();
-        var userId = _currentUserAccessor?.UserId;
-        var timestamp = DateTime.UtcNow;
-
-        foreach (var entry in ChangeTracker.Entries())
-        {
-            if (entry.Entity is AuditLog) continue;
-            var entityName = entry.Entity.GetType().Name;
-            if (!AuditedEntities.Contains(entityName)) continue;
-            if (entry.State is not (EntityState.Added or EntityState.Modified or EntityState.Deleted)) continue;
-
-            var (action, changes) = entry.State switch
-            {
-                EntityState.Added => (AuditAction.Create, SerializeCurrentValues(entry)),
-                EntityState.Deleted => (AuditAction.Delete, SerializeOriginalValues(entry)),
-                _ => (AuditAction.Update, SerializeDiff(entry)),
-            };
-
-            // Skip Update entries where no scalar values actually changed.
-            if (action == AuditAction.Update && changes == "{}") continue;
-
-            entries.Add(new AuditLog
-            {
-                EntityName = entityName,
-                EntityId = entry.Properties.FirstOrDefault(p => p.Metadata.IsPrimaryKey())?.CurrentValue?.ToString() ?? string.Empty,
-                Action = action,
-                Changes = changes,
-                UserId = string.IsNullOrEmpty(userId) ? null : userId,
-                Timestamp = timestamp,
-            });
-        }
-
-        return entries;
-    }
-
-    private static string SerializeCurrentValues(EntityEntry entry)
-    {
-        var dict = entry.Properties
-            .Where(p => !p.Metadata.IsShadowProperty())
-            .ToDictionary(p => p.Metadata.Name, p => p.CurrentValue);
-        return JsonSerializer.Serialize(dict, AuditJsonOptions);
-    }
-
-    private static string SerializeOriginalValues(EntityEntry entry)
-    {
-        var dict = entry.Properties
-            .Where(p => !p.Metadata.IsShadowProperty())
-            .ToDictionary(p => p.Metadata.Name, p => p.OriginalValue);
-        return JsonSerializer.Serialize(dict, AuditJsonOptions);
-    }
-
-    private static string SerializeDiff(EntityEntry entry)
-    {
-        var dict = new Dictionary<string, object?>();
-        foreach (var prop in entry.Properties)
-        {
-            if (prop.Metadata.IsShadowProperty()) continue;
-            if (!prop.IsModified) continue;
-            if (Equals(prop.OriginalValue, prop.CurrentValue)) continue;
-            dict[prop.Metadata.Name] = new { From = prop.OriginalValue, To = prop.CurrentValue };
-        }
-        return JsonSerializer.Serialize(dict, AuditJsonOptions);
     }
 }

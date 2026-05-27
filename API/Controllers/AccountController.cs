@@ -4,6 +4,7 @@ using AccountCommands = Application.Accounts.Commands;
 using Domain;
 using Domain.Interfaces;
 using Infrastructure.Configuration;
+using Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -16,8 +17,11 @@ using Resend;
 using System.Net;
 using System.Security.Claims;
 using System.Text;
+using Asp.Versioning;
 
 namespace API.Controllers;
+
+[ApiVersion("1.0")]
 
 public class AccountController(
     UserManager<User> userManager,
@@ -26,6 +30,7 @@ public class AccountController(
     IConfiguration configuration,
     IOptions<AppUrlOptions> appUrlOptions,
     IResend resend,
+    IEmailService emailService,
     IFileUploadService fileUploadService,
     ILogger<AccountController> logger) : BaseApiController
 {
@@ -321,15 +326,19 @@ public class AccountController(
         }
 
         var displayName = request.DisplayName.Trim();
-        var email = request.Email.Trim();
-        var normalizedEmail = userManager.NormalizeEmail(email);
+        var requestedEmail = request.Email.Trim();
+        var normalizedRequestedEmail = userManager.NormalizeEmail(requestedEmail);
+        var emailChanged = !string.Equals(user.NormalizedEmail, normalizedRequestedEmail, StringComparison.Ordinal);
 
-        var emailInUse = await userManager.Users
-            .AnyAsync(existing => existing.Id != user.Id && existing.NormalizedEmail == normalizedEmail);
-
-        if (emailInUse)
+        if (emailChanged)
         {
-            return BadRequest(new { message = "Email is already registered." });
+            var emailInUse = await userManager.Users
+                .AnyAsync(existing => existing.Id != user.Id && existing.NormalizedEmail == normalizedRequestedEmail);
+
+            if (emailInUse)
+            {
+                return BadRequest(new { message = "Email is already registered." });
+            }
         }
 
         var employeeProfile = await context.EmployeeProfiles
@@ -350,8 +359,6 @@ public class AccountController(
         }
 
         user.DisplayName = displayName;
-        user.Email = email;
-        user.UserName = email;
         employeeProfile.DepartmentId = department.Id;
 
         var result = await userManager.UpdateAsync(user);
@@ -367,14 +374,130 @@ public class AccountController(
 
         await context.SaveChangesAsync();
 
+        var emailChangePending = false;
+        if (emailChanged)
+        {
+            await SendEmailChangeConfirmationAsync(user, requestedEmail);
+            emailChangePending = true;
+        }
+
         return Ok(new
         {
-            message = "Profile updated successfully.",
+            message = emailChangePending
+                ? $"Profile updated. Check {requestedEmail} for a confirmation link — the email change takes effect only after you click it."
+                : "Profile updated successfully.",
             displayName = user.DisplayName,
             email = user.Email,
             departmentId = department.Id,
-            departmentName = department.Name
+            departmentName = department.Name,
+            emailChangePending,
+            pendingEmail = emailChangePending ? requestedEmail : null
         });
+    }
+
+    [AllowAnonymous]
+    [HttpGet("confirm-email-change")]
+    public async Task<IActionResult> ConfirmEmailChange(
+        [FromQuery] string userId,
+        [FromQuery] string newEmail,
+        [FromQuery] string token)
+    {
+        if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(newEmail) || string.IsNullOrWhiteSpace(token))
+        {
+            return RenderVerificationPage(
+                "Confirmation link invalid",
+                "This confirmation link is incomplete. Request a new email change from your profile.",
+                false);
+        }
+
+        var user = await userManager.FindByIdAsync(userId);
+        if (user is null)
+        {
+            return RenderVerificationPage(
+                "Confirmation failed",
+                "We could not find the account for this confirmation link.",
+                false);
+        }
+
+        var normalizedNewEmail = userManager.NormalizeEmail(newEmail);
+        var emailTaken = await userManager.Users
+            .AnyAsync(existing => existing.Id != user.Id && existing.NormalizedEmail == normalizedNewEmail);
+
+        if (emailTaken)
+        {
+            return RenderVerificationPage(
+                "Email unavailable",
+                "Another account is already using this email address. Choose a different one from your profile.",
+                false);
+        }
+
+        string decodedToken;
+        try
+        {
+            decodedToken = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(token));
+        }
+        catch
+        {
+            return RenderVerificationPage(
+                "Confirmation token invalid",
+                "The confirmation token could not be read. Request a new email change from your profile.",
+                false);
+        }
+
+        var changeResult = await userManager.ChangeEmailAsync(user, newEmail, decodedToken);
+        if (!changeResult.Succeeded)
+        {
+            var message = changeResult.Errors.Select(e => e.Description).FirstOrDefault()
+                ?? "Email change failed.";
+            return RenderVerificationPage("Confirmation failed", message, false);
+        }
+
+        // The app uses email as username, so keep them aligned.
+        var setUserNameResult = await userManager.SetUserNameAsync(user, newEmail);
+        if (!setUserNameResult.Succeeded)
+        {
+            var message = setUserNameResult.Errors.Select(e => e.Description).FirstOrDefault()
+                ?? "Username could not be updated.";
+            return RenderVerificationPage("Confirmation failed", message, false);
+        }
+
+        return RenderVerificationPage(
+            "Email updated",
+            "Your account email has been updated. Sign in with the new address from now on.",
+            true);
+    }
+
+    private async Task SendEmailChangeConfirmationAsync(User user, string newEmail)
+    {
+        var token = await userManager.GenerateChangeEmailTokenAsync(user, newEmail);
+        var encodedToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
+
+        var apiBaseUrl = appUrlOptions.Value.ApiBaseUrl;
+        if (string.IsNullOrWhiteSpace(apiBaseUrl))
+        {
+            apiBaseUrl = $"{Request.Scheme}://{Request.Host.Value}";
+        }
+        apiBaseUrl = apiBaseUrl.TrimEnd('/');
+
+        var confirmationUrl = $"{apiBaseUrl}/api/account/confirm-email-change"
+            + $"?userId={Uri.EscapeDataString(user.Id)}"
+            + $"&newEmail={Uri.EscapeDataString(newEmail)}"
+            + $"&token={Uri.EscapeDataString(encodedToken)}";
+
+        var displayName = string.IsNullOrWhiteSpace(user.DisplayName) ? newEmail : user.DisplayName;
+
+        var htmlBody = BuildEmailBody(
+            "Confirm your new Annual Leave email",
+            "Confirm your new email",
+            displayName,
+            $"We received a request to change the email on your Annual Leave account to {newEmail}. Click the secure button below to confirm the switch.",
+            "Confirm new email",
+            confirmationUrl,
+            "If you did not request this change, ignore this email and your current address will stay in place.");
+
+        var textBody = $"Hello {displayName},\n\nConfirm your new Annual Leave email address ({newEmail}) using the link below:\n{confirmationUrl}\n\nIf you did not request this change, ignore this email and your current address will stay in place.";
+
+        await emailService.SendEmailAsync(newEmail, "Confirm your new Annual Leave email", htmlBody, textBody);
     }
 
     [Authorize]
@@ -388,11 +511,6 @@ public class AccountController(
             return BadRequest(new { message = "Please select an image file." });
         }
 
-        if (!file.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
-        {
-            return BadRequest(new { message = "Only image files are supported." });
-        }
-
         var user = await userManager.GetUserAsync(User);
         if (user is null)
         {
@@ -400,6 +518,14 @@ public class AccountController(
         }
 
         await using var stream = file.OpenReadStream();
+
+        var allowed = new[] { FileSignatureValidator.FileKind.Jpeg, FileSignatureValidator.FileKind.Png };
+        var detected = await FileSignatureValidator.DetectAsync(stream, allowed);
+        if (detected is null)
+        {
+            return BadRequest(new { message = "Only real JPG or PNG images are accepted." });
+        }
+
         var uploadResult = await fileUploadService.UploadProfileImageAsync(user.Id, stream, file.FileName);
 
         if (!uploadResult.IsSuccess)

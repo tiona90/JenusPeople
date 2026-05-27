@@ -1,4 +1,7 @@
 import { useMemo, useState } from 'react'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
@@ -19,6 +22,20 @@ import type { Department } from '../../lib/types'
 const socialReturnUrl = encodeURIComponent(`${window.location.origin}/#dashboard`)
 const googleLoginUrl = `${apiBaseUrl}/account/external-login/google?returnUrl=${socialReturnUrl}`
 const githubLoginUrl = `${apiBaseUrl}/account/external-login/github?returnUrl=${socialReturnUrl}`
+
+const registerSchema = z.object({
+    firstName: z.string().trim().min(1, 'First name is required.'),
+    lastName: z.string().trim().min(1, 'Last name is required.'),
+    email: z.string().trim().min(1, 'Email is required.').email('Enter a valid email address.'),
+    departmentId: z.number().int().positive('Please choose your department.'),
+    password: z.string().min(6, 'Use at least 6 characters.'),
+    confirmPassword: z.string().min(1, 'Please confirm your password.'),
+    termsAccepted: z.literal(true, { message: 'You must accept the terms to continue.' }),
+}).refine((data) => data.password === data.confirmPassword, {
+    message: 'Passwords do not match.',
+    path: ['confirmPassword'],
+})
+type RegisterValues = z.infer<typeof registerSchema>
 
 const inputSx = {
     '& .MuiOutlinedInput-root': {
@@ -99,15 +116,8 @@ interface RegisterFormProps {
 
 function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
     const { authStore } = useStore()
-    const [firstName, setFirstName] = useState('')
-    const [lastName, setLastName] = useState('')
-    const [email, setEmail] = useState('')
-    const [departmentId, setDepartmentId] = useState(0)
-    const [password, setPassword] = useState('')
-    const [confirmPassword, setConfirmPassword] = useState('')
     const [showPassword, setShowPassword] = useState(false)
     const [showConfirm, setShowConfirm] = useState(false)
-    const [termsAccepted, setTermsAccepted] = useState(false)
     const [registeredEmail, setRegisteredEmail] = useState('')
 
     const { data: departments = [], isLoading: deptsLoading, isError: deptsError } = useQuery({
@@ -116,28 +126,41 @@ function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
     })
     const activeDepts = useMemo(() => departments.filter((d: Department) => d.isActive), [departments])
 
+    const { register, handleSubmit, watch, reset, formState: { errors } } = useForm<RegisterValues>({
+        resolver: zodResolver(registerSchema),
+        defaultValues: {
+            firstName: '',
+            lastName: '',
+            email: '',
+            departmentId: 0,
+            password: '',
+            confirmPassword: '',
+            termsAccepted: false as unknown as true, // Zod literal(true) — RHF needs an initial value
+        },
+    })
+
+    const password = watch('password')
+
     const mutation = useMutation({ mutationFn: authStore.signUp })
 
-    async function handleSubmit(e: React.FormEvent) {
-        e.preventDefault()
-        if (!termsAccepted) return
-        if (password !== confirmPassword) return
-        if (!departmentId) return
-
+    const onSubmit = handleSubmit(async (values) => {
         mutation.reset()
         setRegisteredEmail('')
 
-        const displayName = [firstName.trim(), lastName.trim()].filter(Boolean).join(' ')
-        const submittedEmail = email.trim()
-        const response = await mutation.mutateAsync({ email: submittedEmail, password, displayName, departmentId })
+        const displayName = [values.firstName.trim(), values.lastName.trim()].filter(Boolean).join(' ')
+        const submittedEmail = values.email.trim()
+        const response = await mutation.mutateAsync({
+            email: submittedEmail,
+            password: values.password,
+            displayName,
+            departmentId: values.departmentId,
+        })
 
         if (response && response.verificationEmailSent === false) return
 
         setRegisteredEmail(submittedEmail)
-        setFirstName(''); setLastName(''); setEmail(''); setDepartmentId(0); setPassword(''); setConfirmPassword(''); setTermsAccepted(false)
-    }
-
-    const pwMismatch = confirmPassword.length > 0 && password !== confirmPassword
+        reset()
+    })
 
     if (mutation.isSuccess && mutation.data?.verificationEmailSent !== false && registeredEmail) {
         return (
@@ -160,7 +183,7 @@ function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
     }
 
     return (
-        <Box component="form" onSubmit={handleSubmit} noValidate>
+        <Box component="form" onSubmit={onSubmit} noValidate>
             <Typography sx={{ fontSize: 22, fontWeight: 700, color: '#1A1A2E', mb: 0.75 }}>Create your account</Typography>
             <Typography sx={{ fontSize: 13, color: '#6B7280', mb: 3 }}>Join WorkFlow to manage your leave and timesheets</Typography>
 
@@ -195,10 +218,10 @@ function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
             <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5, mb: 1.75 }}>
                 <TextField
                     label="First Name"
-                    value={firstName}
-                    onChange={(e) => setFirstName(e.target.value)}
+                    {...register('firstName')}
+                    error={!!errors.firstName}
+                    helperText={errors.firstName?.message}
                     placeholder="John"
-                    required
                     fullWidth
                     disabled={mutation.isPending}
                     autoComplete="given-name"
@@ -206,10 +229,10 @@ function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
                 />
                 <TextField
                     label="Last Name"
-                    value={lastName}
-                    onChange={(e) => setLastName(e.target.value)}
+                    {...register('lastName')}
+                    error={!!errors.lastName}
+                    helperText={errors.lastName?.message}
                     placeholder="Doe"
-                    required
                     fullWidth
                     disabled={mutation.isPending}
                     autoComplete="family-name"
@@ -221,10 +244,10 @@ function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
                 <TextField
                     label="Work Email"
                     type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    {...register('email')}
+                    error={!!errors.email}
+                    helperText={errors.email?.message}
                     placeholder="you@company.com"
-                    required
                     fullWidth
                     disabled={mutation.isPending}
                     autoComplete="email"
@@ -237,18 +260,15 @@ function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
                 <TextField
                     select
                     label="Department"
-                    value={departmentId || ''}
-                    onChange={(e) => setDepartmentId(Number(e.target.value))}
-                    required
+                    {...register('departmentId', { valueAsNumber: true })}
+                    error={!!errors.departmentId}
+                    helperText={errors.departmentId?.message}
                     fullWidth
                     disabled={mutation.isPending || deptsLoading}
                     SelectProps={{ native: true }}
-                    sx={{
-                        ...inputSx,
-                        '& select': { fontSize: 13, color: departmentId ? '#1A1A2E' : '#9CA3AF' },
-                    }}
+                    sx={{ ...inputSx, '& select': { fontSize: 13 } }}
                 >
-                    <option value="">Select your department…</option>
+                    <option value="0">Select your department…</option>
                     {activeDepts.map((d: Department) => (
                         <option key={d.id} value={d.id}>{d.name}</option>
                     ))}
@@ -258,10 +278,10 @@ function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
                     <TextField
                         label="Password"
                         type={showPassword ? 'text' : 'password'}
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
+                        {...register('password')}
+                        error={!!errors.password}
+                        helperText={errors.password?.message}
                         placeholder="Create a strong password"
-                        required
                         fullWidth
                         disabled={mutation.isPending}
                         autoComplete="new-password"
@@ -277,21 +297,19 @@ function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
                         }}
                         sx={inputSx}
                     />
-                    <PasswordStrength password={password} />
+                    <PasswordStrength password={password ?? ''} />
                 </Box>
 
                 <TextField
                     label="Confirm Password"
                     type={showConfirm ? 'text' : 'password'}
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    {...register('confirmPassword')}
+                    error={!!errors.confirmPassword}
+                    helperText={errors.confirmPassword?.message}
                     placeholder="Repeat your password"
-                    required
                     fullWidth
                     disabled={mutation.isPending}
                     autoComplete="new-password"
-                    error={pwMismatch}
-                    helperText={pwMismatch ? 'Passwords do not match' : undefined}
                     InputProps={{
                         startAdornment: <InputAdornment position="start"><Typography sx={{ fontSize: 15, lineHeight: 1 }}>🔒</Typography></InputAdornment>,
                         endAdornment: (
@@ -307,21 +325,27 @@ function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
             </Stack>
 
             {/* Terms */}
-            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 2 }}>
-                <Box
-                    component="input"
-                    type="checkbox"
-                    id="terms"
-                    checked={termsAccepted}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTermsAccepted(e.target.checked)}
-                    sx={{ width: 15, height: 15, mt: '2px', flexShrink: 0, cursor: 'pointer', accentColor: '#4F8EF7' }}
-                />
-                <Typography component="label" htmlFor="terms" sx={{ fontSize: 12, color: '#6B7280', lineHeight: 1.5, cursor: 'pointer' }}>
-                    I agree to the{' '}
-                    <Box component="span" sx={{ color: '#4F8EF7' }}>Terms of Service</Box>
-                    {' '}and{' '}
-                    <Box component="span" sx={{ color: '#4F8EF7' }}>Privacy Policy</Box>
-                </Typography>
+            <Box sx={{ mb: 2 }}>
+                <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+                    <Box
+                        component="input"
+                        type="checkbox"
+                        id="terms"
+                        {...register('termsAccepted')}
+                        sx={{ width: 15, height: 15, mt: '2px', flexShrink: 0, cursor: 'pointer', accentColor: '#4F8EF7' }}
+                    />
+                    <Typography component="label" htmlFor="terms" sx={{ fontSize: 12, color: '#6B7280', lineHeight: 1.5, cursor: 'pointer' }}>
+                        I agree to the{' '}
+                        <Box component="span" sx={{ color: '#4F8EF7' }}>Terms of Service</Box>
+                        {' '}and{' '}
+                        <Box component="span" sx={{ color: '#4F8EF7' }}>Privacy Policy</Box>
+                    </Typography>
+                </Box>
+                {errors.termsAccepted && (
+                    <Typography sx={{ fontSize: 11, color: '#FF4D4F', mt: 0.5, ml: '23px' }}>
+                        {errors.termsAccepted.message}
+                    </Typography>
+                )}
             </Box>
 
             {deptsError && <Alert severity="error" sx={{ mb: 1.5, borderRadius: '8px', fontSize: 12 }}>Unable to load departments. Please refresh.</Alert>}
@@ -339,7 +363,7 @@ function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
             <Box
                 component="button"
                 type="submit"
-                disabled={mutation.isPending || !termsAccepted || pwMismatch || !departmentId}
+                disabled={mutation.isPending}
                 sx={{ width: '100%', py: '11px', borderRadius: '8px', fontSize: 14, fontWeight: 600, cursor: mutation.isPending ? 'not-allowed' : 'pointer', border: 'none', bgcolor: '#4F8EF7', color: '#fff', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, mb: 2, transition: 'all 0.15s', '&:hover:not(:disabled)': { bgcolor: '#3A7AE4', transform: 'translateY(-1px)', boxShadow: '0 4px 12px rgba(79,142,247,0.3)' }, '&:disabled': { opacity: 0.7 } }}
             >
                 {mutation.isPending ? <><CircularProgress size={16} sx={{ color: '#fff' }} /> Creating account...</> : 'Create Account'}

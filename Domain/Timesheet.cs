@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Domain.Interfaces;
 
 namespace Domain;
 
@@ -12,7 +13,7 @@ public enum TimesheetStatus
     Resubmitted = 4
 }
 
-public class Timesheet
+public class Timesheet : IAuditable
 {
     public string Id { get; set; } = Guid.NewGuid().ToString();
     public string EmployeeId { get; set; } = string.Empty;

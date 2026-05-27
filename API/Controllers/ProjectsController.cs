@@ -4,8 +4,11 @@ using Application.Projects.Queries;
 using Domain;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Asp.Versioning;
 
 namespace API.Controllers;
+
+[ApiVersion("1.0")]
 
 public class ProjectsController : BaseApiController
 {
