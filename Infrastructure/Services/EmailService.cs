@@ -11,7 +11,7 @@ public class EmailService(
     IResend resend,
     ILogger<EmailService> logger) : IEmailService
 {
-    public async Task SendEmailAsync(
+    public async Task<bool> SendEmailAsync(
         string toEmail,
         string subject,
         string htmlBody,
@@ -27,7 +27,7 @@ public class EmailService(
                 "Resend email skipped because configuration is incomplete. HasFromAddress: {HasFromAddress}, HasRecipient: {HasRecipient}",
                 !string.IsNullOrWhiteSpace(fromEmail),
                 !string.IsNullOrWhiteSpace(toEmail));
-            return;
+            return false;
         }
 
         var emailMessage = new EmailMessage
@@ -48,10 +48,12 @@ public class EmailService(
         {
             await resend.EmailSendAsync(emailMessage);
             logger.LogInformation("Resend email sent to {Recipient} with subject {Subject}.", toEmail, subject);
+            return true;
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to send Resend email to {Recipient}.", toEmail);
+            return false;
         }
     }
 

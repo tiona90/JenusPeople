@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Application.Attendance.DTOs;
+using Application.Core;
 using Asp.Versioning;
 using Domain;
 using Microsoft.AspNetCore.Authorization;
@@ -339,7 +340,13 @@ public class AttendanceController : BaseApiController
         {
             var me = await GetEmployeeProfileAsync(userId);
             if (me == null) return BadRequest("No employee profile found.");
-            profilesQuery = profilesQuery.Where(p => p.ManagerId == me.Id);
+
+            var scope = await ManagerAccessScopeResolver.ResolveAsync(_context, userId, HttpContext.RequestAborted);
+
+            profilesQuery = profilesQuery.Where(p =>
+                p.UserId != userId
+                && (scope.ManagedDepartmentIds.Contains(p.DepartmentId)
+                    || (p.ManagerId != null && scope.ManagerProfileIds.Contains(p.ManagerId))));
         }
 
         var profiles = await profilesQuery.OrderBy(p => p.User != null ? p.User.DisplayName : "").ToListAsync();

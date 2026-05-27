@@ -334,7 +334,7 @@ function DepartmentsPanel() {
                                     showCancelButton: true,
                                     confirmButtonText: 'Yes, delete',
                                     cancelButtonText: 'Cancel',
-                                    confirmButtonColor: 'error.main',
+                                    confirmButtonColor: '#EF4444',
                                     reverseButtons: true,
                                 })
                                 if (result.isConfirmed) deleteMutation.mutate(d.dept.id)
@@ -357,7 +357,7 @@ function DepartmentsPanel() {
                             showCancelButton: true,
                             confirmButtonText: 'Yes, delete',
                             cancelButtonText: 'Cancel',
-                            confirmButtonColor: 'error.main',
+                            confirmButtonColor: '#EF4444',
                             reverseButtons: true,
                         })
                         if (result.isConfirmed) deleteMutation.mutate(d.id)

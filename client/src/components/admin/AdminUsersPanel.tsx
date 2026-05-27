@@ -13,6 +13,7 @@ import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import {
+    confirmAdminUserEmail,
     createAdminUser,
     deleteAdminUser,
     getAdminUsers,
@@ -241,6 +242,7 @@ function AdminUsersPanel() {
             departmentId: number
             jobTitle: string
             annualLeaveEntitlement: number
+            managerId: string | null
         }) => {
             await updateAdminUser(payload.userId, { email: payload.email, displayName: payload.displayName })
             await setAdminUserRoles(payload.userId, { roles: payload.roles })
@@ -248,7 +250,7 @@ function AdminUsersPanel() {
                 await updateEmployeeProfile({
                     id: payload.profile.id,
                     departmentId: payload.departmentId,
-                    managerId: payload.profile.managerId,
+                    managerId: payload.managerId,
                     annualLeaveEntitlement: payload.annualLeaveEntitlement,
                     leaveBalance: payload.profile.leaveBalance,
                     jobTitle: payload.jobTitle || null,
@@ -270,6 +272,14 @@ function AdminUsersPanel() {
             void queryClient.invalidateQueries({ queryKey: ['employeeProfiles'] })
         },
         onError: (err) => setApiError(getApiErrorMessage(err, 'Could not delete user.')),
+    })
+
+    const confirmEmailMutation = useMutation({
+        mutationFn: confirmAdminUserEmail,
+        onSuccess: () => {
+            void queryClient.invalidateQueries({ queryKey: ['adminUsers'] })
+        },
+        onError: (err) => setApiError(getApiErrorMessage(err, 'Could not mark email as verified.')),
     })
 
     function toggleSelected(id: string) {
@@ -299,7 +309,7 @@ function AdminUsersPanel() {
             showCancelButton: true,
             confirmButtonText: 'Yes, delete',
             cancelButtonText: 'Cancel',
-            confirmButtonColor: 'error.main',
+            confirmButtonColor: '#EF4444',
             reverseButtons: true,
         })
         if (!result.isConfirmed) return
@@ -505,6 +515,8 @@ function AdminUsersPanel() {
                         onToggleSelect={() => toggleSelected(d.user.id)}
                         onToggleExpand={() => toggleExpanded(d.user.id)}
                         onEdit={() => setEditData({ user: d.user, profile: d.profile })}
+                        onConfirmEmail={() => confirmEmailMutation.mutate(d.user.id)}
+                        confirmingEmail={confirmEmailMutation.isPending}
                         onDelete={async () => {
                             const result = await SweetAlert.fire({
                                 title: `Delete ${d.user.displayName || d.user.email}?`,
@@ -513,7 +525,7 @@ function AdminUsersPanel() {
                                 showCancelButton: true,
                                 confirmButtonText: 'Yes, delete',
                                 cancelButtonText: 'Cancel',
-                                confirmButtonColor: 'error.main',
+                                confirmButtonColor: '#EF4444',
                                 reverseButtons: true,
                             })
                             if (result.isConfirmed) deleteMutation.mutate(d.user.id)
@@ -535,6 +547,8 @@ function AdminUsersPanel() {
             <EditUserDialog
                 data={editData}
                 departments={departments}
+                profiles={profiles}
+                users={users}
                 isPending={editMutation.isPending}
                 error={editMutation.error}
                 onClose={() => setEditData(null)}
@@ -550,7 +564,7 @@ function AdminUsersPanel() {
 
 function UserRow({
     derived, isSelected, isExpanded, leaveHistories, timesheetHistories, usersByName,
-    onToggleSelect, onToggleExpand, onEdit, onDelete, disabled,
+    onToggleSelect, onToggleExpand, onEdit, onConfirmEmail, confirmingEmail, onDelete, disabled,
 }: {
     derived: DerivedUser
     isSelected: boolean
@@ -561,6 +575,8 @@ function UserRow({
     onToggleSelect: () => void
     onToggleExpand: () => void
     onEdit: () => void
+    onConfirmEmail: () => void
+    confirmingEmail: boolean
     onDelete: () => void
     disabled: boolean
 }) {
@@ -609,12 +625,16 @@ function UserRow({
         return items.slice(0, 5)
     }, [leaveHistories, timesheetHistories, u.id])
 
+    const { data: profiles = [] } = useQuery({ queryKey: ['employeeProfiles'], queryFn: getEmployeeProfiles })
     const managerName = useMemo(() => {
         if (!derived.profile?.managerId) return null
-        // managerId is an EmployeeProfile.Id (not UserId). Look up by name in profilesByUserId would need data we don't have here.
-        // We don't surface a manager name link without that map; show a placeholder.
-        return null
-    }, [derived.profile])
+        const managerProfile = profiles.find((p) => p.id === derived.profile!.managerId)
+        if (!managerProfile) return null
+        const managerUser = usersByName.size > 0
+            ? Array.from(usersByName.values()).find((u) => u.id === managerProfile.userId)
+            : undefined
+        return managerUser?.displayName || managerUser?.email || null
+    }, [derived.profile, profiles, usersByName])
 
     const roleStyle = roleStyles[role]
     const accentColor = role === 'Admin' ? 'secondary.main'
@@ -820,7 +840,31 @@ function UserRow({
                             <DirectReports user={derived.user} role={role} />
                         ) : (
                             <>
-                                <ExpandRow label="Email verified" value={<Box component="span" sx={{ color: 'success.main' }}>✓ Yes</Box>} />
+                                <ExpandRow
+                                    label="Email verified"
+                                    value={u.emailConfirmed
+                                        ? <Box component="span" sx={{ color: 'success.main' }}>✓ Yes</Box>
+                                        : (
+                                            <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                                                <Box component="span" sx={{ color: 'warning.main' }}>⚠ No</Box>
+                                                <Box
+                                                    component="button"
+                                                    onClick={onConfirmEmail}
+                                                    disabled={confirmingEmail}
+                                                    sx={{
+                                                        bgcolor: 'transparent', border: '1px solid', borderColor: 'primary.main',
+                                                        color: 'primary.main', borderRadius: '4px',
+                                                        px: '8px', py: '2px', fontSize: 10, fontWeight: 600,
+                                                        cursor: confirmingEmail ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+                                                        '&:hover:not(:disabled)': { bgcolor: softBg('primary') },
+                                                        '&:disabled': { opacity: 0.5 },
+                                                    }}
+                                                >
+                                                    {confirmingEmail ? 'Verifying…' : 'Mark verified'}
+                                                </Box>
+                                            </Box>
+                                        )}
+                                />
                                 <ExpandRow label="Roles" value={u.roles.join(', ')} />
                                 <ExpandRow label="User ID" value={<Box component="code" sx={{ fontSize: 10 }}>{u.id.slice(0, 8)}…</Box>} />
                             </>
@@ -830,8 +874,6 @@ function UserRow({
             )}
         </Box>
     )
-    // suppress no-used warning from usersByName param
-    void usersByName
 }
 
 function DirectReports({ user, role }: { user: AdminUser; role: 'Admin' | 'Manager' }) {
@@ -1001,6 +1043,8 @@ const activityIconFg: Record<ActivityItem['color'], string> = {
 function EditUserDialog(props: {
     data: { user: AdminUser; profile?: EmployeeProfile } | null
     departments: Department[]
+    profiles: EmployeeProfile[]
+    users: AdminUser[]
     onClose: () => void
     isPending: boolean
     error: unknown
@@ -1013,6 +1057,7 @@ function EditUserDialog(props: {
         departmentId: number
         jobTitle: string
         annualLeaveEntitlement: number
+        managerId: string | null
     }) => void
 }) {
     const open = !!props.data
@@ -1024,6 +1069,7 @@ function EditUserDialog(props: {
     const [departmentId, setDepartmentId] = useState(0)
     const [jobTitle, setJobTitle] = useState('')
     const [annualLeaveEntitlement, setAnnualLeaveEntitlement] = useState(0)
+    const [managerId, setManagerId] = useState<string>('')
 
     useEffect(() => {
         if (props.data) {
@@ -1034,10 +1080,24 @@ function EditUserDialog(props: {
                 setDepartmentId(props.data!.profile?.departmentId ?? 0)
                 setJobTitle(props.data!.profile?.jobTitle ?? '')
                 setAnnualLeaveEntitlement(props.data!.profile?.annualLeaveEntitlement ?? 0)
+                setManagerId(props.data!.profile?.managerId ?? '')
             })
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [props.data])
+
+    const managerOptions = useMemo(() => {
+        return props.profiles
+            .map((p) => {
+                const u = props.users.find((u) => u.id === p.userId)
+                if (!u) return null
+                if (u.id === props.data?.user.id) return null
+                if (!u.roles.includes('Manager') && !u.roles.includes('Admin')) return null
+                return { id: p.id, name: u.displayName || u.email }
+            })
+            .filter((m): m is { id: string; name: string } => !!m)
+            .sort((a, b) => a.name.localeCompare(b.name))
+    }, [props.profiles, props.users, props.data])
 
     const toggleRole = (role: UserRole) => {
         setRoles((current) =>
@@ -1085,6 +1145,19 @@ function EditUserDialog(props: {
                                 ))}
                             </TextField>
                             <TextField
+                                select
+                                label="Manager"
+                                value={managerId}
+                                onChange={(e) => setManagerId(e.target.value)}
+                                fullWidth
+                                helperText="Assign the person this user reports to (Managers and Admins are eligible)."
+                            >
+                                <MenuItem value="">No manager</MenuItem>
+                                {managerOptions.map((m) => (
+                                    <MenuItem key={m.id} value={m.id}>{m.name}</MenuItem>
+                                ))}
+                            </TextField>
+                            <TextField
                                 label="Job title"
                                 value={jobTitle}
                                 onChange={(e) => setJobTitle(e.target.value)}
@@ -1110,7 +1183,7 @@ function EditUserDialog(props: {
                     variant="contained"
                     disabled={props.isPending || !user || roles.length === 0}
                     onClick={() =>
-                        user && props.onSubmit({ userId: user.id, email, displayName, roles, profile, departmentId, jobTitle, annualLeaveEntitlement })
+                        user && props.onSubmit({ userId: user.id, email, displayName, roles, profile, departmentId, jobTitle, annualLeaveEntitlement, managerId: managerId || null })
                     }
                     sx={saveBtnSx}
                 >

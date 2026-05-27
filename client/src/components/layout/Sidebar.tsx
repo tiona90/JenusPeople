@@ -70,9 +70,9 @@ const Sidebar = observer(function Sidebar() {
     const queryClient = useQueryClient()
     const location = useLocation()
 
-    // The sidebar can render dark while the body stays light (System mode).
-    // Memoize so the nested theme only rebuilds when the chrome mode flips.
-    const chromeTheme = useMemo(() => buildTheme(uiStore.chromeMode), [uiStore.chromeMode])
+    // The sidebar can render dark while the body + topbar stay light (System
+    // mode). Memoize so the nested theme only rebuilds when sidebarMode flips.
+    const sidebarTheme = useMemo(() => buildTheme(uiStore.sidebarMode), [uiStore.sidebarMode])
 
     const isAdminUser = authStore.user?.roles?.includes('Admin') ?? false
     const isManagerUser = authStore.user?.roles?.includes('Manager') ?? false
@@ -230,7 +230,7 @@ const Sidebar = observer(function Sidebar() {
 
     return (
         <>
-            <ThemeProvider theme={chromeTheme}>
+            <ThemeProvider theme={sidebarTheme}>
             <Drawer
                 variant="permanent"
                 sx={{

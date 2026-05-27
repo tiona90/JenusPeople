@@ -216,6 +216,33 @@ public class AdminUsersController(
         return Ok(MapUser(user, roles));
     }
 
+    [HttpPost("{id}/confirm-email")]
+    public async Task<ActionResult<AdminUserDto>> ConfirmUserEmail(string id)
+    {
+        var user = await userManager.FindByIdAsync(id);
+        if (user is null)
+        {
+            return NotFound(new { message = "User not found." });
+        }
+
+        if (!user.EmailConfirmed)
+        {
+            user.EmailConfirmed = true;
+            var updateResult = await userManager.UpdateAsync(user);
+            if (!updateResult.Succeeded)
+            {
+                return BadRequest(new
+                {
+                    message = "Failed to mark email as verified.",
+                    errors = updateResult.Errors.Select(e => e.Description)
+                });
+            }
+        }
+
+        var roles = await userManager.GetRolesAsync(user);
+        return Ok(MapUser(user, roles));
+    }
+
     [HttpDelete("{id}")]
     public async Task<ActionResult> DeleteUser(string id)
     {
@@ -376,6 +403,7 @@ public class AdminUsersController(
             Email = user.Email ?? string.Empty,
             DisplayName = user.DisplayName,
             ImageUrl = user.ImageUrl ?? string.Empty,
+            EmailConfirmed = user.EmailConfirmed,
             Roles = roles.OrderBy(r => r).ToList()
         };
     }

@@ -26,6 +26,11 @@ export async function setAdminUserRoles(id: string, request: AdminSetUserRolesRe
     return response.data
 }
 
+export async function confirmAdminUserEmail(id: string) {
+    const response = await apiClient.post<AdminUser>(`/adminusers/${id}/confirm-email`)
+    return response.data
+}
+
 export async function deleteAdminUser(id: string) {
     await apiClient.delete(`/adminusers/${id}`)
 }

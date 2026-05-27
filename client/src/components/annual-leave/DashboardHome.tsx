@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { observer } from 'mobx-react-lite'
 import Box from '@mui/material/Box'
 import CircularProgress from '@mui/material/CircularProgress'
-import { alpha, type Theme } from '@mui/material/styles'
+import { alpha, useTheme, type Theme } from '@mui/material/styles'
 import { BarChart } from '@mui/x-charts/BarChart'
 import { LineChart } from '@mui/x-charts/LineChart'
 import {
@@ -1375,6 +1375,15 @@ function TeamHealthCard({ leaves, teamHistory }: {
     leaves: AnnualLeave[]
     teamHistory: TeamHistory | null
 }) {
+    const theme = useTheme()
+    const deptPalette = [
+        theme.palette.primary.main,
+        theme.palette.success.main,
+        theme.palette.warning.main,
+        theme.palette.info.main,
+        theme.palette.secondary.main,
+        theme.palette.error.main,
+    ]
     // Bar chart: total approved leave days per department over the last 6 months.
     const leaveByDept = useMemo(() => {
         const cutoff = new Date()
@@ -1436,14 +1445,41 @@ function TeamHealthCard({ leaves, teamHistory }: {
                             No approved leave in the last 6 months.
                         </Box>
                     ) : (
-                        <BarChart
-                            height={240}
-                            xAxis={[{ scaleType: 'band', data: leaveByDept.map((d) => d.name) }]}
-                            yAxis={[{ label: 'Days' }]}
-                            series={[{ data: leaveByDept.map((d) => d.days), label: 'Days taken', color: 'var(--mui-palette-primary-main)' }]}
-                            margin={{ top: 12, bottom: 40, left: 48, right: 12 }}
-                            slotProps={{ legend: { sx: { display: 'none' } } }}
-                        />
+                        <Box sx={{
+                            '& .MuiChartsAxis-tick, & .MuiChartsAxis-line': { stroke: theme.palette.divider },
+                            '& .MuiChartsAxis-tickLabel, & .MuiChartsAxis-label': { fill: theme.palette.text.secondary },
+                            '& .MuiBarLabel-root': { fill: theme.palette.text.primary, fontSize: 11, fontWeight: 600 },
+                        }}>
+                            <BarChart
+                                height={240}
+                                xAxis={[{
+                                    scaleType: 'band',
+                                    data: leaveByDept.map((d) => d.name),
+                                    categoryGapRatio: leaveByDept.length === 1 ? 0.7 : 0.4,
+                                    tickLabelStyle: { fontSize: 11 },
+                                }]}
+                                yAxis={[{
+                                    label: 'Days',
+                                    tickLabelStyle: { fontSize: 10 },
+                                    labelStyle: { fontSize: 11 },
+                                }]}
+                                series={[{
+                                    data: leaveByDept.map((d) => d.days),
+                                    label: 'Days taken',
+                                    valueFormatter: (v) => v == null ? '' : `${v} ${v === 1 ? 'day' : 'days'}`,
+                                }]}
+                                colors={deptPalette}
+                                borderRadius={6}
+                                barLabel={(item) => {
+                                    const v = item.value
+                                    return v == null || v === 0 ? '' : String(v)
+                                }}
+                                grid={{ horizontal: true }}
+                                margin={{ top: 16, bottom: 36, left: 44, right: 12 }}
+                                slotProps={{ legend: { sx: { display: 'none' } } }}
+                                sx={{ '& .MuiChartsGrid-line': { stroke: alpha(theme.palette.divider, 0.5), strokeDasharray: '3 3' } }}
+                            />
+                        </Box>
                     )}
                 </Box>
 

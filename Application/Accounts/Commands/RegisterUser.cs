@@ -75,15 +75,17 @@ public class RegisterUser
 
             await transaction.CommitAsync(cancellationToken);
 
-            await SendVerificationEmailAsync(user, request.ApiBaseUrl, cancellationToken);
+            var emailSent = await SendVerificationEmailAsync(user, request.ApiBaseUrl, cancellationToken);
 
             return Result<RegistrationResponseDto>.Success(new RegistrationResponseDto
             {
-                Message = "User registered successfully. Please check your email to verify your account.",
+                Message = emailSent
+                    ? "User registered successfully. Please check your email to verify your account."
+                    : "User registered, but we could not send the verification email. Please contact your administrator.",
                 Role = AppRoles.Employee,
                 EmployeeProfileId = employeeProfile.Id,
                 EmailVerificationRequired = true,
-                VerificationEmailSent = true
+                VerificationEmailSent = emailSent
             });
         }
 
@@ -98,11 +100,11 @@ public class RegisterUser
             return Result<RegistrationResponseDto>.ValidationFailure(grouped, summary);
         }
 
-        private async Task SendVerificationEmailAsync(User user, string apiBaseUrl, CancellationToken cancellationToken)
+        private async Task<bool> SendVerificationEmailAsync(User user, string apiBaseUrl, CancellationToken cancellationToken)
         {
             if (string.IsNullOrWhiteSpace(user.Email))
             {
-                return;
+                return false;
             }
 
             var token = await userManager.GenerateEmailConfirmationTokenAsync(user);
@@ -126,7 +128,7 @@ public class RegisterUser
                 verificationUrl,
                 "If you did not create this account, you can safely ignore this email.");
 
-            await emailService.SendEmailAsync(
+            return await emailService.SendEmailAsync(
                 user.Email,
                 "Verify your Annual Leave account",
                 htmlBody,

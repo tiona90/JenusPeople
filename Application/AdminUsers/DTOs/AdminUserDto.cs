@@ -7,5 +7,6 @@ public class AdminUserDto
     public string Email { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
     public string ImageUrl { get; set; } = string.Empty;
+    public bool EmailConfirmed { get; set; }
     public List<string> Roles { get; set; } = new();
 }

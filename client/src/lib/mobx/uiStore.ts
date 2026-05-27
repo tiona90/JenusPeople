@@ -41,15 +41,16 @@ class UiStore {
 
     constructor() { makeAutoObservable(this, { setNavigate: false }) }
 
-    // Body content palette: dark only when the user explicitly picks Dark.
-    // Both Light and System render body content with the light palette.
+    // Body + topbar palette: dark only when the user explicitly picks Dark.
+    // Both Light and System render the body and topbar with the light palette.
     get themeMode(): ThemeMode {
         return this.themePreference === 'dark' ? 'dark' : 'light'
     }
 
-    // Chrome (sidebar + topbar) palette: dark for System and Dark, light only
-    // when the user explicitly picks Light.
-    get chromeMode(): ThemeMode {
+    // Sidebar palette: dark for System and Dark, light only when the user
+    // explicitly picks Light. System mode = dark left nav + light everything
+    // else (the popular admin-dashboard layout).
+    get sidebarMode(): ThemeMode {
         return this.themePreference === 'light' ? 'light' : 'dark'
     }
 

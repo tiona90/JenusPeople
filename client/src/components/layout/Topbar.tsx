@@ -15,14 +15,12 @@ import ListItemIcon from '@mui/material/ListItemIcon'
 import ListItemText from '@mui/material/ListItemText'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
-import { ThemeProvider } from '@mui/material/styles'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { getAnnualLeaves, getLeaveStatusHistories, getTimesheets } from '../../lib/api'
 import { useStore } from '../../lib/mobx'
-import { buildTheme } from '../../lib/theme'
 import type { ThemePreference } from '../../lib/mobx/uiStore'
 import AttendanceWidget from './AttendanceWidget'
 
@@ -61,8 +59,6 @@ function scrollToId(id: string) {
 const Topbar = observer(function Topbar() {
     const { authStore, uiStore } = useStore()
     const location = useLocation()
-    // The topbar can render dark while the body stays light (System mode).
-    const chromeTheme = useMemo(() => buildTheme(uiStore.chromeMode), [uiStore.chromeMode])
     const isAdminUser = authStore.user?.roles?.includes('Admin') ?? false
     const isManagerUser = authStore.user?.roles?.includes('Manager') ?? false
     const shouldUseManagerNotifications = isManagerUser && !isAdminUser
@@ -219,7 +215,6 @@ const Topbar = observer(function Topbar() {
     }
 
     return (
-        <ThemeProvider theme={chromeTheme}>
         <Box
             component="header"
             sx={{
@@ -337,7 +332,6 @@ const Topbar = observer(function Topbar() {
                 })}
             </Menu>
         </Box>
-        </ThemeProvider>
     )
 })
 

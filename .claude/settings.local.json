@@ -4,7 +4,9 @@
       "Bash(Start-Process -WindowStyle Hidden -FilePath \"cmd\" -ArgumentList \"/c npm run dev > vite-restart.log 2>&1\")",
       "Bash(dotnet ef *)",
       "PowerShell(Start-Process powershell -ArgumentList \"-NoExit\", \"-Command\", \"cd 'c:\\\\Practice\\\\Own\\\\2026\\\\WorkTrack'; dotnet run --project API\" -WindowStyle Minimized; Start-Sleep -Seconds 8; Test-NetConnection -ComputerName localhost -Port 5000 -WarningAction SilentlyContinue | Select-Object TcpTestSucceeded)",
-      "PowerShell(Start-Sleep -Seconds 8; \\(Test-NetConnection -ComputerName localhost -Port 5000 -WarningAction SilentlyContinue\\).TcpTestSucceeded)"
+      "PowerShell(Start-Sleep -Seconds 8; \\(Test-NetConnection -ComputerName localhost -Port 5000 -WarningAction SilentlyContinue\\).TcpTestSucceeded)",
+      "Bash(curl -s -o /dev/null -w \"no-params: %{http_code} %{content_type}\\\\n\" \"http://localhost:5000/api/account/confirm-email-change\")",
+      "Bash(curl -s \"http://localhost:5000/api/account/confirm-email-change\")"
     ]
   }
 }

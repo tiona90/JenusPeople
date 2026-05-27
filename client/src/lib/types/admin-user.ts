@@ -6,6 +6,7 @@ export interface AdminUser {
     email: string
     displayName: string
     imageUrl: string
+    emailConfirmed: boolean
     roles: UserRole[]
 }
 
