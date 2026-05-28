@@ -1,10 +1,12 @@
 using System.Security.Claims;
+using API.Hubs;
 using Application.Timesheets.Commands;
 using Application.Timesheets.DTOs;
 using Application.Timesheets.Queries;
 using Domain;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Persistence;
 using Asp.Versioning;
@@ -34,10 +36,40 @@ namespace API.Controllers
     public class TimesheetsController : BaseApiController
     {
         private readonly AppDbContext _context;
+        private readonly IHubContext<NotificationsHub> _notificationsHub;
 
-        public TimesheetsController(AppDbContext context)
+        public TimesheetsController(AppDbContext context, IHubContext<NotificationsHub> notificationsHub)
         {
             _context = context;
+            _notificationsHub = notificationsHub;
+        }
+
+        private async Task NotifyForTimesheetAsync(string timesheetId, CancellationToken cancellationToken = default)
+        {
+            var audience = await _context.Timesheets
+                .AsNoTracking()
+                .Where(t => t.Id == timesheetId)
+                .Select(t => new
+                {
+                    t.DepartmentId,
+                    EmployeeUserId = t.Employee != null ? t.Employee.UserId : null,
+                })
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (audience is null) return;
+
+            var dispatch = new List<Task>
+            {
+                _notificationsHub.Clients.Group(NotificationsHub.AdminGroup).SendAsync("notificationsUpdated", cancellationToken),
+                _notificationsHub.Clients.Group(NotificationsHub.DepartmentManagerGroup(audience.DepartmentId)).SendAsync("notificationsUpdated", cancellationToken),
+            };
+
+            if (!string.IsNullOrWhiteSpace(audience.EmployeeUserId))
+            {
+                dispatch.Add(_notificationsHub.Clients.User(audience.EmployeeUserId).SendAsync("notificationsUpdated", cancellationToken));
+            }
+
+            await Task.WhenAll(dispatch);
         }
 
         // GET: api/timesheets
@@ -134,14 +166,19 @@ namespace API.Controllers
         // PATCH: api/timesheets/{id}/submit
         [HttpPatch("{id}/submit")]
         [Authorize]
-        public async Task<IActionResult> SubmitTimesheet(string id)
+        public async Task<IActionResult> SubmitTimesheet(string id, CancellationToken cancellationToken)
         {
             var result = await Mediator.Send(new SubmitTimesheet.Command
             {
                 Id = id,
                 RequestingUserId = ResolveUserId(),
                 IsAdmin = User.IsInRole(AppRoles.Admin),
-            });
+            }, cancellationToken);
+
+            if (result.IsSuccess)
+            {
+                await NotifyForTimesheetAsync(id, cancellationToken);
+            }
 
             return HandleResult(result);
         }
@@ -149,7 +186,7 @@ namespace API.Controllers
         // PATCH: api/timesheets/{id}/approve
         [HttpPatch("{id}/approve")]
         [Authorize(Roles = AppRoles.Admin + "," + AppRoles.Manager)]
-        public async Task<IActionResult> ApproveTimesheet(string id)
+        public async Task<IActionResult> ApproveTimesheet(string id, CancellationToken cancellationToken)
         {
             var result = await Mediator.Send(new UpdateTimesheetStatus.Command
             {
@@ -158,7 +195,12 @@ namespace API.Controllers
                 RequestingUserId = ResolveUserId(),
                 IsAdmin = User.IsInRole(AppRoles.Admin),
                 IsManager = User.IsInRole(AppRoles.Manager),
-            });
+            }, cancellationToken);
+
+            if (result.IsSuccess)
+            {
+                await NotifyForTimesheetAsync(id, cancellationToken);
+            }
 
             return HandleResult(result);
         }
@@ -166,7 +208,7 @@ namespace API.Controllers
         // PATCH: api/timesheets/{id}/reject
         [HttpPatch("{id}/reject")]
         [Authorize(Roles = AppRoles.Admin + "," + AppRoles.Manager)]
-        public async Task<IActionResult> RejectTimesheet(string id, [FromBody] RejectTimesheetRequest? body)
+        public async Task<IActionResult> RejectTimesheet(string id, [FromBody] RejectTimesheetRequest? body, CancellationToken cancellationToken)
         {
             var result = await Mediator.Send(new UpdateTimesheetStatus.Command
             {
@@ -176,7 +218,12 @@ namespace API.Controllers
                 IsAdmin = User.IsInRole(AppRoles.Admin),
                 IsManager = User.IsInRole(AppRoles.Manager),
                 Comment = body?.Comment,
-            });
+            }, cancellationToken);
+
+            if (result.IsSuccess)
+            {
+                await NotifyForTimesheetAsync(id, cancellationToken);
+            }
 
             return HandleResult(result);
         }

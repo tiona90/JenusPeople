@@ -24,6 +24,7 @@ public class GetTimesheetStatusHistoryList
                 .AsNoTracking()
                 .Include(h => h.Timesheet)
                     .ThenInclude(t => t.Employee)
+                        .ThenInclude(e => e!.User)
                 .Include(h => h.ChangedByUser);
 
             if (request.IsAdmin)
@@ -36,8 +37,13 @@ public class GetTimesheetStatusHistoryList
             }
             else
             {
-                // Regular user: only their own timesheet histories
-                query = query.Where(h => h.Timesheet != null && h.Timesheet.EmployeeId == request.RequestingUserId);
+                // Regular user: only their own timesheet histories.
+                // Timesheet.EmployeeId is the EmployeeProfile.Id, so we have to walk the
+                // navigation to compare against the AspNetUsers.Id we get from the token.
+                query = query.Where(h =>
+                    h.Timesheet != null
+                    && h.Timesheet.Employee != null
+                    && h.Timesheet.Employee.UserId == request.RequestingUserId);
             }
 
             return await query
@@ -58,8 +64,8 @@ public class GetTimesheetStatusHistoryList
                             ? h.ChangedByUser.DisplayName
                             : (h.ChangedByUser.Email ?? h.ChangedByUserId))
                         : h.ChangedByUserId,
-                    OldStatus = h.FromStatus.ToString(),
-                    NewStatus = h.ToStatus.ToString(),
+                    OldStatus = ((TimesheetStatus)h.FromStatus).ToString(),
+                    NewStatus = ((TimesheetStatus)h.ToStatus).ToString(),
                     Comment = h.Comment,
                     ChangedAt = h.ChangedAt
                 })

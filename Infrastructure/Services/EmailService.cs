@@ -1,16 +1,19 @@
+using System.Net;
+using System.Net.Mail;
 using System.Text.RegularExpressions;
 using Domain.Interfaces;
-using Microsoft.Extensions.Configuration;
+using Infrastructure.Configuration;
 using Microsoft.Extensions.Logging;
-using Resend;
+using Microsoft.Extensions.Options;
 
 namespace Infrastructure.Services;
 
 public class EmailService(
-    IConfiguration configuration,
-    IResend resend,
+    IOptions<MailSettings> mailSettings,
     ILogger<EmailService> logger) : IEmailService
 {
+    private readonly MailSettings _settings = mailSettings.Value;
+
     public async Task<bool> SendEmailAsync(
         string toEmail,
         string subject,
@@ -18,41 +21,46 @@ public class EmailService(
         string? textBody = null,
         CancellationToken cancellationToken = default)
     {
-        var fromEmail = configuration["Resend:FromEmail"];
-        var fromName = configuration["Resend:FromName"];
-
-        if (string.IsNullOrWhiteSpace(toEmail) || string.IsNullOrWhiteSpace(fromEmail))
+        if (string.IsNullOrWhiteSpace(toEmail)
+            || string.IsNullOrWhiteSpace(_settings.Mail)
+            || string.IsNullOrWhiteSpace(_settings.Host)
+            || string.IsNullOrWhiteSpace(_settings.Password))
         {
             logger.LogWarning(
-                "Resend email skipped because configuration is incomplete. HasFromAddress: {HasFromAddress}, HasRecipient: {HasRecipient}",
-                !string.IsNullOrWhiteSpace(fromEmail),
-                !string.IsNullOrWhiteSpace(toEmail));
+                "SMTP email skipped because configuration is incomplete. HasSender: {HasSender}, HasRecipient: {HasRecipient}, HasHost: {HasHost}, HasPassword: {HasPassword}",
+                !string.IsNullOrWhiteSpace(_settings.Mail),
+                !string.IsNullOrWhiteSpace(toEmail),
+                !string.IsNullOrWhiteSpace(_settings.Host),
+                !string.IsNullOrWhiteSpace(_settings.Password));
             return false;
         }
 
-        var emailMessage = new EmailMessage
-        {
-            From = string.IsNullOrWhiteSpace(fromName)
-                ? fromEmail
-                : $"{fromName} <{fromEmail}>",
-            Subject = subject,
-            HtmlBody = htmlBody,
-            TextBody = string.IsNullOrWhiteSpace(textBody)
-                ? StripHtml(htmlBody)
-                : textBody
-        };
-
-        emailMessage.To.Add(toEmail);
+        var plainText = string.IsNullOrWhiteSpace(textBody) ? StripHtml(htmlBody) : textBody;
 
         try
         {
-            await resend.EmailSendAsync(emailMessage);
-            logger.LogInformation("Resend email sent to {Recipient} with subject {Subject}.", toEmail, subject);
+            using var message = new MailMessage
+            {
+                From = new MailAddress(_settings.Mail, _settings.DisplayName),
+                Subject = subject,
+            };
+            message.To.Add(new MailAddress(toEmail));
+            message.AlternateViews.Add(AlternateView.CreateAlternateViewFromString(plainText, null, "text/plain"));
+            message.AlternateViews.Add(AlternateView.CreateAlternateViewFromString(htmlBody, null, "text/html"));
+
+            using var smtp = new SmtpClient(_settings.Host, _settings.Port)
+            {
+                Credentials = new NetworkCredential(_settings.Mail, _settings.Password),
+                EnableSsl = true,
+            };
+
+            await smtp.SendMailAsync(message, cancellationToken);
+            logger.LogInformation("SMTP email sent to {Recipient} with subject {Subject}.", toEmail, subject);
             return true;
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to send Resend email to {Recipient}.", toEmail);
+            logger.LogError(ex, "Failed to send SMTP email to {Recipient}.", toEmail);
             return false;
         }
     }

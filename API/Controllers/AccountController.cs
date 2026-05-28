@@ -13,7 +13,6 @@ using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Persistence;
-using Resend;
 using System.Net;
 using System.Security.Claims;
 using System.Text;
@@ -29,7 +28,6 @@ public class AccountController(
     AppDbContext context,
     IConfiguration configuration,
     IOptions<AppUrlOptions> appUrlOptions,
-    IResend resend,
     IEmailService emailService,
     IFileUploadService fileUploadService,
     ILogger<AccountController> logger) : BaseApiController
@@ -849,13 +847,6 @@ public class AccountController(
             return false;
         }
 
-        var fromEmail = configuration["Resend:FromEmail"];
-        if (string.IsNullOrWhiteSpace(fromEmail))
-        {
-            logger.LogWarning("Password reset email was skipped because Resend:FromEmail is not configured.");
-            return false;
-        }
-
         var token = await userManager.GeneratePasswordResetTokenAsync(user);
         var encodedToken = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(token));
         var resetUrl = BuildClientAuthUrl("reset-password", new Dictionary<string, string?>
@@ -865,37 +856,23 @@ public class AccountController(
         });
 
         var displayName = string.IsNullOrWhiteSpace(user.DisplayName) ? user.Email : user.DisplayName;
-        var fromName = configuration["Resend:FromName"];
 
-        var emailMessage = new EmailMessage
-        {
-            From = string.IsNullOrWhiteSpace(fromName)
-                ? fromEmail
-                : $"{fromName} <{fromEmail}>",
-            Subject = "Reset your Annual Leave password",
-            TextBody = $"Hello {displayName},\n\nWe received a request to reset your Annual Leave password. Use the secure link below to choose a new password:\n{resetUrl}\n\nIf you did not request a password reset, you can safely ignore this email.",
-            HtmlBody = BuildEmailBody(
-                "Reset your Annual Leave password",
-                "Password reset request",
-                displayName,
-                "We received a request to reset your Annual Leave password. Use the secure button below to choose a new password.",
-                "Reset your password",
-                resetUrl,
-                "If you did not request a password reset, no further action is required and you can safely ignore this message.")
-        };
+        var htmlBody = BuildEmailBody(
+            "Reset your Annual Leave password",
+            "Password reset request",
+            displayName,
+            "We received a request to reset your Annual Leave password. Use the secure button below to choose a new password.",
+            "Reset your password",
+            resetUrl,
+            "If you did not request a password reset, no further action is required and you can safely ignore this message.");
 
-        emailMessage.To.Add(user.Email);
+        var textBody = $"Hello {displayName},\n\nWe received a request to reset your Annual Leave password. Use the secure link below to choose a new password:\n{resetUrl}\n\nIf you did not request a password reset, you can safely ignore this email.";
 
-        try
-        {
-            await resend.EmailSendAsync(emailMessage);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to send password reset email for user {UserId}.", user.Id);
-            return false;
-        }
+        return await emailService.SendEmailAsync(
+            user.Email,
+            "Reset your Annual Leave password",
+            htmlBody,
+            textBody);
     }
 
 }

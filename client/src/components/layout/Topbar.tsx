@@ -19,7 +19,7 @@ import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import { getAnnualLeaves, getLeaveStatusHistories, getTimesheets } from '../../lib/api'
+import { getAnnualLeaves, getLeaveStatusHistories, getTimesheets, getTimesheetStatusHistories } from '../../lib/api'
 import { useStore } from '../../lib/mobx'
 import type { ThemePreference } from '../../lib/mobx/uiStore'
 import AttendanceWidget from './AttendanceWidget'
@@ -28,6 +28,7 @@ const recentWindowDays = 7
 const managerReadPrefix = 'manager-read-leave-notifications:'
 const managerTsReadPrefix = 'manager-read-timesheet-notifications:'
 const employeeReadPrefix = 'employee-read-status-notifications:'
+const employeeTsReadPrefix = 'employee-read-timesheet-status-notifications:'
 const notificationRefreshMs = 15000
 
 function getStoredIds(key: string): string[] {
@@ -41,9 +42,19 @@ function getStoredIds(key: string): string[] {
     }
 }
 
+function parseServerDate(value: string | null | undefined): Date | null {
+    if (!value) return null
+    // Backend stores DateTime.UtcNow but ASP.NET drops the offset on the wire
+    // when EF reads the value back with Kind=Unspecified. Append 'Z' so the
+    // browser interprets the timestamp as UTC instead of local time.
+    const hasTz = /(Z|[+-]\d{2}:\d{2})$/.test(value)
+    const date = new Date(hasTz ? value : `${value}Z`)
+    return Number.isNaN(date.getTime()) ? null : date
+}
+
 function formatChangedAt(changedAt: string) {
-    const date = new Date(changedAt)
-    if (Number.isNaN(date.getTime())) return 'Recently'
+    const date = parseServerDate(changedAt)
+    if (!date) return 'Recently'
     return new Intl.DateTimeFormat(undefined, {
         month: 'short',
         day: 'numeric',
@@ -66,15 +77,25 @@ const Topbar = observer(function Topbar() {
     const managerKey = `${managerReadPrefix}${authStore.user?.id ?? ''}`
     const managerTsKey = `${managerTsReadPrefix}${authStore.user?.id ?? ''}`
     const employeeKey = `${employeeReadPrefix}${authStore.user?.id ?? ''}`
+    const employeeTsKey = `${employeeTsReadPrefix}${authStore.user?.id ?? ''}`
 
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
     const [readManagerIds, setReadManagerIds] = useState<string[]>(() => getStoredIds(managerKey))
     const [readManagerTsIds, setReadManagerTsIds] = useState<string[]>(() => getStoredIds(managerTsKey))
     const [readEmployeeIds, setReadEmployeeIds] = useState<string[]>(() => getStoredIds(employeeKey))
+    const [readEmployeeTsIds, setReadEmployeeTsIds] = useState<string[]>(() => getStoredIds(employeeTsKey))
 
     const { data: statusHistories, isLoading: isLoadingStatus } = useQuery({
         queryKey: ['leaveStatusHistories'],
         queryFn: getLeaveStatusHistories,
+        enabled: authStore.isAuthenticated,
+        refetchInterval: authStore.isAuthenticated ? notificationRefreshMs : false,
+        refetchIntervalInBackground: true,
+    })
+
+    const { data: tsStatusHistories, isLoading: isLoadingTsStatus } = useQuery({
+        queryKey: ['timesheetStatusHistories'],
+        queryFn: getTimesheetStatusHistories,
         enabled: authStore.isAuthenticated,
         refetchInterval: authStore.isAuthenticated ? notificationRefreshMs : false,
         refetchIntervalInBackground: true,
@@ -96,11 +117,22 @@ const Topbar = observer(function Topbar() {
         refetchIntervalInBackground: true,
     })
 
-    const sortedStatusNotifs = (statusHistories ?? [])
-        .slice()
-        .sort((a, b) => new Date(b.changedAt).getTime() - new Date(a.changedAt).getTime())
-        .slice(0, 6)
-    const employeeNotifications = sortedStatusNotifs.filter((item) => item.changedByUserId !== authStore.user?.id)
+    const tsTime = (s: string) => parseServerDate(s)?.getTime() ?? 0
+
+    const employeeLeaveItems = (statusHistories ?? [])
+        .filter((item) => item.changedByUserId !== authStore.user?.id)
+        .map((item) => ({ kind: 'leave' as const, item, ts: tsTime(item.changedAt) }))
+
+    const employeeTsItems = (tsStatusHistories ?? [])
+        .filter((item) => item.changedByUserId !== authStore.user?.id)
+        .map((item) => ({ kind: 'timesheet' as const, item, ts: tsTime(item.changedAt) }))
+
+    const employeeMerged = [...employeeLeaveItems, ...employeeTsItems]
+        .sort((a, b) => b.ts - a.ts)
+        .slice(0, 8)
+
+    const employeeNotifications = employeeLeaveItems.map(e => e.item)
+    const employeeTsNotifications = employeeTsItems.map(e => e.item)
 
     const managerPendingRequests = (annualLeaves ?? [])
         .filter((l) => l.status === 'Pending' && l.employeeId !== authStore.user?.id)
@@ -117,22 +149,26 @@ const Topbar = observer(function Topbar() {
     const readManagerSet = useMemo(() => new Set(readManagerIds), [readManagerIds])
     const readManagerTsSet = useMemo(() => new Set(readManagerTsIds), [readManagerTsIds])
     const readEmployeeSet = useMemo(() => new Set(readEmployeeIds), [readEmployeeIds])
+    const readEmployeeTsSet = useMemo(() => new Set(readEmployeeTsIds), [readEmployeeTsIds])
 
     const unreadManagerRequests = managerPendingRequests.filter((item) => !readManagerSet.has(item.id))
     const unreadManagerTimesheets = managerPendingTimesheets.filter((item) => !readManagerTsSet.has(item.id))
     const unreadEmployeeNotifs = employeeNotifications.filter((item) => !readEmployeeSet.has(item.id))
+    const unreadEmployeeTsNotifs = employeeTsNotifications.filter((item) => !readEmployeeTsSet.has(item.id))
     const recentThreshold = Date.now() - recentWindowDays * 24 * 60 * 60 * 1000
     const unreadCount = shouldUseManagerNotifications
         ? unreadManagerRequests.length + unreadManagerTimesheets.length
         : unreadEmployeeNotifs.filter((item) => new Date(item.changedAt).getTime() >= recentThreshold).length
+          + unreadEmployeeTsNotifs.filter((item) => new Date(item.changedAt).getTime() >= recentThreshold).length
 
     const managerNotifications = unreadManagerRequests.slice(0, 6)
     const managerTsNotifications = unreadManagerTimesheets.slice(0, 6)
-    const isLoading = shouldUseManagerNotifications ? (isLoadingLeaves || isLoadingTimesheets) : isLoadingStatus
+    const isLoading = shouldUseManagerNotifications ? (isLoadingLeaves || isLoadingTimesheets) : (isLoadingStatus || isLoadingTsStatus)
 
     useEffect(() => { setReadManagerIds(getStoredIds(managerKey)) }, [managerKey])
     useEffect(() => { setReadManagerTsIds(getStoredIds(managerTsKey)) }, [managerTsKey])
     useEffect(() => { setReadEmployeeIds(getStoredIds(employeeKey)) }, [employeeKey])
+    useEffect(() => { setReadEmployeeTsIds(getStoredIds(employeeTsKey)) }, [employeeTsKey])
 
     useEffect(() => {
         if (!shouldUseManagerNotifications || isLoadingLeaves || !annualLeaves) return
@@ -164,6 +200,16 @@ const Topbar = observer(function Topbar() {
         }
     }, [statusHistories, employeeKey, readEmployeeIds])
 
+    useEffect(() => {
+        if (!tsStatusHistories) return
+        const historyIds = new Set(tsStatusHistories.map((item) => item.id))
+        const pruned = readEmployeeTsIds.filter((id) => historyIds.has(id))
+        if (pruned.length !== readEmployeeTsIds.length) {
+            setReadEmployeeTsIds(pruned)
+            window.localStorage.setItem(employeeTsKey, JSON.stringify(pruned))
+        }
+    }, [tsStatusHistories, employeeTsKey, readEmployeeTsIds])
+
     const handleManagerClick = (leaveId: string) => {
         const updated = Array.from(new Set([...readManagerIds, leaveId]))
         setReadManagerIds(updated)
@@ -191,6 +237,14 @@ const Topbar = observer(function Topbar() {
         window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#my-requests`)
         window.dispatchEvent(new HashChangeEvent('hashchange'))
         window.setTimeout(() => scrollToId(`leave-card-${leaveId}`), 100)
+    }
+
+    const handleEmployeeTsClick = (notifId: string) => {
+        const updated = Array.from(new Set([...readEmployeeTsIds, notifId]))
+        setReadEmployeeTsIds(updated)
+        window.localStorage.setItem(employeeTsKey, JSON.stringify(updated))
+        setAnchorEl(null)
+        uiStore.navigateToTimesheets()
     }
 
     let pageTitle = 'Dashboard'
@@ -289,7 +343,7 @@ const Topbar = observer(function Topbar() {
                 {!isLoading && shouldUseManagerNotifications && managerNotifications.length === 0 && managerTsNotifications.length === 0 && (
                     <MenuItem disabled><ListItemText primary="No notifications yet" /></MenuItem>
                 )}
-                {!isLoading && !shouldUseManagerNotifications && employeeNotifications.length === 0 && (
+                {!isLoading && !shouldUseManagerNotifications && employeeMerged.length === 0 && (
                     <MenuItem disabled><ListItemText primary="No notifications yet" /></MenuItem>
                 )}
                 {!isLoading && shouldUseManagerNotifications && managerNotifications.map((item) => (
@@ -314,17 +368,32 @@ const Topbar = observer(function Topbar() {
                         />
                     </MenuItem>
                 ))}
-                {!isLoading && !shouldUseManagerNotifications && employeeNotifications.map((item) => {
-                    const changedAt = new Date(item.changedAt).getTime()
-                    const isUnread = !readEmployeeSet.has(item.id)
-                    const isRecent = !Number.isNaN(changedAt) && changedAt >= recentThreshold
+                {!isLoading && !shouldUseManagerNotifications && employeeMerged.map((entry) => {
+                    const isRecent = entry.ts >= recentThreshold
+                    if (entry.kind === 'leave') {
+                        const item = entry.item
+                        const isUnread = !readEmployeeSet.has(item.id)
+                        return (
+                            <MenuItem key={`leave-${item.id}`} onClick={() => handleEmployeeClick(item.id, item.annualLeaveId)}>
+                                <ListItemIcon>
+                                    <CircleRoundedIcon sx={{ fontSize: 10, color: isUnread && isRecent ? 'error.main' : 'divider' }} />
+                                </ListItemIcon>
+                                <ListItemText
+                                    primary={`Leave ${item.newStatus.toLowerCase()}`}
+                                    secondary={`Updated ${formatChangedAt(item.changedAt)}`}
+                                />
+                            </MenuItem>
+                        )
+                    }
+                    const item = entry.item
+                    const isUnread = !readEmployeeTsSet.has(item.id)
                     return (
-                        <MenuItem key={item.id} onClick={() => handleEmployeeClick(item.id, item.annualLeaveId)}>
+                        <MenuItem key={`ts-${item.id}`} onClick={() => handleEmployeeTsClick(item.id)}>
                             <ListItemIcon>
                                 <CircleRoundedIcon sx={{ fontSize: 10, color: isUnread && isRecent ? 'error.main' : 'divider' }} />
                             </ListItemIcon>
                             <ListItemText
-                                primary={`Status changed to ${item.newStatus}`}
+                                primary={`Timesheet ${item.newStatus.toLowerCase()}${item.comment ? ` — "${item.comment}"` : ''}`}
                                 secondary={`Updated ${formatChangedAt(item.changedAt)}`}
                             />
                         </MenuItem>

@@ -85,7 +85,7 @@ Status enums: `AnnualLeaveStatus` (Pending, Approved, Rejected, Cancelled); `Tim
 
 - **DB:** SQL Server, connection string in `API/appsettings.Development.json` (`WorkTrack` database, trusted connection)
 - **Cloudinary:** Used for profile image and evidence file uploads
-- **Email:** Resend API (`API/appsettings.json` → `Resend:ApiToken`) with SMTP fallback
+- **Email:** Gmail SMTP via `System.Net.Mail` (`API/appsettings.json` → `MailSettings`)
 - **OAuth:** Google and GitHub OAuth configured in `appsettings.json`; both are optional (skipped if `ClientId` is empty)
 ## Improvements & Roadmap
 
