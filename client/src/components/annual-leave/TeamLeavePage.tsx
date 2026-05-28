@@ -15,14 +15,15 @@ import Select from '@mui/material/Select'
 import Stack from '@mui/material/Stack'
 import Tab from '@mui/material/Tab'
 import Table from '@mui/material/Table'
+import TextField from '@mui/material/TextField'
 import TableBody from '@mui/material/TableBody'
 import TableCell from '@mui/material/TableCell'
 import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import Tabs from '@mui/material/Tabs'
 import Typography from '@mui/material/Typography'
-import { getAnnualLeaves, getLeaveTypes, updateLeaveStatus } from '../../lib/api'
-import type { AnnualLeave, AnnualLeaveStatus, UserInfo } from '../../lib/types'
+import { getAnnualLeaves, getLeaveStatusHistories, getLeaveTypes, updateLeaveStatus } from '../../lib/api'
+import type { AnnualLeave, AnnualLeaveStatus, LeaveStatusHistory, UserInfo } from '../../lib/types'
 import { softBg, type SxColor } from '../../lib/theme-tokens'
 
 
@@ -89,22 +90,8 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
     )
 }
 
-async function downloadEvidence(url: string) {
-    try {
-        const resp = await fetch(url)
-        if (!resp.ok) throw new Error('fetch failed')
-        const blob = await resp.blob()
-        const objectUrl = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = objectUrl
-        a.download = url.split('/').pop()?.split('?')[0] || 'evidence-file'
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-        setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
-    } catch {
-        window.open(url, '_blank')
-    }
+function evidenceFileName(url: string) {
+    return url.split('/').pop()?.split('?')[0] || 'evidence-file'
 }
 
 type StatusTab = 'all' | 'pending' | 'approved' | 'rejected'
@@ -139,6 +126,9 @@ const TeamLeavePage = observer(function TeamLeavePage({ user }: { user: UserInfo
     const [deptFilter, setDeptFilter] = useState('all')
     const [actionTarget, setActionTarget] = useState<string | null>(null)
     const [viewLeave, setViewLeave] = useState<AnnualLeave | null>(null)
+    const [rejectTarget, setRejectTarget] = useState<AnnualLeave | null>(null)
+    const [rejectReason, setRejectReason] = useState('')
+    const [rejectError, setRejectError] = useState('')
 
     useEffect(() => {
         const sync = () => {
@@ -163,6 +153,11 @@ const TeamLeavePage = observer(function TeamLeavePage({ user }: { user: UserInfo
         queryFn: getLeaveTypes,
     })
 
+    const { data: histories = [] } = useQuery({
+        queryKey: ['leaveStatusHistories'],
+        queryFn: getLeaveStatusHistories,
+    })
+
     const leaveTypeById = useMemo(
         () => new Map(leaveTypes.map((lt) => [lt.id, lt.name])),
         [leaveTypes]
@@ -173,6 +168,30 @@ const TeamLeavePage = observer(function TeamLeavePage({ user }: { user: UserInfo
         [allLeaves]
     )
 
+    const latestHistoryByLeave = useMemo(() => {
+        const map = new Map<string, LeaveStatusHistory>()
+        for (const h of histories) {
+            const prev = map.get(h.annualLeaveId)
+            if (!prev || new Date(h.changedAt) > new Date(prev.changedAt)) {
+                map.set(h.annualLeaveId, h)
+            }
+        }
+        return map
+    }, [histories])
+
+    const overlappingForView = useMemo(() => {
+        if (!viewLeave) return [] as AnnualLeave[]
+        const viewStart = new Date(viewLeave.startDate).getTime()
+        const viewEnd = new Date(viewLeave.endDate).getTime()
+        return allLeaves.filter((l) =>
+            l.id !== viewLeave.id
+            && l.departmentName === viewLeave.departmentName
+            && (l.status === 'Pending' || l.status === 'Approved')
+            && new Date(l.startDate).getTime() <= viewEnd
+            && new Date(l.endDate).getTime() >= viewStart
+        )
+    }, [viewLeave, allLeaves])
+
     const approveMutation = useMutation({
         mutationFn: (id: string) => updateLeaveStatus(id, 'Approved'),
         onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['annualLeaves'] }),
@@ -180,10 +199,41 @@ const TeamLeavePage = observer(function TeamLeavePage({ user }: { user: UserInfo
     })
 
     const rejectMutation = useMutation({
-        mutationFn: (id: string) => updateLeaveStatus(id, 'Rejected'),
-        onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['annualLeaves'] }),
+        mutationFn: ({ id, comment }: { id: string; comment: string }) => updateLeaveStatus(id, 'Rejected', comment),
+        onSuccess: () => {
+            void queryClient.invalidateQueries({ queryKey: ['annualLeaves'] })
+            void queryClient.invalidateQueries({ queryKey: ['leaveStatusHistories'] })
+        },
         onSettled: () => setActionTarget(null),
     })
+
+    function openRejectDialog(leave: AnnualLeave) {
+        setRejectTarget(leave)
+        setRejectReason('')
+        setRejectError('')
+    }
+
+    function closeRejectDialog() {
+        if (rejectMutation.isPending) return
+        setRejectTarget(null)
+        setRejectReason('')
+        setRejectError('')
+    }
+
+    function confirmReject() {
+        const target = rejectTarget
+        if (!target) return
+        const trimmed = rejectReason.trim()
+        if (trimmed.length === 0) {
+            setRejectError('Please provide a reason for rejecting this request.')
+            return
+        }
+        setActionTarget(target.id)
+        rejectMutation.mutate(
+            { id: target.id, comment: trimmed },
+            { onSuccess: () => { setRejectTarget(null); setRejectReason(''); setRejectError('') } }
+        )
+    }
 
     const filtered = useMemo(() => {
         let leaves = allLeaves
@@ -328,6 +378,23 @@ const TeamLeavePage = observer(function TeamLeavePage({ user }: { user: UserInfo
                                                     <Stack direction="row" spacing={0.75}>
                                                         <Button
                                                             size="small"
+                                                            variant="outlined"
+                                                            onClick={() => setViewLeave(leave)}
+                                                            sx={{
+                                                                fontSize: 12,
+                                                                py: '5px',
+                                                                px: 1.5,
+                                                                minWidth: 'unset',
+                                                                color: 'text.secondary',
+                                                                borderColor: 'divider',
+                                                                textTransform: 'none',
+                                                                '&:hover': { bgcolor: 'action.hover', borderColor: 'divider' },
+                                                            }}
+                                                        >
+                                                            View
+                                                        </Button>
+                                                        <Button
+                                                            size="small"
                                                             variant="contained"
                                                             disabled={isWorking}
                                                             onClick={() => {
@@ -351,10 +418,7 @@ const TeamLeavePage = observer(function TeamLeavePage({ user }: { user: UserInfo
                                                             size="small"
                                                             variant="contained"
                                                             disabled={isWorking}
-                                                            onClick={() => {
-                                                                setActionTarget(leave.id)
-                                                                rejectMutation.mutate(leave.id)
-                                                            }}
+                                                            onClick={() => openRejectDialog(leave)}
                                                             sx={{
                                                                 fontSize: 12,
                                                                 py: '5px',
@@ -425,7 +489,11 @@ const TeamLeavePage = observer(function TeamLeavePage({ user }: { user: UserInfo
                                         <Button
                                             size="small"
                                             variant="outlined"
-                                            onClick={() => downloadEvidence(viewLeave.evidenceUrl!)}
+                                            component="a"
+                                            href={viewLeave.evidenceUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            download={evidenceFileName(viewLeave.evidenceUrl)}
                                             sx={{
                                                 fontSize: 12, textTransform: 'none',
                                                 borderColor: 'primary.main', color: 'primary.main',
@@ -433,7 +501,7 @@ const TeamLeavePage = observer(function TeamLeavePage({ user }: { user: UserInfo
                                                 '&:hover': { bgcolor: softBg('info'), borderColor: 'primary.main' },
                                             }}
                                         >
-                                            Download File
+                                            Open File
                                         </Button>
                                     }
                                 />
@@ -442,6 +510,74 @@ const TeamLeavePage = observer(function TeamLeavePage({ user }: { user: UserInfo
                             {viewLeave.approvedAt && (
                                 <DetailRow label="Actioned" value={formatDate(viewLeave.approvedAt)} />
                             )}
+                            {(() => {
+                                const today = new Date(); today.setHours(0, 0, 0, 0)
+                                const start = new Date(viewLeave.startDate); start.setHours(0, 0, 0, 0)
+                                const daysUntil = Math.round((start.getTime() - today.getTime()) / 86_400_000)
+                                const noticeText = daysUntil < 0
+                                    ? `Started ${Math.abs(daysUntil)} day${Math.abs(daysUntil) === 1 ? '' : 's'} ago`
+                                    : daysUntil === 0 ? 'Starts today'
+                                    : daysUntil === 1 ? 'Starts tomorrow'
+                                    : `${daysUntil} days notice`
+                                return <DetailRow label="Notice" value={noticeText} />
+                            })()}
+                            <Divider sx={{ my: 0.5 }} />
+                            <DetailRow
+                                label="Team coverage"
+                                value={
+                                    overlappingForView.length === 0 ? (
+                                        <Typography sx={{ fontSize: 13, color: 'success.dark' }}>
+                                            ● No other team members on leave these days.
+                                        </Typography>
+                                    ) : (
+                                        <Stack spacing={0.5}>
+                                            <Typography sx={{ fontSize: 12, color: 'warning.dark', fontWeight: 600 }}>
+                                                ⚠ {overlappingForView.length} overlap{overlappingForView.length === 1 ? '' : 's'} in {viewLeave.departmentName || 'this department'}
+                                            </Typography>
+                                            {overlappingForView.slice(0, 6).map((c) => (
+                                                <Box key={c.id} sx={{ fontSize: 12, color: 'text.primary' }}>
+                                                    <strong>{c.employeeName}</strong>{' · '}
+                                                    {formatDate(c.startDate)} – {formatDate(c.endDate)}
+                                                    {' '}
+                                                    <Box component="span" sx={{
+                                                        display: 'inline-block', px: '6px', py: '1px',
+                                                        bgcolor: c.status === 'Approved' ? softBg('success') : softBg('warning'),
+                                                        color: c.status === 'Approved' ? 'success.dark' : 'warning.dark',
+                                                        borderRadius: '8px', fontSize: 10, fontWeight: 500,
+                                                    }}>{c.status}</Box>
+                                                </Box>
+                                            ))}
+                                            {overlappingForView.length > 6 && (
+                                                <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>
+                                                    …and {overlappingForView.length - 6} more
+                                                </Typography>
+                                            )}
+                                        </Stack>
+                                    )
+                                }
+                            />
+                            {(() => {
+                                const fb = latestHistoryByLeave.get(viewLeave.id)
+                                if (!fb?.comment) return null
+                                const isRejected = viewLeave.status === 'Rejected'
+                                const bg = isRejected ? softBg('error') : softBg('success')
+                                const fg = isRejected ? 'error.dark' : 'success.dark'
+                                const accent = isRejected ? 'error.main' : 'success.main'
+                                const label = isRejected ? 'Rejection reason' : 'Manager note'
+                                return (
+                                    <Box sx={{
+                                        mt: 0.5, p: '10px 14px', bgcolor: bg, color: fg,
+                                        borderLeft: '3px solid', borderLeftColor: accent, borderRadius: '6px',
+                                    }}>
+                                        <Box sx={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', mb: '4px' }}>
+                                            {label}
+                                        </Box>
+                                        <Box sx={{ fontSize: 13, lineHeight: 1.5 }}>
+                                            <Box component="strong">{fb.changedByUserName}:</Box> "{fb.comment}"
+                                        </Box>
+                                    </Box>
+                                )
+                            })()}
                         </Stack>
                     )}
                 </DialogContent>
@@ -474,15 +610,74 @@ const TeamLeavePage = observer(function TeamLeavePage({ user }: { user: UserInfo
                             variant="contained"
                             disabled={rejectMutation.isPending}
                             onClick={() => {
-                                setActionTarget(viewLeave.id)
-                                rejectMutation.mutate(viewLeave.id)
+                                const target = viewLeave
                                 setViewLeave(null)
+                                openRejectDialog(target)
                             }}
                             sx={{ textTransform: 'none', bgcolor: 'error.main', '&:hover': { bgcolor: 'error.dark' }, boxShadow: 'none' }}
                         >
                             Reject
                         </Button>
                     )}
+                </DialogActions>
+            </Dialog>
+
+            {/* Reject reason dialog */}
+            <Dialog open={rejectTarget !== null} onClose={closeRejectDialog} maxWidth="xs" fullWidth>
+                <DialogTitle sx={{ fontSize: 15, fontWeight: 600, color: 'text.primary', pb: 1 }}>
+                    Reject leave request
+                </DialogTitle>
+                <DialogContent sx={{ px: 3, py: 2 }}>
+                    {rejectTarget && (
+                        <Stack spacing={1.5}>
+                            <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
+                                Please provide a reason. The employee will see this message.
+                            </Typography>
+                            <Box sx={{ fontSize: 12, color: 'text.secondary' }}>
+                                <strong style={{ color: 'inherit' }}>{rejectTarget.employeeName}</strong>
+                                {' · '}
+                                {formatDate(rejectTarget.startDate)} – {formatDate(rejectTarget.endDate)}
+                                {' · '}
+                                {rejectTarget.totalDays} day{rejectTarget.totalDays === 1 ? '' : 's'}
+                            </Box>
+                            <TextField
+                                autoFocus
+                                multiline
+                                minRows={3}
+                                maxRows={6}
+                                fullWidth
+                                placeholder="Reason for rejection (required)"
+                                value={rejectReason}
+                                onChange={(e) => {
+                                    setRejectReason(e.target.value)
+                                    if (rejectError) setRejectError('')
+                                }}
+                                error={!!rejectError}
+                                helperText={rejectError || `${rejectReason.trim().length}/500`}
+                                inputProps={{ maxLength: 500 }}
+                                sx={{ '& .MuiInputBase-input': { fontSize: 13 } }}
+                            />
+                        </Stack>
+                    )}
+                </DialogContent>
+                <DialogActions sx={{ px: 3, py: 1.75, gap: 1 }}>
+                    <Button
+                        size="small"
+                        onClick={closeRejectDialog}
+                        disabled={rejectMutation.isPending}
+                        sx={{ textTransform: 'none', color: 'text.secondary' }}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        size="small"
+                        variant="contained"
+                        disabled={rejectMutation.isPending || rejectReason.trim().length === 0}
+                        onClick={confirmReject}
+                        sx={{ textTransform: 'none', bgcolor: 'error.main', '&:hover': { bgcolor: 'error.dark' }, boxShadow: 'none' }}
+                    >
+                        {rejectMutation.isPending ? 'Rejecting…' : 'Confirm Reject'}
+                    </Button>
                 </DialogActions>
             </Dialog>
         </Stack>

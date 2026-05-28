@@ -20,6 +20,7 @@ import TableCell from '@mui/material/TableCell'
 import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import Tabs from '@mui/material/Tabs'
+import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { approveTimesheet, getDepartments, getProjects, getTimesheet, getTimesheets, rejectTimesheet } from '../../lib/api'
 import type { TimesheetEntry, TimesheetStatus, UserInfo } from '../../lib/types'
@@ -119,6 +120,9 @@ const TeamTimesheetPage = observer(function TeamTimesheetPage({ user }: { user: 
     const [deptFilter, setDeptFilter] = useState('all')
     const [actionTarget, setActionTarget] = useState<string | null>(null)
     const [viewTs, setViewTs] = useState<Timesheet | null>(null)
+    const [rejectTarget, setRejectTarget] = useState<Timesheet | null>(null)
+    const [rejectReason, setRejectReason] = useState('')
+    const [rejectError, setRejectError] = useState('')
 
     const { data: timesheets = [], isLoading } = useQuery({
         queryKey: ['timesheets'],
@@ -160,13 +164,42 @@ const TeamTimesheetPage = observer(function TeamTimesheetPage({ user }: { user: 
     })
 
     const rejectMutation = useMutation({
-        mutationFn: (id: string) => rejectTimesheet(id),
+        mutationFn: ({ id, comment }: { id: string; comment: string }) => rejectTimesheet(id, comment),
         onSuccess: () => {
             void queryClient.invalidateQueries({ queryKey: ['timesheets'] })
+            void queryClient.invalidateQueries({ queryKey: ['timesheetStatusHistories'] })
             setViewTs(null)
         },
         onSettled: () => setActionTarget(null),
     })
+
+    function openRejectDialog(ts: Timesheet) {
+        setRejectTarget(ts)
+        setRejectReason('')
+        setRejectError('')
+    }
+
+    function closeRejectDialog() {
+        if (rejectMutation.isPending) return
+        setRejectTarget(null)
+        setRejectReason('')
+        setRejectError('')
+    }
+
+    function confirmReject() {
+        const target = rejectTarget
+        if (!target) return
+        const trimmed = rejectReason.trim()
+        if (trimmed.length === 0) {
+            setRejectError('Please provide a reason for rejecting this timesheet.')
+            return
+        }
+        setActionTarget(target.id)
+        rejectMutation.mutate(
+            { id: target.id, comment: trimmed },
+            { onSuccess: () => { setRejectTarget(null); setRejectReason(''); setRejectError('') } }
+        )
+    }
 
     const needsAction = (status: TimesheetStatus) => status === 'Submitted' || status === 'Resubmitted'
 
@@ -371,10 +404,7 @@ const TeamTimesheetPage = observer(function TeamTimesheetPage({ user }: { user: 
                                                             size="small"
                                                             variant="contained"
                                                             disabled={isWorking}
-                                                            onClick={() => {
-                                                                setActionTarget(ts.id)
-                                                                rejectMutation.mutate(ts.id)
-                                                            }}
+                                                            onClick={() => openRejectDialog(ts)}
                                                             sx={{
                                                                 fontSize: 12,
                                                                 py: '5px',
@@ -512,8 +542,9 @@ const TeamTimesheetPage = observer(function TeamTimesheetPage({ user }: { user: 
                                         variant="contained"
                                         disabled={isActioning}
                                         onClick={() => {
-                                            setActionTarget(viewTs.id)
-                                            rejectMutation.mutate(viewTs.id)
+                                            const target = viewTs
+                                            setViewTs(null)
+                                            openRejectDialog(target)
                                         }}
                                         startIcon={isActioning && rejectMutation.isPending ? <CircularProgress size={14} color="inherit" /> : null}
                                         sx={{
@@ -547,6 +578,65 @@ const TeamTimesheetPage = observer(function TeamTimesheetPage({ user }: { user: 
                         </DialogActions>
                     </>
                 )}
+            </Dialog>
+
+            {/* Reject reason dialog */}
+            <Dialog open={rejectTarget !== null} onClose={closeRejectDialog} maxWidth="xs" fullWidth>
+                <DialogTitle sx={{ fontSize: 15, fontWeight: 600, color: 'text.primary', pb: 1 }}>
+                    Reject timesheet
+                </DialogTitle>
+                <DialogContent sx={{ px: 3, py: 2 }}>
+                    {rejectTarget && (
+                        <Stack spacing={1.5}>
+                            <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
+                                Please provide a reason. The employee will see this message.
+                            </Typography>
+                            <Box sx={{ fontSize: 12, color: 'text.secondary' }}>
+                                <strong style={{ color: 'inherit' }}>{rejectTarget.employeeName}</strong>
+                                {' · '}
+                                {formatPeriod(rejectTarget.periodStart, rejectTarget.periodEnd)}
+                                {' · '}
+                                {Number(rejectTarget.totalHours).toFixed(1)} hrs
+                            </Box>
+                            <TextField
+                                autoFocus
+                                multiline
+                                minRows={3}
+                                maxRows={6}
+                                fullWidth
+                                placeholder="Reason for rejection (required)"
+                                value={rejectReason}
+                                onChange={(e) => {
+                                    setRejectReason(e.target.value)
+                                    if (rejectError) setRejectError('')
+                                }}
+                                error={!!rejectError}
+                                helperText={rejectError || `${rejectReason.trim().length}/500`}
+                                inputProps={{ maxLength: 500 }}
+                                sx={{ '& .MuiInputBase-input': { fontSize: 13 } }}
+                            />
+                        </Stack>
+                    )}
+                </DialogContent>
+                <DialogActions sx={{ px: 3, py: 1.75, gap: 1 }}>
+                    <Button
+                        size="small"
+                        onClick={closeRejectDialog}
+                        disabled={rejectMutation.isPending}
+                        sx={{ textTransform: 'none', color: 'text.secondary' }}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        size="small"
+                        variant="contained"
+                        disabled={rejectMutation.isPending || rejectReason.trim().length === 0}
+                        onClick={confirmReject}
+                        sx={{ textTransform: 'none', bgcolor: 'error.main', '&:hover': { bgcolor: 'error.dark' }, boxShadow: 'none' }}
+                    >
+                        {rejectMutation.isPending ? 'Rejecting…' : 'Confirm Reject'}
+                    </Button>
+                </DialogActions>
             </Dialog>
         </Stack>
     )

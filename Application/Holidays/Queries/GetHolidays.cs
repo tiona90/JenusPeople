@@ -41,20 +41,39 @@ public class GetHolidays
                 if (fetched.Count == 0)
                     return Result<IReadOnlyList<HolidayDto>>.Success([]);
 
-                var entities = fetched.Select(h => new PublicHoliday
+                var existingDates = await context.PublicHolidays
+                    .Where(h => h.CountryCode == code)
+                    .Select(h => h.Date)
+                    .ToListAsync(cancellationToken);
+                var existingSet = existingDates.Select(d => d.Date).ToHashSet();
+
+                var entities = fetched
+                    .GroupBy(h => h.Date.Date)
+                    .Where(g => !existingSet.Contains(g.Key))
+                    .Select(g => g.First())
+                    .Select(h => new PublicHoliday
+                    {
+                        CountryCode = code,
+                        Year = request.Year,
+                        Date = h.Date.Date,
+                        LocalName = h.LocalName,
+                        EnglishName = h.EnglishName,
+                        CachedAt = DateTime.UtcNow,
+                    }).ToList();
+
+                if (entities.Count > 0)
                 {
-                    CountryCode = code,
-                    Year = request.Year,
-                    Date = h.Date.Date,
-                    LocalName = h.LocalName,
-                    EnglishName = h.EnglishName,
-                    CachedAt = DateTime.UtcNow,
-                }).ToList();
+                    context.PublicHolidays.AddRange(entities);
+                    await context.SaveChangesAsync(cancellationToken);
+                }
 
-                context.PublicHolidays.AddRange(entities);
-                await context.SaveChangesAsync(cancellationToken);
+                var fresh = await context.PublicHolidays
+                    .AsNoTracking()
+                    .Where(h => h.CountryCode == code && h.Year == request.Year)
+                    .OrderBy(h => h.Date)
+                    .ToListAsync(cancellationToken);
 
-                return Result<IReadOnlyList<HolidayDto>>.Success(entities.Select(ToDto).ToList());
+                return Result<IReadOnlyList<HolidayDto>>.Success(fresh.Select(ToDto).ToList());
             }
             catch (HttpRequestException ex)
             {

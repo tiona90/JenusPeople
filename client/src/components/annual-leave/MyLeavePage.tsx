@@ -3,7 +3,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { observer } from 'mobx-react-lite'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
+import Dialog from '@mui/material/Dialog'
+import DialogActions from '@mui/material/DialogActions'
+import DialogContent from '@mui/material/DialogContent'
+import DialogTitle from '@mui/material/DialogTitle'
+import Divider from '@mui/material/Divider'
+import Stack from '@mui/material/Stack'
+import Typography from '@mui/material/Typography'
 import {
     deleteAnnualLeave,
     getAnnualLeaves,
@@ -248,7 +256,7 @@ const MyLeavePage = observer(function MyLeavePage({ user }: { user: UserInfo }) 
         }
     }
 
-    const formOpen = uiStore.isCreateDrawerOpen || viewLeave !== null
+    const formOpen = uiStore.isCreateDrawerOpen
 
     // ── Rendering helpers ───────────────────────────────────────────────
 
@@ -479,12 +487,15 @@ const MyLeavePage = observer(function MyLeavePage({ user }: { user: UserInfo }) 
 
             <AnnualLeaveForm
                 open={formOpen}
-                onClose={() => {
-                    uiStore.closeCreateDrawer()
-                    setViewLeave(null)
-                }}
-                leave={viewLeave ?? undefined}
+                onClose={() => uiStore.closeCreateDrawer()}
                 isAdmin={isAdminUser}
+            />
+
+            <LeaveDetailsDialog
+                leave={viewLeave}
+                leaveTypeName={viewLeave?.leaveTypeId != null ? leaveTypeById.get(viewLeave.leaveTypeId)?.name : undefined}
+                feedback={viewLeave ? latestStatusComment.get(viewLeave.id) : undefined}
+                onClose={() => setViewLeave(null)}
             />
         </>
     )
@@ -854,6 +865,123 @@ function ActionButton({ onClick, variant, children }: {
         >
             {children}
         </Box>
+    )
+}
+
+function LeaveDetailRow({ label, value }: { label: string; value: React.ReactNode }) {
+    return (
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
+            <Typography sx={{ fontSize: 12, color: 'text.secondary', fontWeight: 500, minWidth: 110, pt: '2px' }}>
+                {label}
+            </Typography>
+            <Box sx={{ fontSize: 13, color: 'text.primary', flex: 1 }}>{value}</Box>
+        </Box>
+    )
+}
+
+function LeaveDetailsDialog({ leave, leaveTypeName, feedback, onClose }: {
+    leave: AnnualLeave | null
+    leaveTypeName?: string
+    feedback?: LeaveStatusHistory
+    onClose: () => void
+}) {
+    if (!leave) {
+        return <Dialog open={false} onClose={onClose}><Box /></Dialog>
+    }
+
+    const reasonTrimmed = (leave.reason ?? '').trim()
+    const isPlaceholderReason = reasonTrimmed === '' || /^[-_‐-―−.·•]+$/.test(reasonTrimmed)
+
+    const today = new Date(); today.setHours(0, 0, 0, 0)
+    const start = new Date(leave.startDate); start.setHours(0, 0, 0, 0)
+    const daysUntil = Math.round((start.getTime() - today.getTime()) / 86_400_000)
+    const noticeText = daysUntil < 0
+        ? `Started ${Math.abs(daysUntil)} day${Math.abs(daysUntil) === 1 ? '' : 's'} ago`
+        : daysUntil === 0 ? 'Starts today'
+        : daysUntil === 1 ? 'Starts tomorrow'
+        : `${daysUntil} days notice`
+
+    const status = leave.status
+    const isRejected = status === 'Rejected'
+    const isApproved = status === 'Approved'
+    const isCancelled = status === 'Cancelled'
+
+    const fb = feedback?.comment ? feedback : undefined
+    const banner = fb ? {
+        bg: isRejected ? softBg('error') : isApproved ? softBg('success') : 'action.hover',
+        fg: isRejected ? 'error.dark' : isApproved ? 'success.dark' : 'text.secondary',
+        accent: isRejected ? 'error.main' : isApproved ? 'success.main' : 'text.disabled',
+        label: isRejected ? 'Rejection reason' : isApproved ? 'Manager note' : isCancelled ? 'Cancellation note' : 'Note',
+    } : null
+
+    return (
+        <Dialog open onClose={onClose} maxWidth="sm" fullWidth>
+            <DialogTitle sx={{ fontSize: 15, fontWeight: 600, color: 'text.primary', pb: 1 }}>
+                Leave Request Details
+            </DialogTitle>
+            <DialogContent sx={{ px: 3, py: 2 }}>
+                <Stack spacing={1.5}>
+                    {banner && fb && (
+                        <Box sx={{
+                            p: '10px 14px', bgcolor: banner.bg, color: banner.fg,
+                            borderLeft: '3px solid', borderLeftColor: banner.accent, borderRadius: '6px',
+                        }}>
+                            <Box sx={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', mb: '4px' }}>
+                                {banner.label}
+                            </Box>
+                            <Box sx={{ fontSize: 13, lineHeight: 1.5 }}>
+                                <Box component="strong">{fb.changedByUserName}:</Box> "{fb.comment}"
+                            </Box>
+                        </Box>
+                    )}
+                    <LeaveDetailRow label="Leave Type" value={leaveTypeName ?? 'Annual Leave'} />
+                    <Divider sx={{ my: 0.5 }} />
+                    <LeaveDetailRow label="Start Date" value={formatDate(leave.startDate)} />
+                    <LeaveDetailRow label="End Date" value={formatDate(leave.endDate)} />
+                    <LeaveDetailRow label="Total Days" value={`${leave.totalDays} working day${leave.totalDays !== 1 ? 's' : ''}`} />
+                    <Divider sx={{ my: 0.5 }} />
+                    <LeaveDetailRow label="Status" value={<StatusBadge status={status} />} />
+                    {!isPlaceholderReason && <LeaveDetailRow label="Reason" value={leave.reason} />}
+                    {leave.evidenceUrl && leave.evidenceUrl.trim() !== '' && (
+                        <LeaveDetailRow
+                            label="Evidence"
+                            value={
+                                <Button
+                                    size="small"
+                                    variant="outlined"
+                                    component="a"
+                                    href={leave.evidenceUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    sx={{
+                                        fontSize: 12, textTransform: 'none',
+                                        borderColor: 'primary.main', color: 'primary.main',
+                                        py: '3px', px: 1.25,
+                                        '&:hover': { bgcolor: softBg('info'), borderColor: 'primary.main' },
+                                    }}
+                                >
+                                    Open File
+                                </Button>
+                            }
+                        />
+                    )}
+                    <LeaveDetailRow label="Submitted" value={formatDate(leave.createdAt)} />
+                    {leave.approvedAt && (
+                        <LeaveDetailRow label="Actioned" value={formatDate(leave.approvedAt)} />
+                    )}
+                    <LeaveDetailRow label="Notice" value={noticeText} />
+                </Stack>
+            </DialogContent>
+            <DialogActions sx={{ px: 3, py: 1.75 }}>
+                <Button
+                    size="small"
+                    onClick={onClose}
+                    sx={{ textTransform: 'none', color: 'text.secondary' }}
+                >
+                    Close
+                </Button>
+            </DialogActions>
+        </Dialog>
     )
 }
 

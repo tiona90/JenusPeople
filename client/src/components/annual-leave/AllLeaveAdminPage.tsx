@@ -3,7 +3,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { observer } from 'mobx-react-lite'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
+import Dialog from '@mui/material/Dialog'
+import DialogActions from '@mui/material/DialogActions'
+import DialogContent from '@mui/material/DialogContent'
+import DialogTitle from '@mui/material/DialogTitle'
+import Stack from '@mui/material/Stack'
+import TextField from '@mui/material/TextField'
+import Typography from '@mui/material/Typography'
 import {
     getAnnualLeaves, getDepartments, getEmployeeProfiles, getHolidays, getLeaveStatusHistories,
     getLeaveTypes, updateLeaveStatus,
@@ -118,6 +126,9 @@ const AllLeaveAdminPage = observer(function AllLeaveAdminPage({ user: _user }: {
     const [calMonth, setCalMonth] = useState(today.getMonth())
     const [calYear, setCalYear] = useState(today.getFullYear())
     const [apiError, setApiError] = useState('')
+    const [rejectDialog, setRejectDialog] = useState<{ ids: string[]; label: string } | null>(null)
+    const [rejectReason, setRejectReason] = useState('')
+    const [rejectError, setRejectError] = useState('')
 
     const { data: leaves = [], isLoading } = useQuery({ queryKey: ['annualLeaves'], queryFn: getAnnualLeaves })
     const { data: leaveTypes = [] } = useQuery({ queryKey: ['leaveTypes'], queryFn: getLeaveTypes })
@@ -296,8 +307,11 @@ const AllLeaveAdminPage = observer(function AllLeaveAdminPage({ user: _user }: {
         onError: (err) => setApiError(getApiErrorMessage(err, 'Approval failed.')),
     })
     const rejectMut = useMutation({
-        mutationFn: (id: string) => updateLeaveStatus(id, 'Rejected'),
-        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['annualLeaves'] }),
+        mutationFn: ({ id, comment }: { id: string; comment: string }) => updateLeaveStatus(id, 'Rejected', comment),
+        onSuccess: () => {
+            void queryClient.invalidateQueries({ queryKey: ['annualLeaves'] })
+            void queryClient.invalidateQueries({ queryKey: ['leaveStatusHistories'] })
+        },
         onError: (err) => setApiError(getApiErrorMessage(err, 'Rejection failed.')),
     })
     const isWorking = approveMut.isPending || rejectMut.isPending
@@ -322,9 +336,48 @@ const AllLeaveAdminPage = observer(function AllLeaveAdminPage({ user: _user }: {
         for (const id of selected) await approveMut.mutateAsync(id).catch(() => {})
         setSelected(new Set())
     }
-    async function bulkReject() {
-        for (const id of selected) await rejectMut.mutateAsync(id).catch(() => {})
-        setSelected(new Set())
+
+    function openRejectDialog(leave: AnnualLeave) {
+        setRejectDialog({
+            ids: [leave.id],
+            label: `${leave.employeeName} · ${fmtShort(leave.startDate)} – ${fmtShort(leave.endDate)} · ${leave.totalDays} day${leave.totalDays === 1 ? '' : 's'}`,
+        })
+        setRejectReason('')
+        setRejectError('')
+    }
+
+    function openBulkRejectDialog() {
+        if (selected.size === 0) return
+        setRejectDialog({
+            ids: Array.from(selected),
+            label: `${selected.size} selected leave request${selected.size === 1 ? '' : 's'}`,
+        })
+        setRejectReason('')
+        setRejectError('')
+    }
+
+    function closeRejectDialog() {
+        if (rejectMut.isPending) return
+        setRejectDialog(null)
+        setRejectReason('')
+        setRejectError('')
+    }
+
+    async function confirmReject() {
+        if (!rejectDialog) return
+        const trimmed = rejectReason.trim()
+        if (trimmed.length === 0) {
+            setRejectError('Please provide a reason for rejecting.')
+            return
+        }
+        const ids = rejectDialog.ids
+        for (const id of ids) {
+            await rejectMut.mutateAsync({ id, comment: trimmed }).catch(() => {})
+        }
+        if (ids.length > 1) setSelected(new Set())
+        setRejectDialog(null)
+        setRejectReason('')
+        setRejectError('')
     }
 
     function navMonth(delta: number) {
@@ -367,7 +420,7 @@ const AllLeaveAdminPage = observer(function AllLeaveAdminPage({ user: _user }: {
                 month={calMonth}
                 year={calYear}
                 heatmap={heatmap}
-                holidays={new Set(holidays.map((h) => h.date.slice(0, 10)))}
+                holidays={new Map(holidays.map((h) => [h.date.slice(0, 10), h.localName || h.englishName]))}
                 today={today}
                 onNav={navMonth}
                 alert={showHeatmapAlert}
@@ -382,7 +435,7 @@ const AllLeaveAdminPage = observer(function AllLeaveAdminPage({ user: _user }: {
                     count={selected.size}
                     onClear={() => setSelected(new Set())}
                     onApprove={() => void bulkApprove()}
-                    onReject={() => void bulkReject()}
+                    onReject={openBulkRejectDialog}
                     disabled={isWorking}
                 />
             )}
@@ -488,7 +541,7 @@ const AllLeaveAdminPage = observer(function AllLeaveAdminPage({ user: _user }: {
                     onToggleExpand={() => toggleExpanded(l.id)}
                     onToggleSelect={() => toggleSelected(l.id)}
                     onApprove={() => approveMut.mutate(l.id)}
-                    onReject={() => rejectMut.mutate(l.id)}
+                    onReject={() => openRejectDialog(l)}
                     disabled={isWorking}
                 />
             ))}
@@ -514,7 +567,7 @@ const AllLeaveAdminPage = observer(function AllLeaveAdminPage({ user: _user }: {
                     onToggleExpand={() => toggleExpanded(l.id)}
                     onToggleSelect={() => toggleSelected(l.id)}
                     onApprove={() => approveMut.mutate(l.id)}
-                    onReject={() => rejectMut.mutate(l.id)}
+                    onReject={() => openRejectDialog(l)}
                     disabled={isWorking}
                     hideCheckbox
                 />
@@ -528,6 +581,61 @@ const AllLeaveAdminPage = observer(function AllLeaveAdminPage({ user: _user }: {
                     No leave requests match the current filters.
                 </Box>
             )}
+
+            {/* Reject reason dialog */}
+            <Dialog open={rejectDialog !== null} onClose={closeRejectDialog} maxWidth="xs" fullWidth>
+                <DialogTitle sx={{ fontSize: 15, fontWeight: 600, color: 'text.primary', pb: 1 }}>
+                    {rejectDialog && rejectDialog.ids.length > 1 ? 'Reject selected requests' : 'Reject leave request'}
+                </DialogTitle>
+                <DialogContent sx={{ px: 3, py: 2 }}>
+                    {rejectDialog && (
+                        <Stack spacing={1.5}>
+                            <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
+                                Please provide a reason. The employee will see this message.
+                            </Typography>
+                            <Box sx={{ fontSize: 12, color: 'text.secondary' }}>
+                                {rejectDialog.label}
+                            </Box>
+                            <TextField
+                                autoFocus
+                                multiline
+                                minRows={3}
+                                maxRows={6}
+                                fullWidth
+                                placeholder="Reason for rejection (required)"
+                                value={rejectReason}
+                                onChange={(e) => {
+                                    setRejectReason(e.target.value)
+                                    if (rejectError) setRejectError('')
+                                }}
+                                error={!!rejectError}
+                                helperText={rejectError || `${rejectReason.trim().length}/500`}
+                                inputProps={{ maxLength: 500 }}
+                                sx={{ '& .MuiInputBase-input': { fontSize: 13 } }}
+                            />
+                        </Stack>
+                    )}
+                </DialogContent>
+                <DialogActions sx={{ px: 3, py: 1.75, gap: 1 }}>
+                    <Button
+                        size="small"
+                        onClick={closeRejectDialog}
+                        disabled={rejectMut.isPending}
+                        sx={{ textTransform: 'none', color: 'text.secondary' }}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        size="small"
+                        variant="contained"
+                        disabled={rejectMut.isPending || rejectReason.trim().length === 0}
+                        onClick={() => void confirmReject()}
+                        sx={{ textTransform: 'none', bgcolor: 'error.main', '&:hover': { bgcolor: 'error.dark' }, boxShadow: 'none' }}
+                    >
+                        {rejectMut.isPending ? 'Rejecting…' : 'Confirm Reject'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </Box>
     )
 })
@@ -556,7 +664,7 @@ function Heatmap({ month, year, heatmap, holidays, today, onNav, alert }: {
     month: number
     year: number
     heatmap: Map<string, { count: number; people: string[] }>
-    holidays: Set<string>
+    holidays: Map<string, string>
     today: Date
     onNav: (delta: number) => void
     alert: { iso: string; count: number; people: string[] } | undefined
@@ -583,28 +691,37 @@ function Heatmap({ month, year, heatmap, holidays, today, onNav, alert }: {
         let bg: SxColor = 'action.hover'
         let color: SxColor = 'text.primary'
         if (weekend) { bg = 'action.hover'; color = 'text.disabled' }
-        if (holiday) { bg = softBg('warning'); color = 'warning.dark' }
         if (count === 1) { bg = softBg('info'); color = 'info.dark' }
         else if (count === 2) { bg = softBg('info'); color = 'info.dark' }
         else if (count === 3) { bg = softBg('info'); color = 'info.dark' }
         else if (count >= 4) { bg = 'primary.main'; color = '#fff' }
         if (conflictCount > 0) { bg = softBg('warning'); color = 'warning.dark' }
+        if (holiday) { bg = softBg('secondary'); color = 'secondary.dark' }
+
+        const holidayName = holidays.get(iso)
+        const titleParts: string[] = [`${d} ${MONTH_NAMES[month]}`]
+        if (holidayName) titleParts.push(`🎉 ${holidayName}`)
+        if (data) titleParts.push(`${data.count} on leave (${data.people.join(', ')})`)
 
         cells.push(
             <Box
                 key={iso}
-                title={data ? `${d} ${MONTH_NAMES[month]}: ${data.count} on leave (${data.people.join(', ')})` : `${d} ${MONTH_NAMES[month]}`}
+                title={titleParts.join(' · ')}
                 sx={{
                     aspectRatio: '1', bgcolor: bg, color, borderRadius: '6px',
                     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                     fontSize: 11, position: 'relative',
-                    border: holiday ? '1px solid #F59E0B' : 'none',
+                    border: holiday ? '1px solid' : 'none',
+                    borderColor: holiday ? 'secondary.main' : 'transparent',
                     boxShadow: isToday ? `inset 0 0 0 2px ${'text.primary'}` : conflictCount > 0 ? 'inset 0 0 0 1px #F59E0B' : 'none',
-                    cursor: count > 0 ? 'help' : 'default',
+                    cursor: count > 0 || holiday ? 'help' : 'default',
                 }}
             >
                 <Box sx={{ fontWeight: isToday ? 700 : 500 }}>{d}</Box>
                 {count > 0 && <Box sx={{ fontSize: 9, fontWeight: 700, mt: '2px' }}>{count}</Box>}
+                {holiday && (
+                    <Box component="span" sx={{ position: 'absolute', top: 2, left: 3, fontSize: 10, lineHeight: 1 }}>🎉</Box>
+                )}
                 {conflictCount > 0 && (
                     <Box component="span" sx={{ position: 'absolute', top: 2, right: 3, fontSize: 9 }}>⚠</Box>
                 )}
@@ -627,7 +744,7 @@ function Heatmap({ month, year, heatmap, holidays, today, onNav, alert }: {
                         <Legend color="#93C5FD" label="3" />
                         <Legend color={'primary.main'} label="4+" />
                         <Legend color="#FEF3C7" label="⚠ Conflict" bordered borderColor="#F59E0B" />
-                        <Legend color="#FEF3C7" label="🎉 Holiday" bordered borderColor="#F59E0B" />
+                        <Legend color="#EDE9FE" label="🎉 Holiday" bordered borderColor="#8B5CF6" />
                     </Box>
                     <Box sx={{ display: 'flex', gap: '4px' }}>
                         <CalNavBtn onClick={() => onNav(-1)}>‹</CalNavBtn>

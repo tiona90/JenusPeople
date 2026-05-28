@@ -38,6 +38,6 @@ export async function approveTimesheet(id: string): Promise<void> {
     await apiClient.patch(`/timesheets/${id}/approve`);
 }
 
-export async function rejectTimesheet(id: string): Promise<void> {
-    await apiClient.patch(`/timesheets/${id}/reject`);
+export async function rejectTimesheet(id: string, comment: string): Promise<void> {
+    await apiClient.patch(`/timesheets/${id}/reject`, { comment });
 }

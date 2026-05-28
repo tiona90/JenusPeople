@@ -17,6 +17,11 @@ namespace API.Controllers
         public DateTime PeriodEnd { get; set; }
     }
 
+    public class RejectTimesheetRequest
+    {
+        public string? Comment { get; set; }
+    }
+
     public class GenerateDraftTimesheetRequest
     {
         public DateTime PeriodStart { get; set; }
@@ -161,7 +166,7 @@ namespace API.Controllers
         // PATCH: api/timesheets/{id}/reject
         [HttpPatch("{id}/reject")]
         [Authorize(Roles = AppRoles.Admin + "," + AppRoles.Manager)]
-        public async Task<IActionResult> RejectTimesheet(string id)
+        public async Task<IActionResult> RejectTimesheet(string id, [FromBody] RejectTimesheetRequest? body)
         {
             var result = await Mediator.Send(new UpdateTimesheetStatus.Command
             {
@@ -170,6 +175,7 @@ namespace API.Controllers
                 RequestingUserId = ResolveUserId(),
                 IsAdmin = User.IsInRole(AppRoles.Admin),
                 IsManager = User.IsInRole(AppRoles.Manager),
+                Comment = body?.Comment,
             });
 
             return HandleResult(result);

@@ -15,6 +15,7 @@ public class UpdateTimesheetStatus
         public required string RequestingUserId { get; set; }
         public bool IsAdmin { get; set; }
         public bool IsManager { get; set; }
+        public string? Comment { get; set; }
     }
 
     public class Handler(AppDbContext context) : IRequestHandler<Command, Result<Unit>>
@@ -29,6 +30,16 @@ public class UpdateTimesheetStatus
                         ["NewStatus"] = ["Only Approved or Rejected transitions are supported by this command."]
                     },
                     "Invalid timesheet status transition.");
+            }
+
+            if (request.NewStatus == TimesheetStatus.Rejected && string.IsNullOrWhiteSpace(request.Comment))
+            {
+                return Result<Unit>.ValidationFailure(
+                    new Dictionary<string, string[]>
+                    {
+                        ["Comment"] = ["A reason is required when rejecting a timesheet."]
+                    },
+                    "A reason is required when rejecting a timesheet.");
             }
 
             var timesheet = await context.Timesheets.FindAsync([request.Id], cancellationToken);
@@ -75,12 +86,23 @@ public class UpdateTimesheetStatus
                 }
             }
 
+            var fromStatus = (int)timesheet.Status;
             timesheet.Status = request.NewStatus;
             if (request.NewStatus == TimesheetStatus.Approved)
             {
                 timesheet.ApprovedAt = DateTime.UtcNow;
                 timesheet.ApproverId = request.RequestingUserId;
             }
+
+            context.TimesheetStatusHistories.Add(new TimesheetStatusHistory
+            {
+                TimesheetId = timesheet.Id,
+                ChangedByUserId = request.RequestingUserId,
+                FromStatus = fromStatus,
+                ToStatus = (int)request.NewStatus,
+                Comment = string.IsNullOrWhiteSpace(request.Comment) ? null : request.Comment.Trim(),
+                ChangedAt = DateTime.UtcNow,
+            });
 
             await context.SaveChangesAsync(cancellationToken);
             return Result<Unit>.Success(Unit.Value);

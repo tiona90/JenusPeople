@@ -339,6 +339,15 @@ public class AdminUsersController(
             ts.ApprovedAt = null;
         }
 
+        // Null out OwnerId on projects owned by this user
+        var ownedProjects = await context.Projects
+            .Where(p => p.OwnerId == userId)
+            .ToListAsync(cancellationToken);
+        foreach (var project in ownedProjects)
+        {
+            project.OwnerId = null;
+        }
+
         // Delete timesheet status history rows changed by this user (on any timesheet)
         var timesheetStatusChangesByUser = await context.TimesheetStatusHistories
             .Where(h => h.ChangedByUserId == userId)

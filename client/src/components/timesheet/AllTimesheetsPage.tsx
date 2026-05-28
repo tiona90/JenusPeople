@@ -4,6 +4,10 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
 import CircularProgress from '@mui/material/CircularProgress'
+import Dialog from '@mui/material/Dialog'
+import DialogActions from '@mui/material/DialogActions'
+import DialogContent from '@mui/material/DialogContent'
+import DialogTitle from '@mui/material/DialogTitle'
 import MenuItem from '@mui/material/MenuItem'
 import Paper from '@mui/material/Paper'
 import Select from '@mui/material/Select'
@@ -442,6 +446,9 @@ export default function AllTimesheetsPage() {
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
     const [expandedId, setExpandedId] = useState<string | null>(null)
     const [actionTarget, setActionTarget] = useState<string | null>(null)
+    const [rejectDialog, setRejectDialog] = useState<{ ids: string[]; label: string } | null>(null)
+    const [rejectReason, setRejectReason] = useState('')
+    const [rejectError, setRejectError] = useState('')
 
     const { data: timesheets = [], isLoading } = useQuery({
         queryKey: ['timesheets'],
@@ -470,12 +477,59 @@ export default function AllTimesheetsPage() {
     })
 
     const rejectMutation = useMutation({
-        mutationFn: (id: string) => rejectTimesheet(id),
+        mutationFn: ({ id, comment }: { id: string; comment: string }) => rejectTimesheet(id, comment),
         onSettled: () => {
             void queryClient.invalidateQueries({ queryKey: ['timesheets'] })
+            void queryClient.invalidateQueries({ queryKey: ['timesheetStatusHistories'] })
             setActionTarget(null)
         },
     })
+
+    function openRejectDialog(ts: Timesheet) {
+        setRejectDialog({
+            ids: [ts.id],
+            label: `${ts.employeeName} · ${new Date(ts.periodStart).toLocaleDateString('en-GB')} – ${new Date(ts.periodEnd).toLocaleDateString('en-GB')}`,
+        })
+        setRejectReason('')
+        setRejectError('')
+    }
+
+    function openBulkRejectDialog() {
+        if (selectedIds.size === 0) return
+        setRejectDialog({
+            ids: Array.from(selectedIds),
+            label: `${selectedIds.size} selected timesheet${selectedIds.size === 1 ? '' : 's'}`,
+        })
+        setRejectReason('')
+        setRejectError('')
+    }
+
+    function closeRejectDialog() {
+        if (rejectMutation.isPending) return
+        setRejectDialog(null)
+        setRejectReason('')
+        setRejectError('')
+    }
+
+    async function confirmReject() {
+        if (!rejectDialog) return
+        const trimmed = rejectReason.trim()
+        if (trimmed.length === 0) {
+            setRejectError('Please provide a reason for rejecting.')
+            return
+        }
+        for (const id of rejectDialog.ids) {
+            try {
+                await rejectTimesheet(id, trimmed)
+            } catch {/* keep going */}
+        }
+        if (rejectDialog.ids.length > 1) clearSelection()
+        await queryClient.invalidateQueries({ queryKey: ['timesheets'] })
+        await queryClient.invalidateQueries({ queryKey: ['timesheetStatusHistories'] })
+        setRejectDialog(null)
+        setRejectReason('')
+        setRejectError('')
+    }
 
     // Filter logic
     const filtered = useMemo(() => {
@@ -576,16 +630,6 @@ export default function AllTimesheetsPage() {
         for (const id of Array.from(selectedIds)) {
             try {
                 await approveTimesheet(id)
-            } catch {/* keep going */}
-        }
-        clearSelection()
-        await queryClient.invalidateQueries({ queryKey: ['timesheets'] })
-    }
-
-    const bulkReject = async () => {
-        for (const id of Array.from(selectedIds)) {
-            try {
-                await rejectTimesheet(id)
             } catch {/* keep going */}
         }
         clearSelection()
@@ -791,7 +835,7 @@ export default function AllTimesheetsPage() {
                         <Button
                             size="small"
                             variant="contained"
-                            onClick={() => void bulkReject()}
+                            onClick={openBulkRejectDialog}
                             sx={{
                                 fontSize: 12, textTransform: 'none',
                                 bgcolor: RED, color: '#fff',
@@ -1044,10 +1088,7 @@ export default function AllTimesheetsPage() {
                                         setActionTarget(ts.id)
                                         approveMutation.mutate(ts.id)
                                     }}
-                                    onReject={() => {
-                                        setActionTarget(ts.id)
-                                        rejectMutation.mutate(ts.id)
-                                    }}
+                                    onReject={() => openRejectDialog(ts)}
                                     actionPending={actionTarget === ts.id && (approveMutation.isPending || rejectMutation.isPending)}
                                 />
                             ))}
@@ -1055,6 +1096,61 @@ export default function AllTimesheetsPage() {
                     )
                 })
             )}
+
+            {/* Reject reason dialog */}
+            <Dialog open={rejectDialog !== null} onClose={closeRejectDialog} maxWidth="xs" fullWidth>
+                <DialogTitle sx={{ fontSize: 15, fontWeight: 600, color: 'text.primary', pb: 1 }}>
+                    {rejectDialog && rejectDialog.ids.length > 1 ? 'Reject selected timesheets' : 'Reject timesheet'}
+                </DialogTitle>
+                <DialogContent sx={{ px: 3, py: 2 }}>
+                    {rejectDialog && (
+                        <Stack spacing={1.5}>
+                            <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
+                                Please provide a reason. The employee will see this message.
+                            </Typography>
+                            <Box sx={{ fontSize: 12, color: 'text.secondary' }}>
+                                {rejectDialog.label}
+                            </Box>
+                            <TextField
+                                autoFocus
+                                multiline
+                                minRows={3}
+                                maxRows={6}
+                                fullWidth
+                                placeholder="Reason for rejection (required)"
+                                value={rejectReason}
+                                onChange={(e) => {
+                                    setRejectReason(e.target.value)
+                                    if (rejectError) setRejectError('')
+                                }}
+                                error={!!rejectError}
+                                helperText={rejectError || `${rejectReason.trim().length}/500`}
+                                inputProps={{ maxLength: 500 }}
+                                sx={{ '& .MuiInputBase-input': { fontSize: 13 } }}
+                            />
+                        </Stack>
+                    )}
+                </DialogContent>
+                <DialogActions sx={{ px: 3, py: 1.75, gap: 1 }}>
+                    <Button
+                        size="small"
+                        onClick={closeRejectDialog}
+                        disabled={rejectMutation.isPending}
+                        sx={{ textTransform: 'none', color: 'text.secondary' }}
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        size="small"
+                        variant="contained"
+                        disabled={rejectMutation.isPending || rejectReason.trim().length === 0}
+                        onClick={() => void confirmReject()}
+                        sx={{ textTransform: 'none', bgcolor: 'error.main', '&:hover': { bgcolor: 'error.dark' }, boxShadow: 'none' }}
+                    >
+                        {rejectMutation.isPending ? 'Rejecting…' : 'Confirm Reject'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </Stack>
     )
 }
