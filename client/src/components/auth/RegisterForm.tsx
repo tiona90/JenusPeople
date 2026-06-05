@@ -19,6 +19,7 @@ import { getApiErrorMessage } from '../../lib/api/error-utils'
 import { useStore } from '../../lib/mobx'
 import type { Department } from '../../lib/types'
 
+const todayIso = new Date().toISOString().slice(0, 10)
 const socialReturnUrl = encodeURIComponent(`${window.location.origin}/#dashboard`)
 const googleLoginUrl = `${apiBaseUrl}/account/external-login/google?returnUrl=${socialReturnUrl}`
 const githubLoginUrl = `${apiBaseUrl}/account/external-login/github?returnUrl=${socialReturnUrl}`
@@ -28,7 +29,8 @@ const registerSchema = z.object({
     lastName: z.string().trim().min(1, 'Last name is required.'),
     email: z.string().trim().min(1, 'Email is required.').email('Enter a valid email address.'),
     phoneNumber: z.string().trim().max(30, 'Phone number is too long.').optional(),
-    dateOfBirth: z.string().optional(),
+    dateOfBirth: z.string().optional()
+        .refine((v) => !v || v <= new Date().toISOString().slice(0, 10), 'Date of birth must be in the past.'),
     departmentId: z.number().int().positive('Please choose your department.'),
     password: z.string().min(6, 'Use at least 6 characters.'),
     confirmPassword: z.string().min(1, 'Please confirm your password.'),
@@ -285,6 +287,7 @@ function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
                     fullWidth
                     disabled={mutation.isPending}
                     InputLabelProps={{ shrink: true }}
+                    inputProps={{ max: todayIso }}
                     sx={inputSx}
                 />
 

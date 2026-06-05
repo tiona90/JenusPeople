@@ -1,4 +1,6 @@
-﻿using Domain.Interfaces;
+﻿using System.Net;
+using System.Net.Sockets;
+using Domain.Interfaces;
 using Infrastructure.Configuration;
 using Infrastructure.Services;
 using Infrastructure.Services.Email;
@@ -31,6 +33,33 @@ public static class DependencyInjection
         services.AddHttpClient<IEmailProvider, BrevoEmailProvider>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(15);
+        })
+        // Force the Brevo API connection over IPv4. Brevo's "Authorised IPs"
+        // allowlist contains this host's stable public IPv4, but on a dual-stack
+        // machine .NET prefers IPv6 — whose outbound privacy addresses rotate and
+        // are NOT allowlisted, yielding intermittent 401 "unrecognised IP". Pinning
+        // IPv4 keeps the source address stable and allowlisted.
+        .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+        {
+            ConnectCallback = async (context, cancellationToken) =>
+            {
+                var addresses = await Dns.GetHostAddressesAsync(
+                    context.DnsEndPoint.Host, AddressFamily.InterNetwork, cancellationToken);
+                var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp)
+                {
+                    NoDelay = true,
+                };
+                try
+                {
+                    await socket.ConnectAsync(addresses, context.DnsEndPoint.Port, cancellationToken);
+                    return new NetworkStream(socket, ownsSocket: true);
+                }
+                catch
+                {
+                    socket.Dispose();
+                    throw;
+                }
+            },
         });
         services.AddScoped<IEmailService, EmailService>();
 

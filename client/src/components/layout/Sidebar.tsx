@@ -51,7 +51,8 @@ function buildProfileSchema(requireDepartment: boolean) {
         displayName: z.string().trim().min(1, 'Display name is required.'),
         email: z.string().trim().min(1, 'Email is required.').email('Enter a valid email address.'),
         phoneNumber: z.string().trim().max(30, 'Phone number is too long.').optional(),
-        dateOfBirth: z.string().optional(), // "yyyy-MM-dd" from the date input, or ''
+        dateOfBirth: z.string().optional() // "yyyy-MM-dd" from the date input, or ''
+            .refine((v) => !v || v <= new Date().toISOString().slice(0, 10), 'Date of birth must be in the past.'),
         departmentId: requireDepartment
             ? z.number().int().positive('Department is required.')
             : z.number().int().nonnegative(),
@@ -454,7 +455,7 @@ const Sidebar = observer(function Sidebar() {
                             {...register('dateOfBirth')}
                             error={!!errors.dateOfBirth}
                             helperText={errors.dateOfBirth?.message ?? 'Used for birthday reminders.'}
-                            slotProps={{ inputLabel: { shrink: true } }}
+                            slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: new Date().toISOString().slice(0, 10) } }}
                             fullWidth
                         />
 
