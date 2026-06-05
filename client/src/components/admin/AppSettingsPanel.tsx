@@ -100,6 +100,17 @@ const DEFAULT: AppSettings = {
     notifyManagersOfTeamExpiries: true,
     holidayCountryCode: null,
     holidayCountryName: null,
+    workingHoursStart: '09:00',
+    workingHoursEnd: '18:00',
+    timeZoneId: 'UTC',
+    financialYearStartMonth: 1,
+    workingDays: 'mon-fri',
+    emailNotificationsEnabled: true,
+    emailDailyDigest: true,
+    emailUrgentOnly: false,
+    slackEnabled: false,
+    slackConnected: false,
+    reminders: [],
 }
 
 export default function AppSettingsPanel() {

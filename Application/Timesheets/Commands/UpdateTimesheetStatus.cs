@@ -168,13 +168,21 @@ Please log in to WorkTrack to review the latest update.
 
             try
             {
-                await emailService.SendEmailAsync(
+                var sent = await emailService.SendEmailAsync(
                     employee.User.Email,
                     subject,
                     htmlBody,
                     textBody,
                     cancellationToken);
-                logger.LogInformation("Timesheet {Id}: status email sent to {Email}", timesheet.Id, employee.User.Email);
+
+                if (sent)
+                {
+                    logger.LogInformation("Timesheet {Id}: status email sent to {Email}", timesheet.Id, employee.User.Email);
+                }
+                else
+                {
+                    logger.LogWarning("Timesheet {Id}: status email to {Email} was not sent", timesheet.Id, employee.User.Email);
+                }
             }
             catch (Exception ex)
             {

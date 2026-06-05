@@ -3,6 +3,7 @@ using Application.AnnualLeaves.DTOs;
 using Application.Departments.DTOs;
 using Application.EmployeeProfiles.DTOs;
 using Application.LeaveTypes.DTOs;
+using Application.ProjectActivityTypes.DTOs;
 using Application.Projects.DTOs;
 using Application.Timesheets.DTOs;
 using AutoMapper;
@@ -35,6 +36,14 @@ public class MappingProfiles : Profile
             .ForMember(d => d.EligibilityNotes, opt => opt.MapFrom(s => string.IsNullOrWhiteSpace(s.EligibilityNotes) ? "All employees" : s.EligibilityNotes.Trim()))
             .ForMember(d => d.Id, opt => opt.Ignore())
             .ForMember(d => d.AnnualLeaves, opt => opt.Ignore());
+
+        CreateMap<ProjectActivityType, ProjectActivityTypeDto>();
+        CreateMap<UpsertProjectActivityTypeRequest, ProjectActivityType>()
+            .ForMember(d => d.Name, opt => opt.MapFrom(s => s.Name.Trim()))
+            .ForMember(d => d.Description, opt => opt.MapFrom(s => (s.Description ?? string.Empty).Trim()))
+            .ForMember(d => d.Icon, opt => opt.MapFrom(s => string.IsNullOrWhiteSpace(s.Icon) ? "\U0001F3F7️" : s.Icon.Trim()))
+            .ForMember(d => d.ColorKey, opt => opt.MapFrom(s => string.IsNullOrWhiteSpace(s.ColorKey) ? "default" : s.ColorKey.Trim()))
+            .ForMember(d => d.Id, opt => opt.Ignore());
 
         CreateMap<Department, DepartmentDto>();
         CreateMap<DepartmentDto, Department>()

@@ -22,6 +22,7 @@ public class DbInitializer
         await SeedTimesheets(context);
         await SeedLeaveTypes(context);
         await BackfillLeaveTypeDesignFields(context);
+        await SeedProjectActivityTypes(context);
         await SeedDepartments(context);
         await SeedProjects(context);
         await SeedUserDepartments(context);
@@ -467,6 +468,26 @@ public class DbInitializer
         };
 
         await context.AnnualLeaves.AddRangeAsync(annualLeaves);
+        await context.SaveChangesAsync();
+    }
+
+    private static async Task SeedProjectActivityTypes(AppDbContext context)
+    {
+        if (context.ProjectActivityTypes.Any()) return;
+
+        var activityTypes = new List<ProjectActivityType>
+        {
+            new() { Name = "Development", Icon = "💻", ColorKey = "blue", Description = "Coding, implementation, and feature building.", IsActive = true },
+            new() { Name = "Testing & QA", Icon = "🧪", ColorKey = "green", Description = "Quality assurance, test automation, and bug fixing.", IsActive = true },
+            new() { Name = "Design", Icon = "🎨", ColorKey = "pink", Description = "UI/UX design, mockups, and design systems.", IsActive = true },
+            new() { Name = "Documentation", Icon = "📝", ColorKey = "amber", Description = "Writing specs, guides, and technical documentation.", IsActive = true },
+            new() { Name = "Code Review", Icon = "👀", ColorKey = "purple", Description = "Reviewing pull requests and peer code reviews.", IsActive = true },
+            new() { Name = "Meetings & Sync", Icon = "👥", ColorKey = "red", Description = "Project meetings, standups, and collaboration.", IsActive = true },
+            new() { Name = "Support & Fixes", Icon = "🆘", ColorKey = "orange", Description = "Bug fixes, hotfixes, and production support.", IsActive = false },
+            new() { Name = "Research", Icon = "🔬", ColorKey = "cyan", Description = "Spike investigations, research, and exploration.", IsActive = true },
+        };
+
+        await context.ProjectActivityTypes.AddRangeAsync(activityTypes);
         await context.SaveChangesAsync();
     }
 

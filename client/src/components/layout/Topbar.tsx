@@ -264,7 +264,9 @@ const Topbar = observer(function Topbar() {
         else if (s === 'departments') pageTitle = 'Departments'
         else if (s === 'leave-types' || s === 'leave') pageTitle = 'Leave Types'
         else if (s === 'projects') pageTitle = 'Projects'
+        else if (s === 'activity-types') pageTitle = 'Project Activity Types'
         else if (s === 'settings') pageTitle = 'Leave Settings'
+        else if (s === 'reminders-notifications') pageTitle = 'Reminders & Notifications'
         else pageTitle = 'Administration'
     }
 

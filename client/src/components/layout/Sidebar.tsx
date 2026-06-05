@@ -16,7 +16,9 @@ import GroupRoundedIcon from '@mui/icons-material/GroupRounded'
 import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded'
 import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
 import LabelRoundedIcon from '@mui/icons-material/LabelRounded'
+import CategoryRoundedIcon from '@mui/icons-material/CategoryRounded'
 import EventRoundedIcon from '@mui/icons-material/EventRounded'
+import NotificationsActiveRoundedIcon from '@mui/icons-material/NotificationsActiveRounded'
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
 import NoteAddRoundedIcon from '@mui/icons-material/NoteAddRounded'
 import PeopleRoundedIcon from '@mui/icons-material/PeopleRounded'
@@ -197,7 +199,10 @@ const Sidebar = observer(function Sidebar() {
             { kind: 'item', label: 'Departments', icon: <ApartmentRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('departments'), active: onAdminSection('departments') },
             { kind: 'item', label: 'Leave Types', icon: <LabelRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('leave-types'), active: onAdminSection('leave-types', 'leave') },
             { kind: 'item', label: 'Projects', icon: <FolderRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('projects'), active: onAdminSection('projects') },
+            { kind: 'item', label: 'Project Activity Types', icon: <CategoryRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('activity-types'), active: onAdminSection('activity-types') },
+            { kind: 'section', label: 'Settings' },
             { kind: 'item', label: 'Leave Settings', icon: <EventRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('settings'), active: onAdminSection('settings') },
+            { kind: 'item', label: 'Reminders & Notifications', icon: <NotificationsActiveRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('reminders-notifications'), active: onAdminSection('reminders-notifications') },
         ]
     } else if (isManagerUser) {
         navEntries = [
@@ -258,7 +263,7 @@ const Sidebar = observer(function Sidebar() {
                 </Box>
 
                 {/* Nav */}
-                <Box sx={{ flex: 1, py: 1.5, overflowY: 'auto' }}>
+                <Box sx={{ flex: 1, py: 1, overflowY: 'auto' }}>
                     {navEntries.map((entry, i) => {
                         if (entry.kind === 'section') {
                             return (
@@ -266,7 +271,7 @@ const Sidebar = observer(function Sidebar() {
                                     key={`section-${i}`}
                                     sx={{
                                         px: 1.75,
-                                        pt: i === 0 ? 1 : 2,
+                                        pt: i === 0 ? 0.5 : 1.5,
                                         pb: 0.5,
                                         fontSize: 10,
                                         fontWeight: 600,
@@ -289,7 +294,7 @@ const Sidebar = observer(function Sidebar() {
                                     alignItems: 'center',
                                     gap: 1.25,
                                     px: 1.75,
-                                    py: 1.1,
+                                    py: 0.85,
                                     cursor: 'pointer',
                                     color: entry.active ? 'text.primary' : 'text.secondary',
                                     bgcolor: entry.active ? 'action.selected' : 'transparent',

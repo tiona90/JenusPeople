@@ -22,13 +22,14 @@ import {
     deleteTimesheetEntry,
     getMyTimesheets,
     getProjects,
+    getProjectActivityTypes,
     getTimesheet,
     submitTimesheet,
     updateTimesheetEntry,
 } from '../../lib/api'
 import { useStore } from '../../lib/mobx'
 import { formatElapsed, formatTime12, useAttendanceToday, useLiveElapsedMinutes } from '../../lib/hooks/useAttendance'
-import type { Project, UserInfo } from '../../lib/types'
+import type { Project, ProjectActivityType, UserInfo } from '../../lib/types'
 import type { Timesheet, TimesheetStatus } from '../../lib/types/timesheet'
 import type { TimesheetEntry } from '../../lib/types/timesheet-entry'
 import { softBg, type SxColor } from '../../lib/theme-tokens'
@@ -52,6 +53,7 @@ type Task = {
     _id: string
     serverId?: string
     projectId: string
+    activityTypeId: string
     hours: string
     notes: string
 }
@@ -80,7 +82,7 @@ function addDays(d: Date, n: number) {
 }
 
 function newTask(): Task {
-    return { _id: Math.random().toString(36).slice(2, 11), projectId: '', hours: '', notes: '' }
+    return { _id: Math.random().toString(36).slice(2, 11), projectId: '', activityTypeId: '', hours: '', notes: '' }
 }
 
 function newDayBucket(open: boolean): DayBucket {
@@ -129,6 +131,7 @@ function buildBucketsFromEntries(
             _id: entry.id,
             serverId: entry.id,
             projectId: String(entry.projectId),
+            activityTypeId: entry.activityTypeId != null ? String(entry.activityTypeId) : '',
             hours: String(entry.hoursWorked),
             notes: entry.notes ?? '',
         })
@@ -213,6 +216,8 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
 
     const { data: projects = [] } = useQuery({ queryKey: ['projects'], queryFn: getProjects })
     const activeProjects = projects.filter((p) => p.isActive)
+    const { data: activityTypes = [] } = useQuery({ queryKey: ['projectActivityTypes'], queryFn: getProjectActivityTypes })
+    const activeActivityTypes = activityTypes.filter((a) => a.isActive)
 
     const { data: attendanceToday } = useAttendanceToday()
     const attendanceMinutes = useLiveElapsedMinutes(attendanceToday)
@@ -228,7 +233,7 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
             const tasks = b[key].tasks
             const targetIdx = tasks.findIndex((t) => !t.hours.trim())
             if (targetIdx === -1) {
-                return { ...b, [key]: { ...b[key], tasks: [...tasks, { _id: Math.random().toString(36).slice(2, 11), projectId: '', hours, notes: '' }], open: true } }
+                return { ...b, [key]: { ...b[key], tasks: [...tasks, { _id: Math.random().toString(36).slice(2, 11), projectId: '', activityTypeId: '', hours, notes: '' }], open: true } }
             }
             const updated = tasks.map((t, i) => (i === targetIdx ? { ...t, hours } : t))
             return { ...b, [key]: { ...b[key], tasks: updated, open: true } }
@@ -357,6 +362,7 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
                 const created = await createTimesheetEntry(tsId, {
                     timesheetId: tsId,
                     projectId: Number(x.task.projectId),
+                    activityTypeId: x.task.activityTypeId ? Number(x.task.activityTypeId) : null,
                     date: x.date,
                     hoursWorked: parseFloat(x.task.hours),
                     notes: x.task.notes.trim() || null,
@@ -368,6 +374,7 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
                 if (!existing) continue
                 const same =
                     String(existing.projectId) === x.task.projectId
+                    && String(existing.activityTypeId ?? '') === x.task.activityTypeId
                     && Math.abs(Number(existing.hoursWorked) - parseFloat(x.task.hours)) < 0.001
                     && (existing.notes ?? '') === x.task.notes.trim()
                     && isoDateOnly(existing.date) === x.date
@@ -376,6 +383,7 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
                     id: x.task.serverId!,
                     timesheetId: tsId,
                     projectId: Number(x.task.projectId),
+                    activityTypeId: x.task.activityTypeId ? Number(x.task.activityTypeId) : null,
                     date: x.date,
                     hoursWorked: parseFloat(x.task.hours),
                     notes: x.task.notes.trim() || null,
@@ -512,6 +520,7 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
                                 dayTotal={dayTotal}
                                 taskCount={taskCount}
                                 activeProjects={activeProjects}
+                                activeActivityTypes={activeActivityTypes}
                                 onToggle={() => { if (!isFuture) toggleDay(key) }}
                                 onAddTask={() => addTask(key)}
                                 onRemoveTask={(taskId) => removeTask(key, taskId)}
@@ -688,6 +697,7 @@ type DayCardProps = {
     dayTotal: number
     taskCount: number
     activeProjects: Project[]
+    activeActivityTypes: ProjectActivityType[]
     onToggle: () => void
     onAddTask: () => void
     onRemoveTask: (taskId: string) => void
@@ -746,6 +756,7 @@ function DayCard({
     dow, dom, dayName, isToday, isWeekend, isFuture, isOpen,
     tasks, dayTotal, taskCount,
     activeProjects,
+    activeActivityTypes,
     onToggle, onAddTask, onRemoveTask, onUpdateTask,
     disabled, readOnly, banner,
 }: DayCardProps) {
@@ -857,11 +868,11 @@ function DayCard({
                     {banner && <Box sx={{ pt: 1.25 }}>{banner}</Box>}
                     <Box sx={{
                         display: 'grid',
-                        gridTemplateColumns: '1.7fr 80px 2fr 30px',
+                        gridTemplateColumns: '1.6fr 1.4fr 70px 1.7fr 30px',
                         gap: 1.25,
                         p: '12px 4px 6px',
                     }}>
-                        {['Project', 'Hours', 'What you worked on', ''].map((h, i) => (
+                        {['Project', 'Activity', 'Hours', 'What you worked on', ''].map((h, i) => (
                             <Typography key={i} sx={{
                                 fontSize: 10, fontWeight: 600,
                                 color: 'text.disabled',
@@ -876,7 +887,7 @@ function DayCard({
                         {tasks.map((t) => (
                             <Box key={t._id} sx={{
                                 display: 'grid',
-                                gridTemplateColumns: '1.7fr 80px 2fr 30px',
+                                gridTemplateColumns: '1.6fr 1.4fr 70px 1.7fr 30px',
                                 gap: 1.25,
                                 alignItems: 'center',
                             }}>
@@ -898,6 +909,27 @@ function DayCard({
                                     {activeProjects.map((p) => (
                                         <MenuItem key={p.id} value={String(p.id)}>
                                             {p.code ? `${p.code} — ${p.name}` : p.name}
+                                        </MenuItem>
+                                    ))}
+                                </Select>
+                                <Select
+                                    size="small"
+                                    displayEmpty
+                                    value={t.activityTypeId}
+                                    onChange={(e) => onUpdateTask(t._id, 'activityTypeId', e.target.value)}
+                                    disabled={disabled}
+                                    sx={{
+                                        fontSize: 12,
+                                        '& .MuiSelect-select': { py: '7px', px: '10px' },
+                                        '& fieldset': { borderColor: 'divider', borderRadius: '6px' },
+                                    }}
+                                >
+                                    <MenuItem value="">
+                                        <Box component="em" sx={{ color: 'text.disabled' }}>Activity…</Box>
+                                    </MenuItem>
+                                    {activeActivityTypes.map((a) => (
+                                        <MenuItem key={a.id} value={String(a.id)}>
+                                            {a.icon ? `${a.icon} ${a.name}` : a.name}
                                         </MenuItem>
                                     ))}
                                 </Select>

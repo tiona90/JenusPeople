@@ -1,4 +1,5 @@
 import type { Project } from './project';
+import type { ProjectActivityType } from './project-activity-type';
 
 export interface TimesheetEntry {
     id: string;
@@ -8,4 +9,6 @@ export interface TimesheetEntry {
     date: string;
     hoursWorked: number;
     notes?: string | null;
+    activityTypeId?: number | null;
+    activityType?: ProjectActivityType;
 }

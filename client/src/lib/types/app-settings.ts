@@ -1,3 +1,12 @@
+export type ReminderFrequency = 'daily' | 'weekly'
+
+export interface ReminderSetting {
+    id: string
+    enabled: boolean
+    time: string // "HH:mm"
+    frequency: ReminderFrequency
+}
+
 export interface AppSettings {
     leaveYearStartMonth: number
     maxCarryoverDays: number
@@ -10,4 +19,23 @@ export interface AppSettings {
     notifyManagersOfTeamExpiries: boolean
     holidayCountryCode: string | null
     holidayCountryName: string | null
+
+    // Organization
+    workingHoursStart: string // "HH:mm"
+    workingHoursEnd: string // "HH:mm"
+    timeZoneId: string
+    financialYearStartMonth: number
+    workingDays: string // "mon-fri" | "mon-sat" | "sun-fri" | "custom"
+
+    // Email notifications
+    emailNotificationsEnabled: boolean
+    emailDailyDigest: boolean
+    emailUrgentOnly: boolean
+
+    // Slack
+    slackEnabled: boolean
+    slackConnected: boolean // read-only: webhook configured server-side
+
+    // Reminders
+    reminders: ReminderSetting[]
 }

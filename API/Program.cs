@@ -7,6 +7,8 @@ using Application.AnnualLeaves.Queries;
 using Application.Holidays;
 using Application.LeaveTypes.Commands;
 using Application.LeaveTypes.DTOs;
+using Application.ProjectActivityTypes.Commands;
+using Application.ProjectActivityTypes.DTOs;
 using Asp.Versioning;
 using AspNet.Security.OAuth.GitHub;
 using Domain;
@@ -204,6 +206,10 @@ builder.Services.AddHttpClient<NagerHolidayClient>(client =>
 builder.Services.AddTransient<IRequestHandler<CreateLeaveType.Command, Result<LeaveTypeDto>>, CreateLeaveType.Handler>();
 builder.Services.AddTransient<IRequestHandler<UpdateLeaveType.Command, Result<LeaveTypeDto>>, UpdateLeaveType.Handler>();
 builder.Services.AddTransient<IRequestHandler<DeleteLeaveType.Command, Result<Unit>>, DeleteLeaveType.Handler>();
+
+builder.Services.AddTransient<IRequestHandler<CreateProjectActivityType.Command, Result<ProjectActivityTypeDto>>, CreateProjectActivityType.Handler>();
+builder.Services.AddTransient<IRequestHandler<UpdateProjectActivityType.Command, Result<ProjectActivityTypeDto>>, UpdateProjectActivityType.Handler>();
+builder.Services.AddTransient<IRequestHandler<DeleteProjectActivityType.Command, Result<Unit>>, DeleteProjectActivityType.Handler>();
 
 builder.Services.AddAutoMapper(cfg => { }, typeof(MappingProfiles).Assembly);
 builder.Services.AddValidatorsFromAssemblyContaining<MappingProfiles>();

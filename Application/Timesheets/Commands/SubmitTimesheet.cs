@@ -69,26 +69,14 @@ public class SubmitTimesheet
                 return;
             }
 
-            if (string.IsNullOrWhiteSpace(timesheet.Employee.ManagerId))
-            {
-                logger.LogInformation("Timesheet {Id}: Employee {EmployeeId} has no ManagerId set, skipping notification", timesheet.Id, timesheet.EmployeeId);
-                return;
-            }
+            // Notify the direct manager AND every Manager-role user in the
+            // employee's department (matches how manager team scope works).
+            var recipients = await ManagerNotificationRecipients.ResolveAsync(
+                context, timesheet.Employee, cancellationToken);
 
-            var managerProfile = await context.EmployeeProfiles
-                .Include(mp => mp.User)
-                .AsNoTracking()
-                .FirstOrDefaultAsync(mp => mp.Id == timesheet.Employee.ManagerId, cancellationToken);
-
-            if (managerProfile is null)
+            if (recipients.Count == 0)
             {
-                logger.LogWarning("Timesheet {Id}: Manager profile {ManagerId} not found", timesheet.Id, timesheet.Employee.ManagerId);
-                return;
-            }
-
-            if (managerProfile.User is null || string.IsNullOrWhiteSpace(managerProfile.User.Email))
-            {
-                logger.LogWarning("Timesheet {Id}: Manager {ManagerId} has no email", timesheet.Id, timesheet.Employee.ManagerId);
+                logger.LogInformation("Timesheet {Id}: no manager recipients for employee {EmployeeId}, skipping notification", timesheet.Id, timesheet.EmployeeId);
                 return;
             }
 
@@ -98,31 +86,43 @@ public class SubmitTimesheet
             var period = $"{timesheet.PeriodStart:dd MMM yyyy} to {timesheet.PeriodEnd:dd MMM yyyy}";
             var verb = isResubmission ? "resubmitted" : "submitted";
             var subject = $"Timesheet {verb} by {employeeName}";
-            var managerDisplayName = managerProfile.User.DisplayName ?? managerProfile.User.Email;
-            var htmlBody = $"""
-<p>Hello {managerDisplayName},</p>
+
+            foreach (var recipient in recipients)
+            {
+                var greetingName = recipient.DisplayName ?? recipient.Email;
+                var htmlBody = $"""
+<p>Hello {greetingName},</p>
 <p><strong>{employeeName}</strong> has {verb} a timesheet for <strong>{period}</strong> ({timesheet.TotalHours:0.##} hours).</p>
 <p>Please log in to WorkTrack to review and take action.</p>
 """;
-            var textBody = $"""
-Hello {managerDisplayName},
+                var textBody = $"""
+Hello {greetingName},
 {employeeName} has {verb} a timesheet for {period} ({timesheet.TotalHours:0.##} hours).
 Please log in to WorkTrack to review and take action.
 """;
 
-            try
-            {
-                await emailService.SendEmailAsync(
-                    managerProfile.User.Email,
-                    subject,
-                    htmlBody,
-                    textBody,
-                    cancellationToken);
-                logger.LogInformation("Timesheet {Id}: notification email sent to manager {Email}", timesheet.Id, managerProfile.User.Email);
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Timesheet {Id}: failed to send notification email to {Email}", timesheet.Id, managerProfile.User.Email);
+                try
+                {
+                    var sent = await emailService.SendEmailAsync(
+                        recipient.Email,
+                        subject,
+                        htmlBody,
+                        textBody,
+                        cancellationToken);
+
+                    if (sent)
+                    {
+                        logger.LogInformation("Timesheet {Id}: notification email sent to manager {Email}", timesheet.Id, recipient.Email);
+                    }
+                    else
+                    {
+                        logger.LogWarning("Timesheet {Id}: notification email to manager {Email} was not sent", timesheet.Id, recipient.Email);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Timesheet {Id}: failed to send notification email to {Email}", timesheet.Id, recipient.Email);
+                }
             }
         }
     }

@@ -1,7 +1,7 @@
 import { makeAutoObservable } from 'mobx'
 
 export type MyLeaveSection = 'apply' | 'requests' | 'balance' | 'other' | 'history'
-export type AdminSection = 'dashboard' | 'settings' | 'leave' | 'leave-types' | 'users' | 'departments' | 'projects'
+export type AdminSection = 'dashboard' | 'settings' | 'reminders-notifications' | 'leave' | 'leave-types' | 'users' | 'departments' | 'projects' | 'activity-types'
 export type ThemeMode = 'light' | 'dark'
 // 'system' is the popular admin-dashboard hybrid: light body content with a
 // dark sidebar + topbar (the "chrome"). 'light' / 'dark' make both surfaces

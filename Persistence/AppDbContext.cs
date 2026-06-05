@@ -33,6 +33,7 @@ public class AppDbContext : IdentityDbContext<
     public DbSet<TimesheetStatusHistory> TimesheetStatusHistories { get; set; }
     public DbSet<AttendanceEvent> AttendanceEvents { get; set; }
     public DbSet<PublicHoliday> PublicHolidays { get; set; }
+    public DbSet<ProjectActivityType> ProjectActivityTypes { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -109,6 +110,11 @@ public class AppDbContext : IdentityDbContext<
                 .WithMany(p => p.TimesheetEntries)
                 .HasForeignKey(e => e.ProjectId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.ActivityType)
+                .WithMany()
+                .HasForeignKey(e => e.ActivityTypeId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasIndex(e => e.TimesheetId);
         });
@@ -198,6 +204,16 @@ public class AppDbContext : IdentityDbContext<
             entity.Property(lt => lt.HalfDayAllowed).HasDefaultValue(false);
             entity.Property(lt => lt.EligibilityNotes).HasMaxLength(250).HasDefaultValue("All employees");
             entity.Property(lt => lt.EligibilityScope).HasDefaultValue(EligibilityScope.All);
+        });
+
+        builder.Entity<ProjectActivityType>(entity =>
+        {
+            entity.Property(a => a.Name).IsRequired().HasMaxLength(100);
+            entity.Property(a => a.Description).HasMaxLength(300).HasDefaultValue(string.Empty);
+            entity.Property(a => a.Icon).HasMaxLength(16).HasDefaultValue("🏷️");
+            entity.Property(a => a.ColorKey).HasMaxLength(30).HasDefaultValue("default");
+            entity.Property(a => a.IsActive).HasDefaultValue(true);
+            entity.HasIndex(a => a.Name).IsUnique();
         });
 
         builder.Entity<Project>(entity =>

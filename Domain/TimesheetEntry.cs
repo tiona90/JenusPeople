@@ -12,4 +12,9 @@ public class TimesheetEntry
     public DateTime Date { get; set; }
     public decimal HoursWorked { get; set; }
     public string? Notes { get; set; }
+
+    // Optional activity category for the work logged (Development, Testing, …).
+    // Nullable so existing entries and the minimal project+hours flow stay valid.
+    public int? ActivityTypeId { get; set; }
+    public ProjectActivityType? ActivityType { get; set; }
 }

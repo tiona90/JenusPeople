@@ -21,6 +21,24 @@ public class UpdateAppSettings
         public bool NotifyManagersOfTeamExpiries { get; set; }
         public string? HolidayCountryCode { get; set; }
         public string? HolidayCountryName { get; set; }
+
+        // Organization
+        public string WorkingHoursStart { get; set; } = "09:00";
+        public string WorkingHoursEnd { get; set; } = "18:00";
+        public string TimeZoneId { get; set; } = "UTC";
+        public int FinancialYearStartMonth { get; set; } = 1;
+        public string WorkingDays { get; set; } = "mon-fri";
+
+        // Email
+        public bool EmailNotificationsEnabled { get; set; } = true;
+        public bool EmailDailyDigest { get; set; } = true;
+        public bool EmailUrgentOnly { get; set; }
+
+        // Slack
+        public bool SlackEnabled { get; set; }
+
+        // Reminders
+        public List<ReminderSettingDto> Reminders { get; set; } = new();
     }
 
     public class Handler(AppDbContext context) : IRequestHandler<Command, Result<AppSettingsDto>>
@@ -33,6 +51,12 @@ public class UpdateAppSettings
                 return Result<AppSettingsDto>.Failure("Max carryover days cannot be negative.");
             if (request.DefaultAnnualEntitlement < 1)
                 return Result<AppSettingsDto>.Failure("Default annual entitlement must be at least 1.");
+            if (request.FinancialYearStartMonth < 1 || request.FinancialYearStartMonth > 12)
+                return Result<AppSettingsDto>.Failure("Financial year start month must be between 1 and 12.");
+            if (!TryNormalizeTime(request.WorkingHoursStart, out var workStart))
+                return Result<AppSettingsDto>.Failure("Working hours start must be a valid time (HH:mm).");
+            if (!TryNormalizeTime(request.WorkingHoursEnd, out var workEnd))
+                return Result<AppSettingsDto>.Failure("Working hours end must be a valid time (HH:mm).");
 
             var settings = await context.AppSettings.FirstOrDefaultAsync(cancellationToken);
             if (settings is null)
@@ -51,6 +75,17 @@ public class UpdateAppSettings
             settings.BlockLeaveSpanningIntoNextYear = request.BlockLeaveSpanningIntoNextYear;
             settings.NotifyManagersOfTeamExpiries = request.NotifyManagersOfTeamExpiries;
 
+            settings.WorkingHoursStart = workStart;
+            settings.WorkingHoursEnd = workEnd;
+            settings.TimeZoneId = string.IsNullOrWhiteSpace(request.TimeZoneId) ? "UTC" : request.TimeZoneId.Trim();
+            settings.FinancialYearStartMonth = request.FinancialYearStartMonth;
+            settings.WorkingDays = string.IsNullOrWhiteSpace(request.WorkingDays) ? "mon-fri" : request.WorkingDays.Trim();
+            settings.EmailNotificationsEnabled = request.EmailNotificationsEnabled;
+            settings.EmailDailyDigest = request.EmailDailyDigest;
+            settings.EmailUrgentOnly = request.EmailUrgentOnly;
+            settings.SlackEnabled = request.SlackEnabled;
+            settings.RemindersJson = ReminderSerializer.ToJson(request.Reminders);
+
             var newCode = request.HolidayCountryCode?.Trim().ToUpperInvariant();
             var countryChanged = !string.Equals(settings.HolidayCountryCode, newCode, StringComparison.OrdinalIgnoreCase);
             settings.HolidayCountryCode = string.IsNullOrEmpty(newCode) ? null : newCode;
@@ -65,20 +100,19 @@ public class UpdateAppSettings
 
             await context.SaveChangesAsync(cancellationToken);
 
-            return Result<AppSettingsDto>.Success(new AppSettingsDto
+            return Result<AppSettingsDto>.Success(AppSettingsMapper.ToDto(settings));
+        }
+
+        // Accepts "H:mm"/"HH:mm"; emits canonical "HH:mm".
+        private static bool TryNormalizeTime(string? value, out string normalized)
+        {
+            if (TimeOnly.TryParse(value, out var t))
             {
-                LeaveYearStartMonth = settings.LeaveYearStartMonth,
-                MaxCarryoverDays = settings.MaxCarryoverDays,
-                DefaultAnnualEntitlement = settings.DefaultAnnualEntitlement,
-                YearEndWarningDays = settings.YearEndWarningDays,
-                FinalWarningDays = settings.FinalWarningDays,
-                AutoRunRollover = settings.AutoRunRollover,
-                SendYearEndWarningEmails = settings.SendYearEndWarningEmails,
-                BlockLeaveSpanningIntoNextYear = settings.BlockLeaveSpanningIntoNextYear,
-                NotifyManagersOfTeamExpiries = settings.NotifyManagersOfTeamExpiries,
-                HolidayCountryCode = settings.HolidayCountryCode,
-                HolidayCountryName = settings.HolidayCountryName,
-            });
+                normalized = t.ToString("HH:mm");
+                return true;
+            }
+            normalized = "00:00";
+            return false;
         }
     }
 }

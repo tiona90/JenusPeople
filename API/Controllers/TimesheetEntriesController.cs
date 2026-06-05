@@ -14,6 +14,7 @@ public class CreateEntryRequest
     public DateTime Date { get; set; }
     public decimal HoursWorked { get; set; }
     public string? Notes { get; set; }
+    public int? ActivityTypeId { get; set; }
 }
 
 [ApiController]
@@ -55,6 +56,7 @@ public class TimesheetEntriesController : ControllerBase
             Date = request.Date,
             HoursWorked = request.HoursWorked,
             Notes = request.Notes,
+            ActivityTypeId = request.ActivityTypeId,
         };
 
         var existing = await _context.TimesheetEntries

@@ -278,6 +278,7 @@ const AppInner = observer(function AppInner() {
                         {/* Admin-only nested routes — gated by role inside ProtectedRoute */}
                         <Route element={<ProtectedRoute roles={['Admin']} />}>
                             <Route path="/admin" element={<Navigate to="/admin/users" replace />} />
+                            <Route path="/admin/general" element={<Navigate to="/admin/reminders-notifications" replace />} />
                             <Route path="/admin/:section" element={<DashboardHome />} />
                         </Route>
 
