@@ -105,6 +105,7 @@ const DEFAULT: AppSettings = {
     timeZoneId: 'UTC',
     financialYearStartMonth: 1,
     workingDays: 'mon-fri',
+    workingDaysCustom: 'mon,tue,wed,thu,fri',
     emailNotificationsEnabled: true,
     emailDailyDigest: true,
     emailUrgentOnly: false,

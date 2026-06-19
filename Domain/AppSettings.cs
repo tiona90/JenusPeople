@@ -26,6 +26,9 @@ public class AppSettings
     public int FinancialYearStartMonth { get; set; } = 1;
     // "mon-fri" | "mon-sat" | "sun-fri" | "custom"
     public string WorkingDays { get; set; } = "mon-fri";
+    // Only consulted when WorkingDays == "custom": CSV of day tokens
+    // ("mon,tue,wed,thu,fri,sat,sun") that count as working days.
+    public string WorkingDaysCustom { get; set; } = "mon,tue,wed,thu,fri";
 
     // ── Email notification preferences ─────────────────────────────────────
     public bool EmailNotificationsEnabled { get; set; } = true;

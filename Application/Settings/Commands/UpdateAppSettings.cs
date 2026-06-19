@@ -28,6 +28,7 @@ public class UpdateAppSettings
         public string TimeZoneId { get; set; } = "UTC";
         public int FinancialYearStartMonth { get; set; } = 1;
         public string WorkingDays { get; set; } = "mon-fri";
+        public string WorkingDaysCustom { get; set; } = "mon,tue,wed,thu,fri";
 
         // Email
         public bool EmailNotificationsEnabled { get; set; } = true;
@@ -80,6 +81,9 @@ public class UpdateAppSettings
             settings.TimeZoneId = string.IsNullOrWhiteSpace(request.TimeZoneId) ? "UTC" : request.TimeZoneId.Trim();
             settings.FinancialYearStartMonth = request.FinancialYearStartMonth;
             settings.WorkingDays = string.IsNullOrWhiteSpace(request.WorkingDays) ? "mon-fri" : request.WorkingDays.Trim();
+            settings.WorkingDaysCustom = NormalizeWorkingDaysCustom(request.WorkingDaysCustom);
+            if (settings.WorkingDays == "custom" && settings.WorkingDaysCustom.Length == 0)
+                return Result<AppSettingsDto>.Failure("Select at least one working day for the custom schedule.");
             settings.EmailNotificationsEnabled = request.EmailNotificationsEnabled;
             settings.EmailDailyDigest = request.EmailDailyDigest;
             settings.EmailUrgentOnly = request.EmailUrgentOnly;
@@ -101,6 +105,21 @@ public class UpdateAppSettings
             await context.SaveChangesAsync(cancellationToken);
 
             return Result<AppSettingsDto>.Success(AppSettingsMapper.ToDto(settings));
+        }
+
+        // Canonical week order for the custom working-days CSV.
+        private static readonly string[] DayOrder = { "mon", "tue", "wed", "thu", "fri", "sat", "sun" };
+
+        // Keeps only recognised day tokens, de-duplicated and in week order.
+        private static string NormalizeWorkingDaysCustom(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+            var set = value
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(t => t.ToLowerInvariant())
+                .Where(DayOrder.Contains)
+                .ToHashSet();
+            return string.Join(",", DayOrder.Where(set.Contains));
         }
 
         // Accepts "H:mm"/"HH:mm"; emits canonical "HH:mm".

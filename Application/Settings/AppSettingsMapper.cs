@@ -22,6 +22,7 @@ public static class AppSettingsMapper
         TimeZoneId = s.TimeZoneId,
         FinancialYearStartMonth = s.FinancialYearStartMonth,
         WorkingDays = s.WorkingDays,
+        WorkingDaysCustom = s.WorkingDaysCustom,
         EmailNotificationsEnabled = s.EmailNotificationsEnabled,
         EmailDailyDigest = s.EmailDailyDigest,
         EmailUrgentOnly = s.EmailUrgentOnly,

@@ -26,6 +26,7 @@ export interface AppSettings {
     timeZoneId: string
     financialYearStartMonth: number
     workingDays: string // "mon-fri" | "mon-sat" | "sun-fri" | "custom"
+    workingDaysCustom: string // CSV of day tokens, e.g. "mon,wed,fri" (used when workingDays === "custom")
 
     // Email notifications
     emailNotificationsEnabled: boolean

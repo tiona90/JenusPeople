@@ -12,10 +12,13 @@ namespace Application.Reminders;
 // (ReminderBackgroundService); this class only knows how to produce one
 // reminder's recipients + message when asked.
 //
-// Currently implements the three reminders backed by real data:
+// Currently implements the reminders backed by real data:
 //   • pending-approvals — managers/admins with leave/timesheets awaiting review
 //   • late-submissions  — employees sitting on an un-submitted (Draft) timesheet
 //   • low-balance       — employees whose remaining leave is below the threshold
+//   • birthday-reminder — admins/managers told of upcoming employee birthdays
+//   • check-in          — employees who have not yet checked in today
+//   • check-out         — employees still checked in (no check-out) today
 // Other ids are accepted but logged as not-implemented rather than failing.
 public class ReminderDispatcher(
     AppDbContext context,
@@ -33,6 +36,8 @@ public class ReminderDispatcher(
     public const string LateSubmissions = "late-submissions";
     public const string LowBalance = "low-balance";
     public const string BirthdayReminder = "birthday-reminder";
+    public const string CheckInReminder = "check-in";
+    public const string CheckOutReminder = "check-out";
 
     // Convenience overload (used by the on-demand test endpoint): loads settings.
     public async Task DispatchAsync(string reminderId, CancellationToken cancellationToken)
@@ -57,6 +62,12 @@ public class ReminderDispatcher(
                 break;
             case BirthdayReminder:
                 await BirthdayRemindersAsync(settings, cancellationToken);
+                break;
+            case CheckInReminder:
+                await CheckInReminderAsync(settings, cancellationToken);
+                break;
+            case CheckOutReminder:
+                await CheckOutReminderAsync(settings, cancellationToken);
                 break;
             default:
                 logger.LogInformation("Reminder '{Id}' has no dispatcher implementation; skipping.", reminderId);
@@ -302,6 +313,195 @@ public class ReminderDispatcher(
 
         logger.LogInformation("birthday-reminder: dispatched. Emails sent: {Sent}.", sent);
     }
+
+    // ── check-in ─────────────────────────────────────────────────────────────
+    // Reminds each employee who has not yet checked in today (and isn't on
+    // approved leave) to check in. Attendance is computed over the UTC calendar
+    // day, matching how the attendance feature records and reports it.
+    private async Task CheckInReminderAsync(AppSettings settings, CancellationToken ct)
+    {
+        if (!await IsWorkingDayTodayAsync(settings, ct))
+        {
+            logger.LogInformation("check-in: today is not a working day (weekend or public holiday); nothing sent.");
+            return;
+        }
+
+        var attendance = await LoadAttendanceTodayAsync(ct);
+        var targets = attendance.Employees
+            .Where(e => !attendance.OnLeaveUserIds.Contains(e.UserId) && !attendance.CheckedInProfileIds.Contains(e.ProfileId))
+            .ToList();
+
+        if (targets.Count == 0)
+        {
+            logger.LogInformation("check-in: everyone expected today has checked in (or is on leave); nothing sent.");
+            return;
+        }
+
+        var sent = 0;
+        if (settings.EmailNotificationsEnabled)
+        {
+            foreach (var emp in targets)
+            {
+                var greeting = WebUtility.HtmlEncode(emp.DisplayName ?? emp.Email);
+                var html = $"""
+<p>Hello {greeting},</p>
+<p>This is a friendly reminder to <strong>check in</strong> for the day in WorkTrack.</p>
+<p>Open WorkTrack and tap “Check in” so your attendance is recorded.</p>
+""";
+                var text = $"Hello {emp.DisplayName ?? emp.Email},\n\nThis is a friendly reminder to check in for the day in WorkTrack. Open WorkTrack and tap \"Check in\" so your attendance is recorded.";
+                if (await SendEmailAsync(emp.Email, "WorkTrack: don't forget to check in", html, text, ct))
+                    sent++;
+            }
+        }
+        else
+        {
+            logger.LogInformation("check-in: email notifications disabled; skipping emails.");
+        }
+
+        await MaybeSlackAsync(settings,
+            $"🟢 Check-in reminder: {targets.Count} employee(s) have not checked in yet.", ct);
+
+        logger.LogInformation("check-in: dispatched. Emails sent: {Sent}.", sent);
+    }
+
+    // ── check-out ────────────────────────────────────────────────────────────
+    // Reminds each employee who checked in today but hasn't checked out yet to
+    // check out and complete their timesheet.
+    private async Task CheckOutReminderAsync(AppSettings settings, CancellationToken ct)
+    {
+        if (!await IsWorkingDayTodayAsync(settings, ct))
+        {
+            logger.LogInformation("check-out: today is not a working day (weekend or public holiday); nothing sent.");
+            return;
+        }
+
+        var attendance = await LoadAttendanceTodayAsync(ct);
+        var targets = attendance.Employees
+            .Where(e => !attendance.OnLeaveUserIds.Contains(e.UserId)
+                        && attendance.CheckedInProfileIds.Contains(e.ProfileId)
+                        && !attendance.CheckedOutProfileIds.Contains(e.ProfileId))
+            .ToList();
+
+        if (targets.Count == 0)
+        {
+            logger.LogInformation("check-out: nobody is still checked in; nothing sent.");
+            return;
+        }
+
+        var sent = 0;
+        if (settings.EmailNotificationsEnabled)
+        {
+            foreach (var emp in targets)
+            {
+                var greeting = WebUtility.HtmlEncode(emp.DisplayName ?? emp.Email);
+                var html = $"""
+<p>Hello {greeting},</p>
+<p>You're still <strong>checked in</strong> on WorkTrack. Before you finish for the day, please <strong>check out</strong> and complete your timesheet.</p>
+""";
+                var text = $"Hello {emp.DisplayName ?? emp.Email},\n\nYou're still checked in on WorkTrack. Before you finish for the day, please check out and complete your timesheet.";
+                if (await SendEmailAsync(emp.Email, "WorkTrack: remember to check out", html, text, ct))
+                    sent++;
+            }
+        }
+        else
+        {
+            logger.LogInformation("check-out: email notifications disabled; skipping emails.");
+        }
+
+        await MaybeSlackAsync(settings,
+            $"🔴 Check-out reminder: {targets.Count} employee(s) are still checked in.", ct);
+
+        logger.LogInformation("check-out: dispatched. Emails sent: {Sent}.", sent);
+    }
+
+    // Shared attendance snapshot for the check-in/check-out reminders: every
+    // employee with a usable email, plus the sets of who has checked in / out
+    // today (keyed by EmployeeProfile.Id, as attendance events are) and who is
+    // on approved leave today (keyed by user id, as AnnualLeave.EmployeeId is).
+    private async Task<AttendanceSnapshot> LoadAttendanceTodayAsync(CancellationToken ct)
+    {
+        var employees = await context.EmployeeProfiles
+            .Where(p => p.User != null && p.User.Email != null && p.User.Email != "")
+            .Select(p => new EmployeeContact(p.Id, p.UserId, p.User!.Email!, p.User.DisplayName))
+            .ToListAsync(ct);
+
+        if (employees.Count == 0)
+            return new AttendanceSnapshot(employees, new(), new(), new());
+
+        var now = DateTime.UtcNow;
+        var dayStart = new DateTime(now.Year, now.Month, now.Day, 0, 0, 0, DateTimeKind.Utc);
+        var dayEnd = dayStart.AddDays(1);
+
+        var profileIds = employees.Select(e => e.ProfileId).ToList();
+        var todayEvents = await context.AttendanceEvents
+            .Where(e => profileIds.Contains(e.EmployeeId) && e.At >= dayStart && e.At < dayEnd
+                        && (e.Type == AttendanceEventType.CheckIn || e.Type == AttendanceEventType.CheckOut))
+            .Select(e => new { e.EmployeeId, e.Type })
+            .ToListAsync(ct);
+
+        var checkedIn = todayEvents.Where(e => e.Type == AttendanceEventType.CheckIn).Select(e => e.EmployeeId).ToHashSet();
+        var checkedOut = todayEvents.Where(e => e.Type == AttendanceEventType.CheckOut).Select(e => e.EmployeeId).ToHashSet();
+
+        var userIds = employees.Select(e => e.UserId).ToList();
+        var onLeave = (await context.AnnualLeaves
+            .Where(l => l.Status == AnnualLeaveStatus.Approved
+                        && l.StartDate <= now && l.EndDate >= now
+                        && userIds.Contains(l.EmployeeId))
+            .Select(l => l.EmployeeId)
+            .ToListAsync(ct)).ToHashSet();
+
+        return new AttendanceSnapshot(employees, checkedIn, checkedOut, onLeave);
+    }
+
+    // True when today (UTC calendar day, matching the attendance snapshot) is a
+    // working day for the org: not a weekend per the configured WorkingDays, and
+    // not a public holiday for the configured holiday country.
+    private async Task<bool> IsWorkingDayTodayAsync(AppSettings settings, CancellationToken ct)
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        if (!IsConfiguredWorkingDay(settings, today.DayOfWeek))
+            return false;
+
+        if (!string.IsNullOrWhiteSpace(settings.HolidayCountryCode))
+        {
+            var todayDate = today.ToDateTime(TimeOnly.MinValue);
+            var isHoliday = await context.PublicHolidays
+                .AnyAsync(h => h.CountryCode == settings.HolidayCountryCode && h.Date.Date == todayDate, ct);
+            if (isHoliday) return false;
+        }
+
+        return true;
+    }
+
+    // DayOfWeek is Sunday=0 .. Saturday=6 — index straight into this token table.
+    private static readonly string[] DayTokens = { "sun", "mon", "tue", "wed", "thu", "fri", "sat" };
+
+    private static bool IsConfiguredWorkingDay(AppSettings settings, DayOfWeek day)
+    {
+        if (settings.WorkingDays == "custom")
+        {
+            var working = (settings.WorkingDaysCustom ?? string.Empty)
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(t => t.ToLowerInvariant());
+            return working.Contains(DayTokens[(int)day]);
+        }
+
+        return settings.WorkingDays switch
+        {
+            "mon-sat" => day != DayOfWeek.Sunday,
+            "sun-fri" => day != DayOfWeek.Saturday,
+            _ => day != DayOfWeek.Saturday && day != DayOfWeek.Sunday, // mon-fri (default)
+        };
+    }
+
+    private record EmployeeContact(string ProfileId, string UserId, string Email, string? DisplayName);
+
+    private record AttendanceSnapshot(
+        List<EmployeeContact> Employees,
+        HashSet<string> CheckedInProfileIds,
+        HashSet<string> CheckedOutProfileIds,
+        HashSet<string> OnLeaveUserIds);
 
     // Next occurrence of a birthday on/after 'from', clamping Feb 29 to Feb 28 in
     // non-leap years.

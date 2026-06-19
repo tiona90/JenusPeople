@@ -30,6 +30,8 @@ const REMINDERS_META: ReminderMeta[] = [
     { id: 'low-balance', emoji: '🔔', name: 'Low Leave Balance', desc: 'Alert employees when their leave balance is running low.', tail: 'employees with fewer than 5 days remaining will be notified.' },
     { id: 'department-digest', emoji: '📊', name: 'Department Digest', desc: 'Weekly summary of department metrics and trends.', tail: "department managers receive a digest of their team's metrics." },
     { id: 'birthday-reminder', emoji: '🎂', name: 'Birthday Reminders', desc: 'Notify the team about upcoming employee birthdays.', tail: "you'll see any team members with birthdays that week." },
+    { id: 'check-in', emoji: '🟢', name: 'Check-In Reminder', desc: 'Remind employees to check in at the start of their workday.', tail: "employees who haven't checked in will be reminded to do so." },
+    { id: 'check-out', emoji: '🔴', name: 'Check-Out Reminder', desc: 'Remind employees to check out at the end of their workday.', tail: 'employees still checked in will be reminded to check out and complete their timesheet.' },
 ]
 const META_BY_ID = new Map(REMINDERS_META.map((m) => [m.id, m]))
 
@@ -45,6 +47,18 @@ const WORKING_DAYS: { value: string; label: string }[] = [
     { value: 'mon-sat',  label: 'Monday – Saturday (6-day week)' },
     { value: 'sun-fri',  label: 'Sunday – Friday (custom)' },
     { value: 'custom',   label: 'Custom days' },
+]
+
+// Day tokens in week order, for the "Custom days" picker. Tokens match the
+// backend contract (lowercase 3-letter, stored as a CSV).
+const CUSTOM_DAYS: { token: string; label: string }[] = [
+    { token: 'mon', label: 'Mon' },
+    { token: 'tue', label: 'Tue' },
+    { token: 'wed', label: 'Wed' },
+    { token: 'thu', label: 'Thu' },
+    { token: 'fri', label: 'Fri' },
+    { token: 'sat', label: 'Sat' },
+    { token: 'sun', label: 'Sun' },
 ]
 
 function formatTime(hhmm: string): string {
@@ -134,6 +148,8 @@ export default function OrgSettingsPanel() {
 
     const isDirty = useMemo(() => JSON.stringify(form) !== JSON.stringify(saved), [form, saved])
     const enabledCount = form?.reminders.filter((r) => r.enabled).length ?? 0
+    const customDaysInvalid =
+        form?.workingDays === 'custom' && (form.workingDaysCustom ?? '').split(',').filter(Boolean).length === 0
 
     if (isLoading || !form) {
         return <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress size={28} /></Box>
@@ -289,12 +305,37 @@ export default function OrgSettingsPanel() {
                         {WORKING_DAYS.map((w) => <MenuItem key={w.value} value={w.value} sx={{ fontSize: 13 }}>{w.label}</MenuItem>)}
                     </Select>} />
 
+                {form.workingDays === 'custom' && (() => {
+                    const selected = (form.workingDaysCustom ?? '').split(',').map((t) => t.trim()).filter(Boolean)
+                    return (
+                        <Box sx={{ py: 1.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                            <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.04em', mb: 1 }}>
+                                Custom working days
+                            </Typography>
+                            <ToggleButtonGroup
+                                size="small"
+                                value={selected}
+                                onChange={(_, vals: string[]) =>
+                                    set('workingDaysCustom', CUSTOM_DAYS.filter((d) => vals.includes(d.token)).map((d) => d.token).join(','))}
+                                sx={{ flexWrap: 'wrap' }}
+                            >
+                                {CUSTOM_DAYS.map((d) => (
+                                    <ToggleButton key={d.token} value={d.token} sx={{ textTransform: 'none', fontSize: 12, px: 1.75 }}>{d.label}</ToggleButton>
+                                ))}
+                            </ToggleButtonGroup>
+                            {selected.length === 0 && (
+                                <Typography sx={{ fontSize: 12, color: 'error.main', mt: 0.75 }}>Select at least one working day.</Typography>
+                            )}
+                        </Box>
+                    )
+                })()}
+
                 <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', pt: 2, mt: 1, borderTop: '1px solid', borderColor: 'divider' }}>
                     <Button variant="outlined" size="small" onClick={resetOrgDefaults} disabled={mutation.isPending}
                         sx={{ textTransform: 'none', borderColor: 'divider', color: 'text.secondary' }}>
                         Reset to defaults
                     </Button>
-                    <Button variant="contained" size="small" onClick={() => form && mutation.mutate(form)} disabled={!isDirty || mutation.isPending}
+                    <Button variant="contained" size="small" onClick={() => form && mutation.mutate(form)} disabled={!isDirty || mutation.isPending || customDaysInvalid}
                         startIcon={mutation.isPending ? <CircularProgress size={13} color="inherit" /> : null}
                         sx={{ textTransform: 'none', boxShadow: 'none' }}>
                         {mutation.isPending ? 'Saving…' : '💾 Save changes'}

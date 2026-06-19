@@ -21,6 +21,7 @@ public class AppSettingsDto
     public string TimeZoneId { get; set; } = "UTC";
     public int FinancialYearStartMonth { get; set; } = 1;
     public string WorkingDays { get; set; } = "mon-fri";
+    public string WorkingDaysCustom { get; set; } = "mon,tue,wed,thu,fri";
 
     // ── Email notification preferences ─────────────────────────────────────
     public bool EmailNotificationsEnabled { get; set; } = true;
