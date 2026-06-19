@@ -316,6 +316,12 @@ app.UseMiddleware<SecurityHeadersMiddleware>();
 
 // Configure the HTTP request pipeline.
 app.UseMiddleware<GlobalExceptionMiddleware>();
+
+// Serve the React SPA (published into wwwroot) same-origin: static assets
+// first, then a fallback to index.html for client-side routes below.
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
 app.UseCors("ClientPolicy");
 app.UseCookiePolicy(new CookiePolicyOptions
 {
@@ -329,6 +335,23 @@ app.UseAuthorization();
 app.MapControllers();
 app.MapGroup("api").MapIdentityApi<User>();
 app.MapHub<NotificationsHub>("/hubs/notifications");
+
+// Any non-API, non-file request falls through to the SPA entry point so that
+// client-side routes resolve on a full-page load / refresh. Unmatched /api and
+// /hubs paths must 404 (so API callers get a proper status, not HTML).
+app.MapFallback(async context =>
+{
+    var path = context.Request.Path.Value ?? string.Empty;
+    if (path.StartsWith("/api", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWith("/hubs", StringComparison.OrdinalIgnoreCase))
+    {
+        context.Response.StatusCode = StatusCodes.Status404NotFound;
+        return;
+    }
+
+    context.Response.ContentType = "text/html";
+    await context.Response.SendFileAsync(Path.Combine(app.Environment.WebRootPath, "index.html"));
+});
 
 using var scope = app.Services.CreateScope();
 var services = scope.ServiceProvider;

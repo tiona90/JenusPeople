@@ -6,6 +6,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>80f0ca94-b672-45fa-aa6c-e74d37a67f03</UserSecretsId>
     <UseAppHost>false</UseAppHost>
+    <!-- Bakes ASPNETCORE_ENVIRONMENT=Production into the generated web.config on publish. -->
+    <EnvironmentName>Production</EnvironmentName>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Application\Application.csproj" />

@@ -486,5 +486,9 @@ API/appsettings.json
 API/appsettings.Development.json
 API/appsettings.Production.json
 
+# Build / release artifacts
+/publish/
+API/wwwroot/
+
 # Claude Code local state
 .claude/

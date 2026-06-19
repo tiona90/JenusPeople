@@ -21,6 +21,21 @@ public class SecurityHeadersMiddleware(RequestDelegate next)
         "base-uri 'none'; " +
         "form-action 'self'";
 
+    // The React SPA (served same-origin from wwwroot) loads its own bundled
+    // JS from this origin and relies on inline styles (MUI/Emotion inject
+    // <style> tags at runtime). Images may come from Cloudinary / OAuth avatar
+    // hosts over https. API calls and the SignalR socket are same-origin.
+    private const string AppCsp =
+        "default-src 'self'; " +
+        "script-src 'self'; " +
+        "style-src 'self' 'unsafe-inline'; " +
+        "img-src 'self' data: https:; " +
+        "font-src 'self' data:; " +
+        "connect-src 'self'; " +
+        "frame-ancestors 'none'; " +
+        "base-uri 'self'; " +
+        "form-action 'self'";
+
     // Swagger UI loads its own JS/CSS bundles and uses inline initialiser
     // scripts, so a strict CSP would break it. Swagger is Development-only
     // (see Program.cs), so this relaxation only affects local dev surfaces.
@@ -41,11 +56,15 @@ public class SecurityHeadersMiddleware(RequestDelegate next)
             var headers = context.Response.Headers;
             var path = context.Request.Path.Value ?? string.Empty;
             var isSwagger = path.StartsWith("/swagger", StringComparison.OrdinalIgnoreCase);
+            // API (JSON + branded account HTML pages) and the SignalR hub keep
+            // the strict, script-free policy; everything else is the SPA shell.
+            var isApi = path.StartsWith("/api", StringComparison.OrdinalIgnoreCase)
+                || path.StartsWith("/hubs", StringComparison.OrdinalIgnoreCase);
 
             headers["X-Content-Type-Options"] = "nosniff";
             headers["X-Frame-Options"] = "DENY";
             headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
-            headers["Content-Security-Policy"] = isSwagger ? SwaggerCsp : StrictCsp;
+            headers["Content-Security-Policy"] = isSwagger ? SwaggerCsp : isApi ? StrictCsp : AppCsp;
 
             // Drop server fingerprinting headers if the host added them.
             headers.Remove("Server");
