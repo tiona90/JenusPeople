@@ -45,7 +45,7 @@ function LeftPanel() {
                     <Box sx={{ width: 38, height: 38, bgcolor: '#4F8EF7', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>
                         📋
                     </Box>
-                    <Typography sx={{ fontSize: 20, fontWeight: 700, color: '#fff', letterSpacing: '0.01em' }}>WorkFlow</Typography>
+                    <Typography sx={{ fontSize: 20, fontWeight: 700, color: '#fff', letterSpacing: '0.01em' }}>Jenus People</Typography>
                 </Box>
 
                 <Typography sx={{ fontSize: 28, fontWeight: 700, color: '#fff', lineHeight: 1.35, mb: 2 }}>
@@ -72,7 +72,7 @@ function LeftPanel() {
             </Box>
 
             <Typography sx={{ position: 'relative', zIndex: 1, fontSize: 11, color: '#4B4B6A' }}>
-                © 2026 WorkFlow. All rights reserved.
+                © 2026 Jenus People. All rights reserved.
             </Typography>
         </Box>
     )

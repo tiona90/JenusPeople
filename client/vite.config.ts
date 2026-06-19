@@ -21,8 +21,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg'],
       manifest: {
-        name: 'WorkTrack — Leave & Timesheet',
-        short_name: 'WorkTrack',
+        name: 'Jenus People — Leave & Timesheet',
+        short_name: 'Jenus People',
         description: 'Submit leave requests, log timesheets, and track attendance.',
         theme_color: '#0f766e',
         background_color: '#f4f5f2',

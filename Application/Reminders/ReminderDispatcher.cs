@@ -142,10 +142,10 @@ public class ReminderDispatcher(
   <li><strong>{leaveCount}</strong> leave request(s) pending approval</li>
   <li><strong>{timesheetCount}</strong> timesheet(s) submitted for review</li>
 </ul>
-<p>Please log in to WorkTrack to review and action them.</p>
+<p>Please log in to Jenus People to review and action them.</p>
 """;
-        var text = $"Hello {name ?? email},\n\nAwaiting your review across {scope}:\n- {leaveCount} leave request(s) pending approval\n- {timesheetCount} timesheet(s) submitted for review\n\nPlease log in to WorkTrack to review them.";
-        return SendEmailAsync(email, "WorkTrack: items awaiting your approval", html, text, ct);
+        var text = $"Hello {name ?? email},\n\nAwaiting your review across {scope}:\n- {leaveCount} leave request(s) pending approval\n- {timesheetCount} timesheet(s) submitted for review\n\nPlease log in to Jenus People to review them.";
+        return SendEmailAsync(email, "Jenus People: items awaiting your approval", html, text, ct);
     }
 
     // ── late-submissions ─────────────────────────────────────────────────────
@@ -185,10 +185,10 @@ public class ReminderDispatcher(
 <p>Hello {greeting},</p>
 <p>The following timesheet(s) are still in <strong>draft</strong> and have not been submitted:</p>
 <ul>{items}</ul>
-<p>Please log in to WorkTrack and submit them for approval.</p>
+<p>Please log in to Jenus People and submit them for approval.</p>
 """;
-                var text = $"Hello {emp.Name ?? emp.Email},\n\nThese timesheet(s) are still in draft and not submitted:\n{string.Join("\n", emp.Periods.Select(p => "- " + p))}\n\nPlease log in to WorkTrack and submit them.";
-                if (await SendEmailAsync(emp.Email, "WorkTrack: timesheet not yet submitted", html, text, ct))
+                var text = $"Hello {emp.Name ?? emp.Email},\n\nThese timesheet(s) are still in draft and not submitted:\n{string.Join("\n", emp.Periods.Select(p => "- " + p))}\n\nPlease log in to Jenus People and submit them.";
+                if (await SendEmailAsync(emp.Email, "Jenus People: timesheet not yet submitted", html, text, ct))
                     sent++;
             }
         }
@@ -230,7 +230,7 @@ public class ReminderDispatcher(
 <p>Plan any remaining time off soon, or speak to your manager if you have questions.</p>
 """;
                 var text = $"Hello {emp.Name ?? emp.Email},\n\nYour remaining annual leave balance is {emp.LeaveBalance} day(s), below {LowBalanceThreshold} days. Plan any remaining time off soon.";
-                if (await SendEmailAsync(emp.Email, "WorkTrack: your leave balance is running low", html, text, ct))
+                if (await SendEmailAsync(emp.Email, "Jenus People: your leave balance is running low", html, text, ct))
                     sent++;
             }
         }
@@ -290,7 +290,7 @@ public class ReminderDispatcher(
             {
                 var html = $"<p>Hello {WebUtility.HtmlEncode(admin.DisplayName ?? admin.Email)},</p><p>Upcoming birthdays in the next {BirthdayLookaheadDays} days:</p><ul>{string.Join("", upcoming.Select(u => LineHtml(u.Name, u.Date, u.TurningAge)))}</ul>";
                 var text = $"Hello {admin.DisplayName ?? admin.Email},\n\nUpcoming birthdays in the next {BirthdayLookaheadDays} days:\n{string.Join("\n", upcoming.Select(u => LineText(u.Name, u.Date, u.TurningAge)))}";
-                if (await SendEmailAsync(admin.Email, "WorkTrack: upcoming birthdays 🎂", html, text, ct)) sent++;
+                if (await SendEmailAsync(admin.Email, "Jenus People: upcoming birthdays 🎂", html, text, ct)) sent++;
             }
 
             foreach (var mgr in managers)
@@ -300,7 +300,7 @@ public class ReminderDispatcher(
                 if (deptUpcoming.Count == 0) continue;
                 var html = $"<p>Hello {WebUtility.HtmlEncode(mgr.DisplayName ?? mgr.Email)},</p><p>Upcoming birthdays in your department:</p><ul>{string.Join("", deptUpcoming.Select(u => LineHtml(u.Name, u.Date, u.TurningAge)))}</ul>";
                 var text = $"Hello {mgr.DisplayName ?? mgr.Email},\n\nUpcoming birthdays in your department:\n{string.Join("\n", deptUpcoming.Select(u => LineText(u.Name, u.Date, u.TurningAge)))}";
-                if (await SendEmailAsync(mgr.Email, "WorkTrack: upcoming birthdays 🎂", html, text, ct)) sent++;
+                if (await SendEmailAsync(mgr.Email, "Jenus People: upcoming birthdays 🎂", html, text, ct)) sent++;
             }
         }
         else
@@ -345,11 +345,11 @@ public class ReminderDispatcher(
                 var greeting = WebUtility.HtmlEncode(emp.DisplayName ?? emp.Email);
                 var html = $"""
 <p>Hello {greeting},</p>
-<p>This is a friendly reminder to <strong>check in</strong> for the day in WorkTrack.</p>
-<p>Open WorkTrack and tap “Check in” so your attendance is recorded.</p>
+<p>This is a friendly reminder to <strong>check in</strong> for the day in Jenus People.</p>
+<p>Open Jenus People and tap “Check in” so your attendance is recorded.</p>
 """;
-                var text = $"Hello {emp.DisplayName ?? emp.Email},\n\nThis is a friendly reminder to check in for the day in WorkTrack. Open WorkTrack and tap \"Check in\" so your attendance is recorded.";
-                if (await SendEmailAsync(emp.Email, "WorkTrack: don't forget to check in", html, text, ct))
+                var text = $"Hello {emp.DisplayName ?? emp.Email},\n\nThis is a friendly reminder to check in for the day in Jenus People. Open Jenus People and tap \"Check in\" so your attendance is recorded.";
+                if (await SendEmailAsync(emp.Email, "Jenus People: don't forget to check in", html, text, ct))
                     sent++;
             }
         }
@@ -396,10 +396,10 @@ public class ReminderDispatcher(
                 var greeting = WebUtility.HtmlEncode(emp.DisplayName ?? emp.Email);
                 var html = $"""
 <p>Hello {greeting},</p>
-<p>You're still <strong>checked in</strong> on WorkTrack. Before you finish for the day, please <strong>check out</strong> and complete your timesheet.</p>
+<p>You're still <strong>checked in</strong> on Jenus People. Before you finish for the day, please <strong>check out</strong> and complete your timesheet.</p>
 """;
-                var text = $"Hello {emp.DisplayName ?? emp.Email},\n\nYou're still checked in on WorkTrack. Before you finish for the day, please check out and complete your timesheet.";
-                if (await SendEmailAsync(emp.Email, "WorkTrack: remember to check out", html, text, ct))
+                var text = $"Hello {emp.DisplayName ?? emp.Email},\n\nYou're still checked in on Jenus People. Before you finish for the day, please check out and complete your timesheet.";
+                if (await SendEmailAsync(emp.Email, "Jenus People: remember to check out", html, text, ct))
                     sent++;
             }
         }

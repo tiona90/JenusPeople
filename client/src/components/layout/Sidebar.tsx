@@ -266,7 +266,7 @@ const Sidebar = observer(function Sidebar() {
                 {/* Logo */}
                 <Box sx={{ px: 2.5, py: 2.5, borderBottom: 1, borderColor: 'divider' }}>
                     <Typography sx={{ fontSize: 16, fontWeight: 600, color: 'text.primary', letterSpacing: '0.02em' }}>
-                        WorkTrack
+                        Jenus People
                     </Typography>
                     <Typography sx={{ fontSize: 11, color: 'text.secondary', mt: 0.25 }}>
                         Leave &amp; Timesheet

@@ -193,7 +193,7 @@ function RegisterForm({ onSwitchToLogin }: RegisterFormProps) {
     return (
         <Box component="form" onSubmit={onSubmit} noValidate>
             <Typography sx={{ fontSize: 22, fontWeight: 700, color: '#1A1A2E', mb: 0.75 }}>Create your account</Typography>
-            <Typography sx={{ fontSize: 13, color: '#6B7280', mb: 3 }}>Join WorkFlow to manage your leave and timesheets</Typography>
+            <Typography sx={{ fontSize: 13, color: '#6B7280', mb: 3 }}>Join Jenus People to manage your leave and timesheets</Typography>
 
             {/* Social */}
             <Stack spacing={1.25} mb={2.5}>

@@ -31,7 +31,7 @@ services:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://+:8080
       # `db` resolves to the SQL Server container over the default compose network.
-      ConnectionStrings__DefaultConnection: "Server=db,1433;Database=WorkTrack;User Id=sa;Password=${SA_PASSWORD};Encrypt=False;TrustServerCertificate=True;MultipleActiveResultSets=true"
+      ConnectionStrings__DefaultConnection: "Server=db,1433;Database=jpeople_dev;User Id=sa;Password=${SA_PASSWORD};Encrypt=False;TrustServerCertificate=True;MultipleActiveResultSets=true"
       AppUrls__ApiBaseUrl: "http://localhost:5000"
       AppUrls__ClientBaseUrl: "http://localhost:5173"
     ports:

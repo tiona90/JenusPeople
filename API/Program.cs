@@ -163,6 +163,7 @@ builder.Services.AddDbContext<AppDbContext>((sp, opt) =>
     opt.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"));
     opt.AddInterceptors(sp.GetRequiredService<AuditingSaveChangesInterceptor>());
 });
+var corsAllowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("ClientPolicy", policy =>
@@ -175,7 +176,10 @@ builder.Services.AddCors(options =>
                     return false;
                 }
 
-                return uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase);
+                // localhost is always allowed for local development; additional
+                // production origins come from the "Cors:AllowedOrigins" config.
+                return uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+                    || corsAllowedOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase);
             })
             .AllowAnyHeader()
             .AllowAnyMethod()

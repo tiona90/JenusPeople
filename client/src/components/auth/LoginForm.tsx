@@ -87,7 +87,7 @@ function LoginForm({ onForgotPassword, onSwitchToRegister }: LoginFormProps) {
     return (
         <Box component="form" onSubmit={onSubmit} noValidate>
             <Typography sx={{ fontSize: 22, fontWeight: 700, color: '#1A1A2E', mb: 0.75 }}>Welcome back</Typography>
-            <Typography sx={{ fontSize: 13, color: '#6B7280', mb: 3 }}>Sign in to your WorkFlow account</Typography>
+            <Typography sx={{ fontSize: 13, color: '#6B7280', mb: 3 }}>Sign in to your Jenus People account</Typography>
 
             {mutation.isError && (
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: '10px 14px', borderRadius: '8px', bgcolor: '#FEF2F2', border: '1px solid #FECACA', mb: 1.75 }}>

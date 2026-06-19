@@ -155,7 +155,7 @@ public class UpdateTimesheetStatus
 <p>Hello {employeeName},</p>
 <p>Your timesheet for <strong>{period}</strong> ({timesheet.TotalHours:0.##} hours) has been <strong>{statusLabel}</strong> by {reviewerName}.</p>
 {commentHtml}
-<p>Please log in to WorkTrack to review the latest update.</p>
+<p>Please log in to Jenus People to review the latest update.</p>
 """;
 
             var textBody = $"""
@@ -163,7 +163,7 @@ Hello {employeeName},
 
 Your timesheet for {period} ({timesheet.TotalHours:0.##} hours) has been {statusLabel} by {reviewerName}.{commentLine}
 
-Please log in to WorkTrack to review the latest update.
+Please log in to Jenus People to review the latest update.
 """;
 
             try

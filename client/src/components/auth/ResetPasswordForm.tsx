@@ -81,7 +81,7 @@ function ResetPasswordForm({ onBackToLogin, onRequestNewLink }: ResetPasswordFor
         <Box component="form" onSubmit={onSubmit} noValidate>
             <Typography sx={{ fontSize: 22, fontWeight: 700, color: '#1A1A2E', mb: 0.75 }}>Choose a new password</Typography>
             <Typography sx={{ fontSize: 13, color: '#6B7280', mb: 2.5 }}>
-                Set a new password for your WorkFlow account
+                Set a new password for your Jenus People account
             </Typography>
 
             {!hasValidLink && (

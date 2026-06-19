@@ -93,12 +93,12 @@ public class SubmitTimesheet
                 var htmlBody = $"""
 <p>Hello {greetingName},</p>
 <p><strong>{employeeName}</strong> has {verb} a timesheet for <strong>{period}</strong> ({timesheet.TotalHours:0.##} hours).</p>
-<p>Please log in to WorkTrack to review and take action.</p>
+<p>Please log in to Jenus People to review and take action.</p>
 """;
                 var textBody = $"""
 Hello {greetingName},
 {employeeName} has {verb} a timesheet for {period} ({timesheet.TotalHours:0.##} hours).
-Please log in to WorkTrack to review and take action.
+Please log in to Jenus People to review and take action.
 """;
 
                 try
