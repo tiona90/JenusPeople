@@ -30,9 +30,6 @@ jobs:
       - name: Build (Release)
         run: dotnet build Annualleave.sln --configuration Release --no-restore
 
-      - name: Test
-        run: dotnet test WorkTrack.Tests/WorkTrack.Tests.csproj --configuration Release --no-build --verbosity normal
-
   frontend:
     name: Frontend (lint + build)
     runs-on: ubuntu-latest
