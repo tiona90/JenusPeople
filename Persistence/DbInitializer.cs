@@ -13,11 +13,38 @@ public class DbInitializer
         ["Viewer"] = AppRoles.Employee
     };
 
+    // Accounts from earlier versions — always removed on startup.
+    private static readonly string[] DeprecatedSeedEmails =
+    {
+        "manager@annualleave.com",
+        "employee@annualleave.com",
+        "author@annualleave.com",
+        "viewer@annualleave.com"
+    };
+
+    // Demo manager/employee accounts. Seeded only when demo data is enabled
+    // (development); on a real deployment they're removed so only Admin remains.
+    private static readonly string[] DemoSeedEmails =
+    {
+        "manager1@annualleave.com",
+        "manager2@annualleave.com",
+        "employee1a@annualleave.com",
+        "employee1b@annualleave.com",
+        "employee1c@annualleave.com",
+        "employee1d@annualleave.com",
+        "employee2a@annualleave.com",
+        "employee2b@annualleave.com",
+        "employee2c@annualleave.com",
+        "employee2d@annualleave.com"
+    };
+
+    private record SeedUser(string DisplayName, string Email, string Role);
+
     public static async Task SeedData(AppDbContext context, UserManager<User> userManager,
-        RoleManager<Role> roleManager)
+        RoleManager<Role> roleManager, bool seedDemoData = false)
     {
         await SeedRoles(roleManager, userManager);
-        await SeedUsers(context, userManager);
+        await SeedUsers(context, userManager, seedDemoData);
         await SeedAnnualLeaves(context);
         await SeedTimesheets(context);
         await SeedLeaveTypes(context);
@@ -216,61 +243,44 @@ public class DbInitializer
         }
     }
 
-    private static async Task SeedUsers(AppDbContext context, UserManager<User> userManager)
+    private static async Task SeedUsers(AppDbContext context, UserManager<User> userManager, bool seedDemoData)
     {
-        // Remove legacy seeded accounts so only admin stays as a default user.
-        var deprecatedSeedEmails = new[]
+        // Legacy accounts from older versions — always removed.
+        await RemoveSeedUsersAsync(context, userManager, DeprecatedSeedEmails);
+
+        // On a real deployment, strip the demo manager/employee accounts (in case
+        // a previous deploy created them) so only the Admin account remains.
+        if (!seedDemoData)
         {
-            "manager@annualleave.com",
-            "employee@annualleave.com",
-            "author@annualleave.com",
-            "viewer@annualleave.com"
-        };
-
-        foreach (var deprecatedEmail in deprecatedSeedEmails)
-        {
-            var deprecatedUser = await userManager.FindByEmailAsync(deprecatedEmail);
-            if (deprecatedUser is null) continue;
-
-            await CleanupUserDependencies(context, deprecatedUser.Id, CancellationToken.None);
-
-            var currentRoles = await userManager.GetRolesAsync(deprecatedUser);
-            if (currentRoles.Count > 0)
-            {
-                await EnsureIdentitySucceeded(
-                    () => $"Failed to remove roles for deprecated seed user '{deprecatedEmail}'.",
-                    await userManager.RemoveFromRolesAsync(deprecatedUser, currentRoles));
-            }
-
-            await EnsureIdentitySucceeded(
-                () => $"Failed to delete deprecated seed user '{deprecatedEmail}'.",
-                await userManager.DeleteAsync(deprecatedUser));
+            await RemoveSeedUsersAsync(context, userManager, DemoSeedEmails);
         }
 
-
-        // --- Custom test users: 2 managers, 4 employees each, all emails confirmed ---
-        var users = new[]
+        // Admin is always seeded; the demo managers/employees only in demo mode.
+        var users = new List<SeedUser>
         {
-            new { DisplayName = "Admin User", Email = "admin@annualleave.com", LegacyEmail = (string?)null, Role = AppRoles.Admin },
-            new { DisplayName = "Manager One", Email = "manager1@annualleave.com", LegacyEmail = (string?)null, Role = AppRoles.Manager },
-            new { DisplayName = "Manager Two", Email = "manager2@annualleave.com", LegacyEmail = (string?)null, Role = AppRoles.Manager },
-            new { DisplayName = "Employee 1A", Email = "employee1a@annualleave.com", LegacyEmail = (string?)null, Role = AppRoles.Employee },
-            new { DisplayName = "Employee 1B", Email = "employee1b@annualleave.com", LegacyEmail = (string?)null, Role = AppRoles.Employee },
-            new { DisplayName = "Employee 1C", Email = "employee1c@annualleave.com", LegacyEmail = (string?)null, Role = AppRoles.Employee },
-            new { DisplayName = "Employee 1D", Email = "employee1d@annualleave.com", LegacyEmail = (string?)null, Role = AppRoles.Employee },
-            new { DisplayName = "Employee 2A", Email = "employee2a@annualleave.com", LegacyEmail = (string?)null, Role = AppRoles.Employee },
-            new { DisplayName = "Employee 2B", Email = "employee2b@annualleave.com", LegacyEmail = (string?)null, Role = AppRoles.Employee },
-            new { DisplayName = "Employee 2C", Email = "employee2c@annualleave.com", LegacyEmail = (string?)null, Role = AppRoles.Employee },
-            new { DisplayName = "Employee 2D", Email = "employee2d@annualleave.com", LegacyEmail = (string?)null, Role = AppRoles.Employee },
+            new("Admin User", "admin@annualleave.com", AppRoles.Admin),
         };
+
+        if (seedDemoData)
+        {
+            users.AddRange(new[]
+            {
+                new SeedUser("Manager One", "manager1@annualleave.com", AppRoles.Manager),
+                new SeedUser("Manager Two", "manager2@annualleave.com", AppRoles.Manager),
+                new SeedUser("Employee 1A", "employee1a@annualleave.com", AppRoles.Employee),
+                new SeedUser("Employee 1B", "employee1b@annualleave.com", AppRoles.Employee),
+                new SeedUser("Employee 1C", "employee1c@annualleave.com", AppRoles.Employee),
+                new SeedUser("Employee 1D", "employee1d@annualleave.com", AppRoles.Employee),
+                new SeedUser("Employee 2A", "employee2a@annualleave.com", AppRoles.Employee),
+                new SeedUser("Employee 2B", "employee2b@annualleave.com", AppRoles.Employee),
+                new SeedUser("Employee 2C", "employee2c@annualleave.com", AppRoles.Employee),
+                new SeedUser("Employee 2D", "employee2d@annualleave.com", AppRoles.Employee),
+            });
+        }
 
         foreach (var u in users)
         {
             var existingUser = await userManager.FindByEmailAsync(u.Email);
-            if (existingUser is null && !string.IsNullOrWhiteSpace(u.LegacyEmail))
-            {
-                existingUser = await userManager.FindByEmailAsync(u.LegacyEmail);
-            }
 
             if (existingUser is not null)
             {
@@ -337,6 +347,30 @@ public class DbInitializer
                     () => $"Failed to add '{u.Email}' to role '{u.Role}'.",
                     await userManager.AddToRoleAsync(user, u.Role));
             }
+        }
+    }
+
+    // Deletes the given seed accounts (and their dependent rows) if they exist.
+    private static async Task RemoveSeedUsersAsync(AppDbContext context, UserManager<User> userManager, IEnumerable<string> emails)
+    {
+        foreach (var email in emails)
+        {
+            var user = await userManager.FindByEmailAsync(email);
+            if (user is null) continue;
+
+            await CleanupUserDependencies(context, user.Id, CancellationToken.None);
+
+            var currentRoles = await userManager.GetRolesAsync(user);
+            if (currentRoles.Count > 0)
+            {
+                await EnsureIdentitySucceeded(
+                    () => $"Failed to remove roles for seed user '{email}'.",
+                    await userManager.RemoveFromRolesAsync(user, currentRoles));
+            }
+
+            await EnsureIdentitySucceeded(
+                () => $"Failed to delete seed user '{email}'.",
+                await userManager.DeleteAsync(user));
         }
     }
 
@@ -702,23 +736,11 @@ public class DbInitializer
         if (context.EmployeeProfiles.Any()) return;
 
         var adminUser = context.Users.FirstOrDefault(u => u.Email == "admin@annualleave.com");
-        var manager1 = context.Users.FirstOrDefault(u => u.Email == "manager1@annualleave.com");
-        var manager2 = context.Users.FirstOrDefault(u => u.Email == "manager2@annualleave.com");
-        var emp1a = context.Users.FirstOrDefault(u => u.Email == "employee1a@annualleave.com");
-        var emp1b = context.Users.FirstOrDefault(u => u.Email == "employee1b@annualleave.com");
-        var emp1c = context.Users.FirstOrDefault(u => u.Email == "employee1c@annualleave.com");
-        var emp1d = context.Users.FirstOrDefault(u => u.Email == "employee1d@annualleave.com");
-        var emp2a = context.Users.FirstOrDefault(u => u.Email == "employee2a@annualleave.com");
-        var emp2b = context.Users.FirstOrDefault(u => u.Email == "employee2b@annualleave.com");
-        var emp2c = context.Users.FirstOrDefault(u => u.Email == "employee2c@annualleave.com");
-        var emp2d = context.Users.FirstOrDefault(u => u.Email == "employee2d@annualleave.com");
-
         var engineering = context.Departments.FirstOrDefault(d => d.Code == "ENG");
-        var hr = context.Departments.FirstOrDefault(d => d.Code == "HR");
         var finance = context.Departments.FirstOrDefault(d => d.Code == "FIN");
-        if (engineering is null || hr is null || finance is null) return;
+        if (adminUser is null || engineering is null || finance is null) return;
 
-        // Admin profile — no manager (top of hierarchy)
+        // Admin profile — no manager (top of hierarchy). Always seeded.
         var adminProfile = new EmployeeProfile
         {
             Id = Guid.NewGuid().ToString(),
@@ -730,56 +752,58 @@ public class DbInitializer
             CreatedAt = DateTime.UtcNow
         };
 
-        // Manager 1 (Engineering)
-        var manager1Profile = new EmployeeProfile
-        {
-            Id = Guid.NewGuid().ToString(),
-            UserId = manager1.Id,
-            DepartmentId = engineering.Id,
-            ManagerId = adminProfile.Id,
-            JobTitle = "Engineering Team Lead",
-            AnnualLeaveEntitlement = 20,
-            CreatedAt = DateTime.UtcNow
-        };
+        var profiles = new List<EmployeeProfile> { adminProfile };
 
-        // Manager 2 (Finance)
-        var manager2Profile = new EmployeeProfile
+        // Demo profiles — only for demo users that were actually seeded.
+        EmployeeProfile? AddManager(string email, int departmentId, string jobTitle)
         {
-            Id = Guid.NewGuid().ToString(),
-            UserId = manager2.Id,
-            DepartmentId = finance.Id,
-            ManagerId = adminProfile.Id,
-            JobTitle = "Finance Team Lead",
-            AnnualLeaveEntitlement = 20,
-            CreatedAt = DateTime.UtcNow
-        };
+            var user = context.Users.FirstOrDefault(u => u.Email == email);
+            if (user is null) return null;
+            var profile = new EmployeeProfile
+            {
+                Id = Guid.NewGuid().ToString(),
+                UserId = user.Id,
+                DepartmentId = departmentId,
+                ManagerId = adminProfile.Id,
+                JobTitle = jobTitle,
+                AnnualLeaveEntitlement = 20,
+                CreatedAt = DateTime.UtcNow
+            };
+            profiles.Add(profile);
+            return profile;
+        }
 
-        // Employees under Manager 1 (Engineering)
-        var emp1Profiles = new[]
+        void AddEmployee(string email, int departmentId, string? managerProfileId, string jobTitle)
         {
-            new EmployeeProfile { Id = Guid.NewGuid().ToString(), UserId = emp1a.Id, DepartmentId = engineering.Id, ManagerId = manager1Profile.Id, JobTitle = "Engineer", AnnualLeaveEntitlement = 20, CreatedAt = DateTime.UtcNow },
-            new EmployeeProfile { Id = Guid.NewGuid().ToString(), UserId = emp1b.Id, DepartmentId = engineering.Id, ManagerId = manager1Profile.Id, JobTitle = "Engineer", AnnualLeaveEntitlement = 20, CreatedAt = DateTime.UtcNow },
-            new EmployeeProfile { Id = Guid.NewGuid().ToString(), UserId = emp1c.Id, DepartmentId = engineering.Id, ManagerId = manager1Profile.Id, JobTitle = "Engineer", AnnualLeaveEntitlement = 20, CreatedAt = DateTime.UtcNow },
-            new EmployeeProfile { Id = Guid.NewGuid().ToString(), UserId = emp1d.Id, DepartmentId = engineering.Id, ManagerId = manager1Profile.Id, JobTitle = "Engineer", AnnualLeaveEntitlement = 20, CreatedAt = DateTime.UtcNow },
-        };
+            var user = context.Users.FirstOrDefault(u => u.Email == email);
+            if (user is null) return;
+            profiles.Add(new EmployeeProfile
+            {
+                Id = Guid.NewGuid().ToString(),
+                UserId = user.Id,
+                DepartmentId = departmentId,
+                ManagerId = managerProfileId,
+                JobTitle = jobTitle,
+                AnnualLeaveEntitlement = 20,
+                CreatedAt = DateTime.UtcNow
+            });
+        }
 
-        // Employees under Manager 2 (Finance)
-        var emp2Profiles = new[]
-        {
-            new EmployeeProfile { Id = Guid.NewGuid().ToString(), UserId = emp2a.Id, DepartmentId = finance.Id, ManagerId = manager2Profile.Id, JobTitle = "Accountant", AnnualLeaveEntitlement = 20, CreatedAt = DateTime.UtcNow },
-            new EmployeeProfile { Id = Guid.NewGuid().ToString(), UserId = emp2b.Id, DepartmentId = finance.Id, ManagerId = manager2Profile.Id, JobTitle = "Accountant", AnnualLeaveEntitlement = 20, CreatedAt = DateTime.UtcNow },
-            new EmployeeProfile { Id = Guid.NewGuid().ToString(), UserId = emp2c.Id, DepartmentId = finance.Id, ManagerId = manager2Profile.Id, JobTitle = "Accountant", AnnualLeaveEntitlement = 20, CreatedAt = DateTime.UtcNow },
-            new EmployeeProfile { Id = Guid.NewGuid().ToString(), UserId = emp2d.Id, DepartmentId = finance.Id, ManagerId = manager2Profile.Id, JobTitle = "Accountant", AnnualLeaveEntitlement = 20, CreatedAt = DateTime.UtcNow },
-        };
+        var manager1Profile = AddManager("manager1@annualleave.com", engineering.Id, "Engineering Team Lead");
+        var manager2Profile = AddManager("manager2@annualleave.com", finance.Id, "Finance Team Lead");
 
-        await context.EmployeeProfiles.AddRangeAsync(adminProfile, manager1Profile, manager2Profile);
-        await context.EmployeeProfiles.AddRangeAsync(emp1Profiles);
-        await context.EmployeeProfiles.AddRangeAsync(emp2Profiles);
+        AddEmployee("employee1a@annualleave.com", engineering.Id, manager1Profile?.Id, "Engineer");
+        AddEmployee("employee1b@annualleave.com", engineering.Id, manager1Profile?.Id, "Engineer");
+        AddEmployee("employee1c@annualleave.com", engineering.Id, manager1Profile?.Id, "Engineer");
+        AddEmployee("employee1d@annualleave.com", engineering.Id, manager1Profile?.Id, "Engineer");
+        AddEmployee("employee2a@annualleave.com", finance.Id, manager2Profile?.Id, "Accountant");
+        AddEmployee("employee2b@annualleave.com", finance.Id, manager2Profile?.Id, "Accountant");
+        AddEmployee("employee2c@annualleave.com", finance.Id, manager2Profile?.Id, "Accountant");
+        AddEmployee("employee2d@annualleave.com", finance.Id, manager2Profile?.Id, "Accountant");
+
+        await context.EmployeeProfiles.AddRangeAsync(profiles);
         await context.SaveChangesAsync();
 
-        var profiles = new List<EmployeeProfile> { adminProfile, manager1Profile, manager2Profile };
-        profiles.AddRange(emp1Profiles);
-        profiles.AddRange(emp2Profiles);
         foreach (var profile in profiles)
         {
             await context.Entry(profile).ReloadAsync();

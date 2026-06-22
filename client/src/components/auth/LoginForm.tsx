@@ -194,10 +194,6 @@ function LoginForm({ onForgotPassword, onSwitchToRegister }: LoginFormProps) {
                     Create one
                 </Box>
             </Typography>
-
-            <Typography sx={{ fontSize: 11, color: '#9CA3AF', textAlign: 'center' }}>
-                Demo: admin@annualleave.com / Pa$$w0rd
-            </Typography>
         </Box>
     )
 }

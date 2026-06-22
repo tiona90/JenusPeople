@@ -361,7 +361,11 @@ try
     var userManager = services.GetRequiredService<UserManager<User>>();
     var roleManager = services.GetRequiredService<RoleManager<Role>>();
     await context.Database.MigrateAsync();
-    await DbInitializer.SeedData(context, userManager, roleManager);
+    // Demo manager/employee accounts seed only when explicitly enabled, defaulting
+    // to development. On a real deployment only the Admin account is seeded (and any
+    // previously-seeded demo accounts are removed).
+    var seedDemoData = app.Configuration.GetValue<bool?>("Seed:DemoData") ?? app.Environment.IsDevelopment();
+    await DbInitializer.SeedData(context, userManager, roleManager, seedDemoData);
 }
 catch (Exception ex)
 {
