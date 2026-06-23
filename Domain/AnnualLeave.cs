@@ -1,4 +1,5 @@
 ﻿using System;
+using System.ComponentModel.DataAnnotations;
 using Domain.Interfaces;
 using Domain.Services;
 
@@ -40,6 +41,13 @@ public class AnnualLeave : IAuditable
     /// </summary>
     public int TotalDays => LeaveCalculationService.CalculateBusinessDays(StartDate, EndDate);
     public ICollection<LeaveStatusHistory> StatusHistory { get; set; } = new List<LeaveStatusHistory>();
+
+    /// <summary>
+    /// Optimistic-concurrency token. SQL Server stamps this on every update; a
+    /// stale value on SaveChanges raises <see cref="Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException"/>.
+    /// </summary>
+    [Timestamp]
+    public byte[]? RowVersion { get; set; }
 }
 
 

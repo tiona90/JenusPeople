@@ -23,6 +23,11 @@ public class AppSettingsDto
     public string WorkingDays { get; set; } = "mon-fri";
     public string WorkingDaysCustom { get; set; } = "mon,tue,wed,thu,fri";
 
+    // ── Timesheet policy ───────────────────────────────────────────────────
+    public int WeeklyHoursTarget { get; set; } = 40;
+    public string TimesheetSubmissionDeadlineDay { get; set; } = "fri";
+    public string TimesheetSubmissionDeadlineTime { get; set; } = "18:00";
+
     // ── Email notification preferences ─────────────────────────────────────
     public bool EmailNotificationsEnabled { get; set; } = true;
     public bool EmailDailyDigest { get; set; } = true;

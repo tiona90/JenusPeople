@@ -13,6 +13,12 @@ namespace Application.AnnualLeaves.Commands;
 /// </summary>
 internal static class AnnualLeaveBalanceCalculator
 {
+    /// <summary>
+    /// Throwing wrapper kept for callers that surface insufficient balance as an
+    /// unexpected exception (e.g. status-change flows). Handlers that return
+    /// <see cref="Application.Core.Result{T}"/> should call
+    /// <see cref="CheckSufficientBalanceAsync"/> and map the message to a Failure instead.
+    /// </summary>
     public static async Task EnsureSufficientBalanceAsync(
         AppDbContext context,
         EmployeeProfile employeeProfile,
@@ -20,12 +26,30 @@ internal static class AnnualLeaveBalanceCalculator
         string? excludeLeaveId,
         CancellationToken cancellationToken)
     {
+        var error = await CheckSufficientBalanceAsync(
+            context, employeeProfile, annualLeave, excludeLeaveId, cancellationToken);
+        if (error is not null)
+            throw new InvalidOperationException(error);
+    }
+
+    /// <summary>
+    /// Returns a human-readable error message when the requested leave would exceed
+    /// the employee's remaining balance, or <c>null</c> when the balance is sufficient
+    /// (or the check does not apply). Never throws for the business rule.
+    /// </summary>
+    public static async Task<string?> CheckSufficientBalanceAsync(
+        AppDbContext context,
+        EmployeeProfile employeeProfile,
+        AnnualLeave annualLeave,
+        string? excludeLeaveId,
+        CancellationToken cancellationToken)
+    {
         if (!await AffectsBalanceAsync(context, annualLeave.LeaveTypeId, cancellationToken))
-            return;
+            return null;
 
         // Entitlement of 0 means it has not been configured yet — skip the check.
         if (employeeProfile.AnnualLeaveEntitlement <= 0)
-            return;
+            return null;
 
         var startMonth = await GetLeaveYearStartMonthAsync(context, cancellationToken);
         var holidays = await GetHolidaySetAsync(context, annualLeave.StartDate, annualLeave.EndDate, cancellationToken);
@@ -46,11 +70,12 @@ internal static class AnnualLeaveBalanceCalculator
             if (remainingBalance < requestedDays)
             {
                 var (lyStart, lyEnd) = LeaveCalculationService.GetLeaveYearBounds(leaveYearKey, startMonth);
-                throw new InvalidOperationException(
-                    $"Insufficient leave balance for the leave year {lyStart:dd MMM yyyy} – {lyEnd:dd MMM yyyy}. " +
-                    $"Remaining balance: {remainingBalance} day(s).");
+                return $"Insufficient leave balance for the leave year {lyStart:dd MMM yyyy} – {lyEnd:dd MMM yyyy}. " +
+                    $"Remaining balance: {remainingBalance} day(s).";
             }
         }
+
+        return null;
     }
 
     public static async Task SyncCurrentYearBalanceAsync(

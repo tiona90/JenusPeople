@@ -1,9 +1,17 @@
 import apiClient from './client';
 import type { Timesheet } from '../types/timesheet';
+import { toPaged, type PageParams, type Paged } from './pagination';
 
+// Zero-arg so it stays safe to pass directly as a React Query queryFn.
 export async function getTimesheets(): Promise<Timesheet[]> {
     const res = await apiClient.get('/timesheets');
     return res.data;
+}
+
+// Paged variant: returns items + total (read from the X-Total-Count header).
+export async function getTimesheetsPaged(params: PageParams): Promise<Paged<Timesheet>> {
+    const res = await apiClient.get<Timesheet[]>('/timesheets', { params });
+    return toPaged(res, params);
 }
 
 export async function getMyTimesheets(): Promise<Timesheet[]> {

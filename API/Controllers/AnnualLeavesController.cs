@@ -74,15 +74,18 @@ public class AnnualLeavesController : BaseApiController
     // Visibility is role-scoped: Admin all, Manager by assigned departments, Employee own requests.
     [HttpGet]
     [Authorize(Policy = "AnnualLeaveRead")]
-    public async Task<ActionResult<List<AnnualLeaveDto>>> GetAnnualLeaves()
+    public async Task<ActionResult<List<AnnualLeaveDto>>> GetAnnualLeaves([FromQuery] int? page = null, [FromQuery] int? pageSize = null)
     {
-        return await Mediator.Send(new GetAnnualLeaveList.Query
+        var result = await Mediator.Send(new GetAnnualLeaveList.Query
         {
             RequestingUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty,
             IsAdmin = User.IsInRole(AppRoles.Admin),
             IsManager = User.IsInRole(AppRoles.Manager),
-            IsEmployee = User.IsInRole(AppRoles.Employee)
+            IsEmployee = User.IsInRole(AppRoles.Employee),
+            Page = page,
+            PageSize = pageSize,
         });
+        return Paged(result);
     }
 
     [HttpGet("team-away-this-week/count")]
@@ -125,9 +128,12 @@ public class AnnualLeavesController : BaseApiController
         if (!isAdmin || string.IsNullOrWhiteSpace(request.EmployeeId))
             request.EmployeeId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
 
-        var createdId = await Mediator.Send(new CreateAnnualLeave.Command { AnnualLeave = request });
-        await NotifyForLeaveAsync(createdId);
-        return createdId;
+        var result = await Mediator.Send(new CreateAnnualLeave.Command { AnnualLeave = request });
+        if (result.IsSuccess && result.Value is not null)
+        {
+            await NotifyForLeaveAsync(result.Value);
+        }
+        return HandleResult(result);
     }
 
     [HttpPost("evidence-upload")]
@@ -171,15 +177,18 @@ public class AnnualLeavesController : BaseApiController
     [Authorize(Policy = "AnnualLeaveUpdate")]
     public async Task<ActionResult> EditAnnualLeave(EditAnnualLeaveRequest request)
     {
-        await Mediator.Send(new EditAnnualLeave.Command
+        var result = await Mediator.Send(new EditAnnualLeave.Command
         {
             AnnualLeave = request,
             ChangedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty,
             IsAdmin = User.IsInRole(AppRoles.Admin),
             IsManager = User.IsInRole(AppRoles.Manager)
         });
-        await NotifyForLeaveAsync(request.Id);
-        return NoContent();
+        if (result.IsSuccess)
+        {
+            await NotifyForLeaveAsync(request.Id);
+        }
+        return HandleResult(result);
     }
 
     // Admin and Managers can approve/reject leaves via status-only update.
@@ -187,7 +196,7 @@ public class AnnualLeavesController : BaseApiController
     [Authorize(Policy = "AnnualLeaveUpdate")]
     public async Task<ActionResult> UpdateLeaveStatus(string id, UpdateLeaveStatusRequest request)
     {
-        await Mediator.Send(new UpdateLeaveStatus.Command
+        var result = await Mediator.Send(new UpdateLeaveStatus.Command
         {
             LeaveId = id,
             Request = request,
@@ -195,8 +204,11 @@ public class AnnualLeavesController : BaseApiController
             IsAdmin = User.IsInRole(AppRoles.Admin),
             IsManager = User.IsInRole(AppRoles.Manager),
         });
-        await NotifyForLeaveAsync(id);
-        return NoContent();
+        if (result.IsSuccess)
+        {
+            await NotifyForLeaveAsync(id);
+        }
+        return HandleResult(result);
     }
 
     // Admin can delete all leaves; Employee can delete own leaves; Manager can delete own and managed-department leaves.
@@ -212,7 +224,7 @@ public class AnnualLeavesController : BaseApiController
             .Select(l => new { l.EmployeeId, l.DepartmentId })
             .FirstOrDefaultAsync();
 
-        await Mediator.Send(new DeleteAnnualLeave.Command
+        var result = await Mediator.Send(new DeleteAnnualLeave.Command
         {
             Id = id,
             RequestingUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty,
@@ -220,11 +232,11 @@ public class AnnualLeavesController : BaseApiController
             IsManager = User.IsInRole(AppRoles.Manager)
         });
 
-        if (audience is not null)
+        if (result.IsSuccess && audience is not null)
         {
             await NotifyLeaveAudienceAsync(audience.EmployeeId, audience.DepartmentId);
         }
 
-        return Ok();
+        return HandleResult(result);
     }
 }

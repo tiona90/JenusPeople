@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using Domain.Interfaces;
 
 namespace Domain;
@@ -31,4 +32,11 @@ public class Timesheet : IAuditable
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public ICollection<TimesheetEntry> Entries { get; set; } = new List<TimesheetEntry>();
     public ICollection<TimesheetStatusHistory> StatusHistory { get; set; } = new List<TimesheetStatusHistory>();
+
+    /// <summary>
+    /// Optimistic-concurrency token. SQL Server stamps this on every update; a
+    /// stale value on SaveChanges raises <see cref="Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException"/>.
+    /// </summary>
+    [Timestamp]
+    public byte[]? RowVersion { get; set; }
 }

@@ -12,6 +12,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Expose internal domain helpers (e.g. AnnualLeaveBalanceCalculator) to the unit-test project. -->
+    <InternalsVisibleTo Include="WorkTrack.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="AutoMapper" Version="16.1.1" />
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
     <PackageReference Include="MediatR" Version="13.0.0" />

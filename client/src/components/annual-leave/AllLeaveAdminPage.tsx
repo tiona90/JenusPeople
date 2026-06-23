@@ -3,15 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { observer } from 'mobx-react-lite'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
-import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
-import Dialog from '@mui/material/Dialog'
-import DialogActions from '@mui/material/DialogActions'
-import DialogContent from '@mui/material/DialogContent'
-import DialogTitle from '@mui/material/DialogTitle'
-import Stack from '@mui/material/Stack'
-import TextField from '@mui/material/TextField'
-import Typography from '@mui/material/Typography'
 import {
     getAnnualLeaves, getDepartments, getEmployeeProfiles, getHolidays, getLeaveStatusHistories,
     getLeaveTypes, updateLeaveStatus,
@@ -21,6 +13,10 @@ import { softBg, type SxColor } from '../../lib/theme-tokens'
 import type {
     AnnualLeave, EmployeeProfile, LeaveStatusHistory, LeaveType, UserInfo,
 } from '../../lib/types'
+import { RejectReasonDialog } from '../ui'
+import Heatmap from './Heatmap'
+import DeptBreakdown from './DeptBreakdown'
+import { fmtShort, isoDate } from './leave-format'
 
 
 const LEAVE_ICONS: Record<string, string> = {
@@ -31,11 +27,6 @@ const LEAVE_ICONS: Record<string, string> = {
 }
 
 type TypeKey = 'annual' | 'sick' | 'personal' | 'bereavement' | 'unpaid' | 'maternity' | 'other'
-
-const MONTH_NAMES = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December',
-]
 
 type StatusTab = 'all' | 'pending' | 'urgent' | 'conflict' | 'approved' | 'rejected'
 
@@ -79,14 +70,6 @@ function avatarBg(name: string) {
     let hash = 0
     for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) | 0
     return palette[Math.abs(hash) % palette.length]
-}
-
-function isoDate(d: Date) {
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
-function fmtShort(iso: string) {
-    return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
 }
 
 function fmtDateTime(iso: string) {
@@ -583,59 +566,20 @@ const AllLeaveAdminPage = observer(function AllLeaveAdminPage({ user: _user }: {
             )}
 
             {/* Reject reason dialog */}
-            <Dialog open={rejectDialog !== null} onClose={closeRejectDialog} maxWidth="xs" fullWidth>
-                <DialogTitle sx={{ fontSize: 15, fontWeight: 600, color: 'text.primary', pb: 1 }}>
-                    {rejectDialog && rejectDialog.ids.length > 1 ? 'Reject selected requests' : 'Reject leave request'}
-                </DialogTitle>
-                <DialogContent sx={{ px: 3, py: 2 }}>
-                    {rejectDialog && (
-                        <Stack spacing={1.5}>
-                            <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
-                                Please provide a reason. The employee will see this message.
-                            </Typography>
-                            <Box sx={{ fontSize: 12, color: 'text.secondary' }}>
-                                {rejectDialog.label}
-                            </Box>
-                            <TextField
-                                autoFocus
-                                multiline
-                                minRows={3}
-                                maxRows={6}
-                                fullWidth
-                                placeholder="Reason for rejection (required)"
-                                value={rejectReason}
-                                onChange={(e) => {
-                                    setRejectReason(e.target.value)
-                                    if (rejectError) setRejectError('')
-                                }}
-                                error={!!rejectError}
-                                helperText={rejectError || `${rejectReason.trim().length}/500`}
-                                inputProps={{ maxLength: 500 }}
-                                sx={{ '& .MuiInputBase-input': { fontSize: 13 } }}
-                            />
-                        </Stack>
-                    )}
-                </DialogContent>
-                <DialogActions sx={{ px: 3, py: 1.75, gap: 1 }}>
-                    <Button
-                        size="small"
-                        onClick={closeRejectDialog}
-                        disabled={rejectMut.isPending}
-                        sx={{ textTransform: 'none', color: 'text.secondary' }}
-                    >
-                        Cancel
-                    </Button>
-                    <Button
-                        size="small"
-                        variant="contained"
-                        disabled={rejectMut.isPending || rejectReason.trim().length === 0}
-                        onClick={() => void confirmReject()}
-                        sx={{ textTransform: 'none', bgcolor: 'error.main', '&:hover': { bgcolor: 'error.dark' }, boxShadow: 'none' }}
-                    >
-                        {rejectMut.isPending ? 'Rejecting…' : 'Confirm Reject'}
-                    </Button>
-                </DialogActions>
-            </Dialog>
+            <RejectReasonDialog
+                open={rejectDialog !== null}
+                title={rejectDialog && rejectDialog.ids.length > 1 ? 'Reject selected requests' : 'Reject leave request'}
+                label={rejectDialog?.label ?? ''}
+                reason={rejectReason}
+                error={rejectError}
+                isPending={rejectMut.isPending}
+                onReasonChange={(value) => {
+                    setRejectReason(value)
+                    if (rejectError) setRejectError('')
+                }}
+                onClose={closeRejectDialog}
+                onConfirm={() => void confirmReject()}
+            />
         </Box>
     )
 })
@@ -656,217 +600,6 @@ function StatCard({ label, value, sub, valueColor }: {
             </Box>
             <Box sx={{ fontSize: 22, fontWeight: 700, color: valueColor ?? 'text.primary', lineHeight: 1 }}>{value}</Box>
             <Box sx={{ fontSize: 11, color: 'text.secondary', mt: '4px' }}>{sub}</Box>
-        </Box>
-    )
-}
-
-function Heatmap({ month, year, heatmap, holidays, today, onNav, alert }: {
-    month: number
-    year: number
-    heatmap: Map<string, { count: number; people: string[] }>
-    holidays: Map<string, string>
-    today: Date
-    onNav: (delta: number) => void
-    alert: { iso: string; count: number; people: string[] } | undefined
-}) {
-    const firstOfMonth = new Date(year, month, 1)
-    const startDow = firstOfMonth.getDay()
-    const startOffset = startDow === 0 ? 6 : startDow - 1
-    const daysInMonth = new Date(year, month + 1, 0).getDate()
-    const todayIso = isoDate(today)
-
-    const cells: React.ReactNode[] = []
-    for (let i = 0; i < startOffset; i++) cells.push(<Box key={`b-${i}`} sx={{ aspectRatio: '1' }} />)
-    for (let d = 1; d <= daysInMonth; d++) {
-        const date = new Date(year, month, d)
-        const iso = isoDate(date)
-        const dow = date.getDay()
-        const weekend = dow === 0 || dow === 6
-        const data = heatmap.get(iso)
-        const holiday = holidays.has(iso)
-        const conflictCount = data && data.count >= 3 ? data.count : 0
-        const count = data?.count ?? 0
-        const isToday = iso === todayIso
-
-        let bg: SxColor = 'action.hover'
-        let color: SxColor = 'text.primary'
-        if (weekend) { bg = 'action.hover'; color = 'text.disabled' }
-        if (count === 1) { bg = softBg('info'); color = 'info.dark' }
-        else if (count === 2) { bg = softBg('info'); color = 'info.dark' }
-        else if (count === 3) { bg = softBg('info'); color = 'info.dark' }
-        else if (count >= 4) { bg = 'primary.main'; color = '#fff' }
-        if (conflictCount > 0) { bg = softBg('warning'); color = 'warning.dark' }
-        if (holiday) { bg = softBg('secondary'); color = 'secondary.dark' }
-
-        const holidayName = holidays.get(iso)
-        const titleParts: string[] = [`${d} ${MONTH_NAMES[month]}`]
-        if (holidayName) titleParts.push(`🎉 ${holidayName}`)
-        if (data) titleParts.push(`${data.count} on leave (${data.people.join(', ')})`)
-
-        cells.push(
-            <Box
-                key={iso}
-                title={titleParts.join(' · ')}
-                sx={{
-                    aspectRatio: '1', bgcolor: bg, color, borderRadius: '6px',
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 11, position: 'relative',
-                    border: holiday ? '1px solid' : 'none',
-                    borderColor: holiday ? 'secondary.main' : 'transparent',
-                    boxShadow: isToday ? `inset 0 0 0 2px ${'text.primary'}` : conflictCount > 0 ? 'inset 0 0 0 1px #F59E0B' : 'none',
-                    cursor: count > 0 || holiday ? 'help' : 'default',
-                }}
-            >
-                <Box sx={{ fontWeight: isToday ? 700 : 500 }}>{d}</Box>
-                {count > 0 && <Box sx={{ fontSize: 9, fontWeight: 700, mt: '2px' }}>{count}</Box>}
-                {holiday && (
-                    <Box component="span" sx={{ position: 'absolute', top: 2, left: 3, fontSize: 10, lineHeight: 1 }}>🎉</Box>
-                )}
-                {conflictCount > 0 && (
-                    <Box component="span" sx={{ position: 'absolute', top: 2, right: 3, fontSize: 9 }}>⚠</Box>
-                )}
-            </Box>
-        )
-    }
-
-    return (
-        <Box sx={{ bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider', borderRadius: '12px', p: '14px 18px', mb: '14px' }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', mb: '12px' }}>
-                <Box>
-                    <Box sx={{ fontSize: 13, fontWeight: 600, color: 'text.primary' }}>{MONTH_NAMES[month]} {year} · Leave Calendar</Box>
-                    <Box sx={{ fontSize: 11, color: 'text.secondary', mt: '2px' }}>Click a request below to see details</Box>
-                </Box>
-                <Box sx={{ display: 'flex', gap: '14px', alignItems: 'center', flexWrap: 'wrap' }}>
-                    <Box sx={{ display: 'flex', gap: '10px', fontSize: 10, color: 'text.secondary', flexWrap: 'wrap' }}>
-                        <Legend color="#F9FAFB" label="None" bordered />
-                        <Legend color="#DBEAFE" label="1" />
-                        <Legend color="#BFDBFE" label="2" />
-                        <Legend color="#93C5FD" label="3" />
-                        <Legend color={'primary.main'} label="4+" />
-                        <Legend color="#FEF3C7" label="⚠ Conflict" bordered borderColor="#F59E0B" />
-                        <Legend color="#EDE9FE" label="🎉 Holiday" bordered borderColor="#8B5CF6" />
-                    </Box>
-                    <Box sx={{ display: 'flex', gap: '4px' }}>
-                        <CalNavBtn onClick={() => onNav(-1)}>‹</CalNavBtn>
-                        <CalNavBtn onClick={() => onNav(1)}>›</CalNavBtn>
-                    </Box>
-                </Box>
-            </Box>
-            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', mb: '4px' }}>
-                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => (
-                    <Box key={d} sx={{ textAlign: 'center', fontSize: 10, color: 'text.disabled', fontWeight: 600, textTransform: 'uppercase' }}>{d}</Box>
-                ))}
-            </Box>
-            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px' }}>
-                {cells}
-            </Box>
-            {alert && (
-                <Box sx={{
-                    mt: '12px', p: '10px 14px', bgcolor: softBg('warning'),
-                    border: '1px solid #FDE68A', borderRadius: '8px',
-                    display: 'flex', alignItems: 'flex-start', gap: '8px',
-                    fontSize: 12, color: 'warning.dark',
-                }}>
-                    <Box component="span">⚠️</Box>
-                    <Box>
-                        <Box component="strong">{fmtShort(alert.iso)}:</Box>{' '}
-                        {alert.count} employees on leave that day ({alert.people.join(', ')}).
-                        Could impact multiple departments — review carefully.
-                    </Box>
-                </Box>
-            )}
-        </Box>
-    )
-}
-
-function Legend({ color, label, bordered, borderColor }: {
-    color: string; label: string; bordered?: boolean; borderColor?: string
-}) {
-    return (
-        <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-            <Box sx={{
-                width: 12, height: 12, borderRadius: '2px', bgcolor: color,
-                border: bordered ? `1px solid ${borderColor ?? 'divider'}` : 'none',
-                display: 'inline-block',
-            }} />
-            {label}
-        </Box>
-    )
-}
-
-function CalNavBtn({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
-    return (
-        <Box
-            component="button"
-            onClick={onClick}
-            sx={{
-                width: 28, height: 28, border: '1px solid', borderColor: 'divider', bgcolor: 'background.paper',
-                borderRadius: '5px', cursor: 'pointer', fontSize: 14, color: 'text.secondary', fontFamily: 'inherit',
-                '&:hover': { bgcolor: 'action.hover', color: 'text.primary' },
-            }}
-        >
-            {children}
-        </Box>
-    )
-}
-
-function DeptBreakdown({ stats, totalUsed, totalAllowance, onFilter }: {
-    stats: { name: string; total: number; used: number; pending: number; entitled: number }[]
-    totalUsed: number
-    totalAllowance: number
-    onFilter: (dept: string) => void
-}) {
-    return (
-        <Box sx={{ bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider', borderRadius: '12px', p: '14px 18px', mb: '14px' }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', mb: '12px', flexWrap: 'wrap', gap: '4px' }}>
-                <Box sx={{ fontSize: 13, fontWeight: 600, color: 'text.primary' }}>Leave by Department</Box>
-                <Box sx={{ fontSize: 11, color: 'text.secondary' }}>YTD · {totalUsed} of {totalAllowance} days used</Box>
-            </Box>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {stats.length === 0 ? (
-                    <Box sx={{ fontSize: 12, color: 'text.secondary', py: '6px' }}>No departments configured.</Box>
-                ) : stats.map((d) => {
-                    const pct = d.entitled > 0 ? (d.used / d.entitled) * 100 : 0
-                    const fillColor = pct >= 75 ? 'error.main' : pct >= 50 ? 'warning.main' : 'success.main'
-                    return (
-                        <Box key={d.name} sx={{
-                            display: 'grid',
-                            gridTemplateColumns: { xs: '1fr', sm: '140px 1fr 130px auto' },
-                            gap: '10px', alignItems: 'center',
-                        }}>
-                            <Box>
-                                <Box sx={{ fontSize: 12, fontWeight: 600, color: 'text.primary' }}>{d.name}</Box>
-                                <Box sx={{ fontSize: 11, color: 'text.disabled' }}>{d.total} {d.total === 1 ? 'person' : 'people'}</Box>
-                            </Box>
-                            <Box sx={{ position: 'relative', height: 22, bgcolor: 'action.hover', borderRadius: '4px', overflow: 'hidden' }}>
-                                <Box sx={{
-                                    height: '100%', bgcolor: fillColor, width: `${Math.min(100, pct)}%`,
-                                    display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
-                                    pr: '8px', fontSize: 10, color: '#fff', fontWeight: 600,
-                                }}>
-                                    {pct >= 14 && `${d.used}d · ${Math.round(pct)}%`}
-                                </Box>
-                            </Box>
-                            <Box sx={{ fontSize: 12, color: 'text.secondary' }}>
-                                {d.pending > 0
-                                    ? <><Box component="strong" sx={{ color: 'warning.main' }}>{d.pending}</Box> pending</>
-                                    : <Box component="span" sx={{ color: 'success.main' }}>✓ None pending</Box>}
-                            </Box>
-                            <Box
-                                component="button"
-                                onClick={() => onFilter(d.name)}
-                                sx={{
-                                    fontSize: 11, color: 'primary.main', bgcolor: 'transparent',
-                                    border: 'none', cursor: 'pointer', fontFamily: 'inherit',
-                                    '&:hover': { textDecoration: 'underline' },
-                                }}
-                            >
-                                Filter
-                            </Box>
-                        </Box>
-                    )
-                })}
-            </Box>
         </Box>
     )
 }

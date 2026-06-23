@@ -1,7 +1,9 @@
 name: CI
 
 on:
+  pull_request:
   push:
+    branches: [main]
 
 jobs:
   backend:
@@ -30,6 +32,9 @@ jobs:
       - name: Build (Release)
         run: dotnet build Annualleave.sln --configuration Release --no-restore
 
+      - name: Test
+        run: dotnet test Annualleave.sln --configuration Release --no-build --verbosity normal
+
   frontend:
     name: Frontend (lint + build)
     runs-on: ubuntu-latest
@@ -43,7 +48,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
           cache: 'npm'
           cache-dependency-path: client/package-lock.json
 

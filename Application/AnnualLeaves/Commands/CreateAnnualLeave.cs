@@ -11,14 +11,14 @@ namespace Application.AnnualLeaves.Commands;
 
 public class CreateAnnualLeave
 {
-    public class Command : IRequest<string>
+    public class Command : IRequest<Result<string>>
     {
         public required CreateAnnualLeaveRequest AnnualLeave { get; set; }
     }
 
-    public class Handler(AppDbContext context, IMapper mapper, IEmailService emailService) : IRequestHandler<Command, string>
+    public class Handler(AppDbContext context, IMapper mapper, IEmailService emailService) : IRequestHandler<Command, Result<string>>
     {
-        public async Task<string> Handle(Command request, CancellationToken cancellationToken)
+        public async Task<Result<string>> Handle(Command request, CancellationToken cancellationToken)
         {
             var annualLeave = mapper.Map<AnnualLeave>(request.AnnualLeave);
 
@@ -26,7 +26,7 @@ public class CreateAnnualLeave
                 .FirstOrDefaultAsync(ep => ep.UserId == request.AnnualLeave.EmployeeId, cancellationToken);
 
             if (employeeProfile is null)
-                throw new InvalidOperationException("Employee profile not found for the selected user.");
+                return Result<string>.Failure("Employee profile not found for the selected user.");
 
             annualLeave.EmployeeProfileId = employeeProfile.Id;
             annualLeave.DepartmentId = employeeProfile.DepartmentId;
@@ -37,7 +37,7 @@ public class CreateAnnualLeave
                     type => type.Id == annualLeave.LeaveTypeId && type.IsActive, cancellationToken);
 
             if (leaveType is null)
-                throw new InvalidOperationException("Selected leave type is not available.");
+                return Result<string>.Failure("Selected leave type is not available.");
 
             if (leaveType.RequiresApproval)
             {
@@ -48,12 +48,14 @@ public class CreateAnnualLeave
                 annualLeave.Status = AnnualLeaveStatus.Approved;
                 annualLeave.ApprovedAt = DateTime.UtcNow;
 
-                await AnnualLeaveBalanceCalculator.EnsureSufficientBalanceAsync(
+                var balanceError = await AnnualLeaveBalanceCalculator.CheckSufficientBalanceAsync(
                     context,
                     employeeProfile,
                     annualLeave,
                     excludeLeaveId: annualLeave.Id,
                     cancellationToken);
+                if (balanceError is not null)
+                    return Result<string>.Failure(balanceError);
 
                 context.LeaveStatusHistories.Add(new LeaveStatusHistory
                 {
@@ -119,7 +121,7 @@ public class CreateAnnualLeave
                 }
             }
 
-            return annualLeave.Id;
+            return Result<string>.Success(annualLeave.Id);
         }
     }
 }

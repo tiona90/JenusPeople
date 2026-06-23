@@ -1,4 +1,5 @@
 ﻿using System;
+using Application.Core;
 using Domain;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -8,24 +9,26 @@ namespace Application.AnnualLeaves.Commands;
 
 public class DeleteAnnualLeave
 {
-    public class Command : IRequest
+    public class Command : IRequest<Result<Unit>>
     {
         public required string Id { get; set; }
         public string RequestingUserId { get; set; } = string.Empty;
         public bool IsAdmin { get; set; }
         public bool IsManager { get; set; }
     }
-    public class Handler(AppDbContext context) : IRequestHandler<Command>
+    public class Handler(AppDbContext context) : IRequestHandler<Command, Result<Unit>>
     {
-        public async Task Handle(Command request, CancellationToken cancellationToken)
+        public async Task<Result<Unit>> Handle(Command request, CancellationToken cancellationToken)
         {
             var annualLeave = await context.AnnualLeaves
-             .FindAsync([request.Id], cancellationToken)
-             ?? throw new Exception("Cannot find the annual leave");
+                .FindAsync([request.Id], cancellationToken);
+
+            if (annualLeave is null)
+                return Result<Unit>.Failure("Cannot find the annual leave.");
 
             if (string.IsNullOrWhiteSpace(request.RequestingUserId))
             {
-                throw new UnauthorizedAccessException("User context is required.");
+                return Result<Unit>.Failure("User context is required.");
             }
 
             bool canDelete;
@@ -47,7 +50,7 @@ public class DeleteAnnualLeave
 
             if (!canDelete)
             {
-                throw new UnauthorizedAccessException("You are not allowed to cancel this leave request.");
+                return Result<Unit>.Failure("You are not allowed to cancel this leave request.");
             }
 
             var employeeProfile = await context.EmployeeProfiles
@@ -62,6 +65,8 @@ public class DeleteAnnualLeave
                 await AnnualLeaveBalanceCalculator.SyncCurrentYearBalanceAsync(context, employeeProfile, cancellationToken);
                 await context.SaveChangesAsync(cancellationToken);
             }
+
+            return Result<Unit>.Success(Unit.Value);
         }
     }
 }

@@ -28,6 +28,11 @@ export interface AppSettings {
     workingDays: string // "mon-fri" | "mon-sat" | "sun-fri" | "custom"
     workingDaysCustom: string // CSV of day tokens, e.g. "mon,wed,fri" (used when workingDays === "custom")
 
+    // Timesheet policy
+    weeklyHoursTarget: number // expected hours logged per week
+    timesheetSubmissionDeadlineDay: string // week token "mon".."sun"
+    timesheetSubmissionDeadlineTime: string // "HH:mm" (UTC)
+
     // Email notifications
     emailNotificationsEnabled: boolean
     emailDailyDigest: boolean

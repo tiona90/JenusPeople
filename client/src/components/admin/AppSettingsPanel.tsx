@@ -35,6 +35,12 @@ const MONTHS = [
     'July', 'August', 'September', 'October', 'November', 'December',
 ]
 
+// Week tokens (matching the backend) in Monday-first order, with display labels.
+const WEEKDAYS: [string, string][] = [
+    ['mon', 'Monday'], ['tue', 'Tuesday'], ['wed', 'Wednesday'], ['thu', 'Thursday'],
+    ['fri', 'Friday'], ['sat', 'Saturday'], ['sun', 'Sunday'],
+]
+
 function getLeaveYearBounds(startMonth: number, referenceDate = new Date()) {
     const m = startMonth - 1
     const startYear = referenceDate.getMonth() >= m ? referenceDate.getFullYear() : referenceDate.getFullYear() - 1
@@ -106,6 +112,9 @@ const DEFAULT: AppSettings = {
     financialYearStartMonth: 1,
     workingDays: 'mon-fri',
     workingDaysCustom: 'mon,tue,wed,thu,fri',
+    weeklyHoursTarget: 40,
+    timesheetSubmissionDeadlineDay: 'fri',
+    timesheetSubmissionDeadlineTime: '18:00',
     emailNotificationsEnabled: true,
     emailDailyDigest: true,
     emailUrgentOnly: false,
@@ -286,6 +295,47 @@ export default function AppSettingsPanel() {
                                         />
                                     </Grid>
                                 </Grid>
+
+                                {/* Timesheet policy */}
+                                <Box sx={{ borderTop: '1px solid', borderColor: 'divider', pt: 2 }}>
+                                    <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 1 }}>
+                                        Timesheet Policy
+                                    </Typography>
+                                    <Grid container spacing={1.5}>
+                                        <Grid size={{ xs: 12, sm: 4 }}>
+                                            <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'text.primary', mb: 0.75 }}>Weekly Hours Target</Typography>
+                                            <TextField
+                                                size="small" fullWidth type="number"
+                                                value={form.weeklyHoursTarget}
+                                                onChange={(e) => set('weeklyHoursTarget', Math.min(168, Math.max(1, Number(e.target.value))))}
+                                                inputProps={{ min: 1, max: 168 }}
+                                                sx={{ '& .MuiInputBase-input': { fontSize: 13 } }}
+                                            />
+                                        </Grid>
+                                        <Grid size={{ xs: 12, sm: 4 }}>
+                                            <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'text.primary', mb: 0.75 }}>Submission Deadline Day</Typography>
+                                            <Select
+                                                size="small" fullWidth value={form.timesheetSubmissionDeadlineDay}
+                                                onChange={(e) => set('timesheetSubmissionDeadlineDay', String(e.target.value))}
+                                                sx={{ fontSize: 13 }}
+                                            >
+                                                {WEEKDAYS.map(([token, label]) => <MenuItem key={token} value={token}>{label}</MenuItem>)}
+                                            </Select>
+                                        </Grid>
+                                        <Grid size={{ xs: 12, sm: 4 }}>
+                                            <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'text.primary', mb: 0.75 }}>Deadline Time (UTC)</Typography>
+                                            <TextField
+                                                size="small" fullWidth type="time"
+                                                value={form.timesheetSubmissionDeadlineTime}
+                                                onChange={(e) => set('timesheetSubmissionDeadlineTime', e.target.value)}
+                                                sx={{ '& .MuiInputBase-input': { fontSize: 13 } }}
+                                            />
+                                        </Grid>
+                                    </Grid>
+                                    <Typography sx={{ fontSize: 11, color: 'text.disabled', mt: 0.5 }}>
+                                        Drives the under/over-target colouring and the on-time/late flag on the All Timesheets review page.
+                                    </Typography>
+                                </Box>
 
                                 {/* Public holidays */}
                                 <Box>

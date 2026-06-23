@@ -9,16 +9,18 @@ namespace Application.TimesheetStatusHistories.Queries;
 
 public class GetTimesheetStatusHistoryList
 {
-    public class Query : IRequest<List<TimesheetStatusHistoryDto>>
+    public class Query : IRequest<PagedResult<TimesheetStatusHistoryDto>>
     {
         public string RequestingUserId { get; set; } = string.Empty;
         public bool IsAdmin { get; set; }
         public bool IsManager { get; set; }
+        public int? Page { get; set; }
+        public int? PageSize { get; set; }
     }
 
-    public class Handler(AppDbContext context) : IRequestHandler<Query, List<TimesheetStatusHistoryDto>>
+    public class Handler(AppDbContext context) : IRequestHandler<Query, PagedResult<TimesheetStatusHistoryDto>>
     {
-        public async Task<List<TimesheetStatusHistoryDto>> Handle(Query request, CancellationToken cancellationToken)
+        public async Task<PagedResult<TimesheetStatusHistoryDto>> Handle(Query request, CancellationToken cancellationToken)
         {
             IQueryable<Domain.TimesheetStatusHistory> query = context.TimesheetStatusHistories
                 .AsNoTracking()
@@ -33,7 +35,17 @@ public class GetTimesheetStatusHistoryList
             }
             else if (request.IsManager)
             {
-                // TODO: Implement manager scope filtering if needed
+                // Scope to the manager's own history, their managed departments, and
+                // their direct reports — mirroring GetTimesheetList's authority.
+                var scope = await ManagerAccessScopeResolver.ResolveAsync(
+                    context, request.RequestingUserId, cancellationToken);
+
+                query = query.Where(h =>
+                    h.Timesheet != null
+                    && h.Timesheet.Employee != null
+                    && (h.Timesheet.Employee.UserId == request.RequestingUserId
+                        || scope.ManagedDepartmentIds.Contains(h.Timesheet.DepartmentId)
+                        || scope.DirectReportUserIds.Contains(h.Timesheet.Employee.UserId)));
             }
             else
             {
@@ -46,8 +58,11 @@ public class GetTimesheetStatusHistoryList
                     && h.Timesheet.Employee.UserId == request.RequestingUserId);
             }
 
-            return await query
+            var total = await query.CountAsync(cancellationToken);
+
+            var projected = query
                 .OrderByDescending(h => h.ChangedAt)
+                .ThenBy(h => h.Id)
                 .Select(h => new TimesheetStatusHistoryDto
                 {
                     Id = h.Id,
@@ -68,8 +83,19 @@ public class GetTimesheetStatusHistoryList
                     NewStatus = ((TimesheetStatus)h.ToStatus).ToString(),
                     Comment = h.Comment,
                     ChangedAt = h.ChangedAt
-                })
-                .ToListAsync(cancellationToken);
+                });
+
+            var paging = Pagination.Resolve(request.Page, request.PageSize);
+            if (paging is { } pg)
+                projected = projected.Skip((pg.Page - 1) * pg.Size).Take(pg.Size);
+
+            return new PagedResult<TimesheetStatusHistoryDto>
+            {
+                Items = await projected.ToListAsync(cancellationToken),
+                Total = total,
+                Page = paging?.Page,
+                PageSize = paging?.Size,
+            };
         }
     }
 }

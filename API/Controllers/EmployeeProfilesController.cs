@@ -29,11 +29,11 @@ public class EmployeeProfilesController : BaseApiController
     [Authorize(Policy = "EmployeeProfileUpdate")]
     public async Task<ActionResult> EditEmployeeProfile(EditEmployeeProfileRequest request)
     {
-        await Mediator.Send(new EditEmployeeProfile.Command
+        var result = await Mediator.Send(new EditEmployeeProfile.Command
         {
             EmployeeProfile = request
         });
 
-        return NoContent();
+        return HandleResult(result);
     }
 }

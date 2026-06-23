@@ -50,5 +50,19 @@ namespace API.Controllers
             });
         }
 
+        // Returns a list result as a plain JSON array (backward-compatible body)
+        // and, when the result is paged, advertises the page metadata via headers
+        // so existing clients that ignore them are unaffected.
+        protected ActionResult Paged<T>(PagedResult<T> result)
+        {
+            if (result.Page.HasValue)
+            {
+                Response.Headers["X-Total-Count"] = result.Total.ToString();
+                Response.Headers["X-Page"] = result.Page.Value.ToString();
+                Response.Headers["X-Page-Size"] = (result.PageSize ?? result.Items.Count).ToString();
+            }
+            return Ok(result.Items);
+        }
+
     }
 }

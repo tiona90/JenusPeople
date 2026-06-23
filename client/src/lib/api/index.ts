@@ -13,4 +13,5 @@ export * from './timesheet-entries';
 export * from './settings'
 export * from './attendance'
 export * from './holidays'
+export * from './pagination'
 export { default as apiClient, apiBaseUrl } from './client'

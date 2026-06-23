@@ -33,6 +33,7 @@ import type { Project, ProjectActivityType, UserInfo } from '../../lib/types'
 import type { Timesheet, TimesheetStatus } from '../../lib/types/timesheet'
 import type { TimesheetEntry } from '../../lib/types/timesheet-entry'
 import { softBg, type SxColor } from '../../lib/theme-tokens'
+import { validateTimesheetTask, type TimesheetTaskFieldErrors } from '../../lib/validation/timesheet'
 
 const BLUE = 'primary.main'
 const GREEN = 'success.main'
@@ -211,6 +212,7 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
     }, [currentTs, tsDetail, weekStart, todayIso, periodStartIso])
 
     const [error, setError] = useState('')
+    const [taskErrors, setTaskErrors] = useState<Record<string, TimesheetTaskFieldErrors>>({})
     const [pendingMode, setPendingMode] = useState<'draft' | 'submit' | null>(null)
     const [savedSnack, setSavedSnack] = useState(false)
 
@@ -271,7 +273,16 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
     const addTask = (key: string) =>
         setBuckets((b) => ({ ...b, [key]: { ...b[key], tasks: [...b[key].tasks, newTask()] } }))
 
-    const removeTask = (key: string, taskId: string) =>
+    const clearTaskError = (taskId: string) =>
+        setTaskErrors((prev) => {
+            if (!prev[taskId]) return prev
+            const next = { ...prev }
+            delete next[taskId]
+            return next
+        })
+
+    const removeTask = (key: string, taskId: string) => {
+        clearTaskError(taskId)
         setBuckets((b) => {
             const tasks = b[key].tasks
             if (tasks.length === 1) {
@@ -279,8 +290,10 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
             }
             return { ...b, [key]: { ...b[key], tasks: tasks.filter((t) => t._id !== taskId) } }
         })
+    }
 
-    const updateTask = (key: string, taskId: string, field: keyof Omit<Task, '_id' | 'serverId'>, value: string) =>
+    const updateTask = (key: string, taskId: string, field: keyof Omit<Task, '_id' | 'serverId'>, value: string) => {
+        clearTaskError(taskId)
         setBuckets((b) => ({
             ...b,
             [key]: {
@@ -288,24 +301,23 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
                 tasks: b[key].tasks.map((t) => (t._id === taskId ? { ...t, [field]: value } : t)),
             },
         }))
+    }
 
-    const validatePartial = (): string | null => {
+    // Validates every task against the zod schema (mirrors the server-side
+    // TimesheetEntryValidator + project/hours pairing) and returns a map of
+    // per-task field errors keyed by task id, for inline display.
+    const collectTaskErrors = (): Record<string, TimesheetTaskFieldErrors> => {
+        const errs: Record<string, TimesheetTaskFieldErrors> = {}
         for (const d of dayDates) {
             const key = isoDate(d)
             const bucket = buckets[key]
             if (!bucket) continue
             for (const t of bucket.tasks) {
-                const hasProject = t.projectId !== ''
-                const hasHours = t.hours.trim() !== ''
-                if (hasProject && !hasHours) return 'Some tasks have a project but no hours. Please complete or remove them.'
-                if (!hasProject && hasHours) return 'Some tasks have hours but no project. Please complete or remove them.'
-                if (hasHours) {
-                    const h = parseFloat(t.hours)
-                    if (isNaN(h) || h < 0.5 || h > 24) return 'Hours must be between 0.5 and 24 for each task.'
-                }
+                const fieldErrors = validateTimesheetTask(t)
+                if (fieldErrors.projectId || fieldErrors.hours) errs[t._id] = fieldErrors
             }
         }
-        return null
+        return errs
     }
 
     const collectValidTasks = (): { task: Task; date: string }[] => {
@@ -326,8 +338,13 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
 
     const handleSave = async (mode: 'draft' | 'submit') => {
         if (!isEditable) return
-        const partialErr = validatePartial()
-        if (partialErr) { setError(partialErr); return }
+        const errs = collectTaskErrors()
+        if (Object.keys(errs).length > 0) {
+            setTaskErrors(errs)
+            setError('Please fix the highlighted tasks before saving.')
+            return
+        }
+        setTaskErrors({})
 
         const valid = collectValidTasks()
         if (mode === 'submit' && valid.length === 0) {
@@ -517,6 +534,7 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
                                 isFuture={isFuture}
                                 isOpen={bucket.open && !isFuture}
                                 tasks={bucket.tasks}
+                                taskErrors={taskErrors}
                                 dayTotal={dayTotal}
                                 taskCount={taskCount}
                                 activeProjects={activeProjects}
@@ -694,6 +712,7 @@ type DayCardProps = {
     isFuture: boolean
     isOpen: boolean
     tasks: Task[]
+    taskErrors: Record<string, TimesheetTaskFieldErrors>
     dayTotal: number
     taskCount: number
     activeProjects: Project[]
@@ -754,7 +773,7 @@ function AutoFillBanner({ text, onAutoFill }: { text: string; onAutoFill: () => 
 
 function DayCard({
     dow, dom, dayName, isToday, isWeekend, isFuture, isOpen,
-    tasks, dayTotal, taskCount,
+    tasks, taskErrors, dayTotal, taskCount,
     activeProjects,
     activeActivityTypes,
     onToggle, onAddTask, onRemoveTask, onUpdateTask,
@@ -884,16 +903,20 @@ function DayCard({
                     </Box>
 
                     <Stack spacing={1}>
-                        {tasks.map((t) => (
-                            <Box key={t._id} sx={{
-                                display: 'grid',
-                                gridTemplateColumns: '1.6fr 1.4fr 70px 1.7fr 30px',
-                                gap: 1.25,
-                                alignItems: 'center',
-                            }}>
+                        {tasks.map((t) => {
+                            const err = taskErrors[t._id]
+                            return (
+                            <Box key={t._id}>
+                                <Box sx={{
+                                    display: 'grid',
+                                    gridTemplateColumns: '1.6fr 1.4fr 70px 1.7fr 30px',
+                                    gap: 1.25,
+                                    alignItems: 'center',
+                                }}>
                                 <Select
                                     size="small"
                                     displayEmpty
+                                    error={!!err?.projectId}
                                     value={t.projectId}
                                     onChange={(e) => onUpdateTask(t._id, 'projectId', e.target.value)}
                                     disabled={disabled}
@@ -936,6 +959,7 @@ function DayCard({
                                 <TextField
                                     type="number"
                                     size="small"
+                                    error={!!err?.hours}
                                     value={t.hours}
                                     onChange={(e) => onUpdateTask(t._id, 'hours', e.target.value)}
                                     placeholder="0"
@@ -984,8 +1008,15 @@ function DayCard({
                                 >
                                     <CloseRoundedIcon sx={{ fontSize: 14 }} />
                                 </Box>
+                                </Box>
+                                {err && (err.projectId || err.hours) && (
+                                    <Typography sx={{ fontSize: 11, color: 'error.main', mt: '4px', pl: '2px' }}>
+                                        {[err.projectId, err.hours].filter(Boolean).join(' · ')}
+                                    </Typography>
+                                )}
                             </Box>
-                        ))}
+                            )
+                        })}
                     </Stack>
 
                     {!readOnly && (

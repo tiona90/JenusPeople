@@ -30,6 +30,15 @@ public class AppSettings
     // ("mon,tue,wed,thu,fri,sat,sun") that count as working days.
     public string WorkingDaysCustom { get; set; } = "mon,tue,wed,thu,fri";
 
+    // ── Timesheet policy ───────────────────────────────────────────────────
+    // Target hours an employee is expected to log per week (drives the
+    // under/on-target colouring on the timesheet review page).
+    public int WeeklyHoursTarget { get; set; } = 40;
+    // The day (week-token "mon".."sun") and "HH:mm" UTC time by which a
+    // timesheet must be submitted to count as on-time. Default: Friday 18:00.
+    public string TimesheetSubmissionDeadlineDay { get; set; } = "fri";
+    public string TimesheetSubmissionDeadlineTime { get; set; } = "18:00";
+
     // ── Email notification preferences ─────────────────────────────────────
     public bool EmailNotificationsEnabled { get; set; } = true;
     public bool EmailDailyDigest { get; set; } = true;

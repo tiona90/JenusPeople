@@ -183,7 +183,10 @@ builder.Services.AddCors(options =>
             })
             .AllowAnyHeader()
             .AllowAnyMethod()
-            .AllowCredentials();
+            .AllowCredentials()
+            // Pagination metadata lives in headers (the body stays a plain array);
+            // expose them so the browser client can read page/total.
+            .WithExposedHeaders("X-Total-Count", "X-Page", "X-Page-Size");
     });
 });
 builder.Services.AddMediatR(x =>

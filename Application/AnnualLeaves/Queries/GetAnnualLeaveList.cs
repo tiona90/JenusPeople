@@ -12,17 +12,19 @@ namespace Application.AnnualLeaves.Queries;
 
 public class GetAnnualLeaveList
 {
-    public class Query : IRequest<List<AnnualLeaveDto>>
+    public class Query : IRequest<PagedResult<AnnualLeaveDto>>
     {
         public string RequestingUserId { get; set; } = string.Empty;
         public bool IsAdmin { get; set; }
         public bool IsManager { get; set; }
         public bool IsEmployee { get; set; }
+        public int? Page { get; set; }
+        public int? PageSize { get; set; }
     }
 
-    public class Handler(AppDbContext context, IMapper mapper) : IRequestHandler<Query, List<AnnualLeaveDto>>
+    public class Handler(AppDbContext context, IMapper mapper) : IRequestHandler<Query, PagedResult<AnnualLeaveDto>>
     {
-        public async Task<List<AnnualLeaveDto>> Handle(Query request, CancellationToken cancellationToken)
+        public async Task<PagedResult<AnnualLeaveDto>> Handle(Query request, CancellationToken cancellationToken)
         {
             IQueryable<AnnualLeave> annualLeavesQuery = context.AnnualLeaves
                 .Include(al => al.Employee)
@@ -56,8 +58,27 @@ public class GetAnnualLeaveList
                 annualLeavesQuery = annualLeavesQuery.Where(_ => false);
             }
 
-            var annualLeaves = await annualLeavesQuery.ToListAsync(cancellationToken);
-            return mapper.Map<List<AnnualLeaveDto>>(annualLeaves);
+            // Filtering above runs in SQL. Count the filtered set, then apply a
+            // deterministic order + optional paging (also in SQL) before materializing.
+            var total = await annualLeavesQuery.CountAsync(cancellationToken);
+
+            var ordered = annualLeavesQuery
+                .OrderByDescending(al => al.StartDate)
+                .ThenBy(al => al.Id);
+
+            var paging = Pagination.Resolve(request.Page, request.PageSize);
+            IQueryable<AnnualLeave> pageQuery = ordered;
+            if (paging is { } pg)
+                pageQuery = ordered.Skip((pg.Page - 1) * pg.Size).Take(pg.Size);
+
+            var annualLeaves = await pageQuery.ToListAsync(cancellationToken);
+            return new PagedResult<AnnualLeaveDto>
+            {
+                Items = mapper.Map<List<AnnualLeaveDto>>(annualLeaves),
+                Total = total,
+                Page = paging?.Page,
+                PageSize = paging?.Size,
+            };
         }
     }
 }

@@ -8,19 +8,21 @@ namespace Application.Timesheets.Queries
 {
     public class GetTimesheetList
     {
-        public class Query : IRequest<List<TimesheetDto>>
+        public class Query : IRequest<PagedResult<TimesheetDto>>
         {
             public string RequestingUserId { get; set; } = string.Empty;
             public bool IsAdmin { get; set; }
             public bool IsManager { get; set; }
+            public int? Page { get; set; }
+            public int? PageSize { get; set; }
         }
 
-        public class Handler : IRequestHandler<Query, List<TimesheetDto>>
+        public class Handler : IRequestHandler<Query, PagedResult<TimesheetDto>>
         {
             private readonly AppDbContext _context;
             public Handler(AppDbContext context) { _context = context; }
 
-            public async Task<List<TimesheetDto>> Handle(Query request, CancellationToken cancellationToken)
+            public async Task<PagedResult<TimesheetDto>> Handle(Query request, CancellationToken cancellationToken)
             {
                 IQueryable<Domain.Timesheet> query = _context.Timesheets
                     .Include(t => t.Employee).ThenInclude(e => e.User)
@@ -51,9 +53,22 @@ namespace Application.Timesheets.Queries
                     query = query.Where(t => t.Employee.UserId == request.RequestingUserId);
                 }
 
-                var timesheets = await query.ToListAsync(cancellationToken);
+                // Filtering above runs in SQL. Count the filtered set, then order +
+                // optionally page (in SQL) before materializing the entries.
+                var total = await query.CountAsync(cancellationToken);
 
-                return timesheets.Select(t =>
+                var ordered = query
+                    .OrderByDescending(t => t.PeriodStart)
+                    .ThenBy(t => t.Id);
+
+                var paging = Pagination.Resolve(request.Page, request.PageSize);
+                IQueryable<Domain.Timesheet> pageQuery = ordered;
+                if (paging is { } pg)
+                    pageQuery = ordered.Skip((pg.Page - 1) * pg.Size).Take(pg.Size);
+
+                var timesheets = await pageQuery.ToListAsync(cancellationToken);
+
+                var items = timesheets.Select(t =>
                 {
                     var weekStart = t.PeriodStart.Date;
                     var daily = new List<decimal> { 0m, 0m, 0m, 0m, 0m };
@@ -94,6 +109,14 @@ namespace Application.Timesheets.Queries
                         DailyHours = daily,
                     };
                 }).ToList();
+
+                return new PagedResult<TimesheetDto>
+                {
+                    Items = items,
+                    Total = total,
+                    Page = paging?.Page,
+                    PageSize = paging?.Size,
+                };
             }
         }
     }

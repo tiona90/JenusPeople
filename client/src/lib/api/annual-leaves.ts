@@ -1,9 +1,18 @@
 import apiClient from './client'
 import type { AnnualLeave, CreateAnnualLeaveRequest, EditAnnualLeaveRequest } from '../types'
+import { toPaged, type PageParams, type Paged } from './pagination'
 
+// Returns the full array (server returns all rows when page/pageSize are absent).
+// Kept zero-arg so it stays safe to pass directly as a React Query queryFn.
 export async function getAnnualLeaves() {
     const response = await apiClient.get<AnnualLeave[]>('/annualleaves')
     return response.data
+}
+
+// Paged variant: returns items + total (read from the X-Total-Count header).
+export async function getAnnualLeavesPaged(params: PageParams): Promise<Paged<AnnualLeave>> {
+    const response = await apiClient.get<AnnualLeave[]>('/annualleaves', { params })
+    return toPaged(response, params)
 }
 
 export async function getTeamAwayThisWeekCount() {

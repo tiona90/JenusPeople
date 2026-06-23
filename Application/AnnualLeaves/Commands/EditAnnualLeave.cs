@@ -10,24 +10,26 @@ namespace Application.AnnualLeaves.Commands;
 
 public class EditAnnualLeave
 {
-    public class Command : IRequest
+    public class Command : IRequest<Result<Unit>>
     {
         public required EditAnnualLeaveRequest AnnualLeave { get; set; }
         public string ChangedByUserId { get; set; } = string.Empty;
         public bool IsAdmin { get; set; }
         public bool IsManager { get; set; }
     }
-    public class Handler(AppDbContext context) : IRequestHandler<Command>
+    public class Handler(AppDbContext context) : IRequestHandler<Command, Result<Unit>>
     {
-        public async Task Handle(Command request, CancellationToken cancellationToken)
+        public async Task<Result<Unit>> Handle(Command request, CancellationToken cancellationToken)
         {
             var annualLeave = await context.AnnualLeaves
-            .FindAsync([request.AnnualLeave.Id], cancellationToken)
-            ?? throw new Exception("Cannot find the annual leave");
+                .FindAsync([request.AnnualLeave.Id], cancellationToken);
+
+            if (annualLeave is null)
+                return Result<Unit>.Failure("Cannot find the annual leave.");
 
             if (string.IsNullOrWhiteSpace(request.ChangedByUserId))
             {
-                throw new UnauthorizedAccessException("User context is required.");
+                return Result<Unit>.Failure("User context is required.");
             }
 
             var isInManagedDepartment = false;
@@ -53,12 +55,12 @@ public class EditAnnualLeave
 
             if (!canEdit)
             {
-                throw new UnauthorizedAccessException("You can only update your own leave requests or requests in your managed departments.");
+                return Result<Unit>.Failure("You can only update your own leave requests or requests in your managed departments.");
             }
 
             if ((annualLeave.Status == AnnualLeaveStatus.Rejected || annualLeave.Status == AnnualLeaveStatus.Approved) && !request.IsAdmin)
             {
-                throw new UnauthorizedAccessException("Approved and rejected leave requests cannot be edited.");
+                return Result<Unit>.Failure("Approved and rejected leave requests cannot be edited.");
             }
 
             annualLeave.StartDate = request.AnnualLeave.StartDate;
@@ -73,7 +75,7 @@ public class EditAnnualLeave
             var canChangeStatus = request.IsAdmin || isInManagedDepartment || isDirectReport;
             if (request.AnnualLeave.Status.HasValue && !canChangeStatus)
             {
-                throw new UnauthorizedAccessException("Only admins or managers of the request's department can change leave status.");
+                return Result<Unit>.Failure("Only admins or managers of the request's department can change leave status.");
             }
 
             if (request.AnnualLeave.Status.HasValue && request.AnnualLeave.Status.Value != annualLeave.Status)
@@ -83,7 +85,7 @@ public class EditAnnualLeave
                     .AnyAsync(u => u.Id == changedByUserId, cancellationToken);
                 if (!userExists)
                 {
-                    throw new Exception("Cannot resolve the user who changed status.");
+                    return Result<Unit>.Failure("Cannot resolve the user who changed status.");
                 }
 
                 var oldStatus = annualLeave.Status;
@@ -116,21 +118,32 @@ public class EditAnnualLeave
 
             if (employeeProfile is not null && annualLeave.Status == AnnualLeaveStatus.Approved)
             {
-                await AnnualLeaveBalanceCalculator.EnsureSufficientBalanceAsync(
+                var balanceError = await AnnualLeaveBalanceCalculator.CheckSufficientBalanceAsync(
                     context,
                     employeeProfile,
                     annualLeave,
                     excludeLeaveId: annualLeave.Id,
                     cancellationToken);
+                if (balanceError is not null)
+                    return Result<Unit>.Failure(balanceError);
             }
 
-            await context.SaveChangesAsync(cancellationToken);
+            try
+            {
+                await context.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                return Result<Unit>.Failure(ConcurrencyError.Message);
+            }
 
             if (employeeProfile is not null)
             {
                 await AnnualLeaveBalanceCalculator.SyncCurrentYearBalanceAsync(context, employeeProfile, cancellationToken);
                 await context.SaveChangesAsync(cancellationToken);
             }
+
+            return Result<Unit>.Success(Unit.Value);
         }
     }
 }

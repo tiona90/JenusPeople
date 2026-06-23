@@ -11,7 +11,7 @@ namespace Application.AnnualLeaves.Commands;
 
 public class UpdateLeaveStatus
 {
-    public class Command : IRequest
+    public class Command : IRequest<Result<Unit>>
     {
         public required string LeaveId { get; set; }
         public required UpdateLeaveStatusRequest Request { get; set; }
@@ -24,21 +24,23 @@ public class UpdateLeaveStatus
         AppDbContext context,
         IEmailService emailService,
         IChatNotificationService chatNotificationService)
-        : IRequestHandler<Command>
+        : IRequestHandler<Command, Result<Unit>>
     {
-        public async Task Handle(Command request, CancellationToken cancellationToken)
+        public async Task<Result<Unit>> Handle(Command request, CancellationToken cancellationToken)
         {
             var annualLeave = await context.AnnualLeaves
-                .FindAsync([request.LeaveId], cancellationToken)
-                ?? throw new Exception("Cannot find the annual leave");
+                .FindAsync([request.LeaveId], cancellationToken);
+
+            if (annualLeave is null)
+                return Result<Unit>.Failure("Cannot find the annual leave.");
 
             if (string.IsNullOrWhiteSpace(request.ChangedByUserId))
-                throw new UnauthorizedAccessException("User context is required.");
+                return Result<Unit>.Failure("User context is required.");
 
             if (!request.IsAdmin)
             {
                 if (!request.IsManager)
-                    throw new UnauthorizedAccessException("Only admins or managers can change leave status.");
+                    return Result<Unit>.Failure("Only admins or managers can change leave status.");
 
                 var managerScope = await ManagerAccessScopeResolver.ResolveAsync(
                     context,
@@ -50,13 +52,13 @@ public class UpdateLeaveStatus
                 var isDirectReport = managerScope.DirectReportUserIds.Contains(annualLeave.EmployeeId);
 
                 if (!isInManagedDepartment && !isDirectReport)
-                    throw new UnauthorizedAccessException("You can only change status for leaves in your managed scope.");
+                    return Result<Unit>.Failure("You can only change status for leaves in your managed scope.");
             }
 
             var oldStatus = annualLeave.Status;
             var newStatus = request.Request.Status;
 
-            if (oldStatus == newStatus) return;
+            if (oldStatus == newStatus) return Result<Unit>.Success(Unit.Value);
 
             annualLeave.Status = newStatus;
 
@@ -65,12 +67,14 @@ public class UpdateLeaveStatus
 
             if (employeeProfile is not null && oldStatus != AnnualLeaveStatus.Approved && newStatus == AnnualLeaveStatus.Approved)
             {
-                await AnnualLeaveBalanceCalculator.EnsureSufficientBalanceAsync(
+                var balanceError = await AnnualLeaveBalanceCalculator.CheckSufficientBalanceAsync(
                     context,
                     employeeProfile,
                     annualLeave,
                     excludeLeaveId: annualLeave.Id,
                     cancellationToken);
+                if (balanceError is not null)
+                    return Result<Unit>.Failure(balanceError);
             }
 
             if (newStatus == AnnualLeaveStatus.Approved)
@@ -95,7 +99,14 @@ public class UpdateLeaveStatus
                 ChangedAt = DateTime.UtcNow
             });
 
-            await context.SaveChangesAsync(cancellationToken);
+            try
+            {
+                await context.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                return Result<Unit>.Failure(ConcurrencyError.Message);
+            }
 
             if (employeeProfile is not null)
             {
@@ -117,7 +128,7 @@ public class UpdateLeaveStatus
 
             if (employeeContact is null || string.IsNullOrWhiteSpace(employeeContact.Email))
             {
-                return;
+                return Result<Unit>.Success(Unit.Value);
             }
 
             var changedByName = await context.Users
@@ -182,6 +193,8 @@ Please log in to the Annual Leave system to review the latest update.
                 var slackMessage = $"🎉 {employeeContact.Name}'s leave for {dateRange} has been approved!";
                 await chatNotificationService.SendMessageAsync(slackMessage, cancellationToken);
             }
+
+            return Result<Unit>.Success(Unit.Value);
         }
     }
 }

@@ -75,18 +75,21 @@ namespace API.Controllers
         // GET: api/timesheets
         [HttpGet]
         [Authorize]
-        public async Task<ActionResult<List<TimesheetDto>>> GetTimesheets([FromQuery] bool myOnly = false)
+        public async Task<ActionResult<List<TimesheetDto>>> GetTimesheets([FromQuery] bool myOnly = false, [FromQuery] int? page = null, [FromQuery] int? pageSize = null)
         {
             var userId = ResolveUserId();
             var isAdmin = User.IsInRole(AppRoles.Admin);
             var isManager = User.IsInRole(AppRoles.Manager);
 
-            return await Mediator.Send(new GetTimesheetList.Query
+            var result = await Mediator.Send(new GetTimesheetList.Query
             {
                 RequestingUserId = userId,
                 IsAdmin = !myOnly && isAdmin,
                 IsManager = !myOnly && isManager,
+                Page = page,
+                PageSize = pageSize,
             });
+            return Paged(result);
         }
 
         // GET: api/timesheets/{id}

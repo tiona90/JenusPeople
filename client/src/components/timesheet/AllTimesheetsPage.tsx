@@ -4,10 +4,6 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
 import CircularProgress from '@mui/material/CircularProgress'
-import Dialog from '@mui/material/Dialog'
-import DialogActions from '@mui/material/DialogActions'
-import DialogContent from '@mui/material/DialogContent'
-import DialogTitle from '@mui/material/DialogTitle'
 import MenuItem from '@mui/material/MenuItem'
 import Paper from '@mui/material/Paper'
 import Select from '@mui/material/Select'
@@ -24,7 +20,10 @@ import {
 } from '../../lib/api'
 import type { Timesheet, TimesheetProjectSummary } from '../../lib/types/timesheet'
 import type { TimesheetEntry } from '../../lib/types/timesheet-entry'
+import { useAppSettings } from '../../lib/hooks/useAppSettings'
 import { softBg, type SxColor } from '../../lib/theme-tokens'
+import { RejectReasonDialog } from '../ui'
+import { buildTimesheetsCsv } from './timesheet-csv'
 
 const BLUE = 'primary.main'
 const GREEN = 'success.main'
@@ -75,17 +74,29 @@ function formatWeekHeader(periodStartIso: string): string {
     return `Week of ${fmt(start)} – ${fmt(end)} ${end.getFullYear()}`
 }
 
-function getFridayDeadlineUtc(periodStart: string): Date {
+// Default timesheet policy, used until AppSettings loads (and as a fallback).
+const DEFAULT_WEEKLY_TARGET = 40
+const DEFAULT_DEADLINE_DAY = 'fri'
+const DEFAULT_DEADLINE_TIME = '18:00'
+
+// Week tokens in period order — periodStart is always a Monday, so the index
+// is the day offset to add to reach the deadline weekday.
+const DAY_OFFSET: Record<string, number> = { mon: 0, tue: 1, wed: 2, thu: 3, fri: 4, sat: 5, sun: 6 }
+
+// The submission deadline (UTC) for a given week, derived from the configurable
+// AppSettings deadline day + time.
+function getDeadlineUtc(periodStart: string, deadlineDay: string, deadlineTime: string): Date {
+    const offset = DAY_OFFSET[deadlineDay] ?? DAY_OFFSET[DEFAULT_DEADLINE_DAY]
+    const [h, m] = deadlineTime.split(':').map(Number)
     const d = new Date(periodStart)
-    // periodStart is Monday; Friday 18:00 UTC = +4 days +18h
-    d.setUTCDate(d.getUTCDate() + 4)
-    d.setUTCHours(18, 0, 0, 0)
+    d.setUTCDate(d.getUTCDate() + offset)
+    d.setUTCHours(Number.isFinite(h) ? h : 18, Number.isFinite(m) ? m : 0, 0, 0)
     return d
 }
 
-function isLateSubmission(periodStart: string, submittedAt?: string | null) {
+function isLateSubmission(periodStart: string, submittedAt: string | null | undefined, deadlineDay: string, deadlineTime: string) {
     if (!submittedAt) return false
-    return new Date(submittedAt) > getFridayDeadlineUtc(periodStart)
+    return new Date(submittedAt) > getDeadlineUtc(periodStart, deadlineDay, deadlineTime)
 }
 
 function statusBadge(status: string) {
@@ -248,6 +259,9 @@ function ReviewRow({
     onApprove,
     onReject,
     actionPending,
+    weeklyTarget,
+    deadlineDay,
+    deadlineTime,
 }: {
     ts: Timesheet
     deptName: string
@@ -258,12 +272,15 @@ function ReviewRow({
     onApprove: () => void
     onReject: () => void
     actionPending: boolean
+    weeklyTarget: number
+    deadlineDay: string
+    deadlineTime: string
 }) {
     const pending = isPendingStatus(ts.status)
-    const target = 40
+    const target = weeklyTarget
     const hoursDiff = Number(ts.totalHours) < target * 0.9 ? 'under' : Number(ts.totalHours) > target ? 'over' : 'ok'
     const hoursColor = hoursDiff === 'under' ? AMBER : hoursDiff === 'over' ? BLUE : 'text.primary'
-    const late = isLateSubmission(ts.periodStart, ts.submittedAt)
+    const late = isLateSubmission(ts.periodStart, ts.submittedAt, deadlineDay, deadlineTime)
     const submitted = ts.submittedAt
 
     const rowBg = selected ? softBg('primary') : expanded ? 'action.hover' : 'transparent'
@@ -443,6 +460,7 @@ export default function AllTimesheetsPage() {
     const [deptFilter, setDeptFilter] = useState<string>('all')
     const [weekFilter, setWeekFilter] = useState<string>('all')
     const [projectFilter, setProjectFilter] = useState<string>('all')
+    const [statusFilter, setStatusFilter] = useState<string>('all')
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
     const [expandedId, setExpandedId] = useState<string | null>(null)
     const [actionTarget, setActionTarget] = useState<string | null>(null)
@@ -454,6 +472,13 @@ export default function AllTimesheetsPage() {
         queryKey: ['timesheets'],
         queryFn: getTimesheets,
     })
+
+    // Timesheet policy (weekly target + submission deadline) is admin-configurable
+    // via AppSettings; fall back to the historical defaults until it loads.
+    const { data: appSettings } = useAppSettings()
+    const weeklyTarget = appSettings?.weeklyHoursTarget ?? DEFAULT_WEEKLY_TARGET
+    const deadlineDay = appSettings?.timesheetSubmissionDeadlineDay ?? DEFAULT_DEADLINE_DAY
+    const deadlineTime = appSettings?.timesheetSubmissionDeadlineTime ?? DEFAULT_DEADLINE_TIME
 
     const { data: departments = [] } = useQuery({
         queryKey: ['departments'],
@@ -552,6 +577,10 @@ export default function AllTimesheetsPage() {
             list = list.filter((t) => startOfWeekIso(new Date(t.periodStart)) === weekFilter)
         }
 
+        if (statusFilter !== 'all') {
+            list = list.filter((t) => t.status === statusFilter)
+        }
+
         const q = search.trim().toLowerCase()
         if (q) list = list.filter((t) => t.employeeName.toLowerCase().includes(q))
 
@@ -560,7 +589,7 @@ export default function AllTimesheetsPage() {
             const bDate = b.submittedAt ?? b.createdAt
             return new Date(bDate).getTime() - new Date(aDate).getTime()
         })
-    }, [timesheets, tab, deptFilter, projectFilter, weekFilter, search, departments])
+    }, [timesheets, tab, deptFilter, projectFilter, weekFilter, statusFilter, search, departments])
 
     // Group by week
     const weekGroups = useMemo(() => {
@@ -583,6 +612,15 @@ export default function AllTimesheetsPage() {
         return Array.from(set).sort((a, b) => b.localeCompare(a))
     }, [timesheets])
 
+    // Status options (the "Actions" column reflects status) — only those present in the data
+    const statusOptions = useMemo(() => {
+        const present = new Set<string>(timesheets.map((t) => t.status))
+        const order = ['Draft', 'Submitted', 'Resubmitted', 'Approved', 'Rejected']
+        return order
+            .filter((s) => present.has(s))
+            .map((s) => ({ value: s, label: statusBadge(s).label }))
+    }, [timesheets])
+
     // Counts for tabs
     const counts = useMemo(() => ({
         all: timesheets.length,
@@ -598,7 +636,7 @@ export default function AllTimesheetsPage() {
     }, [timesheets])
     const submittedHoursTotal = submittedThisWeek.reduce((s, t) => s + Number(t.totalHours), 0)
     const approvedThisWeek = submittedThisWeek.filter((t) => t.status === 'Approved').length
-    const onTimeCount = submittedThisWeek.filter((t) => !isLateSubmission(t.periodStart, t.submittedAt)).length
+    const onTimeCount = submittedThisWeek.filter((t) => !isLateSubmission(t.periodStart, t.submittedAt, deadlineDay, deadlineTime)).length
     const onTimePct = submittedThisWeek.length > 0
         ? Math.round((onTimeCount / submittedThisWeek.length) * 100)
         : 0
@@ -653,82 +691,13 @@ export default function AllTimesheetsPage() {
                 )
             )
 
-            const header = [
-                'Employee',
-                'Department',
-                'Week',
-                'Date',
-                'Day',
-                'Project Code',
-                'Project Name',
-                'Hours',
-                'Notes (what was worked on)',
-                'Timesheet Total Hours',
-                'Status',
-                'Submitted At',
-            ]
+            const sources = filtered.map((t, i) => ({
+                timesheet: t,
+                entries: (details[i]?.entries as TimesheetEntry[] | undefined) ?? [],
+                departmentName: deptById.get(t.departmentId) ?? '',
+            }))
 
-            const fmtDate = (iso: string) => iso.split('T')[0]
-            const fmtDay = (iso: string) =>
-                new Date(iso).toLocaleDateString('en-GB', { weekday: 'short' })
-            const fmtSubmitted = (iso?: string | null) =>
-                iso ? new Date(iso).toLocaleString('en-GB', { hour12: false }) : ''
-
-            const csvRows: string[][] = []
-
-            filtered.forEach((t, i) => {
-                const dept = deptById.get(t.departmentId) ?? ''
-                const week = `${fmtDate(t.periodStart)} to ${fmtDate(t.periodEnd)}`
-                const total = Number(t.totalHours).toFixed(1)
-                const submitted = fmtSubmitted(t.submittedAt)
-                const entries = ((details[i]?.entries as TimesheetEntry[] | undefined) ?? [])
-                    .slice()
-                    .sort((a, b) => a.date.localeCompare(b.date))
-
-                if (entries.length === 0) {
-                    csvRows.push([
-                        t.employeeName,
-                        dept,
-                        week,
-                        '',
-                        '',
-                        '',
-                        '',
-                        '',
-                        '(no entries)',
-                        total,
-                        t.status,
-                        submitted,
-                    ])
-                    return
-                }
-
-                for (const e of entries) {
-                    const proj = projectById.get(e.projectId)
-                    csvRows.push([
-                        t.employeeName,
-                        dept,
-                        week,
-                        fmtDate(e.date),
-                        fmtDay(e.date),
-                        proj?.code ?? '',
-                        proj?.name ?? `Project #${e.projectId}`,
-                        Number(e.hoursWorked).toFixed(2),
-                        e.notes ?? '',
-                        total,
-                        t.status,
-                        submitted,
-                    ])
-                }
-            })
-
-            const escape = (v: string) =>
-                /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
-            const lines = [
-                header.map(escape).join(','),
-                ...csvRows.map((cells) => cells.map(escape).join(',')),
-            ]
-            const csv = lines.join('\r\n')
+            const csv = buildTimesheetsCsv(sources, projectById)
 
             const blob = new Blob(['﻿', csv], { type: 'text/csv;charset=utf-8;' })
             const url = URL.createObjectURL(blob)
@@ -957,6 +926,21 @@ export default function AllTimesheetsPage() {
                             <MenuItem key={p.id} value={String(p.id)}>{p.code} — {p.name}</MenuItem>
                         ))}
                     </Select>
+                    <Select
+                        size="small"
+                        value={statusFilter}
+                        onChange={(e) => setStatusFilter(e.target.value)}
+                        sx={{
+                            fontSize: 12,
+                            '& .MuiSelect-select': { py: '7px', px: '12px' },
+                            '& fieldset': { borderColor: 'divider', borderRadius: '6px' },
+                        }}
+                    >
+                        <MenuItem value="all">All statuses</MenuItem>
+                        {statusOptions.map((s) => (
+                            <MenuItem key={s.value} value={s.value}>{s.label}</MenuItem>
+                        ))}
+                    </Select>
                 </Stack>
                 <Button
                     size="small"
@@ -1090,6 +1074,9 @@ export default function AllTimesheetsPage() {
                                     }}
                                     onReject={() => openRejectDialog(ts)}
                                     actionPending={actionTarget === ts.id && (approveMutation.isPending || rejectMutation.isPending)}
+                                    weeklyTarget={weeklyTarget}
+                                    deadlineDay={deadlineDay}
+                                    deadlineTime={deadlineTime}
                                 />
                             ))}
                         </Box>
@@ -1098,59 +1085,20 @@ export default function AllTimesheetsPage() {
             )}
 
             {/* Reject reason dialog */}
-            <Dialog open={rejectDialog !== null} onClose={closeRejectDialog} maxWidth="xs" fullWidth>
-                <DialogTitle sx={{ fontSize: 15, fontWeight: 600, color: 'text.primary', pb: 1 }}>
-                    {rejectDialog && rejectDialog.ids.length > 1 ? 'Reject selected timesheets' : 'Reject timesheet'}
-                </DialogTitle>
-                <DialogContent sx={{ px: 3, py: 2 }}>
-                    {rejectDialog && (
-                        <Stack spacing={1.5}>
-                            <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
-                                Please provide a reason. The employee will see this message.
-                            </Typography>
-                            <Box sx={{ fontSize: 12, color: 'text.secondary' }}>
-                                {rejectDialog.label}
-                            </Box>
-                            <TextField
-                                autoFocus
-                                multiline
-                                minRows={3}
-                                maxRows={6}
-                                fullWidth
-                                placeholder="Reason for rejection (required)"
-                                value={rejectReason}
-                                onChange={(e) => {
-                                    setRejectReason(e.target.value)
-                                    if (rejectError) setRejectError('')
-                                }}
-                                error={!!rejectError}
-                                helperText={rejectError || `${rejectReason.trim().length}/500`}
-                                inputProps={{ maxLength: 500 }}
-                                sx={{ '& .MuiInputBase-input': { fontSize: 13 } }}
-                            />
-                        </Stack>
-                    )}
-                </DialogContent>
-                <DialogActions sx={{ px: 3, py: 1.75, gap: 1 }}>
-                    <Button
-                        size="small"
-                        onClick={closeRejectDialog}
-                        disabled={rejectMutation.isPending}
-                        sx={{ textTransform: 'none', color: 'text.secondary' }}
-                    >
-                        Cancel
-                    </Button>
-                    <Button
-                        size="small"
-                        variant="contained"
-                        disabled={rejectMutation.isPending || rejectReason.trim().length === 0}
-                        onClick={() => void confirmReject()}
-                        sx={{ textTransform: 'none', bgcolor: 'error.main', '&:hover': { bgcolor: 'error.dark' }, boxShadow: 'none' }}
-                    >
-                        {rejectMutation.isPending ? 'Rejecting…' : 'Confirm Reject'}
-                    </Button>
-                </DialogActions>
-            </Dialog>
+            <RejectReasonDialog
+                open={rejectDialog !== null}
+                title={rejectDialog && rejectDialog.ids.length > 1 ? 'Reject selected timesheets' : 'Reject timesheet'}
+                label={rejectDialog?.label ?? ''}
+                reason={rejectReason}
+                error={rejectError}
+                isPending={rejectMutation.isPending}
+                onReasonChange={(value) => {
+                    setRejectReason(value)
+                    if (rejectError) setRejectError('')
+                }}
+                onClose={closeRejectDialog}
+                onConfirm={() => void confirmReject()}
+            />
         </Stack>
     )
 }

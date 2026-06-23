@@ -14,13 +14,16 @@ public class LeaveStatusHistoriesController : BaseApiController
 {
     [HttpGet]
     [Authorize]
-    public async Task<ActionResult<List<LeaveStatusHistoryDto>>> GetLeaveStatusHistories()
+    public async Task<ActionResult<List<LeaveStatusHistoryDto>>> GetLeaveStatusHistories([FromQuery] int? page = null, [FromQuery] int? pageSize = null)
     {
-        return await Mediator.Send(new GetLeaveStatusHistoryList.Query
+        var result = await Mediator.Send(new GetLeaveStatusHistoryList.Query
         {
             RequestingUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty,
             IsAdmin = User.IsInRole(AppRoles.Admin),
             IsManager = User.IsInRole(AppRoles.Manager),
+            Page = page,
+            PageSize = pageSize,
         });
+        return Paged(result);
     }
 }

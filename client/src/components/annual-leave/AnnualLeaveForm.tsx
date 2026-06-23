@@ -1,4 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
+import { Controller, useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
@@ -15,6 +17,7 @@ import { createAnnualLeave, editAnnualLeave, getLeaveTypes, getAdminUsers, uploa
 import { getApiErrorMessage } from '../../lib/api/error-utils'
 import { useStore } from '../../lib/mobx'
 import { softBg } from '../../lib/theme-tokens'
+import { buildAnnualLeaveSchema, type AnnualLeaveFormValues } from '../../lib/validation/leave'
 import type { AnnualLeave, CreateAnnualLeaveRequest, EditAnnualLeaveRequest, LeaveStatusHistory } from '../../lib/types'
 
 function getErrorMessage(error: unknown) {
@@ -43,13 +46,24 @@ function AnnualLeaveForm({ open, onClose, leave, isAdmin = false, readOnly = fal
     const queryClient = useQueryClient()
     const { authStore } = useStore()
 
-    const [startDate, setStartDate] = useState(leave ? toInputDate(leave.startDate) : '')
-    const [endDate, setEndDate] = useState(leave ? toInputDate(leave.endDate) : '')
-    const [leaveTypeId, setLeaveTypeId] = useState<number>(leave?.leaveTypeId ?? 0)
-    const [reason, setReason] = useState(leave?.reason ?? '')
     const [evidenceUrl, setEvidenceUrl] = useState(leave?.evidenceUrl ?? '')
     const [evidenceFile, setEvidenceFile] = useState<File | null>(null)
-    const [assignedUserId, setAssignedUserId] = useState('')
+
+    const requireEmployee = isAdmin && !isEdit
+    const schema = useMemo(() => buildAnnualLeaveSchema(requireEmployee), [requireEmployee])
+
+    const buildDefaults = (): AnnualLeaveFormValues => ({
+        employeeId: '',
+        startDate: leave ? toInputDate(leave.startDate) : '',
+        endDate: leave ? toInputDate(leave.endDate) : '',
+        leaveTypeId: leave?.leaveTypeId ?? 0,
+        reason: leave?.reason ?? '',
+    })
+
+    const { control, handleSubmit, reset, watch } = useForm<AnnualLeaveFormValues>({
+        resolver: zodResolver(schema),
+        defaultValues: buildDefaults(),
+    })
 
     const { data: leaveTypes, isLoading: isLoadingLeaveTypes } = useQuery({
         queryKey: ['leaveTypes'],
@@ -64,13 +78,10 @@ function AnnualLeaveForm({ open, onClose, leave, isAdmin = false, readOnly = fal
 
     // Sync form state on open (populate from leave) and on close (reset).
     useEffect(() => {
-        setStartDate(leave ? toInputDate(leave.startDate) : '')
-        setEndDate(leave ? toInputDate(leave.endDate) : '')
-        setLeaveTypeId(leave?.leaveTypeId ?? 0)
-        setReason(leave?.reason ?? '')
+        reset(buildDefaults())
         setEvidenceUrl(leave?.evidenceUrl ?? '')
         setEvidenceFile(null)
-        setAssignedUserId('')
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open, leave?.id])
 
     const createMutation = useMutation({
@@ -122,9 +133,11 @@ function AnnualLeaveForm({ open, onClose, leave, isAdmin = false, readOnly = fal
         },
     }
 
-    async function handleSubmit(e: React.FormEvent) {
-        e.preventDefault()
+    const watchedStart = watch('startDate')
 
+    // Validated submit (react-hook-form blocks this when the zod schema fails,
+    // so the existing API calls only fire on valid input).
+    const onValid = async (values: AnnualLeaveFormValues) => {
         try {
             let nextEvidenceUrl = evidenceUrl.trim() || undefined
 
@@ -137,20 +150,20 @@ function AnnualLeaveForm({ open, onClose, leave, isAdmin = false, readOnly = fal
             if (isEdit && leave) {
                 await editMutation.mutateAsync({
                     id: leave.id,
-                    startDate,
-                    endDate,
-                    leaveTypeId,
-                    reason,
+                    startDate: values.startDate,
+                    endDate: values.endDate,
+                    leaveTypeId: values.leaveTypeId,
+                    reason: values.reason,
                     evidenceUrl: nextEvidenceUrl,
                 })
             } else {
                 await createMutation.mutateAsync({
-                    startDate,
-                    endDate,
-                    leaveTypeId,
-                    reason,
+                    startDate: values.startDate,
+                    endDate: values.endDate,
+                    leaveTypeId: values.leaveTypeId,
+                    reason: values.reason,
                     evidenceUrl: nextEvidenceUrl,
-                    employeeId: isAdmin ? assignedUserId : (authStore.user?.id ?? ''),
+                    employeeId: isAdmin ? values.employeeId : (authStore.user?.id ?? ''),
                 })
             }
         } catch {
@@ -168,7 +181,7 @@ function AnnualLeaveForm({ open, onClose, leave, isAdmin = false, readOnly = fal
             </AppDialogTitle>
 
             <AppDialogContent>
-                <Stack spacing={3} component="form" id="leave-form" onSubmit={handleSubmit} noValidate sx={{ pt: 1 }}>
+                <Stack spacing={3} component="form" id="leave-form" onSubmit={handleSubmit(onValid)} noValidate sx={{ pt: 1 }}>
                     {readOnly && leave && (() => {
                         const status = leave.status
                         const isRejected = status === 'Rejected'
@@ -213,112 +226,200 @@ function AnnualLeaveForm({ open, onClose, leave, isAdmin = false, readOnly = fal
                         )
                     })()}
                     {isAdmin && !isEdit && (
-                        <TextField
-                            label="Assign to Employee"
-                            select
-                            value={assignedUserId}
-                            onChange={(e) => setAssignedUserId(e.target.value)}
-                            required
-                            fullWidth
-                            disabled={isLoadingUsers}
-                            helperText="Required"
-                        >
-                            <MenuItem value="" disabled>
-                                Select employee
-                            </MenuItem>
-                            {(adminUsers ?? [])
-                                .filter((u) => u.roles.includes('Employee') || u.roles.includes('Manager'))
-                                .map((u) => (
-                                    <MenuItem key={u.id} value={u.id}>
-                                        {u.displayName} ({u.email})
+                        <Controller
+                            name="employeeId"
+                            control={control}
+                            render={({ field, fieldState }) => (
+                                <TextField
+                                    {...field}
+                                    label="Assign to Employee"
+                                    select
+                                    fullWidth
+                                    disabled={isLoadingUsers}
+                                    error={!!fieldState.error}
+                                    helperText={fieldState.error?.message ?? 'Required'}
+                                >
+                                    <MenuItem value="" disabled>
+                                        Select employee
                                     </MenuItem>
-                                ))}
-                        </TextField>
+                                    {(adminUsers ?? [])
+                                        .filter((u) => u.roles.includes('Employee') || u.roles.includes('Manager'))
+                                        .map((u) => (
+                                            <MenuItem key={u.id} value={u.id}>
+                                                {u.displayName} ({u.email})
+                                            </MenuItem>
+                                        ))}
+                                </TextField>
+                            )}
+                        />
                     )}
                     <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-                        <TextField
-                            label="Start Date"
-                            type="date"
-                            value={startDate}
-                            onChange={(e) => setStartDate(e.target.value)}
-                            required
-                            fullWidth
-                            disabled={readOnly}
-                            InputLabelProps={{ shrink: true }}
-                            helperText={readOnly ? ' ' : 'Select start of leave'}
-                            InputProps={{
-                                readOnly,
-                                endAdornment: (
-                                    <InputAdornment position="end">
-                                        <CalendarMonthIcon fontSize="small" color="action" />
-                                    </InputAdornment>
-                                ),
-                            }}
-                            sx={dateFieldSx}
-                        />
-                        <TextField
-                            label="End Date"
-                            type="date"
-                            value={endDate}
-                            onChange={(e) => setEndDate(e.target.value)}
-                            required
-                            fullWidth
-                            disabled={readOnly}
-                            InputLabelProps={{ shrink: true }}
-                            inputProps={{ min: startDate }}
-                            helperText={readOnly ? ' ' : 'Select end of leave'}
-                            InputProps={{
-                                readOnly,
-                                endAdornment: (
-                                    <InputAdornment position="end">
-                                        <CalendarMonthIcon fontSize="small" color="action" />
-                                    </InputAdornment>
-                                ),
-                            }}
-                            sx={dateFieldSx}
-                        />
-                    </Stack>
-                    <TextField
-                        label="Leave Type"
-                        select={!readOnly}
-                        value={readOnly
-                            ? (leaveTypes?.find((lt) => lt.id === leaveTypeId)?.name ?? '')
-                            : leaveTypeId}
-                        onChange={(e) => setLeaveTypeId(Number(e.target.value))}
-                        required
-                        fullWidth
-                        disabled={isLoadingLeaveTypes || readOnly}
-                        helperText={readOnly ? ' ' : 'Required'}
-                        InputProps={readOnly ? { readOnly: true } : undefined}
-                    >
-                        {!readOnly && (
-                            <MenuItem value={0} disabled>
-                                Select leave type
-                            </MenuItem>
-                        )}
-                        {!readOnly && (leaveTypes ?? []).map((leaveType) => (
-                            <MenuItem key={leaveType.id} value={leaveType.id}>
-                                {leaveType.name}
-                            </MenuItem>
-                        ))}
-                    </TextField>
-                    {(() => {
-                        const trimmed = reason.trim()
-                        const isPlaceholderOnly = trimmed === '' || /^[-_‐-―−.·•]+$/.test(trimmed)
-                        if (readOnly && isPlaceholderOnly) return null
-                        return (
+                        {readOnly ? (
                             <TextField
-                                label="Reason"
-                                value={reason}
-                                onChange={(e) => setReason(e.target.value)}
-                                multiline
-                                rows={3}
-                                required={!readOnly}
+                                label="Start Date"
+                                type="date"
+                                value={leave ? toInputDate(leave.startDate) : ''}
                                 fullWidth
-                                disabled={readOnly}
-                                InputProps={{ readOnly }}
-                                helperText={readOnly ? ' ' : 'Required'}
-                                placeholder={readOnly ? '' : 'Add a short reason for this request'}
+                                disabled
+                                InputLabelProps={{ shrink: true }}
+                                helperText=" "
+                                InputProps={{
+                                    readOnly: true,
+                                    endAdornment: (
+                                        <InputAdornment position="end">
+                                            <CalendarMonthIcon fontSize="small" color="action" />
+                                        </InputAdornment>
+                                    ),
+                                }}
+                                sx={dateFieldSx}
+                            />
+                        ) : (
+                            <Controller
+                                name="startDate"
+                                control={control}
+                                render={({ field, fieldState }) => (
+                                    <TextField
+                                        {...field}
+                                        label="Start Date"
+                                        type="date"
+                                        required
+                                        fullWidth
+                                        InputLabelProps={{ shrink: true }}
+                                        error={!!fieldState.error}
+                                        helperText={fieldState.error?.message ?? 'Select start of leave'}
+                                        InputProps={{
+                                            endAdornment: (
+                                                <InputAdornment position="end">
+                                                    <CalendarMonthIcon fontSize="small" color="action" />
+                                                </InputAdornment>
+                                            ),
+                                        }}
+                                        sx={dateFieldSx}
+                                    />
+                                )}
+                            />
+                        )}
+                        {readOnly ? (
+                            <TextField
+                                label="End Date"
+                                type="date"
+                                value={leave ? toInputDate(leave.endDate) : ''}
+                                fullWidth
+                                disabled
+                                InputLabelProps={{ shrink: true }}
+                                helperText=" "
+                                InputProps={{
+                                    readOnly: true,
+                                    endAdornment: (
+                                        <InputAdornment position="end">
+                                            <CalendarMonthIcon fontSize="small" color="action" />
+                                        </InputAdornment>
+                                    ),
+                                }}
+                                sx={dateFieldSx}
+                            />
+                        ) : (
+                            <Controller
+                                name="endDate"
+                                control={control}
+                                render={({ field, fieldState }) => (
+                                    <TextField
+                                        {...field}
+                                        label="End Date"
+                                        type="date"
+                                        required
+                                        fullWidth
+                                        InputLabelProps={{ shrink: true }}
+                                        inputProps={{ min: watchedStart }}
+                                        error={!!fieldState.error}
+                                        helperText={fieldState.error?.message ?? 'Select end of leave'}
+                                        InputProps={{
+                                            endAdornment: (
+                                                <InputAdornment position="end">
+                                                    <CalendarMonthIcon fontSize="small" color="action" />
+                                                </InputAdornment>
+                                            ),
+                                        }}
+                                        sx={dateFieldSx}
+                                    />
+                                )}
+                            />
+                        )}
+                    </Stack>
+                    {readOnly ? (
+                        <TextField
+                            label="Leave Type"
+                            value={leaveTypes?.find((lt) => lt.id === (leave?.leaveTypeId ?? 0))?.name ?? ''}
+                            fullWidth
+                            disabled
+                            helperText=" "
+                            InputProps={{ readOnly: true }}
+                        />
+                    ) : (
+                        <Controller
+                            name="leaveTypeId"
+                            control={control}
+                            render={({ field, fieldState }) => (
+                                <TextField
+                                    label="Leave Type"
+                                    select
+                                    value={field.value}
+                                    onChange={(e) => field.onChange(Number(e.target.value))}
+                                    onBlur={field.onBlur}
+                                    inputRef={field.ref}
+                                    required
+                                    fullWidth
+                                    disabled={isLoadingLeaveTypes}
+                                    error={!!fieldState.error}
+                                    helperText={fieldState.error?.message ?? 'Required'}
+                                >
+                                    <MenuItem value={0} disabled>
+                                        Select leave type
+                                    </MenuItem>
+                                    {(leaveTypes ?? []).map((leaveType) => (
+                                        <MenuItem key={leaveType.id} value={leaveType.id}>
+                                            {leaveType.name}
+                                        </MenuItem>
+                                    ))}
+                                </TextField>
+                            )}
+                        />
+                    )}
+                    {(() => {
+                        if (readOnly) {
+                            const trimmed = (leave?.reason ?? '').trim()
+                            const isPlaceholderOnly = trimmed === '' || /^[-_‐-―−.·•]+$/.test(trimmed)
+                            if (isPlaceholderOnly) return null
+                            return (
+                                <TextField
+                                    label="Reason"
+                                    value={leave?.reason ?? ''}
+                                    multiline
+                                    rows={3}
+                                    fullWidth
+                                    disabled
+                                    InputProps={{ readOnly: true }}
+                                    helperText=" "
+                                />
+                            )
+                        }
+                        return (
+                            <Controller
+                                name="reason"
+                                control={control}
+                                render={({ field, fieldState }) => (
+                                    <TextField
+                                        {...field}
+                                        label="Reason"
+                                        multiline
+                                        rows={3}
+                                        required
+                                        fullWidth
+                                        error={!!fieldState.error}
+                                        helperText={fieldState.error?.message ?? 'Required'}
+                                        placeholder="Add a short reason for this request"
+                                    />
+                                )}
                             />
                         )
                     })()}
@@ -381,7 +482,7 @@ function AnnualLeaveForm({ open, onClose, leave, isAdmin = false, readOnly = fal
                         form="leave-form"
                         variant="contained"
                         sx={saveBtnSx}
-                        disabled={isPending || leaveTypeId <= 0 || !reason.trim() || isLoadingLeaveTypes || (isAdmin && !isEdit && !assignedUserId)}
+                        disabled={isPending || isLoadingLeaveTypes}
                         startIcon={isPending ? <CircularProgress size={16} color="inherit" /> : null}
                     >
                         {submitLabel}

@@ -30,6 +30,11 @@ public class UpdateAppSettings
         public string WorkingDays { get; set; } = "mon-fri";
         public string WorkingDaysCustom { get; set; } = "mon,tue,wed,thu,fri";
 
+        // Timesheet policy
+        public int WeeklyHoursTarget { get; set; } = 40;
+        public string TimesheetSubmissionDeadlineDay { get; set; } = "fri";
+        public string TimesheetSubmissionDeadlineTime { get; set; } = "18:00";
+
         // Email
         public bool EmailNotificationsEnabled { get; set; } = true;
         public bool EmailDailyDigest { get; set; } = true;
@@ -58,6 +63,12 @@ public class UpdateAppSettings
                 return Result<AppSettingsDto>.Failure("Working hours start must be a valid time (HH:mm).");
             if (!TryNormalizeTime(request.WorkingHoursEnd, out var workEnd))
                 return Result<AppSettingsDto>.Failure("Working hours end must be a valid time (HH:mm).");
+            if (request.WeeklyHoursTarget < 1 || request.WeeklyHoursTarget > 168)
+                return Result<AppSettingsDto>.Failure("Weekly hours target must be between 1 and 168.");
+            if (!DayOrder.Contains(request.TimesheetSubmissionDeadlineDay?.Trim().ToLowerInvariant()))
+                return Result<AppSettingsDto>.Failure("Timesheet submission deadline day must be a weekday (mon–sun).");
+            if (!TryNormalizeTime(request.TimesheetSubmissionDeadlineTime, out var deadlineTime))
+                return Result<AppSettingsDto>.Failure("Timesheet submission deadline time must be a valid time (HH:mm).");
 
             var settings = await context.AppSettings.FirstOrDefaultAsync(cancellationToken);
             if (settings is null)
@@ -84,6 +95,9 @@ public class UpdateAppSettings
             settings.WorkingDaysCustom = NormalizeWorkingDaysCustom(request.WorkingDaysCustom);
             if (settings.WorkingDays == "custom" && settings.WorkingDaysCustom.Length == 0)
                 return Result<AppSettingsDto>.Failure("Select at least one working day for the custom schedule.");
+            settings.WeeklyHoursTarget = request.WeeklyHoursTarget;
+            settings.TimesheetSubmissionDeadlineDay = request.TimesheetSubmissionDeadlineDay!.Trim().ToLowerInvariant();
+            settings.TimesheetSubmissionDeadlineTime = deadlineTime;
             settings.EmailNotificationsEnabled = request.EmailNotificationsEnabled;
             settings.EmailDailyDigest = request.EmailDailyDigest;
             settings.EmailUrgentOnly = request.EmailUrgentOnly;

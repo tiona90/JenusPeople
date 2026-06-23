@@ -14,13 +14,16 @@ public class TimesheetStatusHistoriesController : BaseApiController
 {
     [HttpGet]
     [Authorize]
-    public async Task<ActionResult<List<TimesheetStatusHistoryDto>>> GetTimesheetStatusHistories()
+    public async Task<ActionResult<List<TimesheetStatusHistoryDto>>> GetTimesheetStatusHistories([FromQuery] int? page = null, [FromQuery] int? pageSize = null)
     {
-        return await Mediator.Send(new GetTimesheetStatusHistoryList.Query
+        var result = await Mediator.Send(new GetTimesheetStatusHistoryList.Query
         {
             RequestingUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty,
             IsAdmin = User.IsInRole(AppRoles.Admin),
             IsManager = User.IsInRole(AppRoles.Manager),
+            Page = page,
+            PageSize = pageSize,
         });
+        return Paged(result);
     }
 }

@@ -54,7 +54,14 @@ public class SubmitTimesheet
             var isResubmission = timesheet.Status == TimesheetStatus.Rejected;
             timesheet.Status = isResubmission ? TimesheetStatus.Resubmitted : TimesheetStatus.Submitted;
             timesheet.SubmittedAt = DateTime.UtcNow;
-            await context.SaveChangesAsync(cancellationToken);
+            try
+            {
+                await context.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                return Result<Unit>.Failure(ConcurrencyError.Message);
+            }
 
             await NotifyManagerAsync(timesheet, isResubmission, cancellationToken);
 

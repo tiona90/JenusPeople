@@ -9,16 +9,18 @@ namespace Application.LeaveStatusHistories.Queries;
 
 public class GetLeaveStatusHistoryList
 {
-    public class Query : IRequest<List<LeaveStatusHistoryDto>>
+    public class Query : IRequest<PagedResult<LeaveStatusHistoryDto>>
     {
         public string RequestingUserId { get; set; } = string.Empty;
         public bool IsAdmin { get; set; }
         public bool IsManager { get; set; }
+        public int? Page { get; set; }
+        public int? PageSize { get; set; }
     }
 
-    public class Handler(AppDbContext context) : IRequestHandler<Query, List<LeaveStatusHistoryDto>>
+    public class Handler(AppDbContext context) : IRequestHandler<Query, PagedResult<LeaveStatusHistoryDto>>
     {
-        public async Task<List<LeaveStatusHistoryDto>> Handle(Query request, CancellationToken cancellationToken)
+        public async Task<PagedResult<LeaveStatusHistoryDto>> Handle(Query request, CancellationToken cancellationToken)
         {
             IQueryable<Domain.LeaveStatusHistory> query = context.LeaveStatusHistories
                 .AsNoTracking()
@@ -53,8 +55,11 @@ public class GetLeaveStatusHistoryList
                     h.AnnualLeave.EmployeeId == request.RequestingUserId);
             }
 
-            return await query
+            var total = await query.CountAsync(cancellationToken);
+
+            var projected = query
                 .OrderByDescending(h => h.ChangedAt)
+                .ThenBy(h => h.Id)
                 .Select(h => new LeaveStatusHistoryDto
                 {
                     Id = h.Id,
@@ -78,8 +83,19 @@ public class GetLeaveStatusHistoryList
                     NewStatus = h.NewStatus.ToString(),
                     Comment = h.Comment,
                     ChangedAt = h.ChangedAt
-                })
-                .ToListAsync(cancellationToken);
+                });
+
+            var paging = Pagination.Resolve(request.Page, request.PageSize);
+            if (paging is { } pg)
+                projected = projected.Skip((pg.Page - 1) * pg.Size).Take(pg.Size);
+
+            return new PagedResult<LeaveStatusHistoryDto>
+            {
+                Items = await projected.ToListAsync(cancellationToken),
+                Total = total,
+                Page = paging?.Page,
+                PageSize = paging?.Size,
+            };
         }
     }
 }

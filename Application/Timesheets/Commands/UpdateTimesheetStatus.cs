@@ -28,26 +28,8 @@ public class UpdateTimesheetStatus
     {
         public async Task<Result<Unit>> Handle(Command request, CancellationToken cancellationToken)
         {
-            if (request.NewStatus is not (TimesheetStatus.Approved or TimesheetStatus.Rejected))
-            {
-                return Result<Unit>.ValidationFailure(
-                    new Dictionary<string, string[]>
-                    {
-                        ["NewStatus"] = ["Only Approved or Rejected transitions are supported by this command."]
-                    },
-                    "Invalid timesheet status transition.");
-            }
-
-            if (request.NewStatus == TimesheetStatus.Rejected && string.IsNullOrWhiteSpace(request.Comment))
-            {
-                return Result<Unit>.ValidationFailure(
-                    new Dictionary<string, string[]>
-                    {
-                        ["Comment"] = ["A reason is required when rejecting a timesheet."]
-                    },
-                    "A reason is required when rejecting a timesheet.");
-            }
-
+            // Input rules (valid target status + comment-required-on-reject) are enforced
+            // by UpdateTimesheetStatusValidator in the ValidationBehavior pipeline.
             var timesheet = await context.Timesheets.FindAsync([request.Id], cancellationToken);
             if (timesheet is null)
             {
@@ -112,7 +94,14 @@ public class UpdateTimesheetStatus
                 ChangedAt = DateTime.UtcNow,
             });
 
-            await context.SaveChangesAsync(cancellationToken);
+            try
+            {
+                await context.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                return Result<Unit>.Failure(ConcurrencyError.Message);
+            }
 
             await NotifyEmployeeAsync(timesheet, request.NewStatus, request.RequestingUserId, trimmedComment, cancellationToken);
 
