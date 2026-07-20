@@ -83,7 +83,7 @@ public class GlobalExceptionMiddleware(
             return;
         }
 
-        var clientBase = configuration["AppUrls:ClientBaseUrl"]?.TrimEnd('/') ?? "http://localhost:5173";
+        var clientBase = configuration["AppUrls:ClientBaseUrl"]?.TrimEnd('/') ?? "http://localhost:5174";
         var msg = Uri.EscapeDataString("Sign-in failed. Please try again.");
         context.Response.Redirect($"{clientBase}/?authStatus=error&authMessage={msg}#login");
     }

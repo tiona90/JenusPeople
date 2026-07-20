@@ -33,7 +33,7 @@ services:
       # `db` resolves to the SQL Server container over the default compose network.
       ConnectionStrings__DefaultConnection: "Server=db,1433;Database=jpeople_dev;User Id=sa;Password=${SA_PASSWORD};Encrypt=False;TrustServerCertificate=True;MultipleActiveResultSets=true"
       AppUrls__ApiBaseUrl: "http://localhost:5000"
-      AppUrls__ClientBaseUrl: "http://localhost:5173"
+      AppUrls__ClientBaseUrl: "http://localhost:5174"
     ports:
       - "5000:8080"
     restart: unless-stopped
@@ -46,7 +46,7 @@ services:
     depends_on:
       - api
     ports:
-      - "5173:5173"
+      - "5174:5174"
     volumes:
       # Bind-mount source for HMR. The named volume preserves the container's
       # node_modules so the host's (possibly Windows-built) install doesn't

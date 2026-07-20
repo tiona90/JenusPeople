@@ -14,7 +14,7 @@ RUN npm install --no-audit --no-fund
 # is only used when building/running the image standalone.
 COPY . .
 
-EXPOSE 5173
+EXPOSE 5174
 
 # --host 0.0.0.0 makes Vite reachable from the host machine when the port
 # is published by docker-compose.

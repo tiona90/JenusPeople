@@ -251,7 +251,7 @@ if (!string.IsNullOrWhiteSpace(googleClientId) && !string.IsNullOrWhiteSpace(goo
         options.CorrelationCookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
         options.Events.OnRemoteFailure = ctx =>
         {
-            var baseUrl = builder.Configuration["AppUrls:ClientBaseUrl"]?.TrimEnd('/') ?? "http://localhost:5173";
+            var baseUrl = builder.Configuration["AppUrls:ClientBaseUrl"]?.TrimEnd('/') ?? "http://localhost:5174";
             var msg = Uri.EscapeDataString("Google sign-in failed. Please try again.");
             ctx.Response.Redirect($"{baseUrl}/?authStatus=error&authMessage={msg}#login");
             ctx.HandleResponse();
@@ -272,7 +272,7 @@ if (!string.IsNullOrWhiteSpace(githubClientId) && !string.IsNullOrWhiteSpace(git
         options.CorrelationCookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
         options.Events.OnRemoteFailure = ctx =>
         {
-            var baseUrl = builder.Configuration["AppUrls:ClientBaseUrl"]?.TrimEnd('/') ?? "http://localhost:5173";
+            var baseUrl = builder.Configuration["AppUrls:ClientBaseUrl"]?.TrimEnd('/') ?? "http://localhost:5174";
             var msg = Uri.EscapeDataString("GitHub sign-in failed. Please try again.");
             ctx.Response.Redirect($"{baseUrl}/?authStatus=error&authMessage={msg}#login");
             ctx.HandleResponse();
@@ -361,14 +361,17 @@ var services = scope.ServiceProvider;
 try
 {
     var context = services.GetRequiredService<AppDbContext>();
-    var userManager = services.GetRequiredService<UserManager<User>>();
-    var roleManager = services.GetRequiredService<RoleManager<Role>>();
     await context.Database.MigrateAsync();
-    // Demo manager/employee accounts seed only when explicitly enabled, defaulting
-    // to development. On a real deployment only the Admin account is seeded (and any
-    // previously-seeded demo accounts are removed).
-    var seedDemoData = app.Configuration.GetValue<bool?>("Seed:DemoData") ?? app.Environment.IsDevelopment();
-    await DbInitializer.SeedData(context, userManager, roleManager, seedDemoData);
+
+    // Seeding is deliberately opt-in. Deployments only run migrations and keep the
+    // users and business data that already exist in SQL Server.
+    if (app.Configuration.GetValue<bool>("Seed:Enabled"))
+    {
+        var userManager = services.GetRequiredService<UserManager<User>>();
+        var roleManager = services.GetRequiredService<RoleManager<Role>>();
+        var seedDemoData = app.Configuration.GetValue<bool>("Seed:DemoData");
+        await DbInitializer.SeedData(context, userManager, roleManager, seedDemoData);
+    }
 }
 catch (Exception ex)
 {
