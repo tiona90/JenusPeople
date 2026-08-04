@@ -21,7 +21,7 @@ public class DeleteLeaveType
 
             var inUse = context.AnnualLeaves.Any(al => al.LeaveTypeId == request.Id);
             if (inUse)
-                return Result<Unit>.Failure("Cannot delete leave type because it is used by leave requests.");
+                return Result<Unit>.Conflict("Cannot delete leave type because it is used by leave requests.");
 
             context.LeaveTypes.Remove(leaveType);
             await context.SaveChangesAsync(cancellationToken);

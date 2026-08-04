@@ -40,6 +40,22 @@ namespace API.Controllers
                 });
             }
 
+            // A business-rule refusal (the resource exists but the operation is
+            // not allowed against its current state) must not be reported as a
+            // 404 — that is indistinguishable from a missing route and sends
+            // people hunting for deployment faults instead of reading the body.
+            if (result.ErrorKind == ResultErrorKind.Conflict)
+            {
+                return Conflict(new ApiErrorResponse
+                {
+                    StatusCode = StatusCodes.Status409Conflict,
+                    Message = string.IsNullOrWhiteSpace(result.Error) ? "The request conflicts with the current state." : result.Error,
+                    Path = HttpContext.Request.Path.Value ?? string.Empty,
+                    TraceId = HttpContext.TraceIdentifier,
+                    Timestamp = DateTime.UtcNow
+                });
+            }
+
             return NotFound(new ApiErrorResponse
             {
                 StatusCode = StatusCodes.Status404NotFound,

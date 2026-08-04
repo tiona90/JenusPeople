@@ -17,7 +17,7 @@ public class CreateDepartment
         public async Task<Result<DepartmentDto>> Handle(Command request, CancellationToken cancellationToken)
         {
             if (context.Departments.Any(d => d.Code == request.Department.Code))
-                return Result<DepartmentDto>.Failure("A department with that code already exists.");
+                return Result<DepartmentDto>.Conflict("A department with that code already exists.");
 
             var department = new Domain.Department
             {

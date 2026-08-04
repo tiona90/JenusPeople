@@ -22,7 +22,7 @@ public class DeleteProjectActivityType
 
             var inUse = await context.TimesheetEntries.AnyAsync(e => e.ActivityTypeId == request.Id, cancellationToken);
             if (inUse)
-                return Result<Unit>.Failure("Cannot delete activity type because it is used by timesheet entries.");
+                return Result<Unit>.Conflict("Cannot delete activity type because it is used by timesheet entries.");
 
             context.ProjectActivityTypes.Remove(activityType);
             await context.SaveChangesAsync(cancellationToken);

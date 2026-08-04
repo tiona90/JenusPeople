@@ -23,9 +23,9 @@ public class CreateProject
             var code = req.Code.Trim().ToUpperInvariant();
 
             if (await context.Projects.AnyAsync(p => p.Name.ToLower() == name.ToLower(), cancellationToken))
-                return Result<ProjectDto>.Failure("A project with that name already exists.");
+                return Result<ProjectDto>.Conflict("A project with that name already exists.");
             if (await context.Projects.AnyAsync(p => p.Code == code, cancellationToken))
-                return Result<ProjectDto>.Failure("A project with that code already exists.");
+                return Result<ProjectDto>.Conflict("A project with that code already exists.");
 
             if (req.DepartmentId.HasValue
                 && !await context.Departments.AnyAsync(d => d.Id == req.DepartmentId, cancellationToken))

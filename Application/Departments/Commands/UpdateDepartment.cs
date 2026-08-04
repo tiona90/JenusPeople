@@ -23,7 +23,7 @@ public class UpdateDepartment
                 return Result<DepartmentDto>.Failure("Department not found.");
 
             if (context.Departments.Any(d => d.Code == request.Department.Code && d.Id != request.Id))
-                return Result<DepartmentDto>.Failure("A department with that code already exists.");
+                return Result<DepartmentDto>.Conflict("A department with that code already exists.");
 
             department.Name = request.Department.Name;
             department.Code = request.Department.Code.ToUpperInvariant();

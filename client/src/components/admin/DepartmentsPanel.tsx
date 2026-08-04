@@ -233,6 +233,48 @@ function DepartmentsPanel() {
         onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['departments'] }),
     })
 
+    // A department with people in it cannot be deleted (the API answers 409),
+    // so say that up front instead of offering a delete that is going to fail.
+    // The server is still the authority — it also blocks on an assigned manager
+    // even when headcount is 0 — so its refusal is surfaced in the dialog the
+    // admin is already looking at, not only in the banner at the top of a
+    // scrolled page.
+    async function confirmDelete(dept: Department, headcount: number) {
+        if (headcount > 0) {
+            await SweetAlert.fire({
+                title: `Cannot delete "${dept.name}"`,
+                text: `${headcount} ${headcount === 1 ? 'person is' : 'people are'} still assigned to this department. `
+                    + 'Reassign them to another department first.',
+                icon: 'info',
+                confirmButtonText: 'Got it',
+            })
+            return
+        }
+
+        const result = await SweetAlert.fire({
+            title: `Delete "${dept.name}"?`,
+            text: 'This cannot be undone.',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Yes, delete',
+            cancelButtonText: 'Cancel',
+            confirmButtonColor: '#EF4444',
+            reverseButtons: true,
+        })
+        if (!result.isConfirmed) return
+
+        try {
+            await deleteMutation.mutateAsync(dept.id)
+        } catch (err) {
+            await SweetAlert.fire({
+                title: 'Cannot delete department',
+                text: getErrorMessage(err),
+                icon: 'error',
+                confirmButtonText: 'Close',
+            })
+        }
+    }
+
     if (isLoading) {
         return <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress size={28} /></Box>
     }
@@ -326,19 +368,7 @@ function DepartmentsPanel() {
                             key={d.dept.id}
                             derived={d}
                             onEdit={() => setEditDept(d.dept)}
-                            onDelete={async () => {
-                                const result = await SweetAlert.fire({
-                                    title: `Delete "${d.dept.name}"?`,
-                                    text: d.headcount > 0 ? 'Cannot delete — users are assigned to this department.' : 'This cannot be undone.',
-                                    icon: 'warning',
-                                    showCancelButton: true,
-                                    confirmButtonText: 'Yes, delete',
-                                    cancelButtonText: 'Cancel',
-                                    confirmButtonColor: '#EF4444',
-                                    reverseButtons: true,
-                                })
-                                if (result.isConfirmed) deleteMutation.mutate(d.dept.id)
-                            }}
+                            onDelete={() => void confirmDelete(d.dept, d.headcount)}
                             onViewTeam={() => uiStore.navigateToAdminSection('users')}
                             onReport={() => uiStore.navigateToCompanyAttendance()}
                         />
@@ -349,19 +379,7 @@ function DepartmentsPanel() {
                 <TableView
                     rows={filtered}
                     onEdit={(d) => setEditDept(d)}
-                    onDelete={async (d) => {
-                        const result = await SweetAlert.fire({
-                            title: `Delete "${d.name}"?`,
-                            text: 'This will fail if users are assigned to it.',
-                            icon: 'warning',
-                            showCancelButton: true,
-                            confirmButtonText: 'Yes, delete',
-                            cancelButtonText: 'Cancel',
-                            confirmButtonColor: '#EF4444',
-                            reverseButtons: true,
-                        })
-                        if (result.isConfirmed) deleteMutation.mutate(d.id)
-                    }}
+                    onDelete={(d) => void confirmDelete(d.dept, d.headcount)}
                 />
             )}
 
@@ -655,7 +673,9 @@ const TD = { py: '11px', px: '14px', fontSize: 13, color: 'text.primary', border
 function TableView({ rows, onEdit, onDelete }: {
     rows: DerivedDept[]
     onEdit: (d: Department) => void
-    onDelete: (d: Department) => void
+    // Takes the derived row, not the bare department, so the delete guard can
+    // read headcount without re-deriving it.
+    onDelete: (d: DerivedDept) => void
 }) {
     return (
         <Box sx={{ bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider', borderRadius: '10px', overflow: 'hidden' }}>
@@ -720,7 +740,7 @@ function TableView({ rows, onEdit, onDelete }: {
                                                         '&:hover': { bgcolor: 'action.hover', borderColor: 'divider' },
                                                     }}>Edit</Button>
                                             <Button size="small" variant="outlined"
-                                                    onClick={() => onDelete(d.dept)}
+                                                    onClick={() => onDelete(d)}
                                                     sx={{
                                                         fontSize: 12, py: '5px', px: 1.5, minWidth: 'unset',
                                                         color: 'error.main', borderColor: 'error.main', textTransform: 'none',

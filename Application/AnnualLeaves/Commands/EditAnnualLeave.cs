@@ -60,7 +60,7 @@ public class EditAnnualLeave
 
             if ((annualLeave.Status == AnnualLeaveStatus.Rejected || annualLeave.Status == AnnualLeaveStatus.Approved) && !request.IsAdmin)
             {
-                return Result<Unit>.Failure("Approved and rejected leave requests cannot be edited.");
+                return Result<Unit>.Conflict("Approved and rejected leave requests cannot be edited.");
             }
 
             annualLeave.StartDate = request.AnnualLeave.StartDate;
