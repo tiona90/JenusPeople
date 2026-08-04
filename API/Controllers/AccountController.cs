@@ -26,31 +26,14 @@ public class AccountController(
     UserManager<User> userManager,
     SignInManager<User> signInManager,
     AppDbContext context,
-    IConfiguration configuration,
     IOptions<AppUrlOptions> appUrlOptions,
     IEmailService emailService,
     IFileUploadService fileUploadService,
     ILogger<AccountController> logger) : BaseApiController
 {
-    [AllowAnonymous]
-    [EnableRateLimiting("auth-strict")]
-    [HttpPost("register")]
-    public async Task<ActionResult> Register(RegisterDto request)
-    {
-        var apiBaseUrl = appUrlOptions.Value.ApiBaseUrl;
-        if (string.IsNullOrWhiteSpace(apiBaseUrl))
-        {
-            apiBaseUrl = $"{Request.Scheme}://{Request.Host.Value}";
-        }
-
-        var result = await Mediator.Send(new AccountCommands.RegisterUser.Command
-        {
-            Request = request,
-            ApiBaseUrl = apiBaseUrl
-        });
-
-        return HandleResult(result);
-    }
+    // There is deliberately no public registration endpoint. Accounts are
+    // created only by an administrator via POST /api/AdminUsers, which is
+    // gated by [Authorize(Roles = AppRoles.Admin)].
 
     [AllowAnonymous]
     [HttpGet("verify-email")]
@@ -66,142 +49,6 @@ public class AccountController(
         return RenderVerificationPage(outcome.Title, outcome.Message, outcome.IsConfirmed);
     }
 
-    [AllowAnonymous]
-    [HttpGet("external-login/{provider}")]
-    public IActionResult ExternalLogin(string provider, [FromQuery] string? returnUrl = null)
-    {
-        if (!TryGetExternalProviderSettings(provider, out var normalizedProvider, out var clientId, out var clientSecret))
-        {
-            return RedirectToAuthPage("error", "Only Google and GitHub sign-in are currently supported.");
-        }
-
-        if (string.IsNullOrWhiteSpace(clientId) || string.IsNullOrWhiteSpace(clientSecret))
-        {
-            return RedirectToAuthPage("error", $"{normalizedProvider} sign-in is not configured yet. Add the client ID and client secret first.");
-        }
-
-        returnUrl ??= BuildClientAuthUrl("dashboard");
-
-        var redirectUrl = Url.Action(nameof(ExternalLoginCallback), "Account", new { returnUrl });
-        if (string.IsNullOrWhiteSpace(redirectUrl))
-        {
-            redirectUrl = $"/api/account/external-login-callback?returnUrl={Uri.EscapeDataString(returnUrl)}";
-        }
-
-        var properties = signInManager.ConfigureExternalAuthenticationProperties(normalizedProvider, redirectUrl);
-        return Challenge(properties, normalizedProvider);
-    }
-
-    [AllowAnonymous]
-    [HttpGet("external-login-callback")]
-    public async Task<IActionResult> ExternalLoginCallback([FromQuery] string? returnUrl = null, [FromQuery] string? remoteError = null)
-    {
-        returnUrl ??= BuildClientAuthUrl("dashboard");
-
-        if (!string.IsNullOrWhiteSpace(remoteError))
-        {
-            return RedirectToAuthPage("error", $"External sign-in failed: {remoteError}");
-        }
-
-        var info = await signInManager.GetExternalLoginInfoAsync();
-        if (info is null)
-        {
-            return RedirectToAuthPage("error", "We could not load your external login information. Please try again.");
-        }
-
-        var signInResult = await signInManager.ExternalLoginSignInAsync(
-            info.LoginProvider,
-            info.ProviderKey,
-            isPersistent: false,
-            bypassTwoFactor: true);
-
-        if (signInResult.Succeeded)
-        {
-            return RedirectToClient(returnUrl);
-        }
-
-        if (signInResult.IsLockedOut)
-        {
-            return RedirectToAuthPage("error", "This account is locked. Please contact an administrator.");
-        }
-
-        var email = info.Principal.FindFirstValue(ClaimTypes.Email);
-        if (string.IsNullOrWhiteSpace(email))
-        {
-            return RedirectToAuthPage("error", $"{info.LoginProvider} did not provide an email address for this account.");
-        }
-
-        var user = await userManager.FindByEmailAsync(email);
-        if (user is null)
-        {
-            var defaultDepartment = await context.Departments
-                .AsNoTracking()
-                .Where(d => d.IsActive)
-                .OrderBy(d => d.Name)
-                .FirstOrDefaultAsync();
-
-            if (defaultDepartment is null)
-            {
-                return RedirectToAuthPage("error", "No active department is available for new social sign-ins. Please contact an administrator.");
-            }
-
-            var displayName = info.Principal.FindFirstValue(ClaimTypes.Name) ?? email;
-            user = new User
-            {
-                UserName = email,
-                Email = email,
-                DisplayName = displayName,
-                EmailConfirmed = true
-            };
-
-            var createResult = await userManager.CreateAsync(user);
-            if (!createResult.Succeeded)
-            {
-                var createMessage = createResult.Errors.Select(e => e.Description).FirstOrDefault()
-                    ?? $"Unable to create a local account for {info.LoginProvider} sign-in.";
-
-                return RedirectToAuthPage("error", createMessage);
-            }
-
-            var addRoleResult = await userManager.AddToRoleAsync(user, AppRoles.Employee);
-            if (!addRoleResult.Succeeded)
-            {
-                await userManager.DeleteAsync(user);
-                var roleMessage = addRoleResult.Errors.Select(e => e.Description).FirstOrDefault()
-                    ?? "Unable to assign the default Employee role for this account.";
-
-                return RedirectToAuthPage("error", roleMessage);
-            }
-
-            try
-            {
-                await CreateEmployeeProfileAsync(user.Id, defaultDepartment.Id, "Employee");
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Failed to create an employee profile for external login user {UserId}.", user.Id);
-                await userManager.DeleteAsync(user);
-                return RedirectToAuthPage("error", "Unable to finish setting up your social sign-in account. Please try again.");
-            }
-        }
-        else if (!user.EmailConfirmed)
-        {
-            user.EmailConfirmed = true;
-            await userManager.UpdateAsync(user);
-        }
-
-        var addLoginResult = await userManager.AddLoginAsync(user, info);
-        if (!addLoginResult.Succeeded)
-        {
-            var loginMessage = addLoginResult.Errors.Select(e => e.Description).FirstOrDefault()
-                ?? $"Unable to link your {info.LoginProvider} account.";
-
-            return RedirectToAuthPage("error", loginMessage);
-        }
-
-        await signInManager.SignInAsync(user, isPersistent: false, info.LoginProvider);
-        return RedirectToClient(returnUrl);
-    }
 
     [AllowAnonymous]
     [HttpPost("forgot-password")]
@@ -543,48 +390,6 @@ public class AccountController(
         return Ok(new { imageUrl = user.ImageUrl });
     }
 
-    private async Task<EmployeeProfile> CreateEmployeeProfileAsync(string userId, int departmentId, string jobTitle, CancellationToken cancellationToken = default)
-    {
-        var employeeProfile = new EmployeeProfile
-        {
-            UserId = userId,
-            DepartmentId = departmentId,
-            JobTitle = jobTitle,
-            AnnualLeaveEntitlement = 20,
-            LeaveBalance = 20,
-            CreatedAt = DateTime.UtcNow
-        };
-
-        context.EmployeeProfiles.Add(employeeProfile);
-        await context.SaveChangesAsync(cancellationToken);
-
-        return employeeProfile;
-    }
-
-    private bool TryGetExternalProviderSettings(string provider, out string normalizedProvider, out string? clientId, out string? clientSecret)
-    {
-        if (string.Equals(provider, "google", StringComparison.OrdinalIgnoreCase))
-        {
-            normalizedProvider = "Google";
-            clientId = configuration["Authentication:Google:ClientId"];
-            clientSecret = configuration["Authentication:Google:ClientSecret"];
-            return true;
-        }
-
-        if (string.Equals(provider, "github", StringComparison.OrdinalIgnoreCase))
-        {
-            normalizedProvider = "GitHub";
-            clientId = configuration["Authentication:GitHub:ClientId"];
-            clientSecret = configuration["Authentication:GitHub:ClientSecret"];
-            return true;
-        }
-
-        normalizedProvider = string.Empty;
-        clientId = null;
-        clientSecret = null;
-        return false;
-    }
-
     private IActionResult RedirectToAuthPage(string status, string message, string hashRoute = "login")
     {
         return Redirect(BuildClientAuthUrl(hashRoute, new Dictionary<string, string?>
@@ -592,13 +397,6 @@ public class AccountController(
             ["authStatus"] = status,
             ["authMessage"] = message
         }));
-    }
-
-    private IActionResult RedirectToClient(string url)
-    {
-        return Uri.TryCreate(url, UriKind.Absolute, out _)
-            ? Redirect(url)
-            : LocalRedirect(url);
     }
 
     private string BuildClientAuthUrl(string hashRoute, IDictionary<string, string?>? query = null)

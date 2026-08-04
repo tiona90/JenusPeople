@@ -4,7 +4,6 @@ import Typography from '@mui/material/Typography'
 import { ThemeProvider } from '@mui/material/styles'
 import { buildTheme } from '../../lib/theme'
 import LoginForm from './LoginForm'
-import RegisterForm from './RegisterForm'
 import ForgotPasswordForm from './ForgotPasswordForm'
 import ResetPasswordForm from './ResetPasswordForm'
 
@@ -78,72 +77,69 @@ function LeftPanel() {
     )
 }
 
+// Accounts are created by an administrator only — there is no public
+// self-registration view, so sign-in is the sole entry point here.
 interface AuthPageProps {
-    authView: 'login' | 'register' | 'forgot-password' | 'reset-password'
+    authView: 'login' | 'forgot-password' | 'reset-password'
     authNotice: { severity: 'success' | 'info' | 'error'; message: string } | null
     onClearNotice: () => void
-    onSwitchToLogin: () => void
-    onSwitchToRegister: () => void
     onForgotPassword: () => void
     onBackToLogin: () => void
     onRequestNewLink: () => void
 }
 
-const toggleBtnSx = (active: boolean) => ({
-    flex: 1,
-    py: '8px',
-    borderRadius: '6px',
-    fontSize: 13,
-    fontWeight: 500,
-    cursor: 'pointer',
-    border: 'none',
-    fontFamily: 'inherit',
-    bgcolor: active ? '#fff' : 'transparent',
-    color: active ? '#1A1A2E' : '#6B7280',
-    boxShadow: active ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-    transition: 'all 0.2s',
-    '&:hover': { color: '#1A1A2E' },
-})
-
-function AuthPage({ authView, authNotice, onClearNotice, onSwitchToLogin, onSwitchToRegister, onForgotPassword, onBackToLogin, onRequestNewLink }: AuthPageProps) {
-    const showToggle = authView === 'login' || authView === 'register'
-
+function AuthPage({ authView, authNotice, onClearNotice, onForgotPassword, onBackToLogin, onRequestNewLink }: AuthPageProps) {
     return (
         <ThemeProvider theme={authTheme}>
             <Box sx={{ minHeight: '100vh', display: 'flex' }}>
                 <LeftPanel />
 
                 <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', p: '40px 20px', bgcolor: '#F4F5F7', overflowY: 'auto' }}>
-                    <Box sx={{ width: '100%', maxWidth: 420 }}>
+                    <Box sx={{ width: '100%', maxWidth: 440 }}>
+                        {/* The navy panel carries the brand, but it is hidden below md —
+                            repeat the mark here so small screens aren't unbranded. */}
+                        <Box sx={{ display: { xs: 'flex', md: 'none' }, alignItems: 'center', justifyContent: 'center', gap: 1.25, mb: 3.5 }}>
+                            <Box sx={{ width: 34, height: 34, bgcolor: '#4F8EF7', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>
+                                📋
+                            </Box>
+                            <Typography sx={{ fontSize: 18, fontWeight: 700, color: '#1A1A2E', letterSpacing: '0.01em' }}>Jenus People</Typography>
+                        </Box>
+
                         {authNotice && (
                             <Alert severity={authNotice.severity} onClose={onClearNotice} sx={{ mb: 2.5, borderRadius: '8px', fontSize: 13 }}>
                                 {authNotice.message}
                             </Alert>
                         )}
 
-                        {showToggle && (
-                            <Box sx={{ display: 'flex', bgcolor: '#E4E6EA', borderRadius: '8px', p: '4px', mb: 3.5 }}>
-                                <Box component="button" onClick={onSwitchToLogin} sx={toggleBtnSx(authView === 'login')}>
-                                    Sign In
-                                </Box>
-                                <Box component="button" onClick={onSwitchToRegister} sx={toggleBtnSx(authView === 'register')}>
-                                    Create Account
-                                </Box>
-                            </Box>
-                        )}
+                        {/* Surface for the form. Without it the fields float unanchored
+                            in the panel, which reads as an unfinished page. */}
+                        <Box
+                            sx={{
+                                bgcolor: '#fff',
+                                border: '1px solid #E5E7EB',
+                                borderRadius: '14px',
+                                p: { xs: 2.75, sm: 4 },
+                                boxShadow: '0 1px 2px rgba(16,24,40,0.04), 0 10px 28px rgba(16,24,40,0.06)',
+                            }}
+                        >
+                            {authView === 'login' && (
+                                <LoginForm onForgotPassword={onForgotPassword} />
+                            )}
+                            {authView === 'forgot-password' && (
+                                <ForgotPasswordForm onBackToLogin={onBackToLogin} />
+                            )}
+                            {authView === 'reset-password' && (
+                                <ResetPasswordForm onBackToLogin={onBackToLogin} onRequestNewLink={onRequestNewLink} />
+                            )}
+                        </Box>
 
-                        {authView === 'login' && (
-                            <LoginForm onForgotPassword={onForgotPassword} onSwitchToRegister={onSwitchToRegister} />
-                        )}
-                        {authView === 'register' && (
-                            <RegisterForm onSwitchToLogin={onSwitchToLogin} />
-                        )}
-                        {authView === 'forgot-password' && (
-                            <ForgotPasswordForm onBackToLogin={onBackToLogin} />
-                        )}
-                        {authView === 'reset-password' && (
-                            <ResetPasswordForm onBackToLogin={onBackToLogin} onRequestNewLink={onRequestNewLink} />
-                        )}
+                        {/* Self-registration is gone, so tell visitors how to actually
+                            get an account instead of leaving a dead end. */}
+                        <Typography sx={{ mt: 3, textAlign: 'center', fontSize: 12, color: '#6B7280', lineHeight: 1.8 }}>
+                            Accounts are created by your administrator.
+                            <br />
+                            Contact them if you need access or your account is locked.
+                        </Typography>
                     </Box>
                 </Box>
             </Box>

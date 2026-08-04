@@ -12,7 +12,6 @@ using Application.LeaveTypes.DTOs;
 using Application.ProjectActivityTypes.Commands;
 using Application.ProjectActivityTypes.DTOs;
 using Asp.Versioning;
-using AspNet.Security.OAuth.GitHub;
 using Domain;
 using FluentValidation;
 using Infrastructure;
@@ -34,11 +33,6 @@ if (builder.Environment.IsDevelopment())
 {
     builder.Configuration.AddUserSecrets<Program>(optional: true);
 }
-
-var googleClientId = builder.Configuration["Authentication:Google:ClientId"]?.Trim();
-var googleClientSecret = builder.Configuration["Authentication:Google:ClientSecret"]?.Trim();
-var githubClientId = builder.Configuration["Authentication:GitHub:ClientId"]?.Trim();
-var githubClientSecret = builder.Configuration["Authentication:GitHub:ClientSecret"]?.Trim();
 
 // Add services to the container.
 
@@ -238,48 +232,11 @@ builder.Services.AddIdentityApiEndpoints<User>(opt =>
 .AddRoles<Role>()
     .AddEntityFrameworkStores<AppDbContext>();
 
-var authenticationBuilder = builder.Services.AddAuthentication();
-
-if (!string.IsNullOrWhiteSpace(googleClientId) && !string.IsNullOrWhiteSpace(googleClientSecret))
-{
-    authenticationBuilder.AddGoogle(options =>
-    {
-        options.SignInScheme = IdentityConstants.ExternalScheme;
-        options.ClientId = googleClientId;
-        options.ClientSecret = googleClientSecret;
-        options.CorrelationCookie.SameSite = SameSiteMode.Unspecified;
-        options.CorrelationCookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
-        options.Events.OnRemoteFailure = ctx =>
-        {
-            var baseUrl = builder.Configuration["AppUrls:ClientBaseUrl"]?.TrimEnd('/') ?? "http://localhost:5174";
-            var msg = Uri.EscapeDataString("Google sign-in failed. Please try again.");
-            ctx.Response.Redirect($"{baseUrl}/?authStatus=error&authMessage={msg}#login");
-            ctx.HandleResponse();
-            return Task.CompletedTask;
-        };
-    });
-}
-
-if (!string.IsNullOrWhiteSpace(githubClientId) && !string.IsNullOrWhiteSpace(githubClientSecret))
-{
-    authenticationBuilder.AddGitHub(options =>
-    {
-        options.SignInScheme = IdentityConstants.ExternalScheme;
-        options.ClientId = githubClientId;
-        options.ClientSecret = githubClientSecret;
-        options.Scope.Add("user:email");
-        options.CorrelationCookie.SameSite = SameSiteMode.Unspecified;
-        options.CorrelationCookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
-        options.Events.OnRemoteFailure = ctx =>
-        {
-            var baseUrl = builder.Configuration["AppUrls:ClientBaseUrl"]?.TrimEnd('/') ?? "http://localhost:5174";
-            var msg = Uri.EscapeDataString("GitHub sign-in failed. Please try again.");
-            ctx.Response.Redirect($"{baseUrl}/?authStatus=error&authMessage={msg}#login");
-            ctx.HandleResponse();
-            return Task.CompletedTask;
-        };
-    });
-}
+// No external (Google/GitHub) providers are registered. Social sign-in was
+// removed along with public self-registration: its callback provisioned an
+// account for any unrecognised email, which is exactly the self-signup path
+// this application must not expose. Accounts come from POST /api/AdminUsers.
+builder.Services.AddAuthentication();
 
 builder.Services.AddAuthorization(options =>
 {

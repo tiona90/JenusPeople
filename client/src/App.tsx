@@ -32,10 +32,9 @@ import { useStore } from './lib/mobx'
 import Sidebar from './components/layout/Sidebar'
 import Topbar from './components/layout/Topbar'
 
-type AuthView = 'login' | 'register' | 'forgot-password' | 'reset-password'
+type AuthView = 'login' | 'forgot-password' | 'reset-password'
 
 function getAuthViewFromPath(pathname: string): AuthView {
-    if (pathname.startsWith('/register')) return 'register'
     if (pathname.startsWith('/forgot-password')) return 'forgot-password'
     if (pathname.startsWith('/reset-password')) return 'reset-password'
     return 'login'
@@ -80,8 +79,6 @@ const AuthGate = observer(function AuthGate() {
             authView={authView}
             authNotice={authNotice}
             onClearNotice={() => setAuthNotice(null)}
-            onSwitchToLogin={() => navigate('/login')}
-            onSwitchToRegister={() => navigate('/register')}
             onForgotPassword={() => navigate('/forgot-password')}
             onBackToLogin={() => navigate('/login')}
             onRequestNewLink={() => navigate('/forgot-password')}
@@ -253,9 +250,11 @@ const AppInner = observer(function AppInner() {
     return (
         <>
             <Routes>
-                {/* Public auth routes */}
+                {/* Public auth routes. Accounts are created by an administrator,
+                    so /register is retired — it redirects to sign-in rather than
+                    leaving a usable public self-registration screen behind. */}
                 <Route path="/login" element={<AuthGate />} />
-                <Route path="/register" element={<AuthGate />} />
+                <Route path="/register" element={<Navigate to="/login" replace />} />
                 <Route path="/forgot-password" element={<AuthGate />} />
                 <Route path="/reset-password" element={<AuthGate />} />
 

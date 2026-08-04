@@ -12,8 +12,12 @@ namespace API.Controllers;
 
 public class DepartmentsController : BaseApiController
 {
+    // Was [AllowAnonymous] purely so the public registration form could fill its
+    // department dropdown. That form is gone, and every remaining caller is
+    // authenticated, so the department list is no longer exposed to anonymous
+    // visitors. Any signed-in role may read it (unchanged for those callers).
     [HttpGet]
-    [AllowAnonymous]
+    [Authorize]
     public async Task<ActionResult<List<DepartmentDto>>> GetDepartments()
     {
         return await Mediator.Send(new GetDepartmentList.Query());

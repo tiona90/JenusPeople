@@ -1,6 +1,6 @@
 import { makeAutoObservable, runInAction } from 'mobx'
-import { getCurrentUser, login, logout, register } from '../api'
-import type { LoginRequest, RegisterRequest, UserInfo } from '../types'
+import { getCurrentUser, login, logout } from '../api'
+import type { LoginRequest, UserInfo } from '../types'
 
 class AuthStore {
     user: UserInfo | null = null
@@ -55,26 +55,6 @@ class AuthStore {
         } finally {
             runInAction(() => {
                 this.isLoadingUser = false
-            })
-        }
-    }
-
-    async signUp(details: RegisterRequest) {
-        this.isLoadingUser = true
-
-        try {
-            const response = await register(details)
-
-            runInAction(() => {
-                this.user = null
-                this.hasCheckedAuth = true
-            })
-
-            return response
-        } finally {
-            runInAction(() => {
-                this.isLoadingUser = false
-                this.hasCheckedAuth = true
             })
         }
     }

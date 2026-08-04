@@ -20,6 +20,9 @@
     <ProjectReference Include="..\..\Domain\Domain.csproj" />
     <ProjectReference Include="..\..\Application\Application.csproj" />
     <ProjectReference Include="..\..\Persistence\Persistence.csproj" />
+    <!-- Needed by PublicRegistrationRemovedTests, which asserts on the
+         controllers' routing/authorization attributes. -->
+    <ProjectReference Include="..\..\API\API.csproj" />
   </ItemGroup>
 
 </Project>

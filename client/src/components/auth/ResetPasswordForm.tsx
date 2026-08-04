@@ -29,11 +29,11 @@ type ResetPasswordValues = z.infer<typeof resetPasswordSchema>
 const inputSx = {
     '& .MuiOutlinedInput-root': {
         borderRadius: '8px',
-        bgcolor: '#fff',
+        bgcolor: '#F9FAFB',
         fontSize: 13,
         '& fieldset': { borderColor: '#D1D5DB', borderWidth: '1.5px' },
         '&:hover fieldset': { borderColor: '#9CA3AF', borderWidth: '1.5px' },
-        '&.Mui-focused': { boxShadow: '0 0 0 3px rgba(79,142,247,0.12)' },
+        '&.Mui-focused': { bgcolor: '#fff', boxShadow: '0 0 0 3px rgba(79,142,247,0.12)' },
         '&.Mui-focused fieldset': { borderColor: '#4F8EF7', borderWidth: '1.5px' },
     },
     '& .MuiInputLabel-root': { fontSize: 12, fontWeight: 500, color: '#374151' },

@@ -4,15 +4,6 @@ export interface LoginRequest {
     rememberMe: boolean
 }
 
-export interface RegisterRequest {
-    email: string
-    password: string
-    displayName: string
-    departmentId: number
-    phoneNumber?: string | null
-    dateOfBirth?: string | null
-}
-
 export interface ForgotPasswordRequest {
     email: string
 }
