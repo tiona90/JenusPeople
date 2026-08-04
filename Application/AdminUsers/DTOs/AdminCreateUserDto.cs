@@ -2,19 +2,20 @@
 
 namespace Application.AdminUsers.DTOs;
 
+/// <summary>
+/// An administrator creating an account never sets a password: the account is
+/// created without one and the new user chooses their own from the link in the
+/// welcome email. So there is deliberately no password field here.
+/// </summary>
 public class AdminCreateUserDto
 {
     [Required]
     [EmailAddress]
     public string Email { get; set; } = string.Empty;
 
-    [Required]
+    [Required(ErrorMessage = "Display name is required.")]
     [StringLength(100, MinimumLength = 2)]
     public string DisplayName { get; set; } = string.Empty;
-
-    [Required]
-    [MinLength(6)]
-    public string Password { get; set; } = string.Empty;
 
     [MinLength(1)]
     public List<string> Roles { get; set; } = new();

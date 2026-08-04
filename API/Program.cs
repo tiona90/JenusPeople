@@ -3,6 +3,7 @@ using API.Extensions;
 using API.Models;
 using API.Hubs;
 using API.BackgroundServices;
+using API.Services;
 using Application.Core;
 using Application.Reminders;
 using Application.AnnualLeaves.Queries;
@@ -151,6 +152,10 @@ builder.Services.AddHsts(options =>
 });
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddInfrastructureServices(builder.Configuration);
+// Account-lifecycle emails (welcome invite, password reset, email change) and
+// the client links inside them. Shared by AccountController and
+// AdminUsersController so the link shape can't drift between them.
+builder.Services.AddScoped<IAccountEmailSender, AccountEmailSender>();
 builder.Services.AddScoped<AuditingSaveChangesInterceptor>();
 builder.Services.AddDbContext<AppDbContext>((sp, opt) =>
 {

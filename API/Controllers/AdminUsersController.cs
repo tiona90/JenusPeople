@@ -1,3 +1,4 @@
+using API.Services;
 using Application.AdminUsers.DTOs;
 using Domain;
 using Microsoft.AspNetCore.Authorization;
@@ -15,7 +16,9 @@ namespace API.Controllers;
 public class AdminUsersController(
     UserManager<User> userManager,
     RoleManager<Role> roleManager,
-    AppDbContext context) : BaseApiController
+    AppDbContext context,
+    IAccountEmailSender accountEmailSender,
+    ILogger<AdminUsersController> logger) : BaseApiController
 {
     [HttpGet]
     public async Task<ActionResult<List<AdminUserDto>>> GetUsers()
@@ -57,12 +60,20 @@ public class AdminUsersController(
             return BadRequest(new { message = "Selected department does not exist." });
         }
 
-        if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
+        var email = request.Email.Trim();
+        var displayName = request.DisplayName.Trim();
+
+        if (string.IsNullOrWhiteSpace(email))
         {
-            return BadRequest(new { message = "Email and password are required." });
+            return BadRequest(new { message = "Email is required." });
         }
 
-        if (await userManager.FindByEmailAsync(request.Email) is not null)
+        if (string.IsNullOrWhiteSpace(displayName))
+        {
+            return BadRequest(new { message = "Display name is required." });
+        }
+
+        if (await userManager.FindByEmailAsync(email) is not null)
         {
             return BadRequest(new { message = "Email is already registered." });
         }
@@ -80,15 +91,18 @@ public class AdminUsersController(
 
         var user = new User
         {
-            UserName = request.Email,
-            Email = request.Email,
-            DisplayName = request.DisplayName,
+            UserName = email,
+            Email = email,
+            DisplayName = displayName,
             PhoneNumber = string.IsNullOrWhiteSpace(request.PhoneNumber) ? null : request.PhoneNumber.Trim(),
             DateOfBirth = request.DateOfBirth,
             EmailConfirmed = true
         };
 
-        var createResult = await userManager.CreateAsync(user, request.Password);
+        // No password on purpose. The account is activated by the welcome email
+        // sent below, where the new user picks their own password — so an
+        // administrator never chooses, sees, or has to relay one.
+        var createResult = await userManager.CreateAsync(user);
         if (!createResult.Succeeded)
         {
             return BadRequest(new
@@ -123,7 +137,23 @@ public class AdminUsersController(
             });
         }
 
-        return CreatedAtAction(nameof(GetUser), new { id = user.Id }, MapUser(user, selectedRoles));
+        var inviteEmailSent = await accountEmailSender.SendWelcomeInviteAsync(user, HttpContext.RequestAborted);
+        if (!inviteEmailSent)
+        {
+            // Don't fail the request over this: the account exists and its owner
+            // can still get in via "Forgot password?". Report it instead, so the
+            // admin knows to tell them rather than waiting for an email that
+            // never arrives.
+            logger.LogWarning(
+                "Welcome invite email could not be sent to {Email} for new user {UserId}.",
+                user.Email,
+                user.Id);
+        }
+
+        var created = MapUser(user, selectedRoles);
+        created.InviteEmailSent = inviteEmailSent;
+
+        return CreatedAtAction(nameof(GetUser), new { id = user.Id }, created);
     }
 
     [HttpPut("{id}")]

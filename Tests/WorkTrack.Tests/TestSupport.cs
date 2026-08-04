@@ -24,10 +24,21 @@ internal static class TestDb
     }
 }
 
-/// <summary>No-op email sender — reports success without sending anything.</summary>
+/// <summary>
+/// No-op email sender — reports success without sending anything, and keeps the
+/// last message so tests can assert on what a recipient would have received.
+/// </summary>
 internal sealed class FakeEmailService : IEmailService
 {
     public int SentCount { get; private set; }
+
+    public string? LastRecipient { get; private set; }
+    public string? LastSubject { get; private set; }
+    public string? LastHtmlBody { get; private set; }
+    public string? LastTextBody { get; private set; }
+
+    /// <summary>Set to false to simulate a provider rejecting the send.</summary>
+    public bool SendResult { get; set; } = true;
 
     public Task<bool> SendEmailAsync(
         string toEmail,
@@ -37,7 +48,11 @@ internal sealed class FakeEmailService : IEmailService
         CancellationToken cancellationToken = default)
     {
         SentCount++;
-        return Task.FromResult(true);
+        LastRecipient = toEmail;
+        LastSubject = subject;
+        LastHtmlBody = htmlBody;
+        LastTextBody = textBody;
+        return Task.FromResult(SendResult);
     }
 }
 

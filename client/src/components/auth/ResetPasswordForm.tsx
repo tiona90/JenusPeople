@@ -51,6 +51,10 @@ function ResetPasswordForm({ onBackToLogin, onRequestNewLink }: ResetPasswordFor
     const initialToken = searchParams.get('token') ?? ''
     const hasValidLink = Boolean(initialEmail && initialToken)
 
+    // The admin welcome email lands here too — same endpoint, same token — but
+    // the recipient has never had a password, so "reset" would confuse them.
+    const isWelcome = searchParams.get('welcome') === '1'
+
     const [showNew, setShowNew] = useState(false)
     const [showConfirm, setShowConfirm] = useState(false)
 
@@ -79,19 +83,27 @@ function ResetPasswordForm({ onBackToLogin, onRequestNewLink }: ResetPasswordFor
 
     return (
         <Box component="form" onSubmit={onSubmit} noValidate>
-            <Typography sx={{ fontSize: 22, fontWeight: 700, color: '#1A1A2E', mb: 0.75 }}>Choose a new password</Typography>
+            <Typography sx={{ fontSize: 22, fontWeight: 700, color: '#1A1A2E', mb: 0.75 }}>
+                {isWelcome ? 'Set your password' : 'Choose a new password'}
+            </Typography>
             <Typography sx={{ fontSize: 13, color: '#6B7280', mb: 2.5 }}>
-                Set a new password for your Jenus People account
+                {isWelcome
+                    ? 'Choose a password to activate your Jenus People account'
+                    : 'Set a new password for your Jenus People account'}
             </Typography>
 
             {!hasValidLink && (
                 <Alert severity="error" sx={{ mb: 2, borderRadius: '8px', fontSize: 12 }}>
-                    This reset link is incomplete or expired. Please request a new one.
+                    {isWelcome
+                        ? 'This invitation link is incomplete or has expired. Use “Forgot password?” on the sign-in page to send yourself a new one.'
+                        : 'This reset link is incomplete or expired. Please request a new one.'}
                 </Alert>
             )}
             {mutation.isSuccess && (
                 <Alert severity="success" sx={{ mb: 2, borderRadius: '8px', fontSize: 12 }}>
-                    Your password has been reset. You can now sign in with your new password.
+                    {isWelcome
+                        ? 'Your password is set. You can now sign in.'
+                        : 'Your password has been reset. You can now sign in with your new password.'}
                 </Alert>
             )}
             {mutation.isError && (
@@ -117,7 +129,7 @@ function ResetPasswordForm({ onBackToLogin, onRequestNewLink }: ResetPasswordFor
                 />
 
                 <TextField
-                    label="New password"
+                    label={isWelcome ? 'Password' : 'New password'}
                     type={showNew ? 'text' : 'password'}
                     {...register('newPassword')}
                     error={!!errors.newPassword}
@@ -140,7 +152,7 @@ function ResetPasswordForm({ onBackToLogin, onRequestNewLink }: ResetPasswordFor
                 />
 
                 <TextField
-                    label="Confirm new password"
+                    label={isWelcome ? 'Confirm password' : 'Confirm new password'}
                     type={showConfirm ? 'text' : 'password'}
                     {...register('confirmPassword')}
                     error={!!errors.confirmPassword}
@@ -169,7 +181,9 @@ function ResetPasswordForm({ onBackToLogin, onRequestNewLink }: ResetPasswordFor
                 disabled={mutation.isPending || !hasValidLink || mutation.isSuccess}
                 sx={{ width: '100%', py: '11px', borderRadius: '8px', fontSize: 14, fontWeight: 600, cursor: mutation.isPending ? 'not-allowed' : 'pointer', border: 'none', bgcolor: '#4F8EF7', color: '#fff', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, mb: 2, transition: 'all 0.15s', '&:hover:not(:disabled)': { bgcolor: '#3A7AE4', transform: 'translateY(-1px)', boxShadow: '0 4px 12px rgba(79,142,247,0.3)' }, '&:disabled': { opacity: 0.7 } }}
             >
-                {mutation.isPending ? <><CircularProgress size={16} sx={{ color: '#fff' }} /> Resetting...</> : 'Reset Password'}
+                {mutation.isPending
+                    ? <><CircularProgress size={16} sx={{ color: '#fff' }} /> {isWelcome ? 'Saving...' : 'Resetting...'}</>
+                    : isWelcome ? 'Set Password' : 'Reset Password'}
             </Box>
 
             <Typography sx={{ textAlign: 'center', fontSize: 13, color: '#6B7280' }}>
@@ -180,7 +194,8 @@ function ResetPasswordForm({ onBackToLogin, onRequestNewLink }: ResetPasswordFor
                     onClick={mutation.isSuccess ? onBackToLogin : onRequestNewLink}
                     sx={{ color: '#4F8EF7', fontWeight: 500, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, p: 0, '&:hover': { textDecoration: 'underline' } }}
                 >
-                    {mutation.isSuccess ? 'Go to Sign In' : 'Request a new reset email'}
+                    {mutation.isSuccess ? 'Go to Sign In'
+                        : isWelcome ? 'Email me a new link' : 'Request a new reset email'}
                 </Box>
             </Typography>
         </Box>

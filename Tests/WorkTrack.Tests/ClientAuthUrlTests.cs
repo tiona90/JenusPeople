@@ -1,6 +1,6 @@
-using System.Reflection;
-using API.Controllers;
+using API.Services;
 using Infrastructure.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
 
@@ -20,21 +20,18 @@ public class ClientAuthUrlTests
     private const string ClientBaseUrl = "https://people.example.test";
 
     /// <summary>
-    /// BuildClientAuthUrl reads only <c>appUrlOptions</c>, so the remaining
-    /// primary-constructor dependencies are left null deliberately.
+    /// BuildClientUrl reads only <c>appUrlOptions</c>, so the remaining
+    /// dependencies are left null deliberately.
     /// </summary>
     private static string BuildUrl(string route, IDictionary<string, string?>? query = null, string? baseUrl = ClientBaseUrl)
     {
-        var options = Options.Create(new AppUrlOptions { ClientBaseUrl = baseUrl! });
-        var controller = new AccountController(null!, null!, null!, options, null!, null!, null!);
+        var sender = new AccountEmailSender(
+            null!,
+            null!,
+            Options.Create(new AppUrlOptions { ClientBaseUrl = baseUrl! }),
+            NullLogger<AccountEmailSender>.Instance);
 
-        var method = typeof(AccountController).GetMethod(
-            "BuildClientAuthUrl",
-            BindingFlags.Instance | BindingFlags.NonPublic);
-
-        Assert.NotNull(method);
-
-        return (string)method!.Invoke(controller, [route, query])!;
+        return sender.BuildClientUrl(route, query);
     }
 
     [Fact]

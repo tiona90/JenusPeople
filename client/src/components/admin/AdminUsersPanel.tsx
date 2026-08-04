@@ -110,6 +110,7 @@ function AdminUsersPanel() {
     const [createOpen, setCreateOpen] = useState(false)
     const [editData, setEditData] = useState<{ user: AdminUser; profile?: EmployeeProfile } | null>(null)
     const [apiError, setApiError] = useState('')
+    const [inviteNotice, setInviteNotice] = useState<{ severity: 'success' | 'warning'; message: string } | null>(null)
 
     const { data: users = [], isLoading, isError, error } = useQuery({
         queryKey: ['adminUsers'],
@@ -224,10 +225,22 @@ function AdminUsersPanel() {
     /* Mutations */
     const createMutation = useMutation({
         mutationFn: createAdminUser,
-        onSuccess: () => {
+        onSuccess: (created) => {
             void queryClient.invalidateQueries({ queryKey: ['adminUsers'] })
             void queryClient.invalidateQueries({ queryKey: ['employeeProfiles'] })
             setCreateOpen(false)
+            // The account is created without a password, so whether the invite
+            // email actually left matters: if it didn't, the new user has no way
+            // in until someone tells them to use "Forgot password?".
+            setInviteNotice(created.inviteEmailSent === false
+                ? {
+                    severity: 'warning',
+                    message: `${created.email} was created, but the welcome email could not be sent. Ask them to use “Forgot password?” on the sign-in page to set their password.`,
+                }
+                : {
+                    severity: 'success',
+                    message: `${created.email} was created. A welcome email with a link to set their password is on its way.`,
+                })
         },
         onError: (err) => setApiError(getApiErrorMessage(err, 'Could not create user.')),
     })
@@ -333,6 +346,12 @@ function AdminUsersPanel() {
         <Box>
             {apiError && (
                 <Alert severity="error" onClose={() => setApiError('')} sx={{ mb: 2 }}>{apiError}</Alert>
+            )}
+
+            {inviteNotice && (
+                <Alert severity={inviteNotice.severity} onClose={() => setInviteNotice(null)} sx={{ mb: 2 }}>
+                    {inviteNotice.message}
+                </Alert>
             )}
 
             {/* Stats row */}
@@ -1211,12 +1230,11 @@ function CreateUserDialog(props: {
     onClose: () => void
     isPending: boolean
     error: unknown
-    onSubmit: (payload: { email: string; displayName: string; password: string; roles: UserRole[]; departmentId: number; phoneNumber: string | null; dateOfBirth: string | null }) => void
+    onSubmit: (payload: { email: string; displayName: string; roles: UserRole[]; departmentId: number; phoneNumber: string | null; dateOfBirth: string | null }) => void
     departments: Department[]
 }) {
     const [email, setEmail] = useState('')
     const [displayName, setDisplayName] = useState('')
-    const [password, setPassword] = useState('')
     const [roles, setRoles] = useState<UserRole[]>(['Employee'])
     const [departmentId, setDepartmentId] = useState<number>(0)
     const [phoneNumber, setPhoneNumber] = useState('')
@@ -1231,7 +1249,6 @@ function CreateUserDialog(props: {
     const close = () => {
         setEmail('')
         setDisplayName('')
-        setPassword('')
         setRoles(['Employee'])
         setDepartmentId(0)
         setPhoneNumber('')
@@ -1244,9 +1261,21 @@ function CreateUserDialog(props: {
             <AppDialogTitle>Create User</AppDialogTitle>
             <AppDialogContent>
                 <Stack spacing={2}>
+                    {/* No password field: the new user picks their own from the
+                        emailed link, so an admin never sets or relays one. */}
+                    <Alert severity="info" sx={{ fontSize: 12 }}>
+                        No password needed — we'll email this person a secure link to set their own.
+                    </Alert>
                     <TextField label="Email" value={email} onChange={(e) => setEmail(e.target.value)} fullWidth required />
-                    <TextField label="Display name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} fullWidth />
-                    <TextField label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} fullWidth required />
+                    <TextField
+                        label="Display name"
+                        value={displayName}
+                        onChange={(e) => setDisplayName(e.target.value)}
+                        fullWidth
+                        required
+                        error={!displayName.trim()}
+                        helperText={!displayName.trim() ? 'Display name is required' : 'Shown throughout the app and used to greet them in emails.'}
+                    />
                     <TextField label="Phone number" type="tel" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} fullWidth />
                     <TextField label="Date of birth" type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} fullWidth slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: new Date().toISOString().slice(0, 10) } }} helperText="Used for birthday reminders." />
                     <TextField
@@ -1280,8 +1309,8 @@ function CreateUserDialog(props: {
                 <Button variant="outlined" onClick={close} disabled={props.isPending} sx={cancelBtnSx}>Cancel</Button>
                 <Button
                     variant="contained"
-                    disabled={props.isPending || !email || !password || departmentId === 0}
-                    onClick={() => props.onSubmit({ email, displayName, password, roles, departmentId, phoneNumber: phoneNumber.trim() || null, dateOfBirth: dateOfBirth || null })}
+                    disabled={props.isPending || !email.trim() || !displayName.trim() || departmentId === 0}
+                    onClick={() => props.onSubmit({ email: email.trim(), displayName: displayName.trim(), roles, departmentId, phoneNumber: phoneNumber.trim() || null, dateOfBirth: dateOfBirth || null })}
                     sx={saveBtnSx}
                 >
                     Create
