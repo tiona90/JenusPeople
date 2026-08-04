@@ -91,6 +91,21 @@ public class AccountController(
         var result = await userManager.ResetPasswordAsync(user, decodedToken, request.NewPassword);
         if (!result.Succeeded)
         {
+            // A rejected token is by far the common failure here, and Identity's
+            // stock wording ("Invalid token.") tells the user nothing they can act
+            // on. Reset tokens last 24 hours and are invalidated early by any
+            // password change, so say that and point at the recovery action.
+            // Returning no `errors` array matters: the client prefers those over
+            // `message`, so the raw Identity text would otherwise win.
+            if (result.Errors.Any(e => e.Code == nameof(IdentityErrorDescriber.InvalidToken)))
+            {
+                return BadRequest(new
+                {
+                    message = "This reset link has expired or has already been used. Links are valid for 24 hours — please request a new one."
+                });
+            }
+
+            // Password-policy failures are already actionable; pass them through.
             return BadRequest(new
             {
                 message = "Unable to reset the password.",
@@ -390,16 +405,26 @@ public class AccountController(
         return Ok(new { imageUrl = user.ImageUrl });
     }
 
-    private IActionResult RedirectToAuthPage(string status, string message, string hashRoute = "login")
+    private IActionResult RedirectToAuthPage(string status, string message, string route = "login")
     {
-        return Redirect(BuildClientAuthUrl(hashRoute, new Dictionary<string, string?>
+        return Redirect(BuildClientAuthUrl(route, new Dictionary<string, string?>
         {
             ["authStatus"] = status,
             ["authMessage"] = message
         }));
     }
 
-    private string BuildClientAuthUrl(string hashRoute, IDictionary<string, string?>? query = null)
+    /// <summary>
+    /// Builds a link into the SPA, e.g. <c>{base}/reset-password?email=…&amp;token=…</c>.
+    /// </summary>
+    /// <remarks>
+    /// The client routes on the path (react-router), so the route must live in the
+    /// path. This previously emitted the hash form <c>{base}/?query#route</c> from
+    /// when the SPA used hash routing; that lands on <c>/</c>, which sends an
+    /// unauthenticated visitor to <c>/login</c> and discards the query string — so
+    /// password-reset emails opened the sign-in page with the token thrown away.
+    /// </remarks>
+    private string BuildClientAuthUrl(string route, IDictionary<string, string?>? query = null)
     {
         var clientBaseUrl = appUrlOptions.Value.ClientBaseUrl;
         if (string.IsNullOrWhiteSpace(clientBaseUrl))
@@ -409,15 +434,13 @@ public class AccountController(
 
         clientBaseUrl = clientBaseUrl.TrimEnd('/');
 
-        var url = $"{clientBaseUrl}/";
+        // Tolerate a leading '#' or '/' so existing callers stay correct.
+        var path = route.TrimStart('#').Trim('/');
+        var url = $"{clientBaseUrl}/{path}";
+
         if (query is { Count: > 0 })
         {
             url = QueryHelpers.AddQueryString(url, query);
-        }
-
-        if (!string.IsNullOrWhiteSpace(hashRoute))
-        {
-            url = $"{url}{(hashRoute.StartsWith('#') ? hashRoute : $"#{hashRoute}")}";
         }
 
         return url;
