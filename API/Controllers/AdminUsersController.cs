@@ -89,6 +89,12 @@ public class AdminUsersController(
             selectedRoles.Add(AppRoles.Employee);
         }
 
+        // Backstop for the DTO's [MaxLength(1)] — see SetUserRoles.
+        if (selectedRoles.Count > 1)
+        {
+            return BadRequest(new { message = "A user can have only one role." });
+        }
+
         var user = new User
         {
             UserName = email,
@@ -213,7 +219,16 @@ public class AdminUsersController(
 
         if (selectedRoles.Count == 0)
         {
-            return BadRequest(new { message = "At least one role is required." });
+            return BadRequest(new { message = "A role is required." });
+        }
+
+        // One role per user. [MaxLength(1)] on the DTO already rejects a longer
+        // list before the action runs, so this is a backstop that keeps the
+        // invariant if that annotation is ever relaxed — role assignment decides
+        // department scoping, so it is worth guarding twice.
+        if (selectedRoles.Count > 1)
+        {
+            return BadRequest(new { message = "A user can have only one role." });
         }
 
         var currentRoles = await userManager.GetRolesAsync(user);

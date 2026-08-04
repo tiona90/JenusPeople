@@ -17,7 +17,9 @@ public class AdminCreateUserDto
     [StringLength(100, MinimumLength = 2)]
     public string DisplayName { get; set; } = string.Empty;
 
-    [MinLength(1)]
+    /// <summary>Exactly one role per user (Admin, Manager or Employee).</summary>
+    [MinLength(1, ErrorMessage = "A role is required.")]
+    [MaxLength(1, ErrorMessage = "A user can have only one role.")]
     public List<string> Roles { get; set; } = new();
 
     [Required]

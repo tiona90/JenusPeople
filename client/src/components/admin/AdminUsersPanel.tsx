@@ -4,7 +4,8 @@ import { SweetAlert, AppDialog, AppDialogTitle, AppDialogContent, AppDialogActio
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
-import Checkbox from '@mui/material/Checkbox'
+import Radio from '@mui/material/Radio'
+import RadioGroup from '@mui/material/RadioGroup'
 import CircularProgress from '@mui/material/CircularProgress'
 import Divider from '@mui/material/Divider'
 import FormControlLabel from '@mui/material/FormControlLabel'
@@ -1090,7 +1091,8 @@ function EditUserDialog(props: {
 
     const [email, setEmail] = useState('')
     const [displayName, setDisplayName] = useState('')
-    const [roles, setRoles] = useState<UserRole[]>([])
+    // Exactly one role per user, so a single value rather than a set.
+    const [role, setRole] = useState<UserRole>('Employee')
     const [departmentId, setDepartmentId] = useState(0)
     const [jobTitle, setJobTitle] = useState('')
     const [annualLeaveEntitlement, setAnnualLeaveEntitlement] = useState(0)
@@ -1103,7 +1105,8 @@ function EditUserDialog(props: {
             Promise.resolve().then(() => {
                 setEmail(props.data!.user.email)
                 setDisplayName(props.data!.user.displayName ?? '')
-                setRoles(props.data!.user.roles)
+                // Collapses any legacy multi-role account to its highest role.
+                setRole(primaryRoleOf(props.data!.user.roles))
                 setDepartmentId(props.data!.profile?.departmentId ?? 0)
                 setJobTitle(props.data!.profile?.jobTitle ?? '')
                 setAnnualLeaveEntitlement(props.data!.profile?.annualLeaveEntitlement ?? 0)
@@ -1128,12 +1131,6 @@ function EditUserDialog(props: {
             .sort((a, b) => a.name.localeCompare(b.name))
     }, [props.profiles, props.users, props.data])
 
-    const toggleRole = (role: UserRole) => {
-        setRoles((current) =>
-            current.includes(role) ? current.filter((r) => r !== role) : [...current, role]
-        )
-    }
-
     return (
         <AppDialog open={open} onClose={props.onClose} maxWidth="sm">
             <AppDialogTitle>Edit User</AppDialogTitle>
@@ -1145,16 +1142,12 @@ function EditUserDialog(props: {
                     <TextField label="Date of birth" type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} fullWidth slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: new Date().toISOString().slice(0, 10) } }} helperText="Used for birthday reminders." />
 
                     <Divider />
-                    <Typography variant="subtitle2" color="text.secondary">Roles</Typography>
-                    <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-                        {ALL_ROLES.map((role) => (
-                            <FormControlLabel
-                                key={role}
-                                control={<Checkbox checked={roles.includes(role)} onChange={() => toggleRole(role)} />}
-                                label={role}
-                            />
+                    <Typography variant="subtitle2" color="text.secondary">Role</Typography>
+                    <RadioGroup row name="edit-user-role" value={role} onChange={(e) => setRole(e.target.value as UserRole)}>
+                        {ALL_ROLES.map((option) => (
+                            <FormControlLabel key={option} value={option} control={<Radio />} label={option} />
                         ))}
-                    </Stack>
+                    </RadioGroup>
 
                     {profile && (
                         <>
@@ -1212,9 +1205,9 @@ function EditUserDialog(props: {
                 <Button variant="outlined" onClick={props.onClose} disabled={props.isPending} sx={cancelBtnSx}>Cancel</Button>
                 <Button
                     variant="contained"
-                    disabled={props.isPending || !user || roles.length === 0}
+                    disabled={props.isPending || !user}
                     onClick={() =>
-                        user && props.onSubmit({ userId: user.id, email, displayName, roles, profile, departmentId, jobTitle, annualLeaveEntitlement, managerId: managerId || null, phoneNumber: phoneNumber.trim() || null, dateOfBirth: dateOfBirth || null })
+                        user && props.onSubmit({ userId: user.id, email, displayName, roles: [role], profile, departmentId, jobTitle, annualLeaveEntitlement, managerId: managerId || null, phoneNumber: phoneNumber.trim() || null, dateOfBirth: dateOfBirth || null })
                     }
                     sx={saveBtnSx}
                 >
@@ -1235,21 +1228,16 @@ function CreateUserDialog(props: {
 }) {
     const [email, setEmail] = useState('')
     const [displayName, setDisplayName] = useState('')
-    const [roles, setRoles] = useState<UserRole[]>(['Employee'])
+    // Exactly one role per user, so a single value rather than a set.
+    const [role, setRole] = useState<UserRole>('Employee')
     const [departmentId, setDepartmentId] = useState<number>(0)
     const [phoneNumber, setPhoneNumber] = useState('')
     const [dateOfBirth, setDateOfBirth] = useState('')
 
-    const toggleRole = (role: UserRole) => {
-        setRoles((current) =>
-            current.includes(role) ? current.filter((r) => r !== role) : [...current, role]
-        )
-    }
-
     const close = () => {
         setEmail('')
         setDisplayName('')
-        setRoles(['Employee'])
+        setRole('Employee')
         setDepartmentId(0)
         setPhoneNumber('')
         setDateOfBirth('')
@@ -1293,15 +1281,12 @@ function CreateUserDialog(props: {
                             <MenuItem key={dept.id} value={dept.id}>{dept.name} ({dept.code})</MenuItem>
                         ))}
                     </TextField>
-                    <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-                        {ALL_ROLES.map((role) => (
-                            <FormControlLabel
-                                key={role}
-                                control={<Checkbox checked={roles.includes(role)} onChange={() => toggleRole(role)} />}
-                                label={role}
-                            />
+                    <Typography variant="subtitle2" color="text.secondary">Role</Typography>
+                    <RadioGroup row name="create-user-role" value={role} onChange={(e) => setRole(e.target.value as UserRole)}>
+                        {ALL_ROLES.map((option) => (
+                            <FormControlLabel key={option} value={option} control={<Radio />} label={option} />
                         ))}
-                    </Stack>
+                    </RadioGroup>
                     {props.error ? <Alert severity="error">{getApiErrorMessage(props.error, 'Failed.')}</Alert> : null}
                 </Stack>
             </AppDialogContent>
@@ -1310,7 +1295,7 @@ function CreateUserDialog(props: {
                 <Button
                     variant="contained"
                     disabled={props.isPending || !email.trim() || !displayName.trim() || departmentId === 0}
-                    onClick={() => props.onSubmit({ email: email.trim(), displayName: displayName.trim(), roles, departmentId, phoneNumber: phoneNumber.trim() || null, dateOfBirth: dateOfBirth || null })}
+                    onClick={() => props.onSubmit({ email: email.trim(), displayName: displayName.trim(), roles: [role], departmentId, phoneNumber: phoneNumber.trim() || null, dateOfBirth: dateOfBirth || null })}
                     sx={saveBtnSx}
                 >
                     Create

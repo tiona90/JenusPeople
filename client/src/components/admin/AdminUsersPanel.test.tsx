@@ -146,6 +146,63 @@ describe('AdminUsersPanel — Create User', () => {
     })
 })
 
+// A user holds exactly one role, so the role picker must be radios rather than
+// checkboxes — checkboxes let an admin tick Manager *and* Employee.
+describe('AdminUsersPanel — role selection', () => {
+    it('offers the three roles as a single choice, not as checkboxes', async () => {
+        const dialog = await openCreateDialog()
+
+        for (const role of ['Admin', 'Manager', 'Employee']) {
+            expect(within(dialog).getByRole('radio', { name: role })).toBeInTheDocument()
+            expect(within(dialog).queryByRole('checkbox', { name: role })).not.toBeInTheDocument()
+        }
+
+        // Employee is the default for a new joiner.
+        expect(within(dialog).getByRole('radio', { name: 'Employee' })).toBeChecked()
+    })
+
+    it('replaces the current role instead of adding to it', async () => {
+        const dialog = await openCreateDialog()
+
+        fireEvent.click(within(dialog).getByRole('radio', { name: 'Manager' }))
+        expect(within(dialog).getByRole('radio', { name: 'Manager' })).toBeChecked()
+        expect(within(dialog).getByRole('radio', { name: 'Employee' })).not.toBeChecked()
+
+        fireEvent.click(within(dialog).getByRole('radio', { name: 'Admin' }))
+        expect(within(dialog).getByRole('radio', { name: 'Admin' })).toBeChecked()
+        expect(within(dialog).getByRole('radio', { name: 'Manager' })).not.toBeChecked()
+
+        // Exactly one radio checked at any time.
+        const checked = within(dialog).getAllByRole('radio').filter((r) => (r as HTMLInputElement).checked)
+        expect(checked).toHaveLength(1)
+    })
+
+    it('submits the chosen role as the only role', async () => {
+        const dialog = await openCreateDialog()
+
+        api.createAdminUser.mockResolvedValue({
+            id: 'u1',
+            userName: 'newjoiner@example.test',
+            email: 'newjoiner@example.test',
+            displayName: 'New Joiner',
+            imageUrl: '',
+            emailConfirmed: true,
+            roles: ['Manager'],
+            inviteEmailSent: true,
+        })
+
+        fireEvent.change(within(dialog).getByLabelText(/email/i), { target: { value: 'newjoiner@example.test' } })
+        fireEvent.change(within(dialog).getByLabelText(/display name/i), { target: { value: 'New Joiner' } })
+        fireEvent.click(within(dialog).getByRole('radio', { name: 'Manager' }))
+        await selectDepartment(dialog)
+        fireEvent.click(within(dialog).getByRole('button', { name: /^create$/i }))
+
+        await waitFor(() => expect(createAdminUser).toHaveBeenCalledTimes(1))
+
+        expect(api.createAdminUser.mock.calls[0][0].roles).toEqual(['Manager'])
+    })
+})
+
 /** MUI's select renders its options into a portal, hence the two steps. */
 async function selectDepartment(dialog: HTMLElement) {
     fireEvent.mouseDown(within(dialog).getByRole('combobox'))
