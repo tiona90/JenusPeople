@@ -10,7 +10,7 @@ vi.mock('../../lib/api', () => ({
     getAdminUsers: vi.fn(),
     getEmployeeProfiles: vi.fn(),
     getDepartments: vi.fn(),
-    getCompanyAttendance: vi.fn(),
+    getUserPresence: vi.fn(),
     getLeaveStatusHistories: vi.fn(),
     getTimesheetStatusHistories: vi.fn(),
     getAnnualLeaves: vi.fn(),
@@ -32,7 +32,7 @@ beforeEach(() => {
     api.getAdminUsers.mockResolvedValue([])
     api.getEmployeeProfiles.mockResolvedValue([])
     api.getDepartments.mockResolvedValue([DEPARTMENT] as never)
-    api.getCompanyAttendance.mockResolvedValue(null as never)
+    api.getUserPresence.mockResolvedValue([])
     api.getLeaveStatusHistories.mockResolvedValue([])
     api.getTimesheetStatusHistories.mockResolvedValue([])
     api.getAnnualLeaves.mockResolvedValue([])
@@ -143,6 +143,62 @@ describe('AdminUsersPanel — Create User', () => {
 
         expect(await screen.findByText(/the welcome email could not be sent/i)).toBeInTheDocument()
         expect(screen.getByText(/forgot password/i)).toBeInTheDocument()
+    })
+})
+
+// Presence must come from the check-in state keyed by user id. It was
+// previously inferred client-side by substring-matching the company activity
+// feed, where the synthetic "Not checked in" row contains "checked in" — so the
+// panel badged exactly the people who had *not* checked in as Online.
+describe('AdminUsersPanel — presence', () => {
+    const USERS = [
+        { id: 'u-in', userName: 'in@example.test', email: 'in@example.test', displayName: 'Checked In', imageUrl: '', emailConfirmed: true, roles: ['Employee'] },
+        { id: 'u-out', userName: 'out@example.test', email: 'out@example.test', displayName: 'Never In', imageUrl: '', emailConfirmed: true, roles: ['Employee'] },
+        { id: 'u-done', userName: 'done@example.test', email: 'done@example.test', displayName: 'Checked Out', imageUrl: '', emailConfirmed: true, roles: ['Employee'] },
+        { id: 'u-break', userName: 'break@example.test', email: 'break@example.test', displayName: 'On Break', imageUrl: '', emailConfirmed: true, roles: ['Employee'] },
+    ]
+
+    beforeEach(() => {
+        api.getAdminUsers.mockResolvedValue(USERS as never)
+        api.getUserPresence.mockResolvedValue([
+            { userId: 'u-in', status: 'online', checkInAt: '2026-08-04T08:00:00Z', lastActivityAt: '2026-08-04T08:00:00Z' },
+            { userId: 'u-out', status: 'offline', checkInAt: null, lastActivityAt: null },
+            { userId: 'u-done', status: 'offline', checkInAt: '2026-08-04T08:00:00Z', lastActivityAt: '2026-08-04T17:00:00Z' },
+            { userId: 'u-break', status: 'away', checkInAt: '2026-08-04T08:00:00Z', lastActivityAt: '2026-08-04T12:00:00Z' },
+        ])
+    })
+
+    it('badges one user Online, one Away, and the rest Offline', async () => {
+        renderPanel()
+
+        // Four users: only the open check-in is Online, the break is Away, and
+        // both "never checked in" and "checked out" are Offline.
+        expect(await screen.findByText('Online')).toBeInTheDocument()
+        expect(screen.getAllByText('Online')).toHaveLength(1)
+        expect(screen.getAllByText('Away')).toHaveLength(1)
+        expect(screen.getAllByText('Offline')).toHaveLength(2)
+    })
+
+    // The regression itself: never checking in must never read as Online.
+    it('shows a user who has never checked in as Offline with no activity', async () => {
+        renderPanel()
+
+        await screen.findByText('Never In')
+        expect(screen.getByText('No activity')).toBeInTheDocument()
+    })
+
+    it('counts and filters only checked-in users as Online', async () => {
+        renderPanel()
+
+        const tab = await screen.findByRole('button', { name: /🟢 Online/ })
+        expect(within(tab).getByText('1')).toBeInTheDocument()
+
+        fireEvent.click(tab)
+
+        expect(screen.getByText('Checked In')).toBeInTheDocument()
+        for (const absent of ['Never In', 'Checked Out', 'On Break']) {
+            expect(screen.queryByText(absent)).not.toBeInTheDocument()
+        }
     })
 })
 

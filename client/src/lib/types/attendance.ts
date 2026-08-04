@@ -96,6 +96,17 @@ export interface RecentActivity {
     minutesAgo: number | null
 }
 
+// Presence for today, keyed by Identity user id. Online means "checked in and
+// not yet checked out"; away means "on break"; everything else is offline.
+export type PresenceStatus = 'online' | 'away' | 'offline'
+
+export interface UserPresence {
+    userId: string
+    status: PresenceStatus
+    checkInAt: string | null
+    lastActivityAt: string | null
+}
+
 export type IssueSeverity = 'danger' | 'warning' | 'info' | 'success'
 
 export interface AttendanceIssue {

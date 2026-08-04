@@ -504,6 +504,59 @@ public class AttendanceController : BaseApiController
         return Ok(new TeamHistoryDto(members));
     }
 
+    // Authoritative per-user presence for today, keyed by Identity user id.
+    //
+    // The admin Users panel used to infer this client-side from the /company
+    // "recent activity" feed, which was wrong in both directions: that feed is
+    // capped at 20 events, is keyed by display name, and carries synthetic
+    // "Not checked in" rows whose text contains the substring "checked in".
+    // Presence has one source of truth — today's events run through
+    // ComputeDayState — so it is computed here instead.
+    [HttpGet("presence")]
+    [Authorize(Roles = "Admin")]
+    public async Task<ActionResult<List<UserPresenceDto>>> GetPresence()
+    {
+        var now = DateTime.UtcNow;
+        var todayStart = UtcDayStart(now);
+        var todayEnd = todayStart.AddDays(1);
+
+        var profiles = await _context.EmployeeProfiles
+            .Select(p => new { p.Id, p.UserId })
+            .ToListAsync();
+
+        var employeeIds = profiles.Select(p => p.Id).ToList();
+
+        var todayEvents = await _context.AttendanceEvents
+            .Where(e => employeeIds.Contains(e.EmployeeId) && e.At >= todayStart && e.At < todayEnd)
+            .ToListAsync();
+        var todayByEmployee = todayEvents.GroupBy(e => e.EmployeeId).ToDictionary(g => g.Key, g => g.ToList());
+
+        var result = profiles
+            .Where(p => !string.IsNullOrEmpty(p.UserId))
+            .Select(p =>
+            {
+                todayByEmployee.TryGetValue(p.Id, out var evts);
+                evts ??= new List<AttendanceEvent>();
+                var s = ComputeDayState(evts, now);
+
+                // "done" (checked in *and* out) collapses to offline alongside
+                // "out" (never checked in) — only an open check-in counts.
+                var status = s.status switch
+                {
+                    "in" => "online",
+                    "break" => "away",
+                    _ => "offline",
+                };
+
+                DateTime? lastActivityAt = evts.Count > 0 ? AsUtc(evts.Max(e => e.At)) : null;
+
+                return new UserPresenceDto(p.UserId, status, AsUtcNullable(s.checkInAt), lastActivityAt);
+            })
+            .ToList();
+
+        return Ok(result);
+    }
+
     [HttpGet("company")]
     [Authorize(Roles = "Admin")]
     public async Task<ActionResult<CompanyAttendanceDto>> GetCompany()

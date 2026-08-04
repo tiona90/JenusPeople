@@ -1,5 +1,5 @@
 import apiClient from './client'
-import type { AttendanceHistoryDay, AttendanceToday, CompanyAttendance, TeamAttendance, TeamHistory } from '../types/attendance'
+import type { AttendanceHistoryDay, AttendanceToday, CompanyAttendance, TeamAttendance, TeamHistory, UserPresence } from '../types/attendance'
 
 export async function getAttendanceToday(): Promise<AttendanceToday> {
     const res = await apiClient.get<AttendanceToday>('/attendance/me/today')
@@ -43,5 +43,10 @@ export async function getTeamAttendanceHistory(days = 30): Promise<TeamHistory> 
 
 export async function getCompanyAttendance(): Promise<CompanyAttendance> {
     const res = await apiClient.get<CompanyAttendance>('/attendance/company')
+    return res.data
+}
+
+export async function getUserPresence(): Promise<UserPresence[]> {
+    const res = await apiClient.get<UserPresence[]>('/attendance/presence')
     return res.data
 }

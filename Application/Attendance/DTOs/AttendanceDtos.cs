@@ -79,6 +79,16 @@ public record IssueDto(
     string Title,
     string Detail);
 
+// Per-user presence for today, keyed by the Identity user id. Presence is
+// derived from today's attendance events only: a user is online once they have
+// checked in and stays online until they check out. Never checked in, or
+// already checked out, is offline.
+public record UserPresenceDto(
+    string UserId,
+    string Status,
+    DateTime? CheckInAt,
+    DateTime? LastActivityAt);
+
 public record CompanyAttendanceDto(
     int Total,
     int In,

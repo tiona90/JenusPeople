@@ -19,11 +19,11 @@ import {
     deleteAdminUser,
     getAdminUsers,
     getAnnualLeaves,
-    getCompanyAttendance,
     getDepartments,
     getEmployeeProfiles,
     getLeaveStatusHistories,
     getTimesheetStatusHistories,
+    getUserPresence,
     setAdminUserRoles,
     updateAdminUser,
     updateEmployeeProfile,
@@ -31,7 +31,7 @@ import {
 import { getApiErrorMessage } from '../../lib/api/error-utils'
 import { softBg, type SxColor } from '../../lib/theme-tokens'
 import type {
-    AdminUser, Department, EmployeeProfile, LeaveStatusHistory, TimesheetStatusHistory, UserRole,
+    AdminUser, Department, EmployeeProfile, LeaveStatusHistory, PresenceStatus, TimesheetStatusHistory, UserRole,
 } from '../../lib/types'
 
 const PROTECTED_ADMIN_EMAIL = 'admin@annualleave.com'
@@ -39,7 +39,7 @@ const ALL_ROLES: UserRole[] = ['Admin', 'Manager', 'Employee']
 
 type StatusTab = 'all' | 'active' | 'admins' | 'managers' | 'employees' | 'online'
 
-type Presence = 'online' | 'away' | 'offline'
+type Presence = PresenceStatus
 
 interface DerivedUser {
     user: AdminUser
@@ -119,7 +119,7 @@ function AdminUsersPanel() {
     })
     const { data: profiles = [] } = useQuery({ queryKey: ['employeeProfiles'], queryFn: getEmployeeProfiles })
     const { data: departments = [] } = useQuery({ queryKey: ['departments'], queryFn: getDepartments })
-    const { data: company } = useQuery({ queryKey: ['attendance', 'company'], queryFn: getCompanyAttendance })
+    const { data: presences = [] } = useQuery({ queryKey: ['attendance', 'presence'], queryFn: getUserPresence })
     const { data: leaveHistories = [] } = useQuery({ queryKey: ['leaveStatusHistories'], queryFn: getLeaveStatusHistories })
     const { data: timesheetHistories = [] } = useQuery({ queryKey: ['timesheetStatusHistories'], queryFn: getTimesheetStatusHistories })
     const { data: leaves = [] } = useQuery({ queryKey: ['annualLeaves'], queryFn: getAnnualLeaves })
@@ -128,35 +128,26 @@ function AdminUsersPanel() {
     const deptById = useMemo(() => new Map(departments.map((d) => [d.id, d])), [departments])
     const userByName = useMemo(() => new Map(users.map((u) => [u.displayName, u])), [users])
 
-    // Presence map: name → status (from CompanyAttendance.recent + departments list)
-    const presenceByName = useMemo(() => {
-        const map = new Map<string, Presence>()
-        if (!company) return map
-        // CompanyAttendance.departments only has counts; we infer per-user presence from the recent activity feed.
-        for (const r of company.recent) {
-            if (!r.action) continue
-            const action = r.action.toLowerCase()
-            if (action.includes('check-in') || action.includes('checked in')) map.set(r.employeeName, 'online')
-            else if (action.includes('break start')) map.set(r.employeeName, 'away')
-            else if (action.includes('break end')) map.set(r.employeeName, 'online')
-            else if (action.includes('check-out') || action.includes('checked out')) map.set(r.employeeName, 'offline')
-        }
-        return map
-    }, [company])
+    // Presence comes from /attendance/presence, keyed by user id: a user is
+    // online only while checked in (away while on break), and offline once they
+    // check out or if they never checked in. It is deliberately NOT inferred
+    // from the company "recent activity" feed — that feed is capped at 20
+    // events, keyed by display name, and includes synthetic "Not checked in"
+    // rows, so string-matching it reported exactly the wrong users as online.
+    const presenceByUserId = useMemo(
+        () => new Map(presences.map((p) => [p.userId, p.status])),
+        [presences],
+    )
 
-    // Last-seen label per user (best effort)
-    const lastSeenByName = useMemo(() => {
+    // Last-seen label per user, from that same authoritative feed.
+    const lastSeenByUserId = useMemo(() => {
         const map = new Map<string, string>()
-        if (!company) return map
-        for (const r of company.recent) {
-            if (!r.employeeName) continue
-            if (map.has(r.employeeName)) continue
-            map.set(r.employeeName, r.minutesAgo != null && r.minutesAgo < 1 ? 'Just now'
-                : r.minutesAgo != null ? `${r.minutesAgo}m ago`
-                : '—')
+        for (const p of presences) {
+            if (!p.lastActivityAt) continue
+            map.set(p.userId, fmtRelative(new Date(p.lastActivityAt).getTime()))
         }
         return map
-    }, [company])
+    }, [presences])
 
     /* Derive a unified user list */
     const derivedAll: DerivedUser[] = useMemo(() => {
@@ -164,10 +155,10 @@ function AdminUsersPanel() {
         return users.map((u) => {
             const profile = profilesByUserId.get(u.id)
             const departmentName = profile?.departmentId ? deptById.get(profile.departmentId)?.name ?? null : null
-            const presence = presenceByName.get(u.displayName) ?? 'offline'
+            const presence = presenceByUserId.get(u.id) ?? 'offline'
             const lastSeenLabel = presence === 'online' ? 'Online now'
                 : presence === 'away' ? 'On break'
-                : (lastSeenByName.get(u.displayName) ?? 'No activity')
+                : (lastSeenByUserId.get(u.id) ?? 'No activity')
             const used = leaves
                 .filter((l) => l.employeeId === u.id && l.status === 'Approved' && new Date(l.startDate).getFullYear() === currentYear)
                 .reduce((s, l) => s + l.totalDays, 0)
@@ -187,7 +178,7 @@ function AdminUsersPanel() {
                 isProtected: u.email.trim().toLowerCase() === PROTECTED_ADMIN_EMAIL,
             }
         })
-    }, [users, profilesByUserId, deptById, presenceByName, lastSeenByName, leaves])
+    }, [users, profilesByUserId, deptById, presenceByUserId, lastSeenByUserId, leaves])
 
     /* Stats */
     const counts = useMemo(() => {
