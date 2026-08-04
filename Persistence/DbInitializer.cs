@@ -43,10 +43,12 @@ public class DbInitializer
     public static async Task SeedData(AppDbContext context, UserManager<User> userManager,
         RoleManager<Role> roleManager, bool seedDemoData = false)
     {
+        // Order matters: each seeder bails out early if its dependencies are
+        // missing, so reference data (departments, projects, profiles) must be in
+        // place before the business data (leaves, timesheets, entries) that hangs
+        // off it — otherwise a fresh database needs several restarts to fill in.
         await SeedRoles(roleManager, userManager);
         await SeedUsers(context, userManager, seedDemoData);
-        await SeedAnnualLeaves(context);
-        await SeedTimesheets(context);
         await SeedLeaveTypes(context);
         await BackfillLeaveTypeDesignFields(context);
         await SeedProjectActivityTypes(context);
@@ -54,6 +56,8 @@ public class DbInitializer
         await SeedProjects(context);
         await SeedUserDepartments(context);
         await SeedEmployeeProfiles(context);
+        await SeedAnnualLeaves(context);
+        await SeedTimesheets(context);
         await SeedTimesheetEntries(context);
         await FixZeroEntitlementProfiles(context);
         await SeedAppSettings(context);
@@ -65,9 +69,11 @@ public class DbInitializer
 
         // Get admin user and profile
         var adminUser = context.Users.FirstOrDefault(u => u.Email == "admin@annualleave.com");
+        if (adminUser is null) return;
+
         var adminProfile = context.EmployeeProfiles.FirstOrDefault(ep => ep.UserId == adminUser.Id);
         var engineering = context.Departments.FirstOrDefault(d => d.Code == "ENG");
-        if (adminUser is null || adminProfile is null || engineering is null) return;
+        if (adminProfile is null || engineering is null) return;
 
         var timesheet = new Timesheet
         {
@@ -480,8 +486,7 @@ public class DbInitializer
         if (context.AnnualLeaves.Any()) return;
 
         var adminUser = context.Users.FirstOrDefault(u => u.Email == "admin@annualleave.com");
-        var managerUser = context.Users.FirstOrDefault(u => u.Email == "manager@annualleave.com");
-        if (adminUser is null || managerUser is null) return;
+        if (adminUser is null) return;
 
         var annualLeaves = new List<AnnualLeave>
         {
@@ -491,15 +496,21 @@ public class DbInitializer
                 EmployeeId = adminUser.Id,
                 StartDate = DateTime.Now.AddMonths(1),
                 EndDate = DateTime.Now.AddMonths(1).AddDays(5)
-            },
-            new AnnualLeave
+            }
+        };
+
+        // Second request belongs to a demo manager, so it only appears in demo mode.
+        var managerUser = context.Users.FirstOrDefault(u => u.Email == "manager1@annualleave.com");
+        if (managerUser is not null)
+        {
+            annualLeaves.Add(new AnnualLeave
             {
                 Id = Guid.NewGuid().ToString(),
                 EmployeeId = managerUser.Id,
                 StartDate = DateTime.Now.AddMonths(2),
                 EndDate = DateTime.Now.AddMonths(2).AddDays(10)
-            }
-        };
+            });
+        }
 
         await context.AnnualLeaves.AddRangeAsync(annualLeaves);
         await context.SaveChangesAsync();
@@ -693,14 +704,11 @@ public class DbInitializer
         if (context.UserDepartments.Any()) return;
 
         var adminUser = context.Users.FirstOrDefault(u => u.Email == "admin@annualleave.com");
-        var managerUser = context.Users.FirstOrDefault(u => u.Email == "manager@annualleave.com");
-        var employeeUser = context.Users.FirstOrDefault(u => u.Email == "employee@annualleave.com");
-        if (adminUser is null || managerUser is null || employeeUser is null) return;
+        if (adminUser is null) return;
 
         var engineering = context.Departments.FirstOrDefault(d => d.Code == "ENG");
         var hr = context.Departments.FirstOrDefault(d => d.Code == "HR");
-        var finance = context.Departments.FirstOrDefault(d => d.Code == "FIN");
-        if (engineering is null || hr is null || finance is null) return;
+        if (engineering is null || hr is null) return;
 
         var userDepartments = new List<UserDepartment>
         {
@@ -711,21 +719,25 @@ public class DbInitializer
                 AssignedByUserId = adminUser.Id,
                 AssignedAt     = DateTime.UtcNow
             },
-            new UserDepartment
-            {
-                UserId         = managerUser.Id,
-                DepartmentId   = engineering.Id,
-                AssignedByUserId = adminUser.Id,
-                AssignedAt     = DateTime.UtcNow
-            },
-            new UserDepartment
-            {
-                UserId         = employeeUser.Id,
-                DepartmentId   = hr.Id,
-                AssignedByUserId = adminUser.Id,
-                AssignedAt     = DateTime.UtcNow
-            },
         };
+
+        // Demo assignments — these users exist only when demo data is enabled.
+        void Assign(string email, int departmentId)
+        {
+            var user = context.Users.FirstOrDefault(u => u.Email == email);
+            if (user is null) return;
+
+            userDepartments.Add(new UserDepartment
+            {
+                UserId         = user.Id,
+                DepartmentId   = departmentId,
+                AssignedByUserId = adminUser.Id,
+                AssignedAt     = DateTime.UtcNow
+            });
+        }
+
+        Assign("manager1@annualleave.com", engineering.Id);
+        Assign("employee1a@annualleave.com", hr.Id);
 
         await context.UserDepartments.AddRangeAsync(userDepartments);
         await context.SaveChangesAsync();

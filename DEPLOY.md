@@ -44,9 +44,16 @@ folder to the server (e.g. `C:\sites\jpeople`).
 
 ## 3. Database (SQL Server)
 
-The app **auto-creates its schema and seed data on startup**
-(`context.Database.MigrateAsync()` + `DbInitializer.SeedData`). You only need
-the login and an (empty) database it can own.
+The app **auto-creates its schema on startup** (`context.Database.MigrateAsync()`).
+Seeding is separate and opt-in — see §3.1. You only need the login and an
+(empty) database it can own.
+
+> `ppluser` has no `CREATE DATABASE` permission, so the database **must already
+> exist** before the first start. If it doesn't, startup logs
+> `CREATE DATABASE permission denied in database 'master'` and — because the
+> migrate/seed block only logs its exception — **the site still comes up, just
+> with no tables**. Always check the log after a first deploy rather than
+> trusting that the site loaded.
 
 Run once on the production SQL Server (adjust `Server=` if SQL is remote):
 
@@ -70,6 +77,55 @@ GO
 > change it to `Server=localhost` (or `Server=.`) for a faster loopback.
 > Also ensure SQL Server has **Mixed-Mode authentication** enabled (SQL logins)
 > and **TCP/IP** turned on if connecting by IP.
+
+### 3.1 Seeding the demo data
+
+Seeding is controlled by two flags in `appsettings.Production.json` (the
+git-ignored file that ships in the release folder):
+
+```jsonc
+"Seed": {
+  "Enabled": true,   // run DbInitializer at all
+  "DemoData": true   // also create the demo managers/employees + their data
+}
+```
+
+Both are currently **`true`**, so a deploy onto an empty database fills it in a
+**single** app-pool start:
+
+| Data | Rows |
+|---|---|
+| Users (Admin + 2 managers + 8 employees) | 11 |
+| Roles | 3 |
+| Departments | 5 |
+| Projects | 3 |
+| Employee profiles | 11 |
+| User↔department assignments | 3 |
+| Annual leave requests | 2 |
+| Timesheets / timesheet entries | 1 / 2 |
+| Leave types / activity types | 8 / 8 |
+| App settings | 1 |
+
+Log in as `admin@annualleave.com`; every seeded account uses the password
+`Pa$$w0rd`.
+
+**Read these before leaving the flags on:**
+
+- ⚠️ **All 11 accounts share the hardcoded password `Pa$$w0rd`**, and
+  `EnsurePassword` **resets it on every startup**. So while `Seed:Enabled` is
+  `true`, changing Admin's password in the UI is undone by the next app-pool
+  recycle. This is fine for a demo/UAT site on `jpeople_dev`; it is **not**
+  acceptable for a real tenant with real staff data.
+- ⚠️ **Flipping `DemoData` back to `false` deletes the demo data.** On the next
+  start `SeedUsers` removes all ten demo accounts *and their dependent rows*
+  (profiles, leave, timesheets) so only Admin remains. Leave it `true` for as
+  long as you want the demo accounts to exist — don't treat it as a one-shot
+  fill.
+- To go live for real: set **both** flags to `false`, restart, then set a strong
+  Admin password. With `Enabled: false` the seeder never runs, so the password
+  sticks.
+- Each individual seeder is a no-op when its table already has rows, so an
+  existing database is never overwritten — it only gains what's missing.
 
 ---
 
