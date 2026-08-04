@@ -31,4 +31,20 @@ public class AdminCreateUserDto
     public string? PhoneNumber { get; set; }
 
     public DateOnly? DateOfBirth { get; set; }
+
+    /// <summary>
+    /// The profile id of who this person reports to. The admin UI derives this
+    /// from the department's manager rather than letting it be hand-picked —
+    /// see AdminUsersPanel's EditUserDialog — but the field stays free-form
+    /// here too, matching EditEmployeeProfileRequest, so validation is the
+    /// same for both.
+    /// </summary>
+    public string? ManagerId { get; set; }
+
+    [StringLength(150)]
+    public string? JobTitle { get; set; }
+
+    /// <summary>Defaults to 20 when omitted — see CreateUser in AdminUsersController.</summary>
+    [Range(0, 365)]
+    public int? AnnualLeaveEntitlement { get; set; }
 }

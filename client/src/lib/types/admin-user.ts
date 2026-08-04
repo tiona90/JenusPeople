@@ -28,6 +28,9 @@ export interface AdminCreateUserRequest {
     departmentId: number
     phoneNumber?: string | null
     dateOfBirth?: string | null
+    managerId?: string | null
+    jobTitle?: string | null
+    annualLeaveEntitlement?: number
 }
 
 export interface AdminUpdateUserRequest {

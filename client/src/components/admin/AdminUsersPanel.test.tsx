@@ -115,6 +115,9 @@ describe('AdminUsersPanel — Create User', () => {
             displayName: 'New Joiner',
             roles: ['Employee'],
             departmentId: DEPARTMENT.id,
+            managerId: null,
+            jobTitle: null,
+            annualLeaveEntitlement: 20,
             phoneNumber: null,
             dateOfBirth: null,
         })
@@ -199,6 +202,102 @@ describe('AdminUsersPanel — presence', () => {
         for (const absent of ['Never In', 'Checked Out', 'On Break']) {
             expect(screen.queryByText(absent)).not.toBeInTheDocument()
         }
+    })
+})
+
+// A user's manager is whoever manages their department, not a free pick — an
+// admin could previously assign anyone (even across departments) as the person
+// this user reports to, which drifted from what the Departments page showed as
+// that department's manager.
+describe('AdminUsersPanel — manager is derived from department', () => {
+    const MANAGER_USER = { id: 'u-manager', userName: 'manager@example.test', email: 'manager@example.test', displayName: 'Andreas Georgiou', imageUrl: '', emailConfirmed: true, roles: ['Manager'] }
+    const EMPLOYEE_USER = { id: 'u-employee', userName: 'employee@example.test', email: 'employee@example.test', displayName: 'Theodoros Iona', imageUrl: '', emailConfirmed: true, roles: ['Employee'] }
+
+    const MANAGER_PROFILE = { id: 'p-manager', userId: 'u-manager', displayName: 'Andreas Georgiou', departmentId: DEPARTMENT.id, managerId: null, annualLeaveEntitlement: 20, leaveBalance: 20, jobTitle: null, createdAt: '2026-01-01' }
+    const EMPLOYEE_PROFILE = { id: 'p-employee', userId: 'u-employee', displayName: 'Theodoros Iona', departmentId: DEPARTMENT.id, managerId: null, annualLeaveEntitlement: 20, leaveBalance: 20, jobTitle: null, createdAt: '2026-01-01' }
+
+    beforeEach(() => {
+        api.getAdminUsers.mockResolvedValue([MANAGER_USER, EMPLOYEE_USER] as never)
+        api.getEmployeeProfiles.mockResolvedValue([MANAGER_PROFILE, EMPLOYEE_PROFILE] as never)
+    })
+
+    async function openEditFor(displayName: string) {
+        renderPanel()
+        const nameEl = await screen.findByText(displayName)
+        // Four ancestors up from the name text: its own box -> the "User" cell
+        // -> the row's grid -> the row container that also holds the action buttons.
+        const row = nameEl.parentElement!.parentElement!.parentElement!.parentElement!
+        fireEvent.click(within(row).getByTitle('Edit'))
+        return screen.getByRole('dialog')
+    }
+
+    it('shows the department manager as a fixed value, not a pickable dropdown', async () => {
+        const dialog = await openEditFor('Theodoros Iona')
+
+        expect(await within(dialog).findByDisplayValue('Andreas Georgiou')).toBeInTheDocument()
+        expect(within(dialog).queryByRole('combobox', { name: /manager/i })).not.toBeInTheDocument()
+        // The Manager field itself is disabled. getByLabelText would also match
+        // the "Manager" role radio, so target the textbox role specifically.
+        expect(within(dialog).getByRole('textbox', { name: 'Manager' })).toBeDisabled()
+    })
+
+    it('sends the department manager\'s profile id on save without letting it be edited', async () => {
+        const dialog = await openEditFor('Theodoros Iona')
+
+        // Wait for the department-driven effect to populate the form before
+        // saving — otherwise the click races the microtask that sets it.
+        await within(dialog).findByDisplayValue('Andreas Georgiou')
+        fireEvent.click(within(dialog).getByRole('button', { name: /^save$/i }))
+
+        await waitFor(() => expect(api.updateEmployeeProfile).toHaveBeenCalledTimes(1))
+        expect(api.updateEmployeeProfile.mock.calls[0][0]).toMatchObject({
+            id: EMPLOYEE_PROFILE.id,
+            managerId: MANAGER_PROFILE.id,
+        })
+    })
+
+    it('shows no manager for the department manager\'s own record, rather than themself', async () => {
+        const dialog = await openEditFor('Andreas Georgiou')
+
+        await within(dialog).findByDisplayValue('No manager assigned to this department')
+
+        fireEvent.click(within(dialog).getByRole('button', { name: /^save$/i }))
+
+        await waitFor(() => expect(api.updateEmployeeProfile).toHaveBeenCalledTimes(1))
+        expect(api.updateEmployeeProfile.mock.calls[0][0]).toMatchObject({
+            id: MANAGER_PROFILE.id,
+            managerId: null,
+        })
+    })
+
+    // Create User must land a new hire on the same manager Edit would show for
+    // that department — the two forms should never disagree about who manages whom.
+    it('Create User picks up the department manager too, once a department is chosen', async () => {
+        const dialog = await openCreateDialog()
+
+        api.createAdminUser.mockResolvedValue({
+            id: 'u-new',
+            userName: 'newhire@example.test',
+            email: 'newhire@example.test',
+            displayName: 'New Hire',
+            imageUrl: '',
+            emailConfirmed: true,
+            roles: ['Employee'],
+            inviteEmailSent: true,
+        })
+
+        fireEvent.change(within(dialog).getByLabelText(/email/i), { target: { value: 'newhire@example.test' } })
+        fireEvent.change(within(dialog).getByLabelText(/display name/i), { target: { value: 'New Hire' } })
+        await selectDepartment(dialog)
+
+        expect(await within(dialog).findByDisplayValue('Andreas Georgiou')).toBeInTheDocument()
+
+        fireEvent.click(within(dialog).getByRole('button', { name: /^create$/i }))
+
+        await waitFor(() => expect(api.createAdminUser).toHaveBeenCalledTimes(1))
+        expect(api.createAdminUser.mock.calls[0][0]).toMatchObject({
+            managerId: MANAGER_PROFILE.id,
+        })
     })
 })
 

@@ -556,6 +556,8 @@ function AdminUsersPanel() {
                 onClose={() => setCreateOpen(false)}
                 onSubmit={(payload) => createMutation.mutate(payload)}
                 departments={departments}
+                profiles={profiles}
+                users={users}
             />
             <EditUserDialog
                 data={editData}
@@ -1055,6 +1057,29 @@ const activityIconFg: Record<ActivityItem['color'], string> = {
 /* Dialogs                                                                  */
 /* ════════════════════════════════════════════════════════════════════════ */
 
+// A user's manager is whoever manages their department — not a free pick.
+// Mirrors DepartmentsPanel's "Department manager" derivation (the department's
+// Manager-role profile) so the two views agree. Shared by Create and Edit so
+// both dialogs land on the same person. excludeUserId keeps a department
+// manager from being shown as their own manager while editing themselves.
+function deriveDepartmentManager(
+    departmentId: number,
+    profiles: EmployeeProfile[],
+    users: AdminUser[],
+    excludeUserId?: string,
+): { profileId: string; name: string } | null {
+    if (!departmentId) return null
+    const candidate = profiles.find((p) => {
+        if (p.departmentId !== departmentId) return false
+        if (p.userId === excludeUserId) return false
+        const u = users.find((u) => u.id === p.userId)
+        return !!u?.roles.includes('Manager')
+    })
+    if (!candidate) return null
+    const u = users.find((u) => u.id === candidate.userId)
+    return { profileId: candidate.id, name: u?.displayName || u?.email || 'Unknown' }
+}
+
 function EditUserDialog(props: {
     data: { user: AdminUser; profile?: EmployeeProfile } | null
     departments: Department[]
@@ -1087,7 +1112,6 @@ function EditUserDialog(props: {
     const [departmentId, setDepartmentId] = useState(0)
     const [jobTitle, setJobTitle] = useState('')
     const [annualLeaveEntitlement, setAnnualLeaveEntitlement] = useState(0)
-    const [managerId, setManagerId] = useState<string>('')
     const [phoneNumber, setPhoneNumber] = useState('')
     const [dateOfBirth, setDateOfBirth] = useState('')
 
@@ -1101,7 +1125,6 @@ function EditUserDialog(props: {
                 setDepartmentId(props.data!.profile?.departmentId ?? 0)
                 setJobTitle(props.data!.profile?.jobTitle ?? '')
                 setAnnualLeaveEntitlement(props.data!.profile?.annualLeaveEntitlement ?? 0)
-                setManagerId(props.data!.profile?.managerId ?? '')
                 setPhoneNumber(props.data!.user.phoneNumber ?? '')
                 setDateOfBirth(props.data!.user.dateOfBirth ?? '')
             })
@@ -1109,18 +1132,12 @@ function EditUserDialog(props: {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [props.data])
 
-    const managerOptions = useMemo(() => {
-        return props.profiles
-            .map((p) => {
-                const u = props.users.find((u) => u.id === p.userId)
-                if (!u) return null
-                if (u.id === props.data?.user.id) return null
-                if (!u.roles.includes('Manager') && !u.roles.includes('Admin')) return null
-                return { id: p.id, name: u.displayName || u.email }
-            })
-            .filter((m): m is { id: string; name: string } => !!m)
-            .sort((a, b) => a.name.localeCompare(b.name))
-    }, [props.profiles, props.users, props.data])
+    // If the person being edited *is* their department's manager, they have no
+    // manager of their own here — excludeUserId keeps them from matching themselves.
+    const departmentManager = useMemo(
+        () => deriveDepartmentManager(departmentId, props.profiles, props.users, props.data?.user.id),
+        [departmentId, props.profiles, props.users, props.data],
+    )
 
     return (
         <AppDialog open={open} onClose={props.onClose} maxWidth="sm">
@@ -1160,18 +1177,12 @@ function EditUserDialog(props: {
                                 ))}
                             </TextField>
                             <TextField
-                                select
                                 label="Manager"
-                                value={managerId}
-                                onChange={(e) => setManagerId(e.target.value)}
+                                value={departmentManager?.name ?? 'No manager assigned to this department'}
                                 fullWidth
-                                helperText="Assign the person this user reports to (Managers and Admins are eligible)."
-                            >
-                                <MenuItem value="">No manager</MenuItem>
-                                {managerOptions.map((m) => (
-                                    <MenuItem key={m.id} value={m.id}>{m.name}</MenuItem>
-                                ))}
-                            </TextField>
+                                disabled
+                                helperText="Set by the department's manager — change it by reassigning who manages this department."
+                            />
                             <TextField
                                 label="Job title"
                                 value={jobTitle}
@@ -1198,7 +1209,7 @@ function EditUserDialog(props: {
                     variant="contained"
                     disabled={props.isPending || !user}
                     onClick={() =>
-                        user && props.onSubmit({ userId: user.id, email, displayName, roles: [role], profile, departmentId, jobTitle, annualLeaveEntitlement, managerId: managerId || null, phoneNumber: phoneNumber.trim() || null, dateOfBirth: dateOfBirth || null })
+                        user && props.onSubmit({ userId: user.id, email, displayName, roles: [role], profile, departmentId, jobTitle, annualLeaveEntitlement, managerId: departmentManager?.profileId ?? null, phoneNumber: phoneNumber.trim() || null, dateOfBirth: dateOfBirth || null })
                     }
                     sx={saveBtnSx}
                 >
@@ -1214,22 +1225,45 @@ function CreateUserDialog(props: {
     onClose: () => void
     isPending: boolean
     error: unknown
-    onSubmit: (payload: { email: string; displayName: string; roles: UserRole[]; departmentId: number; phoneNumber: string | null; dateOfBirth: string | null }) => void
+    onSubmit: (payload: {
+        email: string
+        displayName: string
+        roles: UserRole[]
+        departmentId: number
+        managerId: string | null
+        jobTitle: string | null
+        annualLeaveEntitlement: number
+        phoneNumber: string | null
+        dateOfBirth: string | null
+    }) => void
     departments: Department[]
+    profiles: EmployeeProfile[]
+    users: AdminUser[]
 }) {
     const [email, setEmail] = useState('')
     const [displayName, setDisplayName] = useState('')
     // Exactly one role per user, so a single value rather than a set.
     const [role, setRole] = useState<UserRole>('Employee')
     const [departmentId, setDepartmentId] = useState<number>(0)
+    const [jobTitle, setJobTitle] = useState('')
+    const [annualLeaveEntitlement, setAnnualLeaveEntitlement] = useState(20)
     const [phoneNumber, setPhoneNumber] = useState('')
     const [dateOfBirth, setDateOfBirth] = useState('')
+
+    // Same rule as EditUserDialog: a new hire reports to whoever manages the
+    // department they're placed in — not a free pick.
+    const departmentManager = useMemo(
+        () => deriveDepartmentManager(departmentId, props.profiles, props.users),
+        [departmentId, props.profiles, props.users],
+    )
 
     const close = () => {
         setEmail('')
         setDisplayName('')
         setRole('Employee')
         setDepartmentId(0)
+        setJobTitle('')
+        setAnnualLeaveEntitlement(20)
         setPhoneNumber('')
         setDateOfBirth('')
         props.onClose()
@@ -1257,6 +1291,17 @@ function CreateUserDialog(props: {
                     />
                     <TextField label="Phone number" type="tel" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} fullWidth />
                     <TextField label="Date of birth" type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} fullWidth slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: new Date().toISOString().slice(0, 10) } }} helperText="Used for birthday reminders." />
+
+                    <Divider />
+                    <Typography variant="subtitle2" color="text.secondary">Role</Typography>
+                    <RadioGroup row name="create-user-role" value={role} onChange={(e) => setRole(e.target.value as UserRole)}>
+                        {ALL_ROLES.map((option) => (
+                            <FormControlLabel key={option} value={option} control={<Radio />} label={option} />
+                        ))}
+                    </RadioGroup>
+
+                    <Divider />
+                    <Typography variant="subtitle2" color="text.secondary">Profile</Typography>
                     <TextField
                         select
                         label="Department"
@@ -1272,12 +1317,28 @@ function CreateUserDialog(props: {
                             <MenuItem key={dept.id} value={dept.id}>{dept.name} ({dept.code})</MenuItem>
                         ))}
                     </TextField>
-                    <Typography variant="subtitle2" color="text.secondary">Role</Typography>
-                    <RadioGroup row name="create-user-role" value={role} onChange={(e) => setRole(e.target.value as UserRole)}>
-                        {ALL_ROLES.map((option) => (
-                            <FormControlLabel key={option} value={option} control={<Radio />} label={option} />
-                        ))}
-                    </RadioGroup>
+                    <TextField
+                        label="Manager"
+                        value={departmentManager?.name ?? 'No manager assigned to this department'}
+                        fullWidth
+                        disabled
+                        helperText="Set by the department's manager — change it by reassigning who manages this department."
+                    />
+                    <TextField
+                        label="Job title"
+                        value={jobTitle}
+                        onChange={(e) => setJobTitle(e.target.value)}
+                        fullWidth
+                    />
+                    <TextField
+                        label="Annual leave entitlement"
+                        type="number"
+                        value={annualLeaveEntitlement}
+                        onChange={(e) => setAnnualLeaveEntitlement(Number(e.target.value))}
+                        inputProps={{ min: 0, step: 0.5 }}
+                        fullWidth
+                    />
+
                     {props.error ? <Alert severity="error">{getApiErrorMessage(props.error, 'Failed.')}</Alert> : null}
                 </Stack>
             </AppDialogContent>
@@ -1286,7 +1347,17 @@ function CreateUserDialog(props: {
                 <Button
                     variant="contained"
                     disabled={props.isPending || !email.trim() || !displayName.trim() || departmentId === 0}
-                    onClick={() => props.onSubmit({ email: email.trim(), displayName: displayName.trim(), roles: [role], departmentId, phoneNumber: phoneNumber.trim() || null, dateOfBirth: dateOfBirth || null })}
+                    onClick={() => props.onSubmit({
+                        email: email.trim(),
+                        displayName: displayName.trim(),
+                        roles: [role],
+                        departmentId,
+                        managerId: departmentManager?.profileId ?? null,
+                        jobTitle: jobTitle.trim() || null,
+                        annualLeaveEntitlement,
+                        phoneNumber: phoneNumber.trim() || null,
+                        dateOfBirth: dateOfBirth || null,
+                    })}
                     sx={saveBtnSx}
                 >
                     Create

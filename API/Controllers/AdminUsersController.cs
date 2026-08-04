@@ -78,6 +78,12 @@ public class AdminUsersController(
             return BadRequest(new { message = "Email is already registered." });
         }
 
+        if (!string.IsNullOrWhiteSpace(request.ManagerId)
+            && !await context.EmployeeProfiles.AnyAsync(ep => ep.Id == request.ManagerId))
+        {
+            return BadRequest(new { message = "Manager profile is invalid." });
+        }
+
         var selectedRoles = await ResolveRolesOrBadRequest(request.Roles);
         if (selectedRoles is null)
         {
@@ -119,12 +125,15 @@ public class AdminUsersController(
         }
 
         // Create EmployeeProfile with DepartmentId
+        var entitlement = request.AnnualLeaveEntitlement ?? 20;
         var employeeProfile = new EmployeeProfile
         {
             UserId = user.Id,
             DepartmentId = request.DepartmentId,
-            AnnualLeaveEntitlement = 20,
-            LeaveBalance = 20,
+            ManagerId = string.IsNullOrWhiteSpace(request.ManagerId) ? null : request.ManagerId,
+            JobTitle = string.IsNullOrWhiteSpace(request.JobTitle) ? null : request.JobTitle.Trim(),
+            AnnualLeaveEntitlement = entitlement,
+            LeaveBalance = entitlement,
         };
         context.EmployeeProfiles.Add(employeeProfile);
         await context.SaveChangesAsync();
