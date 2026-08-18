@@ -164,6 +164,11 @@ public class AppDbContext : IdentityDbContext<
                 .WithMany()
                 .HasForeignKey(al => al.ApprovedById)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(al => al.Delegate)
+                .WithMany()
+                .HasForeignKey(al => al.DelegateId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         builder.Entity<AttendanceEvent>(entity =>

@@ -155,6 +155,9 @@ function AnnualLeaveForm({ open, onClose, leave, isAdmin = false, readOnly = fal
                     leaveTypeId: values.leaveTypeId,
                     reason: values.reason,
                     evidenceUrl: nextEvidenceUrl,
+                    // This form doesn't edit coverage — carry the existing delegate
+                    // through so an edit here never silently drops it.
+                    delegateId: leave.delegateId ?? undefined,
                 })
             } else {
                 await createMutation.mutateAsync({

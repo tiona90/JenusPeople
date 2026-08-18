@@ -24,6 +24,7 @@ public class GetAnnualLeaveDetails
         public async Task<Result<AnnualLeaveDto>> Handle(Query request, CancellationToken cancellationToken)
         {
             IQueryable<Domain.AnnualLeave> annualLeaveQuery = context.AnnualLeaves
+                .Include(al => al.Delegate)
                 .AsNoTracking()
                 .Where(al => al.Id == request.Id);
 

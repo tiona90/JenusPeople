@@ -10,6 +10,8 @@ export interface AnnualLeaveBase {
     leaveTypeId: number
     reason: string
     evidenceUrl?: string | null
+    /** User id of the colleague nominated to cover while the employee is away. */
+    delegateId?: string | null
 }
 
 export interface AnnualLeave {
@@ -20,6 +22,8 @@ export interface AnnualLeave {
     leaveTypeId: number | null
     reason: string
     evidenceUrl: string | null
+    delegateId: string | null
+    delegateName: string
     status: AnnualLeaveStatus
     createdAt: string
     approvedAt: string | null

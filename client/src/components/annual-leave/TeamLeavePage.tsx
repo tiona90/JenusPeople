@@ -482,6 +482,7 @@ const TeamLeavePage = observer(function TeamLeavePage({ user }: { user: UserInfo
                             <Divider sx={{ my: 0.5 }} />
                             <DetailRow label="Status" value={<StatusBadge status={viewLeave.status} />} />
                             {viewLeave.reason && <DetailRow label="Reason" value={viewLeave.reason} />}
+                            {viewLeave.delegateName && <DetailRow label="Covered By" value={viewLeave.delegateName} />}
                             {viewLeave.evidenceUrl && viewLeave.evidenceUrl.trim() !== '' && (
                                 <DetailRow
                                     label="Evidence"

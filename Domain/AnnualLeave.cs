@@ -20,6 +20,13 @@ public class AnnualLeave : IAuditable
     public User? Employee { get; set; }
     public string? ApprovedById { get; set; }
     public User? ApprovedBy { get; set; }
+
+    /// <summary>
+    /// Colleague nominated to cover urgent matters while the employee is away.
+    /// Optional — a request with no delegate is perfectly valid.
+    /// </summary>
+    public string? DelegateId { get; set; }
+    public User? Delegate { get; set; }
     public string? EmployeeProfileId { get; set; }
     public EmployeeProfile? EmployeeProfile { get; set; }
     public int? DepartmentId { get; set; }

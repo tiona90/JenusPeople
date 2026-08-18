@@ -729,6 +729,22 @@ function LeaveRow({
     const typeKey = leaveTypeKey(typeName)
     const isPending = leave.status === 'Pending'
     const hasConflict = !!conflicts && conflicts.length > 0
+
+    // Nominated cover, shown in whichever coverage block renders below.
+    const delegateLine = leave.delegateName ? (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', mt: '8px', pt: '8px', borderTop: '1px dashed', borderTopColor: 'divider' }}>
+            <Box sx={{
+                width: 26, height: 26, borderRadius: '50%',
+                bgcolor: avatarBg(leave.delegateName), color: '#fff',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 10, fontWeight: 600, flexShrink: 0,
+            }}>{initials(leave.delegateName)}</Box>
+            <Box sx={{ minWidth: 0 }}>
+                <Box sx={{ fontSize: 12, fontWeight: 500, color: 'text.primary' }}>{leave.delegateName}</Box>
+                <Box sx={{ fontSize: 10, color: 'text.secondary' }}>Nominated to cover</Box>
+            </Box>
+        </Box>
+    ) : null
     const accent = isUrgent ? 'error.main' : hasConflict ? 'warning.main'
         : isPending ? 'warning.main'
         : leave.status === 'Approved' ? 'success.main'
@@ -946,6 +962,7 @@ function LeaveRow({
                             <Box sx={{ mt: '8px', pt: '8px', borderTop: '1px dashed', borderTopColor: 'divider', fontSize: 11, color: 'warning.dark' }}>
                                 Check coverage in {leave.departmentName ?? 'this department'} carefully.
                             </Box>
+                            {delegateLine}
                         </ExpandBlock>
                     ) : (
                         <ExpandBlock title="✓ Coverage">
@@ -956,6 +973,7 @@ function LeaveRow({
                             <Box sx={{ fontSize: 11, color: 'text.secondary', mt: '6px' }}>
                                 No overlapping approved or pending leave on these dates.
                             </Box>
+                            {delegateLine}
                         </ExpandBlock>
                     )}
 

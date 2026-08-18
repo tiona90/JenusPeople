@@ -735,6 +735,22 @@ function LeaveCard({
                         </Box>
                     )}
 
+                    {leave.delegateName && (
+                        <Box sx={{
+                            display: 'inline-flex', alignItems: 'center', gap: '6px', mt: '10px',
+                            p: '4px 10px 4px 6px', bgcolor: 'action.hover',
+                            border: '1px solid', borderColor: 'divider', borderRadius: '14px',
+                            fontSize: 11, color: 'text.secondary',
+                        }}>
+                            <Box component="span" sx={{
+                                width: 18, height: 18, borderRadius: '50%',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                fontSize: 10, bgcolor: softBg('primary'), color: 'primary.main',
+                            }}>🤝</Box>
+                            Covered by&nbsp;<Box component="strong" sx={{ color: 'text.primary', fontWeight: 600 }}>{leave.delegateName}</Box>
+                        </Box>
+                    )}
+
                     {leave.evidenceUrl && (
                         <Box sx={{ display: 'flex', gap: '6px', mt: '10px', flexWrap: 'wrap' }}>
                             <Box
@@ -942,6 +958,7 @@ function LeaveDetailsDialog({ leave, leaveTypeName, feedback, onClose }: {
                     <Divider sx={{ my: 0.5 }} />
                     <LeaveDetailRow label="Status" value={<StatusBadge status={status} />} />
                     {!isPlaceholderReason && <LeaveDetailRow label="Reason" value={leave.reason} />}
+                    {leave.delegateName && <LeaveDetailRow label="Covered By" value={leave.delegateName} />}
                     {leave.evidenceUrl && leave.evidenceUrl.trim() !== '' && (
                         <LeaveDetailRow
                             label="Evidence"

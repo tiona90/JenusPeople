@@ -24,6 +24,10 @@ public class AnnualLeaveDto
 
     public string? EvidenceUrl { get; set; }
 
+    public string? DelegateId { get; set; }
+
+    public string DelegateName { get; set; } = string.Empty;
+
     public string Status { get; set; } = string.Empty;
 
 

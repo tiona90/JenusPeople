@@ -68,6 +68,9 @@ public class EditAnnualLeave
             annualLeave.LeaveTypeId = request.AnnualLeave.LeaveTypeId;
             annualLeave.Reason = request.AnnualLeave.Reason;
             annualLeave.EvidenceUrl = request.AnnualLeave.EvidenceUrl;
+            annualLeave.DelegateId = string.IsNullOrWhiteSpace(request.AnnualLeave.DelegateId)
+                ? null
+                : request.AnnualLeave.DelegateId;
 
             var employeeProfile = await context.EmployeeProfiles
                 .FirstOrDefaultAsync(ep => ep.Id == annualLeave.EmployeeProfileId, cancellationToken);

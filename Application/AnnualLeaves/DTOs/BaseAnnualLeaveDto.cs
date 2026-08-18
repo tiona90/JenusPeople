@@ -18,4 +18,8 @@ public class BaseAnnualLeaveDto
 
     [StringLength(2048)]
     public string? EvidenceUrl { get; set; }
+
+    /// <summary>Optional colleague nominated to cover while the employee is away.</summary>
+    [StringLength(450)]
+    public string? DelegateId { get; set; }
 }

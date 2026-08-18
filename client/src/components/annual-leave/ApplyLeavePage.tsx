@@ -6,10 +6,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import CircularProgress from '@mui/material/CircularProgress'
-import { createAnnualLeave, getAnnualLeaves, getEmployeeProfiles, getHolidays, getLeaveTypes, uploadLeaveEvidence } from '../../lib/api'
+import { createAnnualLeave, getAnnualLeaves, getEmployeeProfiles, getHolidays, getLeaveTypes, getTeammates, uploadLeaveEvidence } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
 import { useStore } from '../../lib/mobx'
-import type { LeaveType, UserInfo } from '../../lib/types'
+import { AppDialog, AppDialogActions, AppDialogContent, AppDialogTitle, cancelBtnSx } from '../ui'
+import Button from '@mui/material/Button'
+import type { LeaveType, Teammate, UserInfo } from '../../lib/types'
 import { softBg, type SxColor } from '../../lib/theme-tokens'
 import type { Theme } from '@mui/material/styles'
 
@@ -20,6 +22,7 @@ const applyLeaveSchema = z
         startDate: z.string().min(1, 'Pick a start date on the calendar.'),
         endDate: z.string().min(1, 'Pick an end date on the calendar.'),
         reason: z.string().max(500, 'Reason must be 500 characters or fewer.').optional(),
+        delegateId: z.string().optional(),
     })
     .refine((data) => !data.startDate || !data.endDate || data.endDate >= data.startDate, {
         message: 'End date must be on or after the start date.',
@@ -170,6 +173,7 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
             startDate: '',
             endDate: '',
             reason: '',
+            delegateId: '',
         },
     })
 
@@ -178,17 +182,21 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
     const startDate = watch('startDate')
     const endDate = watch('endDate')
     const reason = watch('reason') ?? ''
+    const delegateId = watch('delegateId') ?? ''
 
     const [calMonth, setCalMonth] = useState<number>(today.getMonth())
     const [calYear, setCalYear] = useState<number>(today.getFullYear())
     const [attachment, setAttachment] = useState<StagedFile | null>(null)
     const [uploadError, setUploadError] = useState<string | null>(null)
     const [isDragOver, setIsDragOver] = useState(false)
+    const [delegatePickerOpen, setDelegatePickerOpen] = useState(false)
+    const [delegateSearch, setDelegateSearch] = useState('')
     const fileInputRef = useRef<HTMLInputElement>(null)
 
     const { data: leaveTypes = [] } = useQuery({ queryKey: ['leaveTypes'], queryFn: getLeaveTypes })
     const { data: profiles = [] } = useQuery({ queryKey: ['employeeProfiles'], queryFn: getEmployeeProfiles })
     const { data: allLeaves = [] } = useQuery({ queryKey: ['annualLeaves'], queryFn: getAnnualLeaves })
+    const { data: teammates = [] } = useQuery({ queryKey: ['teammates'], queryFn: getTeammates })
 
     // Holidays for the displayed calendar year (and the selection year if different)
     const { data: holidaysCurrentYear = [] } = useQuery({
@@ -290,6 +298,57 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
         return map
     }, [allLeaves, profiles, user.departmentId])
 
+    // Coverage candidates: department colleagues, minus yourself as a safety net
+    // (the server already excludes the caller).
+    const delegateCandidates = useMemo(
+        () => teammates.filter((t) => t.userId !== user.id),
+        [teammates, user.id]
+    )
+
+    // Anyone already off during the selected dates — nominating them is a poor choice.
+    const awayUserIds = useMemo(() => {
+        if (!startDate || !endDate) return new Set<string>()
+        return new Set(
+            allLeaves
+                .filter(
+                    (l) =>
+                        (l.status === 'Approved' || l.status === 'Pending') &&
+                        l.startDate <= endDate &&
+                        l.endDate >= startDate
+                )
+                .map((l) => l.employeeId)
+        )
+    }, [allLeaves, startDate, endDate])
+
+    const visibleDelegates = useMemo(() => {
+        const term = delegateSearch.trim().toLowerCase()
+        if (!term) return delegateCandidates
+        return delegateCandidates.filter(
+            (t) =>
+                t.displayName.toLowerCase().includes(term) ||
+                (t.jobTitle ?? '').toLowerCase().includes(term)
+        )
+    }, [delegateCandidates, delegateSearch])
+
+    const selectedDelegate = delegateId
+        ? delegateCandidates.find((t) => t.userId === delegateId) ?? null
+        : null
+    const delegateIsAway = !!selectedDelegate && awayUserIds.has(selectedDelegate.userId)
+
+    function chooseDelegate(userId: string) {
+        setValue('delegateId', userId, { shouldDirty: true, shouldValidate: true })
+        closeDelegatePicker()
+    }
+
+    function clearDelegate() {
+        setValue('delegateId', '', { shouldDirty: true, shouldValidate: true })
+    }
+
+    function closeDelegatePicker() {
+        setDelegatePickerOpen(false)
+        setDelegateSearch('')
+    }
+
     const typeNameLower = selectedType?.name.toLowerCase() ?? ''
     const isSickLeave = typeNameLower.includes('sick')
     const isBereavement = typeNameLower.includes('bereavement')
@@ -315,6 +374,7 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
                 endDate: values.endDate,
                 reason: (values.reason ?? '').trim() || '—',
                 evidenceUrl,
+                delegateId: values.delegateId?.trim() || undefined,
             })
         },
         onSuccess: () => {
@@ -533,7 +593,7 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
                     )}
                 </Box>
 
-                {/* Step 3: Coverage (optional / placeholder) */}
+                {/* Step 3: Coverage */}
                 <Box sx={sectionSx}>
                     <Box sx={sectionTitleSx}>
                         <Box component="span" sx={sectionNumSx}>3</Box>
@@ -541,22 +601,56 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
                         <Box component="span" sx={{ fontWeight: 400, color: 'text.disabled', fontSize: 12, ml: '6px' }}>(optional)</Box>
                     </Box>
                     <Box sx={sectionSubSx}>Nominate a colleague to handle urgent matters while you're away.</Box>
-                    <Box
-                        onClick={() => alert('Teammate picker coming soon.')}
-                        sx={{
-                            display: 'flex', gap: '10px', alignItems: 'center', p: '10px 12px',
-                            bgcolor: 'action.hover', border: '1px dashed', borderColor: 'divider', borderRadius: '8px', cursor: 'pointer',
-                            transition: 'all 0.15s',
-                            '&:hover': { bgcolor: softBg('primary'), borderColor: 'primary.main', borderStyle: 'solid' },
-                        }}
-                    >
-                        <Box sx={{ width: 32, height: 32, borderRadius: '50%', bgcolor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: 'text.secondary' }}>+</Box>
-                        <Box sx={{ flex: 1 }}>
-                            <Box sx={{ fontSize: 12, fontWeight: 500, color: 'text.primary' }}>Choose a delegate</Box>
-                            <Box sx={{ fontSize: 11, color: 'text.secondary', mt: '1px' }}>Click to pick a teammate</Box>
+                    {selectedDelegate ? (
+                        <Box
+                            sx={{
+                                display: 'flex', gap: '10px', alignItems: 'center', p: '10px 12px',
+                                bgcolor: softBg('primary'), border: '1px solid', borderColor: 'primary.main', borderRadius: '8px',
+                            }}
+                        >
+                            <DelegateAvatar name={selectedDelegate.displayName} />
+                            <Box sx={{ flex: 1, minWidth: 0 }}>
+                                <Box sx={{ fontSize: 12, fontWeight: 600, color: 'text.primary' }}>{selectedDelegate.displayName}</Box>
+                                <Box sx={{ fontSize: 11, color: 'text.secondary', mt: '1px' }}>
+                                    {delegateSubtitle(selectedDelegate, user.departmentId)}
+                                </Box>
+                            </Box>
+                            <Box component="button" type="button" onClick={() => setDelegatePickerOpen(true)} sx={inlineLinkSx}>Change</Box>
+                            <Box component="button" type="button" onClick={clearDelegate} sx={inlineLinkSx}>Remove</Box>
                         </Box>
-                        <Box component="span" sx={{ color: 'text.disabled', fontSize: 14 }}>›</Box>
-                    </Box>
+                    ) : (
+                        <Box
+                            component="button"
+                            type="button"
+                            onClick={() => setDelegatePickerOpen(true)}
+                            sx={{
+                                display: 'flex', gap: '10px', alignItems: 'center', p: '10px 12px', width: '100%',
+                                bgcolor: 'action.hover', border: '1px dashed', borderColor: 'divider', borderRadius: '8px', cursor: 'pointer',
+                                transition: 'all 0.15s', textAlign: 'left', fontFamily: 'inherit',
+                                '&:hover': { bgcolor: softBg('primary'), borderColor: 'primary.main', borderStyle: 'solid' },
+                            }}
+                        >
+                            <Box sx={{ width: 32, height: 32, borderRadius: '50%', bgcolor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: 'text.secondary' }}>+</Box>
+                            <Box sx={{ flex: 1 }}>
+                                <Box sx={{ fontSize: 12, fontWeight: 500, color: 'text.primary' }}>Choose a delegate</Box>
+                                <Box sx={{ fontSize: 11, color: 'text.secondary', mt: '1px' }}>Click to pick a teammate</Box>
+                            </Box>
+                            <Box component="span" sx={{ color: 'text.disabled', fontSize: 14 }}>›</Box>
+                        </Box>
+                    )}
+                    {delegateIsAway && (
+                        <Box sx={{
+                            mt: '10px', p: '8px 12px', bgcolor: softBg('warning'),
+                            border: '1px solid', borderColor: 'warning.main', borderRadius: '6px',
+                            fontSize: 11, color: 'warning.dark',
+                            display: 'flex', alignItems: 'center', gap: '6px',
+                        }}>
+                            <Box component="span">⚠️</Box>
+                            <Box component="span">
+                                {selectedDelegate?.displayName} is also off during these dates — consider nominating someone else.
+                            </Box>
+                        </Box>
+                    )}
                 </Box>
 
                 {/* Step 4: Reason */}
@@ -797,6 +891,7 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
                         <SummaryRow l="Working days" r={String(workingDays)} />
                         <SummaryRow l="Back at work" r={endDate ? nextWorkingDay(endDate, holidaySet) : '—'} />
                         <SummaryRow l="Days deducted" r={selectedAffectsBalance ? String(daysDeducted) : '0 (unpaid)'} />
+                        <SummaryRow l="Coverage" r={selectedDelegate ? selectedDelegate.displayName : 'None'} muted={!selectedDelegate} />
                         <SummaryRow l="Attachments" r={attachment ? `📎 1 file` : 'None'} muted={!attachment} />
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', py: '8px', fontSize: 12, mt: '6px', pt: '12px', borderTop: '2px solid', borderTopColor: 'divider' }}>
                             <Box sx={{ fontWeight: 600, color: 'text.primary' }}>Balance after</Box>
@@ -892,6 +987,86 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
                     </Box>
                 </Box>
             </Box>
+
+            {/* Delegate picker */}
+            <AppDialog open={delegatePickerOpen} onClose={closeDelegatePicker} maxWidth="xs">
+                <AppDialogTitle>Choose a delegate</AppDialogTitle>
+                <AppDialogContent>
+                    <Box
+                        component="input"
+                        autoFocus
+                        value={delegateSearch}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDelegateSearch(e.target.value)}
+                        placeholder="Search by name or job title"
+                        sx={{
+                            width: '100%', p: '9px 12px', fontSize: 13, fontFamily: 'inherit',
+                            border: '1px solid', borderColor: 'divider', borderRadius: '8px',
+                            bgcolor: 'background.paper', color: 'text.primary', outline: 'none',
+                            '&::placeholder': { color: 'text.disabled' },
+                            '&:focus': { borderColor: 'primary.main' },
+                        }}
+                    />
+                    <Box sx={{ mt: '12px', maxHeight: 320, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {visibleDelegates.length === 0 ? (
+                            <Box sx={{ fontSize: 12, color: 'text.secondary', p: '18px 12px', textAlign: 'center' }}>
+                                {delegateCandidates.length === 0
+                                    ? 'No colleagues available to nominate.'
+                                    : 'No colleagues match your search.'}
+                            </Box>
+                        ) : (
+                            visibleDelegates.map((candidate) => {
+                                const isSelected = candidate.userId === delegateId
+                                const isAway = awayUserIds.has(candidate.userId)
+                                return (
+                                    <Box
+                                        key={candidate.userId}
+                                        component="button"
+                                        type="button"
+                                        onClick={() => chooseDelegate(candidate.userId)}
+                                        sx={{
+                                            display: 'flex', alignItems: 'center', gap: '10px', p: '8px 10px', width: '100%',
+                                            border: '1px solid', borderColor: isSelected ? 'primary.main' : 'divider',
+                                            bgcolor: isSelected ? softBg('primary') : 'background.paper',
+                                            borderRadius: '8px', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+                                            transition: 'all 0.15s',
+                                            '&:hover': { borderColor: 'primary.main', bgcolor: softBg('primary') },
+                                        }}
+                                    >
+                                        <DelegateAvatar name={candidate.displayName} />
+                                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                                            <Box sx={{ fontSize: 12, fontWeight: 600, color: 'text.primary' }}>{candidate.displayName}</Box>
+                                            <Box sx={{ fontSize: 11, color: 'text.secondary', mt: '1px' }}>
+                                                {delegateSubtitle(candidate, user.departmentId)}
+                                            </Box>
+                                        </Box>
+                                        {isAway && (
+                                            <Box sx={{
+                                                fontSize: 10, px: '7px', py: '2px', borderRadius: '10px',
+                                                bgcolor: softBg('warning'), color: 'warning.dark', whiteSpace: 'nowrap',
+                                            }}>
+                                                Away then
+                                            </Box>
+                                        )}
+                                        {isSelected && <Box component="span" sx={{ color: 'primary.main', fontSize: 13 }}>✓</Box>}
+                                    </Box>
+                                )
+                            })
+                        )}
+                    </Box>
+                </AppDialogContent>
+                <AppDialogActions>
+                    {selectedDelegate && (
+                        <Button
+                            variant="outlined"
+                            onClick={() => { clearDelegate(); closeDelegatePicker() }}
+                            sx={cancelBtnSx}
+                        >
+                            Remove delegate
+                        </Button>
+                    )}
+                    <Button variant="outlined" onClick={closeDelegatePicker} sx={cancelBtnSx}>Close</Button>
+                </AppDialogActions>
+            </AppDialog>
         </Box>
     )
 }
@@ -1016,6 +1191,34 @@ function Legend({ swatch, borderBottom, label }: { swatch: string; borderBottom?
     )
 }
 
+function initials(name: string): string {
+    const parts = name.trim().split(' ').filter(Boolean)
+    if (parts.length === 0) return '?'
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+}
+
+function delegateSubtitle(teammate: Teammate, myDepartmentId?: number | null): string {
+    const sameTeam = myDepartmentId != null && teammate.departmentId === myDepartmentId
+    const title = teammate.jobTitle?.trim()
+    if (title && sameTeam) return `${title} · Your team`
+    if (title) return title
+    return sameTeam ? 'Your team' : 'Colleague'
+}
+
+function DelegateAvatar({ name }: { name: string }) {
+    return (
+        <Box sx={{
+            width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
+            bgcolor: softBg('primary'), color: 'primary.main',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 11, fontWeight: 700,
+        }}>
+            {initials(name)}
+        </Box>
+    )
+}
+
 function SummaryRow({ l, r, muted }: { l: string; r: string; muted?: boolean }) {
     return (
         <Box sx={{ display: 'flex', justifyContent: 'space-between', py: '8px', fontSize: 12, borderBottom: '1px solid', borderBottomColor: 'divider' }}>
@@ -1087,6 +1290,20 @@ const sectionTitleSx = {
     mb: '4px',
     display: 'flex',
     alignItems: 'center',
+} as const
+
+/** Text-only button used for the inline Change / Remove affordances. */
+const inlineLinkSx = {
+    bgcolor: 'transparent',
+    border: 'none',
+    p: '2px 4px',
+    fontSize: 11,
+    fontWeight: 600,
+    fontFamily: 'inherit',
+    color: 'primary.main',
+    cursor: 'pointer',
+    borderRadius: '4px',
+    '&:hover': { textDecoration: 'underline' },
 } as const
 
 const sectionSubSx = {

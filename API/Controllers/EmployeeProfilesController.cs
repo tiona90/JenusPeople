@@ -25,6 +25,20 @@ public class EmployeeProfilesController : BaseApiController
         });
     }
 
+    /// <summary>
+    /// Colleagues in the caller's own department — names and job titles only.
+    /// Backs the leave-coverage delegate picker, which every employee can use.
+    /// </summary>
+    [HttpGet("teammates")]
+    [Authorize]
+    public async Task<ActionResult<List<TeammateDto>>> GetTeammates()
+    {
+        return await Mediator.Send(new GetTeammateList.Query
+        {
+            RequestingUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty,
+        });
+    }
+
     [HttpPut]
     [Authorize(Policy = "EmployeeProfileUpdate")]
     public async Task<ActionResult> EditEmployeeProfile(EditEmployeeProfileRequest request)

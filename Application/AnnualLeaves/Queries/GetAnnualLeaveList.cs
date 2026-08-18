@@ -29,6 +29,7 @@ public class GetAnnualLeaveList
             IQueryable<AnnualLeave> annualLeavesQuery = context.AnnualLeaves
                 .Include(al => al.Employee)
                 .Include(al => al.Department)
+                .Include(al => al.Delegate)
                 .AsNoTracking();
 
             if (request.IsAdmin)
