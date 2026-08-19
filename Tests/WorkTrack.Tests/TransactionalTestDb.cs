@@ -7,17 +7,18 @@ using Persistence;
 namespace WorkTrack.Tests;
 
 /// <summary>
-/// An <see cref="AppDbContext"/> over SQLite in memory, for tests that need real
-/// transaction semantics.
+/// An <see cref="AppDbContext"/> over SQLite in memory, for tests that need a
+/// database that behaves like one: real transactions, enforced unique indexes,
+/// enforced foreign keys.
 ///
-/// <see cref="TestDb"/> cannot serve these: the EF in-memory provider ignores
-/// BeginTransaction outright (which is why TestDb has to silence the warning), so
-/// a rollback assertion written against it passes whether or not the code under
-/// test opens a transaction at all. SQLite commits and rolls back for real.
+/// <see cref="TestDb"/> cannot serve those: the EF in-memory provider ignores
+/// BeginTransaction outright (which is why TestDb has to silence the warning) and
+/// enforces no constraints at all, so an assertion about either passes whether or
+/// not the code under test does anything.
 ///
-/// Two consequences worth knowing before writing a test against this:
-/// SQLite enforces foreign keys, so every parent row has to be seeded; and rows
-/// live only as long as the connection, which the returned context owns.
+/// Two consequences worth knowing before writing a test against this: every parent
+/// row has to be seeded, and rows live only as long as the connection, which the
+/// context returned by <see cref="CreateAsync"/> owns.
 /// </summary>
 internal static class TransactionalTestDb
 {
@@ -31,9 +32,31 @@ internal static class TransactionalTestDb
             .AddInterceptors(interceptors)
             .Options;
 
-        var context = new SqliteAppDbContext(options, connection);
+        var context = new SqliteAppDbContext(options, connection, ownsConnection: true);
         await context.Database.EnsureCreatedAsync();
         return context;
+    }
+
+    /// <summary>
+    /// A second context over the same database, which is what a second concurrent
+    /// request gets: its own change tracker, the same store. Neither can see what
+    /// the other has not yet saved.
+    ///
+    /// It shares the connection deliberately. Two SQLite connections writing at
+    /// once collide on database locking, which would make a race test fail for
+    /// reasons that have nothing to do with the code; sharing serialises the writes
+    /// so the test turns on the constraint instead of on timing.
+    /// </summary>
+    public static AppDbContext Attach(AppDbContext existing)
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite((SqliteConnection)existing.Database.GetDbConnection())
+            .Options;
+
+        return new SqliteAppDbContext(
+            options,
+            (SqliteConnection)existing.Database.GetDbConnection(),
+            ownsConnection: false);
     }
 
     /// <summary>
@@ -46,7 +69,10 @@ internal static class TransactionalTestDb
     /// Dropping the rowversion means this context cannot be used to test optimistic
     /// concurrency — use <see cref="TestDb"/> for that.
     /// </summary>
-    private sealed class SqliteAppDbContext(DbContextOptions<AppDbContext> options, SqliteConnection connection)
+    private sealed class SqliteAppDbContext(
+        DbContextOptions<AppDbContext> options,
+        SqliteConnection connection,
+        bool ownsConnection)
         : AppDbContext(options)
     {
         protected override void OnModelCreating(ModelBuilder builder)
@@ -67,17 +93,20 @@ internal static class TransactionalTestDb
         }
 
         // The database exists only for as long as this connection is open, so the
-        // context has to close it — EF will not, having been handed it already open.
+        // owning context has to close it — EF will not, having been handed it
+        // already open. An attached context must leave it alone.
         public override async ValueTask DisposeAsync()
         {
             await base.DisposeAsync();
-            await connection.DisposeAsync();
+            if (ownsConnection)
+                await connection.DisposeAsync();
         }
 
         public override void Dispose()
         {
             base.Dispose();
-            connection.Dispose();
+            if (ownsConnection)
+                connection.Dispose();
         }
     }
 }

@@ -132,6 +132,14 @@ public class AppDbContext : IdentityDbContext<
             entity.Property(t => t.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()").IsRequired();
             entity.HasIndex(t => t.EmployeeId);
             entity.HasIndex(t => t.DepartmentId);
+            // One timesheet per employee per period. Both insert paths already
+            // assume this — CreateTimesheet checked nothing at all, and
+            // GenerateDraft reuses an existing row for the period — but two
+            // concurrent creates could still both get past their own checks and
+            // land duplicates. The database is the only place that can settle it.
+            entity.HasIndex(t => new { t.EmployeeId, t.PeriodStart })
+                .IsUnique()
+                .HasDatabaseName("IX_Timesheets_EmployeeId_PeriodStart_Unique");
             entity.HasOne(t => t.Employee).WithMany(e => e.Timesheets).HasForeignKey(t => t.EmployeeId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(t => t.Department).WithMany(d => d.Timesheets).HasForeignKey(t => t.DepartmentId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(t => t.Approver).WithMany(u => u.ApprovedTimesheets).HasForeignKey(t => t.ApproverId).OnDelete(DeleteBehavior.Restrict);
