@@ -177,6 +177,17 @@ public class AppDbContext : IdentityDbContext<
                 .WithMany()
                 .HasForeignKey(al => al.DelegateId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            // AnnualLeaveBalanceCalculator totals an employee's approved leave over
+            // a leave year on every create, edit and status change, and had only the
+            // single-column EmployeeId FK index to work from — so it read every leave
+            // that employee has ever taken and filtered the rest in the engine.
+            //
+            // Equality on EmployeeId and Status, then the range on StartDate; EndDate
+            // rides along so the second date predicate is answered from the index
+            // rather than a lookup.
+            entity.HasIndex(al => new { al.EmployeeId, al.Status, al.StartDate, al.EndDate })
+                .HasDatabaseName("IX_AnnualLeaves_EmployeeId_Status_StartDate_EndDate");
         });
 
         builder.Entity<AttendanceEvent>(entity =>
