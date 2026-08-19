@@ -27,11 +27,16 @@ namespace WorkTrack.Tests;
 /// <param name="AllowsAnonymous">
 /// Whether an unauthenticated caller reaches the handler.
 /// </param>
+/// <param name="Roles">
+/// Roles named by the endpoint's <c>[Authorize]</c> attributes, joined as written,
+/// or null when it requires authentication but no particular role.
+/// </param>
 public sealed record RouteEntry(
     string Pattern,
     ImmutableArray<string> HttpMethods,
     bool AllowsAnonymous,
-    string DisplayName)
+    string DisplayName,
+    string? Roles)
 {
     /// <summary>
     /// Every controller carries both a versioned and an unversioned route
@@ -135,11 +140,21 @@ public sealed class ApiRouteTableFixture : IAsyncLifetime
             endpoint.Metadata.GetMetadata<IAllowAnonymous>() is not null
             || !endpoint.Metadata.OfType<IAuthorizeData>().Any();
 
+        // Several [Authorize] attributes can stack (controller plus action), and
+        // each may name roles. Joined so a test can compare against the literal
+        // the attribute was written with.
+        var roles = string.Join(
+            ",",
+            endpoint.Metadata.OfType<IAuthorizeData>()
+                .Select(a => a.Roles)
+                .Where(r => !string.IsNullOrWhiteSpace(r)));
+
         return new RouteEntry(
             pattern,
             [.. methods.OrderBy(m => m, StringComparer.Ordinal)],
             allowsAnonymous,
-            endpoint.DisplayName ?? pattern);
+            endpoint.DisplayName ?? pattern,
+            string.IsNullOrEmpty(roles) ? null : roles);
     }
 
     private sealed class RouteTableFactory : WebApplicationFactory<Program>

@@ -1,9 +1,13 @@
 using System.Security.Claims;
 using API.Controllers;
 using Application.Attendance.DTOs;
+using Application.Attendance.Queries;
 using Domain;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Persistence;
 using Xunit;
 
@@ -83,45 +87,54 @@ public class AttendanceOnLeaveTodayTests
         db.SaveChanges();
     }
 
-    private static AttendanceController ControllerFor(AppDbContext db, string userId, params string[] roles)
+    private static ServiceProvider BuildProvider(AppDbContext db) =>
+        new ServiceCollection()
+            .AddSingleton(db)
+            // MediatR 13's license accessor resolves ILoggerFactory during construction.
+            .AddSingleton<ILoggerFactory>(NullLoggerFactory.Instance)
+            .AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<GetCompanyAttendance>())
+            .BuildServiceProvider();
+
+    private static AttendanceController ControllerFor(IServiceProvider provider, string userId, params string[] roles)
     {
         var claims = new List<Claim> { new(ClaimTypes.NameIdentifier, userId) };
         claims.AddRange(roles.Select(role => new Claim(ClaimTypes.Role, role)));
 
         var httpContext = new DefaultHttpContext
         {
+            RequestServices = provider,
             User = new ClaimsPrincipal(new ClaimsIdentity(claims, "Test")),
         };
 
-        return new AttendanceController(db)
+        return new AttendanceController
         {
             ControllerContext = new ControllerContext { HttpContext = httpContext },
         };
     }
 
     /// <summary>
-    /// Both actions hand back Ok(...), so the payload arrives as the ObjectResult in
-    /// ActionResult&lt;T&gt;.Result and Value stays null.
+    /// Both actions return through HandleResult, so a success arrives as an
+    /// OkObjectResult carrying the DTO.
     /// </summary>
-    private static T Payload<T>(ActionResult<T> action) => action.Result switch
-    {
-        ObjectResult objectResult => (T)objectResult.Value!,
-        _ => action.Value!,
-    };
+    private static T Payload<T>(ActionResult action) =>
+        (T)Assert.IsType<OkObjectResult>(action).Value!;
 
-    private static async Task<CompanyAttendanceDto> GetCompanyAsync(AppDbContext db) =>
-        Payload(await ControllerFor(db, AdminUserId, AppRoles.Admin).GetCompany());
+    private static async Task<CompanyAttendanceDto> GetCompanyAsync(IServiceProvider provider) =>
+        Payload<CompanyAttendanceDto>(
+            await ControllerFor(provider, AdminUserId, AppRoles.Admin).GetCompany(CancellationToken.None));
 
-    private static async Task<TeamAttendanceDto> GetTeamAsync(AppDbContext db) =>
-        Payload(await ControllerFor(db, AdminUserId, AppRoles.Admin).GetTeam());
+    private static async Task<TeamAttendanceDto> GetTeamAsync(IServiceProvider provider) =>
+        Payload<TeamAttendanceDto>(
+            await ControllerFor(provider, AdminUserId, AppRoles.Admin).GetTeam(CancellationToken.None));
 
     [Fact]
     public async Task Company_dashboard_counts_an_employee_on_approved_leave_today()
     {
         using var db = SeedWorld();
+        using var provider = BuildProvider(db);
         AddLeave(db, EmployeeUserId, EmployeeProfileId);
 
-        var company = await GetCompanyAsync(db);
+        var company = await GetCompanyAsync(provider);
 
         Assert.Equal(2, company.Total);
         Assert.Equal(1, company.Leave);
@@ -134,9 +147,10 @@ public class AttendanceOnLeaveTodayTests
     public async Task Team_board_shows_an_employee_on_approved_leave_today_as_on_leave()
     {
         using var db = SeedWorld();
+        using var provider = BuildProvider(db);
         AddLeave(db, EmployeeUserId, EmployeeProfileId);
 
-        var team = await GetTeamAsync(db);
+        var team = await GetTeamAsync(provider);
 
         var member = Assert.Single(team.Members, m => m.EmployeeId == EmployeeProfileId);
         Assert.Equal("leave", member.Status);
@@ -151,9 +165,10 @@ public class AttendanceOnLeaveTodayTests
     public async Task A_colleague_who_is_not_away_is_not_marked_on_leave()
     {
         using var db = SeedWorld();
+        using var provider = BuildProvider(db);
         AddLeave(db, EmployeeUserId, EmployeeProfileId);
 
-        var team = await GetTeamAsync(db);
+        var team = await GetTeamAsync(provider);
 
         var admin = Assert.Single(team.Members, m => m.EmployeeId == AdminProfileId);
         Assert.Equal("out", admin.Status);
@@ -167,10 +182,11 @@ public class AttendanceOnLeaveTodayTests
     public async Task A_leave_row_with_no_profile_id_counts_for_nobody()
     {
         using var db = SeedWorld();
+        using var provider = BuildProvider(db);
         AddLeave(db, EmployeeUserId, profileId: null);
 
-        var company = await GetCompanyAsync(db);
-        var team = await GetTeamAsync(db);
+        var company = await GetCompanyAsync(provider);
+        var team = await GetTeamAsync(provider);
 
         Assert.Equal(0, company.Leave);
         Assert.All(team.Members, m => Assert.NotEqual("leave", m.Status));
@@ -180,9 +196,10 @@ public class AttendanceOnLeaveTodayTests
     public async Task Leave_that_does_not_span_today_is_not_counted()
     {
         using var db = SeedWorld();
+        using var provider = BuildProvider(db);
         AddLeave(db, EmployeeUserId, EmployeeProfileId, startOffsetDays: 30, endOffsetDays: 35);
 
-        var company = await GetCompanyAsync(db);
+        var company = await GetCompanyAsync(provider);
 
         Assert.Equal(0, company.Leave);
     }
@@ -191,9 +208,10 @@ public class AttendanceOnLeaveTodayTests
     public async Task Leave_still_awaiting_approval_is_not_counted()
     {
         using var db = SeedWorld();
+        using var provider = BuildProvider(db);
         AddLeave(db, EmployeeUserId, EmployeeProfileId, status: AnnualLeaveStatus.Pending);
 
-        var company = await GetCompanyAsync(db);
+        var company = await GetCompanyAsync(provider);
 
         Assert.Equal(0, company.Leave);
     }
@@ -207,9 +225,10 @@ public class AttendanceOnLeaveTodayTests
     public async Task Leave_is_attributed_to_the_profile_it_names_not_the_user_id()
     {
         using var db = SeedWorld();
+        using var provider = BuildProvider(db);
         AddLeave(db, EmployeeUserId, AdminProfileId);
 
-        var team = await GetTeamAsync(db);
+        var team = await GetTeamAsync(provider);
 
         var employee = Assert.Single(team.Members, m => m.EmployeeId == EmployeeProfileId);
         var admin = Assert.Single(team.Members, m => m.EmployeeId == AdminProfileId);

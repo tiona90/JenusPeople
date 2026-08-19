@@ -72,6 +72,22 @@ namespace API.Controllers
                 });
             }
 
+            // A precondition the caller cannot satisfy is a bad request, not a
+            // missing resource. Carried as a plain 400 with a message rather than
+            // as ValidationErrors, because the client suppresses its global error
+            // notification for field-level validation responses.
+            if (result.ErrorKind == ResultErrorKind.Invalid)
+            {
+                return BadRequest(new ApiErrorResponse
+                {
+                    StatusCode = StatusCodes.Status400BadRequest,
+                    Message = string.IsNullOrWhiteSpace(result.Error) ? "The request could not be completed." : result.Error,
+                    Path = HttpContext.Request.Path.Value ?? string.Empty,
+                    TraceId = HttpContext.TraceIdentifier,
+                    Timestamp = DateTime.UtcNow
+                });
+            }
+
             return NotFound(new ApiErrorResponse
             {
                 StatusCode = StatusCodes.Status404NotFound,
