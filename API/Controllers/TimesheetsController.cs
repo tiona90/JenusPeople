@@ -1,8 +1,11 @@
 using System.Security.Claims;
 using API.Hubs;
+using API.Models;
 using Application.Timesheets.Commands;
 using Application.Timesheets.DTOs;
 using Application.Timesheets.Queries;
+using Application.TimesheetStatusHistories.DTOs;
+using Application.TimesheetStatusHistories.Queries;
 using Domain;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -95,13 +98,19 @@ namespace API.Controllers
         // GET: api/timesheets/{id}
         [HttpGet("{id}")]
         [Authorize]
-        public async Task<ActionResult<Timesheet>> GetTimesheet(string id)
+        [ProducesResponseType(typeof(Timesheet), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<Timesheet>> GetTimesheet(string id, CancellationToken cancellationToken)
         {
-            var timesheet = await _context.Timesheets
-                .Include(t => t.Entries)
-                .FirstOrDefaultAsync(t => t.Id == id);
-            if (timesheet == null) return NotFound();
-            return timesheet;
+            var result = await Mediator.Send(new GetTimesheetDetail.Query
+            {
+                Id = id,
+                RequestingUserId = ResolveUserId(),
+                IsAdmin = User.IsInRole(AppRoles.Admin),
+                IsManager = User.IsInRole(AppRoles.Manager),
+            }, cancellationToken);
+
+            return HandleResult(result);
         }
 
         // POST: api/timesheets
@@ -232,14 +241,23 @@ namespace API.Controllers
         }
 
         // GET: api/timesheets/{id}/history
+        // Scoped through GetTimesheetStatusHistoryList rather than read directly, so
+        // a caller with no claim on this timesheet gets an empty list — the same
+        // answer the list endpoint already gives them.
         [HttpGet("{id}/history")]
         [Authorize]
-        public async Task<ActionResult<IEnumerable<TimesheetStatusHistory>>> GetStatusHistory(string id)
+        [ProducesResponseType(typeof(IEnumerable<TimesheetStatusHistoryDto>), StatusCodes.Status200OK)]
+        public async Task<ActionResult> GetStatusHistory(string id, CancellationToken cancellationToken)
         {
-            var history = await _context.TimesheetStatusHistories
-                .Where(h => h.TimesheetId == id)
-                .ToListAsync();
-            return history;
+            var result = await Mediator.Send(new GetTimesheetStatusHistoryList.Query
+            {
+                TimesheetId = id,
+                RequestingUserId = ResolveUserId(),
+                IsAdmin = User.IsInRole(AppRoles.Admin),
+                IsManager = User.IsInRole(AppRoles.Manager),
+            }, cancellationToken);
+
+            return Paged(result);
         }
 
         /// <summary>

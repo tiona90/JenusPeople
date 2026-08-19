@@ -29,29 +29,15 @@ namespace Application.Timesheets.Queries
                     .Include(t => t.Entries).ThenInclude(e => e.Project)
                     .AsNoTracking();
 
-                if (request.IsAdmin)
-                {
-                    // Admins see all timesheets — no filter
-                }
-                else if (request.IsManager)
-                {
-                    var scope = await ManagerAccessScopeResolver.ResolveAsync(
-                        _context, request.RequestingUserId, cancellationToken);
-
-                    query = query.Where(t =>
-                        // Own timesheets
-                        t.Employee.UserId == request.RequestingUserId
-                        // Timesheets in managed departments
-                        || scope.ManagedDepartmentIds.Contains(t.DepartmentId)
-                        // Direct reports' timesheets
-                        || scope.DirectReportUserIds.Contains(t.Employee.UserId)
-                    );
-                }
-                else
-                {
-                    // Employees see only their own timesheets
-                    query = query.Where(t => t.Employee.UserId == request.RequestingUserId);
-                }
+                // Shared with GetTimesheetDetail so listing timesheets and
+                // reading one by id agree on who is allowed to see what.
+                query = await TimesheetScope.ApplyAsync(
+                    _context,
+                    query,
+                    request.RequestingUserId,
+                    request.IsAdmin,
+                    request.IsManager,
+                    cancellationToken);
 
                 // Filtering above runs in SQL. Count the filtered set, then order +
                 // optionally page (in SQL) before materializing the entries.

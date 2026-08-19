@@ -11,6 +11,13 @@ public class GetTimesheetStatusHistoryList
 {
     public class Query : IRequest<PagedResult<TimesheetStatusHistoryDto>>
     {
+        /// <summary>
+        /// Optional: restrict to one timesheet's history. The scope filter below
+        /// still applies, so asking for a timesheet you may not see returns nothing
+        /// rather than someone else's audit trail.
+        /// </summary>
+        public string? TimesheetId { get; set; }
+
         public string RequestingUserId { get; set; } = string.Empty;
         public bool IsAdmin { get; set; }
         public bool IsManager { get; set; }
@@ -28,6 +35,11 @@ public class GetTimesheetStatusHistoryList
                     .ThenInclude(t => t.Employee)
                         .ThenInclude(e => e!.User)
                 .Include(h => h.ChangedByUser);
+
+            if (!string.IsNullOrWhiteSpace(request.TimesheetId))
+            {
+                query = query.Where(h => h.TimesheetId == request.TimesheetId);
+            }
 
             if (request.IsAdmin)
             {
