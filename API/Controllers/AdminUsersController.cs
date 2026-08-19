@@ -379,6 +379,17 @@ public class AdminUsersController(
             leave.ApprovedAt = null;
         }
 
+        // Null out DelegateId on other people's leave this user was covering.
+        // That FK is Restrict too, so leaving it set fails the delete with a raw
+        // DbUpdateException instead of the 400 the caller can act on.
+        var delegatedLeaves = await context.AnnualLeaves
+            .Where(al => al.DelegateId == userId)
+            .ToListAsync(cancellationToken);
+        foreach (var leave in delegatedLeaves)
+        {
+            leave.DelegateId = null;
+        }
+
         var assignedByRows = await context.UserDepartments
             .Where(ud => ud.AssignedByUserId == userId)
             .ToListAsync(cancellationToken);
