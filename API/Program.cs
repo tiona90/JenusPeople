@@ -310,7 +310,21 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
-app.MapGroup("api").MapIdentityApi<User>();
+
+// MapIdentityApi is deliberately NOT mapped. It publishes an anonymous
+// POST /register (plus /resendConfirmationEmail, /refresh and /manage/*), which
+// is exactly the public self-registration this application must not expose —
+// mapping it would re-open that door behind AccountController's back.
+// Everything the client needs is an explicit action on AccountController:
+// login, logout, user-info, profile, profile-image, forgot-password,
+// reset-password, verify-email and confirm-email-change. Accounts are created
+// only by an administrator via POST /api/AdminUsers.
+//
+// AddIdentityApiEndpoints<User> above stays: it registers services only — the
+// SignInManager and default token providers that AccountController's sign-in,
+// password-reset and email-change flows depend on — not routes. With the
+// token-issuing endpoint unmapped no bearer token can be obtained, so the
+// identity cookie is the only way in.
 app.MapHub<NotificationsHub>("/hubs/notifications");
 
 // Any non-API, non-file request falls through to the SPA entry point so that

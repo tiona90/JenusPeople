@@ -10,6 +10,12 @@
     <EnvironmentName>Production</EnvironmentName>
   </PropertyGroup>
   <ItemGroup>
+    <!-- Program comes from top-level statements, so it is internal. WorkTrack.Tests
+         boots it through WebApplicationFactory<Program> to assert on the real
+         route table. -->
+    <InternalsVisibleTo Include="WorkTrack.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Application\Application.csproj" />
     <ProjectReference Include="..\Infrastructure\Infrastructure.csproj" />
   </ItemGroup>

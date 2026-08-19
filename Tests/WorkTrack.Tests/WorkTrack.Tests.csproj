@@ -12,6 +12,10 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <!-- Boots the real API host in-process so PublicRegistrationRemovedTests can
+         read the actual route table (EndpointDataSource), which is the only way
+         to see minimal-API routes such as the ones MapIdentityApi would add. -->
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.0" />
     <!-- Match the EF Core 9.x version used by Persistence/SqlServer. -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.0" />
     <!-- Real transactions, which the in-memory provider silently ignores. Used
