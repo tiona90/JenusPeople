@@ -67,6 +67,17 @@ public sealed record RouteEntry(
 /// migration then fails against the in-memory provider and is swallowed by the
 /// try/catch in Program.cs, which is fine — routing needs no database.
 /// </summary>
+/// <summary>
+/// Booting the real API costs a second or two, so every class that asserts on the
+/// route table shares one instance through this collection instead of starting its
+/// own host.
+/// </summary>
+[CollectionDefinition(Name)]
+public sealed class ApiRouteTableCollection : ICollectionFixture<ApiRouteTableFixture>
+{
+    public const string Name = "api-route-table";
+}
+
 public sealed class ApiRouteTableFixture : IAsyncLifetime
 {
     private WebApplicationFactory<Program>? _factory;

@@ -28,8 +28,8 @@ namespace WorkTrack.Tests;
 ///     published an anonymous <c>POST /api/register</c> that every attribute test
 ///     in this class passed straight over.
 /// </summary>
+[Collection(ApiRouteTableCollection.Name)]
 public class PublicRegistrationRemovedTests(ApiRouteTableFixture routeTable)
-    : IClassFixture<ApiRouteTableFixture>
 {
     private static IEnumerable<MethodInfo> ActionsOf<TController>() =>
         typeof(TController)

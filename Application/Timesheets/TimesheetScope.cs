@@ -50,7 +50,7 @@ public static class TimesheetScope
                 || scope.DirectReportUserIds.Contains(t.Employee.UserId));
         }
 
-        // Employees see only their own timesheets. Timesheet.EmployeeId is an
+        // Employees see only their own timesheets. Timesheet.EmployeeProfileId is an
         // EmployeeProfile.Id, so the comparison has to walk Employee to reach the
         // AspNetUsers.Id the token carries.
         return query.Where(t => t.Employee!.UserId == requestingUserId);

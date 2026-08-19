@@ -8,9 +8,13 @@ namespace Application.Timesheets;
 /// <summary>
 /// Who may modify a timesheet — and therefore its entries: the employee it
 /// belongs to, an Admin, or a Manager whose scope covers that employee (their
-/// department, or a direct report). Widens the ownership rule
-/// <c>TimesheetsController.DeleteTimesheet</c> applies inline, and lives here so
-/// every entry action enforces the identical rule rather than its own variant.
+/// department, or a direct report).
+///
+/// Lives here so every write enforces the identical rule rather than its own
+/// variant. Both callers now do: the entry actions in
+/// <c>TimesheetEntriesController</c>, and
+/// <c>Application.Timesheets.Commands.DeleteTimesheet</c>, which used to apply a
+/// narrower rule inline that recognised only the owning employee.
 /// </summary>
 public static class TimesheetAccess
 {
@@ -54,7 +58,7 @@ public static class TimesheetAccess
             .Select(ep => ep.Id)
             .ToListAsync(cancellationToken);
 
-        if (callerProfileIds.Contains(timesheet.EmployeeId))
+        if (callerProfileIds.Contains(timesheet.EmployeeProfileId))
         {
             return Result<Timesheet>.Success(timesheet);
         }
@@ -70,7 +74,7 @@ public static class TimesheetAccess
                 inScope = await context.EmployeeProfiles
                     .AsNoTracking()
                     .AnyAsync(ep =>
-                        ep.Id == timesheet.EmployeeId
+                        ep.Id == timesheet.EmployeeProfileId
                         && ep.ManagerId != null
                         && scope.ManagerProfileIds.Contains(ep.ManagerId),
                         cancellationToken);

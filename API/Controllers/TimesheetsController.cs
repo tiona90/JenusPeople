@@ -151,28 +151,17 @@ namespace API.Controllers
         // DELETE: api/timesheets/{id}
         [HttpDelete("{id}")]
         [Authorize]
-        public async Task<IActionResult> DeleteTimesheet(string id)
+        public async Task<ActionResult> DeleteTimesheet(string id, CancellationToken cancellationToken)
         {
-            var timesheet = await _context.Timesheets
-                .Include(t => t.Entries)
-                .FirstOrDefaultAsync(t => t.Id == id);
+            var result = await Mediator.Send(new DeleteTimesheet.Command
+            {
+                Id = id,
+                RequestingUserId = ResolveUserId(),
+                IsAdmin = User.IsInRole(AppRoles.Admin),
+                IsManager = User.IsInRole(AppRoles.Manager),
+            }, cancellationToken);
 
-            if (timesheet == null) return NotFound();
-
-            if (timesheet.Status != TimesheetStatus.Draft)
-                return BadRequest("Only Draft timesheets can be deleted.");
-
-            var userId = ResolveUserId();
-
-            var employeeProfile = await _context.EmployeeProfiles
-                .FirstOrDefaultAsync(ep => ep.UserId == userId);
-
-            if (employeeProfile == null || timesheet.EmployeeId != employeeProfile.Id)
-                return Forbid();
-
-            _context.Timesheets.Remove(timesheet);
-            await _context.SaveChangesAsync();
-            return NoContent();
+            return HandleResult(result);
         }
 
         // PATCH: api/timesheets/{id}/submit
@@ -261,61 +250,87 @@ namespace API.Controllers
         }
 
         /// <summary>
-        /// Admin only: Retrieves status history across all timesheets, filterable by employee, department, date range, and status transition.
+        /// Admin only: status history across all timesheets, filterable by employee,
+        /// department, date range and status transition.
         /// </summary>
-        [HttpGet("/api/admin/timesheets/history")]
-        [ProducesResponseType(typeof(IEnumerable<TimesheetStatusHistory>), 200)]
-        [ProducesResponseType(403)]
+        // The template is relative, so this action inherits both of
+        // BaseApiController's routes — api/v{version}/timesheets/history and the
+        // unversioned api/timesheets/history alias. The absolute template it used to
+        // carry sat outside versioning entirely, so the endpoint could never be
+        // revised behind a new API version like every other action can.
+        //
+        // The filtering now lives in GetTimesheetStatusHistoryList, so this route,
+        // {id}/history above it and the per-employee route below all share one scope
+        // filter, one projection and one paging path. Reading the entities here also
+        // meant serialising the whole Included graph — timesheet, employee profile,
+        // user — straight to the client.
+        [HttpGet("history")]
+        [ProducesResponseType(typeof(IEnumerable<TimesheetStatusHistoryDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
         [Authorize(Roles = AppRoles.Admin)]
-        public async Task<ActionResult<IEnumerable<TimesheetStatusHistory>>> GetAllStatusHistories(
-            [FromQuery] string? employeeId,
+        public async Task<ActionResult> GetAllStatusHistories(
+            [FromQuery] string? employeeProfileId,
             [FromQuery] int? departmentId,
             [FromQuery] DateTime? from,
             [FromQuery] DateTime? to,
             [FromQuery] int? fromStatus,
-            [FromQuery] int? toStatus)
+            [FromQuery] int? toStatus,
+            [FromQuery] int? page,
+            [FromQuery] int? pageSize,
+            CancellationToken cancellationToken)
         {
-            var query = _context.TimesheetStatusHistories
-                .Include(h => h.Timesheet)
-                .AsQueryable();
+            var result = await Mediator.Send(new GetTimesheetStatusHistoryList.Query
+            {
+                EmployeeProfileId = employeeProfileId,
+                DepartmentId = departmentId,
+                From = from,
+                To = to,
+                FromStatus = fromStatus,
+                ToStatus = toStatus,
+                RequestingUserId = ResolveUserId(),
+                IsAdmin = User.IsInRole(AppRoles.Admin),
+                IsManager = User.IsInRole(AppRoles.Manager),
+                Page = page,
+                PageSize = pageSize,
+            }, cancellationToken);
 
-            if (!string.IsNullOrEmpty(employeeId))
-                query = query.Where(h => h.Timesheet!.EmployeeId == employeeId);
-            if (departmentId.HasValue)
-                query = query.Where(h => h.Timesheet!.DepartmentId == departmentId.Value);
-            if (from.HasValue)
-                query = query.Where(h => h.ChangedAt >= from.Value);
-            if (to.HasValue)
-                query = query.Where(h => h.ChangedAt <= to.Value);
-            if (fromStatus.HasValue)
-                query = query.Where(h => h.FromStatus == fromStatus.Value);
-            if (toStatus.HasValue)
-                query = query.Where(h => h.ToStatus == toStatus.Value);
-
-            var result = await query.ToListAsync();
-            return Ok(result);
+            return Paged(result);
         }
 
         /// <summary>
-        /// Retrieves all status history entries across all timesheets for a specific employee. Scoped by role.
+        /// Retrieves all status history entries across all timesheets for one
+        /// employee, identified by their <see cref="EmployeeProfile"/>.Id.
         /// </summary>
-        [HttpGet("/api/employees/{employeeId}/timesheets/history")]
-        [ProducesResponseType(typeof(IEnumerable<TimesheetStatusHistory>), 200)]
-        [ProducesResponseType(403)]
+        // Scoped through GetTimesheetStatusHistoryList for the same reason
+        // {id}/history is: the handler's scope filter *is* the authorization, so an
+        // employee sees their own trail, a manager sees their scope, and asking for
+        // someone you have no claim on returns an empty list.
+        //
+        // What this replaced hand-rolled the check, and got it wrong in both halves:
+        // it compared User.Identity.Name — an email — against the route's
+        // EmployeeProfile.Id, which no non-admin could ever match, so every one of
+        // them was refused outright; and it then returned raw entities rather than
+        // the DTO every other history endpoint serves.
+        [HttpGet("employees/{employeeProfileId}/history")]
+        [ProducesResponseType(typeof(IEnumerable<TimesheetStatusHistoryDto>), StatusCodes.Status200OK)]
         [Authorize]
-        public async Task<ActionResult<IEnumerable<TimesheetStatusHistory>>> GetEmployeeStatusHistories(string employeeId)
+        public async Task<ActionResult> GetEmployeeStatusHistories(
+            string employeeProfileId,
+            [FromQuery] int? page,
+            [FromQuery] int? pageSize,
+            CancellationToken cancellationToken)
         {
-            var isAdmin = User.IsInRole(AppRoles.Admin);
-            var userId = User.Identity?.Name;
+            var result = await Mediator.Send(new GetTimesheetStatusHistoryList.Query
+            {
+                EmployeeProfileId = employeeProfileId,
+                RequestingUserId = ResolveUserId(),
+                IsAdmin = User.IsInRole(AppRoles.Admin),
+                IsManager = User.IsInRole(AppRoles.Manager),
+                Page = page,
+                PageSize = pageSize,
+            }, cancellationToken);
 
-            if (!isAdmin && userId != employeeId)
-                return Forbid();
-
-            var histories = await _context.TimesheetStatusHistories
-                .Include(h => h.Timesheet)
-                .Where(h => h.Timesheet!.EmployeeId == employeeId)
-                .ToListAsync();
-            return Ok(histories);
+            return Paged(result);
         }
 
         private string ResolveUserId() =>

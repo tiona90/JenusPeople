@@ -17,7 +17,12 @@ public enum TimesheetStatus
 public class Timesheet : IAuditable
 {
     public string Id { get; set; } = Guid.NewGuid().ToString();
-    public string EmployeeId { get; set; } = string.Empty;
+    /// <summary>
+    /// FK to <see cref="Domain.EmployeeProfile"/>.Id — <b>not</b> AspNetUsers.Id.
+    /// The sibling <see cref="AnnualLeave.EmployeeId"/> is a user id, so the two
+    /// must never be compared or interchanged.
+    /// </summary>
+    public string EmployeeProfileId { get; set; } = string.Empty;
     public EmployeeProfile? Employee { get; set; }
     public int DepartmentId { get; set; }
     public Department? Department { get; set; }

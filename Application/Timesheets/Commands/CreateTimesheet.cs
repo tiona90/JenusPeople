@@ -37,7 +37,7 @@ public class CreateTimesheet
             var timesheet = new Timesheet
             {
                 Id = Guid.NewGuid().ToString(),
-                EmployeeId = profile.Id,
+                EmployeeProfileId = profile.Id,
                 DepartmentId = profile.DepartmentId,
                 PeriodStart = request.PeriodStart,
                 PeriodEnd = request.PeriodEnd,
@@ -56,7 +56,7 @@ public class CreateTimesheet
             {
                 // Two creates for the same period can both get this far — nothing here
                 // reserves the period — so the unique index on
-                // (EmployeeId, PeriodStart) is what settles which one wins.
+                // (EmployeeProfileId, PeriodStart) is what settles which one wins.
                 //
                 // Confirm that is what failed rather than reporting every write error
                 // as a duplicate: a genuine fault reported as "you already have one"
@@ -66,7 +66,7 @@ public class CreateTimesheet
                 var duplicate = await context.Timesheets
                     .AsNoTracking()
                     .AnyAsync(
-                        t => t.EmployeeId == profile.Id && t.PeriodStart == request.PeriodStart,
+                        t => t.EmployeeProfileId == profile.Id && t.PeriodStart == request.PeriodStart,
                         cancellationToken);
 
                 if (!duplicate)
@@ -82,8 +82,8 @@ public class CreateTimesheet
             return Result<TimesheetDto>.Success(new TimesheetDto
             {
                 Id = timesheet.Id,
-                EmployeeId = timesheet.EmployeeId,
-                EmployeeName = user?.DisplayName ?? user?.UserName ?? timesheet.EmployeeId,
+                EmployeeId = timesheet.EmployeeProfileId,
+                EmployeeName = user?.DisplayName ?? user?.UserName ?? timesheet.EmployeeProfileId,
                 DepartmentId = timesheet.DepartmentId,
                 PeriodStart = timesheet.PeriodStart,
                 PeriodEnd = timesheet.PeriodEnd,

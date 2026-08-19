@@ -55,7 +55,7 @@ public class GenerateDraft
             var existing = await context.Timesheets
                 .Include(t => t.Entries)
                 .FirstOrDefaultAsync(t =>
-                    t.EmployeeId == profile.Id
+                    t.EmployeeProfileId == profile.Id
                     && t.PeriodStart == request.PeriodStart
                     && t.PeriodEnd == request.PeriodEnd, cancellationToken);
 
@@ -68,7 +68,7 @@ public class GenerateDraft
             var timesheet = existing ?? new Timesheet
             {
                 Id = Guid.NewGuid().ToString(),
-                EmployeeId = profile.Id,
+                EmployeeProfileId = profile.Id,
                 DepartmentId = profile.DepartmentId,
                 PeriodStart = request.PeriodStart,
                 PeriodEnd = request.PeriodEnd,
@@ -90,7 +90,7 @@ public class GenerateDraft
 
             var events = await context.AttendanceEvents
                 .AsNoTracking()
-                .Where(e => e.EmployeeId == profile.Id && e.At >= periodStart && e.At < periodEnd)
+                .Where(e => e.EmployeeProfileId == profile.Id && e.At >= periodStart && e.At < periodEnd)
                 .OrderBy(e => e.At)
                 .ToListAsync(cancellationToken);
 
@@ -122,8 +122,8 @@ public class GenerateDraft
             return Result<TimesheetDto>.Success(new TimesheetDto
             {
                 Id = timesheet.Id,
-                EmployeeId = timesheet.EmployeeId,
-                EmployeeName = user?.DisplayName ?? user?.UserName ?? timesheet.EmployeeId,
+                EmployeeId = timesheet.EmployeeProfileId,
+                EmployeeName = user?.DisplayName ?? user?.UserName ?? timesheet.EmployeeProfileId,
                 DepartmentId = timesheet.DepartmentId,
                 PeriodStart = timesheet.PeriodStart,
                 PeriodEnd = timesheet.PeriodEnd,

@@ -159,7 +159,7 @@ public class SeedDemoDataTeardownTests : IAsyncLifetime
     /// <summary>
     /// A demo account that logged hours during a UAT session hits two more Restrict
     /// FKs the seeder's cleanup was missing: Timesheet.ApproverId on anything it
-    /// approved, and Timesheet.EmployeeId on its own, which points at the profile the
+    /// approved, and Timesheet.EmployeeProfileId on its own, which points at the profile the
     /// cleanup deletes.
     /// </summary>
     [Fact]
@@ -179,7 +179,7 @@ public class SeedDemoDataTeardownTests : IAsyncLifetime
         // account has to detach or delete this row first.
         Db.Timesheets.Add(new Timesheet
         {
-            EmployeeId = employeeProfile.Id,
+            EmployeeProfileId = employeeProfile.Id,
             DepartmentId = department.Id,
             PeriodStart = DateTime.UtcNow.Date.AddDays(-7),
             PeriodEnd = DateTime.UtcNow.Date,

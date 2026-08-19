@@ -119,7 +119,7 @@ public class DbInitializer
 
         var timesheet = new Timesheet
         {
-            EmployeeId = adminProfile.Id,
+            EmployeeProfileId = adminProfile.Id,
             DepartmentId = engineering.Id,
             PeriodStart = DateTime.UtcNow.Date.AddDays(-7),
             PeriodEnd = DateTime.UtcNow.Date,
@@ -553,12 +553,12 @@ public class DbInitializer
             context.TimesheetStatusHistories.RemoveRange(timesheetStatusChangesByUser);
         }
 
-        // Timesheet.EmployeeId points at the profile deleted below, and that FK is
+        // Timesheet.EmployeeProfileId points at the profile deleted below, and that FK is
         // Restrict as well, so the timesheets have to go first.
         if (!string.IsNullOrWhiteSpace(userProfileId))
         {
             var userTimesheets = await context.Timesheets
-                .Where(t => t.EmployeeId == userProfileId)
+                .Where(t => t.EmployeeProfileId == userProfileId)
                 .ToListAsync(cancellationToken);
             if (userTimesheets.Count > 0)
             {
@@ -607,12 +607,20 @@ public class DbInitializer
         var adminUser = context.Users.FirstOrDefault(u => u.Email == "admin@annualleave.com");
         if (adminUser is null) return;
 
+        // EmployeeProfileId has to be set alongside EmployeeId. CreateAnnualLeave
+        // refuses to create a request without it, so every row the application
+        // writes has one, and the balance calculators and the attendance boards
+        // read that column rather than EmployeeId. A seeded row that left it null
+        // would be a shape the rest of the code never has to handle.
+        var adminProfile = context.EmployeeProfiles.FirstOrDefault(ep => ep.UserId == adminUser.Id);
+
         var annualLeaves = new List<AnnualLeave>
         {
             new AnnualLeave
             {
                 Id = Guid.NewGuid().ToString(),
                 EmployeeId = adminUser.Id,
+                EmployeeProfileId = adminProfile?.Id,
                 StartDate = DateTime.Now.AddMonths(1),
                 EndDate = DateTime.Now.AddMonths(1).AddDays(5)
             }
@@ -622,10 +630,13 @@ public class DbInitializer
         var managerUser = context.Users.FirstOrDefault(u => u.Email == "manager1@annualleave.com");
         if (managerUser is not null)
         {
+            var managerProfile = context.EmployeeProfiles.FirstOrDefault(ep => ep.UserId == managerUser.Id);
+
             annualLeaves.Add(new AnnualLeave
             {
                 Id = Guid.NewGuid().ToString(),
                 EmployeeId = managerUser.Id,
+                EmployeeProfileId = managerProfile?.Id,
                 StartDate = DateTime.Now.AddMonths(2),
                 EndDate = DateTime.Now.AddMonths(2).AddDays(10)
             });

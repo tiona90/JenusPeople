@@ -68,10 +68,10 @@ namespace Application.Timesheets.Queries
                     return new TimesheetDto
                     {
                         Id = t.Id,
-                        EmployeeId = t.EmployeeId,
+                        EmployeeId = t.EmployeeProfileId,
                         EmployeeName = t.Employee != null && t.Employee.User != null
-                            ? (t.Employee.User.DisplayName ?? t.Employee.User.UserName ?? t.EmployeeId)
-                            : t.EmployeeId,
+                            ? (t.Employee.User.DisplayName ?? t.Employee.User.UserName ?? t.EmployeeProfileId)
+                            : t.EmployeeProfileId,
                         DepartmentId = t.DepartmentId,
                         PeriodStart = t.PeriodStart,
                         PeriodEnd = t.PeriodEnd,

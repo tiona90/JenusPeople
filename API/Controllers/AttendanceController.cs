@@ -109,14 +109,14 @@ public class AttendanceController : BaseApiController
         return (status, checkIn, checkOut, breakStart, totalBreakSeconds / 60, workedMinutes);
     }
 
-    private async Task<TodayStateDto> BuildTodayStateAsync(string employeeId)
+    private async Task<TodayStateDto> BuildTodayStateAsync(string employeeProfileId)
     {
         var now = DateTime.UtcNow;
         var dayStart = UtcDayStart(now);
         var dayEnd = dayStart.AddDays(1);
 
         var events = await _context.AttendanceEvents
-            .Where(e => e.EmployeeId == employeeId && e.At >= dayStart && e.At < dayEnd)
+            .Where(e => e.EmployeeProfileId == employeeProfileId && e.At >= dayStart && e.At < dayEnd)
             .OrderBy(e => e.At)
             .ToListAsync();
 
@@ -158,7 +158,7 @@ public class AttendanceController : BaseApiController
         var dayEnd = dayStart.AddDays(1);
 
         var existing = await _context.AttendanceEvents
-            .Where(e => e.EmployeeId == profile.Id && e.At >= dayStart && e.At < dayEnd)
+            .Where(e => e.EmployeeProfileId == profile.Id && e.At >= dayStart && e.At < dayEnd)
             .OrderBy(e => e.At)
             .ToListAsync();
 
@@ -169,7 +169,7 @@ public class AttendanceController : BaseApiController
         _context.AttendanceEvents.Add(new AttendanceEvent
         {
             Id = Guid.NewGuid().ToString(),
-            EmployeeId = profile.Id,
+            EmployeeProfileId = profile.Id,
             At = now,
             Type = AttendanceEventType.CheckIn,
         });
@@ -189,7 +189,7 @@ public class AttendanceController : BaseApiController
         var dayEnd = dayStart.AddDays(1);
 
         var existing = await _context.AttendanceEvents
-            .Where(e => e.EmployeeId == profile.Id && e.At >= dayStart && e.At < dayEnd)
+            .Where(e => e.EmployeeProfileId == profile.Id && e.At >= dayStart && e.At < dayEnd)
             .OrderBy(e => e.At)
             .ToListAsync();
 
@@ -202,7 +202,7 @@ public class AttendanceController : BaseApiController
             _context.AttendanceEvents.Add(new AttendanceEvent
             {
                 Id = Guid.NewGuid().ToString(),
-                EmployeeId = profile.Id,
+                EmployeeProfileId = profile.Id,
                 At = now,
                 Type = AttendanceEventType.BreakEnd,
             });
@@ -210,7 +210,7 @@ public class AttendanceController : BaseApiController
         _context.AttendanceEvents.Add(new AttendanceEvent
         {
             Id = Guid.NewGuid().ToString(),
-            EmployeeId = profile.Id,
+            EmployeeProfileId = profile.Id,
             At = now,
             Type = AttendanceEventType.CheckOut,
         });
@@ -230,7 +230,7 @@ public class AttendanceController : BaseApiController
         var dayEnd = dayStart.AddDays(1);
 
         var existing = await _context.AttendanceEvents
-            .Where(e => e.EmployeeId == profile.Id && e.At >= dayStart && e.At < dayEnd)
+            .Where(e => e.EmployeeProfileId == profile.Id && e.At >= dayStart && e.At < dayEnd)
             .OrderBy(e => e.At)
             .ToListAsync();
 
@@ -241,7 +241,7 @@ public class AttendanceController : BaseApiController
         _context.AttendanceEvents.Add(new AttendanceEvent
         {
             Id = Guid.NewGuid().ToString(),
-            EmployeeId = profile.Id,
+            EmployeeProfileId = profile.Id,
             At = now,
             Type = AttendanceEventType.BreakStart,
         });
@@ -261,7 +261,7 @@ public class AttendanceController : BaseApiController
         var dayEnd = dayStart.AddDays(1);
 
         var existing = await _context.AttendanceEvents
-            .Where(e => e.EmployeeId == profile.Id && e.At >= dayStart && e.At < dayEnd)
+            .Where(e => e.EmployeeProfileId == profile.Id && e.At >= dayStart && e.At < dayEnd)
             .OrderBy(e => e.At)
             .ToListAsync();
 
@@ -272,7 +272,7 @@ public class AttendanceController : BaseApiController
         _context.AttendanceEvents.Add(new AttendanceEvent
         {
             Id = Guid.NewGuid().ToString(),
-            EmployeeId = profile.Id,
+            EmployeeProfileId = profile.Id,
             At = now,
             Type = AttendanceEventType.BreakEnd,
         });
@@ -293,7 +293,7 @@ public class AttendanceController : BaseApiController
         var from = UtcDayStart(now).AddDays(-(days - 1));
 
         var events = await _context.AttendanceEvents
-            .Where(e => e.EmployeeId == profile.Id && e.At >= from)
+            .Where(e => e.EmployeeProfileId == profile.Id && e.At >= from)
             .OrderBy(e => e.At)
             .ToListAsync();
 
@@ -357,16 +357,20 @@ public class AttendanceController : BaseApiController
         var todayEnd = todayStart.AddDays(1);
 
         var todayEvents = await _context.AttendanceEvents
-            .Where(e => employeeIds.Contains(e.EmployeeId) && e.At >= todayStart && e.At < todayEnd)
+            .Where(e => employeeIds.Contains(e.EmployeeProfileId) && e.At >= todayStart && e.At < todayEnd)
             .ToListAsync();
-        var todayByEmployee = todayEvents.GroupBy(e => e.EmployeeId).ToDictionary(g => g.Key, g => g.ToList());
+        var todayByEmployee = todayEvents.GroupBy(e => e.EmployeeProfileId).ToDictionary(g => g.Key, g => g.ToList());
 
         // Today's leaves (Approved)
         var leavesToday = await _context.AnnualLeaves
-            .Where(l => employeeIds.Contains(l.EmployeeId)
+            // AnnualLeave carries two employee keys: EmployeeId is the AspNetUsers.Id,
+            // EmployeeProfileId is the EmployeeProfile.Id. employeeIds above holds
+            // profile ids, so the filter has to use the profile key.
+            .Where(l => l.EmployeeProfileId != null
+                && employeeIds.Contains(l.EmployeeProfileId)
                 && l.Status == AnnualLeaveStatus.Approved
                 && l.StartDate <= now && l.EndDate >= now)
-            .Select(l => l.EmployeeId)
+            .Select(l => l.EmployeeProfileId!)
             .ToListAsync();
         var onLeaveSet = new HashSet<string>(leavesToday);
 
@@ -403,7 +407,7 @@ public class AttendanceController : BaseApiController
         var friday = monday.AddDays(5);
 
         var weekEvents = await _context.AttendanceEvents
-            .Where(e => employeeIds.Contains(e.EmployeeId) && e.At >= monday && e.At < friday)
+            .Where(e => employeeIds.Contains(e.EmployeeProfileId) && e.At >= monday && e.At < friday)
             .ToListAsync();
 
         var weekRows = new List<TeamWeekRowDto>();
@@ -416,7 +420,7 @@ public class AttendanceController : BaseApiController
                 var dayStart = monday.AddDays(i);
                 var dayEnd = dayStart.AddDays(1);
                 var evts = weekEvents
-                    .Where(e => e.EmployeeId == p.Id && e.At >= dayStart && e.At < dayEnd)
+                    .Where(e => e.EmployeeProfileId == p.Id && e.At >= dayStart && e.At < dayEnd)
                     .ToList();
                 var s = ComputeDayState(evts, now);
                 int? minutes = s.checkInAt == null ? (int?)null : s.workedMinutes;
@@ -472,14 +476,14 @@ public class AttendanceController : BaseApiController
 
         // Only need CheckIn events — earliest per day per employee.
         var checkIns = await _context.AttendanceEvents
-            .Where(e => employeeIds.Contains(e.EmployeeId)
+            .Where(e => employeeIds.Contains(e.EmployeeProfileId)
                 && e.Type == AttendanceEventType.CheckIn
                 && e.At >= rangeStart && e.At < rangeEnd)
-            .Select(e => new { e.EmployeeId, e.At })
+            .Select(e => new { e.EmployeeProfileId, e.At })
             .ToListAsync();
 
         var earliestPerDay = checkIns
-            .GroupBy(e => new { e.EmployeeId, Day = UtcDayStart(e.At) })
+            .GroupBy(e => new { e.EmployeeProfileId, Day = UtcDayStart(e.At) })
             .ToDictionary(g => g.Key, g => g.Min(x => x.At));
 
         var members = profiles.Select(p =>
@@ -488,7 +492,7 @@ public class AttendanceController : BaseApiController
             for (int i = days - 1; i >= 0; i--)
             {
                 var day = UtcDayStart(now).AddDays(-i);
-                earliestPerDay.TryGetValue(new { EmployeeId = p.Id, Day = day }, out var at);
+                earliestPerDay.TryGetValue(new { EmployeeProfileId = p.Id, Day = day }, out var at);
                 int? minutes = at == default
                     ? null
                     : at.Hour * 60 + at.Minute;
@@ -527,9 +531,9 @@ public class AttendanceController : BaseApiController
         var employeeIds = profiles.Select(p => p.Id).ToList();
 
         var todayEvents = await _context.AttendanceEvents
-            .Where(e => employeeIds.Contains(e.EmployeeId) && e.At >= todayStart && e.At < todayEnd)
+            .Where(e => employeeIds.Contains(e.EmployeeProfileId) && e.At >= todayStart && e.At < todayEnd)
             .ToListAsync();
-        var todayByEmployee = todayEvents.GroupBy(e => e.EmployeeId).ToDictionary(g => g.Key, g => g.ToList());
+        var todayByEmployee = todayEvents.GroupBy(e => e.EmployeeProfileId).ToDictionary(g => g.Key, g => g.ToList());
 
         var result = profiles
             .Where(p => !string.IsNullOrEmpty(p.UserId))
@@ -573,15 +577,19 @@ public class AttendanceController : BaseApiController
         var employeeIds = profiles.Select(p => p.Id).ToList();
 
         var todayEvents = await _context.AttendanceEvents
-            .Where(e => employeeIds.Contains(e.EmployeeId) && e.At >= todayStart && e.At < todayEnd)
+            .Where(e => employeeIds.Contains(e.EmployeeProfileId) && e.At >= todayStart && e.At < todayEnd)
             .ToListAsync();
-        var todayByEmployee = todayEvents.GroupBy(e => e.EmployeeId).ToDictionary(g => g.Key, g => g.ToList());
+        var todayByEmployee = todayEvents.GroupBy(e => e.EmployeeProfileId).ToDictionary(g => g.Key, g => g.ToList());
 
         var leavesToday = await _context.AnnualLeaves
-            .Where(l => employeeIds.Contains(l.EmployeeId)
+            // AnnualLeave carries two employee keys: EmployeeId is the AspNetUsers.Id,
+            // EmployeeProfileId is the EmployeeProfile.Id. employeeIds above holds
+            // profile ids, so the filter has to use the profile key.
+            .Where(l => l.EmployeeProfileId != null
+                && employeeIds.Contains(l.EmployeeProfileId)
                 && l.Status == AnnualLeaveStatus.Approved
                 && l.StartDate <= now && l.EndDate >= now)
-            .Select(l => l.EmployeeId)
+            .Select(l => l.EmployeeProfileId!)
             .ToListAsync();
         var onLeaveSet = new HashSet<string>(leavesToday);
 
@@ -633,7 +641,7 @@ public class AttendanceController : BaseApiController
 
         // Recent activity (last 20 events today)
         var recentEvents = await _context.AttendanceEvents
-            .Where(e => employeeIds.Contains(e.EmployeeId) && e.At >= todayStart && e.At < todayEnd)
+            .Where(e => employeeIds.Contains(e.EmployeeProfileId) && e.At >= todayStart && e.At < todayEnd)
             .OrderByDescending(e => e.At)
             .Take(20)
             .ToListAsync();
@@ -641,7 +649,7 @@ public class AttendanceController : BaseApiController
         var profileById = profiles.ToDictionary(p => p.Id);
         var recentDto = recentEvents.Select(e =>
         {
-            profileById.TryGetValue(e.EmployeeId, out var prof);
+            profileById.TryGetValue(e.EmployeeProfileId, out var prof);
             var ago = (int)Math.Max(0, (now - e.At).TotalMinutes);
             string action;
             if (e.Type == AttendanceEventType.CheckIn)

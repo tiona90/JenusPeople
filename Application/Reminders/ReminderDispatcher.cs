@@ -434,13 +434,13 @@ public class ReminderDispatcher(
 
         var profileIds = employees.Select(e => e.ProfileId).ToList();
         var todayEvents = await context.AttendanceEvents
-            .Where(e => profileIds.Contains(e.EmployeeId) && e.At >= dayStart && e.At < dayEnd
+            .Where(e => profileIds.Contains(e.EmployeeProfileId) && e.At >= dayStart && e.At < dayEnd
                         && (e.Type == AttendanceEventType.CheckIn || e.Type == AttendanceEventType.CheckOut))
-            .Select(e => new { e.EmployeeId, e.Type })
+            .Select(e => new { e.EmployeeProfileId, e.Type })
             .ToListAsync(ct);
 
-        var checkedIn = todayEvents.Where(e => e.Type == AttendanceEventType.CheckIn).Select(e => e.EmployeeId).ToHashSet();
-        var checkedOut = todayEvents.Where(e => e.Type == AttendanceEventType.CheckOut).Select(e => e.EmployeeId).ToHashSet();
+        var checkedIn = todayEvents.Where(e => e.Type == AttendanceEventType.CheckIn).Select(e => e.EmployeeProfileId).ToHashSet();
+        var checkedOut = todayEvents.Where(e => e.Type == AttendanceEventType.CheckOut).Select(e => e.EmployeeProfileId).ToHashSet();
 
         var userIds = employees.Select(e => e.UserId).ToList();
         var onLeave = (await context.AnnualLeaves

@@ -150,7 +150,7 @@ public class DeleteAdminUser
             if (!string.IsNullOrWhiteSpace(userProfileId))
             {
                 var userTimesheets = await context.Timesheets
-                    .Where(t => t.EmployeeId == userProfileId)
+                    .Where(t => t.EmployeeProfileId == userProfileId)
                     .ToListAsync(cancellationToken);
                 if (userTimesheets.Count > 0)
                 {

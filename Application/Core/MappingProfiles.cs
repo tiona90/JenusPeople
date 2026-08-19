@@ -78,8 +78,8 @@ public class MappingProfiles : Profile
             .ForMember(d => d.Status, opt => opt.MapFrom(s => s.Status.ToString()))
             .ForMember(d => d.EmployeeName, opt => opt.MapFrom(s =>
                 s.Employee != null && s.Employee.User != null
-                    ? (s.Employee.User.DisplayName ?? s.Employee.User.UserName ?? s.EmployeeId)
-                    : s.EmployeeId))
+                    ? (s.Employee.User.DisplayName ?? s.Employee.User.UserName ?? s.EmployeeProfileId)
+                    : s.EmployeeProfileId))
             .ForMember(d => d.ProjectSummaries, opt => opt.Ignore())
             .ForMember(d => d.DailyHours, opt => opt.Ignore());
 

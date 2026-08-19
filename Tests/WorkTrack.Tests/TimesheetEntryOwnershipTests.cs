@@ -52,7 +52,7 @@ public class TimesheetEntryOwnershipTests
         db.Timesheets.Add(new Timesheet
         {
             Id = TimesheetId,
-            EmployeeId = OwnerProfileId,
+            EmployeeProfileId = OwnerProfileId,
             DepartmentId = 1,
             PeriodStart = new DateTime(2024, 1, 1),
             PeriodEnd = new DateTime(2024, 1, 7),

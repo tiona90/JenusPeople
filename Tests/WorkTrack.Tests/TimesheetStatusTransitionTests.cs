@@ -27,7 +27,7 @@ public class TimesheetStatusTransitionTests
         var ts = new Timesheet
         {
             Id = Guid.NewGuid().ToString(),
-            EmployeeId = "emp-profile-1",
+            EmployeeProfileId = "emp-profile-1",
             DepartmentId = 1,
             PeriodStart = new DateTime(2024, 1, 1),
             PeriodEnd = new DateTime(2024, 1, 7),

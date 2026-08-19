@@ -79,7 +79,7 @@ public class TimesheetReadScopeTests
         db.Timesheets.Add(new Timesheet
         {
             Id = id,
-            EmployeeId = employeeProfileId,
+            EmployeeProfileId = employeeProfileId,
             DepartmentId = departmentId,
             PeriodStart = new DateTime(2024, 1, 1),
             PeriodEnd = new DateTime(2024, 1, 7),

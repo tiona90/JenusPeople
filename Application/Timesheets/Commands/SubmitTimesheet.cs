@@ -40,7 +40,7 @@ public class SubmitTimesheet
                     .AsNoTracking()
                     .FirstOrDefaultAsync(ep => ep.UserId == request.RequestingUserId, cancellationToken);
 
-                if (requesterProfile is null || timesheet.EmployeeId != requesterProfile.Id)
+                if (requesterProfile is null || timesheet.EmployeeProfileId != requesterProfile.Id)
                 {
                     return Result<Unit>.ValidationFailure(
                         new Dictionary<string, string[]>
@@ -83,7 +83,7 @@ public class SubmitTimesheet
 
             if (recipients.Count == 0)
             {
-                logger.LogInformation("Timesheet {Id}: no manager recipients for employee {EmployeeId}, skipping notification", timesheet.Id, timesheet.EmployeeId);
+                logger.LogInformation("Timesheet {Id}: no manager recipients for employee {EmployeeProfileId}, skipping notification", timesheet.Id, timesheet.EmployeeProfileId);
                 return;
             }
 

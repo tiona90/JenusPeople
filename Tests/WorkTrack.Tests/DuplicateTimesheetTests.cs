@@ -13,7 +13,7 @@ namespace WorkTrack.Tests;
 /// period could both build a timesheet and both write it: one employee, one week,
 /// two draft timesheets, and every later query having to guess which is real.
 ///
-/// A unique index on (EmployeeId, PeriodStart) is the only place that can settle
+/// A unique index on (EmployeeProfileId, PeriodStart) is the only place that can settle
 /// it — a check in the handler is always a race — and the handler now reports the
 /// resulting write failure as 409 rather than letting it surface as a 500.
 ///
@@ -113,8 +113,8 @@ public class DuplicateTimesheetTests
     }
 
     /// <summary>
-    /// The index covers (EmployeeId, PeriodStart), so it must not stand in the way
-    /// of the next week — the ordinary case, and what an index on EmployeeId alone
+    /// The index covers (EmployeeProfileId, PeriodStart), so it must not stand in the way
+    /// of the next week — the ordinary case, and what an index on EmployeeProfileId alone
     /// would have broken.
     /// </summary>
     [Fact]
