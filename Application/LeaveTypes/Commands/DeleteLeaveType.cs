@@ -1,5 +1,6 @@
 using Application.Core;
 using MediatR;
+using Microsoft.EntityFrameworkCore;
 using Persistence;
 
 namespace Application.LeaveTypes.Commands;
@@ -19,7 +20,7 @@ public class DeleteLeaveType
             if (leaveType is null)
                 return Result<Unit>.Failure("Leave type not found.");
 
-            var inUse = context.AnnualLeaves.Any(al => al.LeaveTypeId == request.Id);
+            var inUse = await context.AnnualLeaves.AnyAsync(al => al.LeaveTypeId == request.Id, cancellationToken);
             if (inUse)
                 return Result<Unit>.Conflict("Cannot delete leave type because it is used by leave requests.");
 
