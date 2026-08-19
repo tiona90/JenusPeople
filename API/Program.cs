@@ -8,10 +8,6 @@ using Application.Core;
 using Application.Reminders;
 using Application.AnnualLeaves.Queries;
 using Application.Holidays;
-using Application.LeaveTypes.Commands;
-using Application.LeaveTypes.DTOs;
-using Application.ProjectActivityTypes.Commands;
-using Application.ProjectActivityTypes.DTOs;
 using Asp.Versioning;
 using Domain;
 using Domain.Interfaces;
@@ -216,16 +212,6 @@ builder.Services.AddHttpClient<NagerHolidayClient>(client =>
     // Circuit-breaker sampling window must be at least 2× AttemptTimeout.
     options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(30);
 });
-
-// Explicit registrations for LeaveType commands to avoid handler resolution issues
-// when running under watch/hot-reload in development.
-builder.Services.AddTransient<IRequestHandler<CreateLeaveType.Command, Result<LeaveTypeDto>>, CreateLeaveType.Handler>();
-builder.Services.AddTransient<IRequestHandler<UpdateLeaveType.Command, Result<LeaveTypeDto>>, UpdateLeaveType.Handler>();
-builder.Services.AddTransient<IRequestHandler<DeleteLeaveType.Command, Result<Unit>>, DeleteLeaveType.Handler>();
-
-builder.Services.AddTransient<IRequestHandler<CreateProjectActivityType.Command, Result<ProjectActivityTypeDto>>, CreateProjectActivityType.Handler>();
-builder.Services.AddTransient<IRequestHandler<UpdateProjectActivityType.Command, Result<ProjectActivityTypeDto>>, UpdateProjectActivityType.Handler>();
-builder.Services.AddTransient<IRequestHandler<DeleteProjectActivityType.Command, Result<Unit>>, DeleteProjectActivityType.Handler>();
 
 builder.Services.AddAutoMapper(cfg => { }, typeof(MappingProfiles).Assembly);
 builder.Services.AddValidatorsFromAssemblyContaining<MappingProfiles>();

@@ -98,6 +98,14 @@ public sealed class ApiRouteTableFixture : IAsyncLifetime
     public HttpClient Client => _client
         ?? throw new InvalidOperationException("The fixture has not been initialised.");
 
+    /// <summary>
+    /// The running application's root service provider. Resolve scoped services
+    /// through <c>CreateScope()</c> — most handlers depend on AppDbContext, which is
+    /// scoped, and the root provider refuses those.
+    /// </summary>
+    public IServiceProvider Services => _factory?.Services
+        ?? throw new InvalidOperationException("The fixture has not been initialised.");
+
     public Task InitializeAsync()
     {
         _factory = new RouteTableFactory();
