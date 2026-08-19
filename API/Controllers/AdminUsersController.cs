@@ -1,7 +1,12 @@
+using API.Models;
 using API.Services;
+using Application.AdminUsers;
+using Application.AdminUsers.Commands;
 using Application.AdminUsers.DTOs;
 using Domain;
+using Domain.Interfaces;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -51,124 +56,24 @@ public class AdminUsersController(
     }
 
     [HttpPost]
+    [ProducesResponseType(typeof(AdminUserDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<AdminUserDto>> CreateUser(AdminCreateUserDto request)
     {
-        // Validate DepartmentId exists
-        var departmentExists = await context.Departments.AnyAsync(d => d.Id == request.DepartmentId);
-        if (!departmentExists)
+        var result = await Mediator.Send(
+            new CreateAdminUser.Command { User = request },
+            HttpContext.RequestAborted);
+
+        // Not HandleResult on the success path: that answers 200, and this action
+        // has always answered 201 with a Location header. The frontend only reads
+        // the body, but a status change is not this migration's to make.
+        if (result.IsSuccess && result.Value is not null)
         {
-            return BadRequest(new { message = "Selected department does not exist." });
+            return CreatedAtAction(nameof(GetUser), new { id = result.Value.Id }, result.Value);
         }
 
-        var email = request.Email.Trim();
-        var displayName = request.DisplayName.Trim();
-
-        if (string.IsNullOrWhiteSpace(email))
-        {
-            return BadRequest(new { message = "Email is required." });
-        }
-
-        if (string.IsNullOrWhiteSpace(displayName))
-        {
-            return BadRequest(new { message = "Display name is required." });
-        }
-
-        if (await userManager.FindByEmailAsync(email) is not null)
-        {
-            return BadRequest(new { message = "Email is already registered." });
-        }
-
-        if (!string.IsNullOrWhiteSpace(request.ManagerId)
-            && !await context.EmployeeProfiles.AnyAsync(ep => ep.Id == request.ManagerId))
-        {
-            return BadRequest(new { message = "Manager profile is invalid." });
-        }
-
-        var selectedRoles = await ResolveRolesOrBadRequest(request.Roles);
-        if (selectedRoles is null)
-        {
-            return BadRequest(new { message = "One or more roles are invalid." });
-        }
-
-        if (selectedRoles.Count == 0)
-        {
-            selectedRoles.Add(AppRoles.Employee);
-        }
-
-        // Backstop for the DTO's [MaxLength(1)] — see SetUserRoles.
-        if (selectedRoles.Count > 1)
-        {
-            return BadRequest(new { message = "A user can have only one role." });
-        }
-
-        var user = new User
-        {
-            UserName = email,
-            Email = email,
-            DisplayName = displayName,
-            PhoneNumber = string.IsNullOrWhiteSpace(request.PhoneNumber) ? null : request.PhoneNumber.Trim(),
-            DateOfBirth = request.DateOfBirth,
-            EmailConfirmed = true
-        };
-
-        // No password on purpose. The account is activated by the welcome email
-        // sent below, where the new user picks their own password — so an
-        // administrator never chooses, sees, or has to relay one.
-        var createResult = await userManager.CreateAsync(user);
-        if (!createResult.Succeeded)
-        {
-            return BadRequest(new
-            {
-                message = "Failed to create user.",
-                errors = createResult.Errors.Select(e => e.Description)
-            });
-        }
-
-        // Create EmployeeProfile with DepartmentId
-        var entitlement = request.AnnualLeaveEntitlement ?? 20;
-        var employeeProfile = new EmployeeProfile
-        {
-            UserId = user.Id,
-            DepartmentId = request.DepartmentId,
-            ManagerId = string.IsNullOrWhiteSpace(request.ManagerId) ? null : request.ManagerId,
-            JobTitle = string.IsNullOrWhiteSpace(request.JobTitle) ? null : request.JobTitle.Trim(),
-            AnnualLeaveEntitlement = entitlement,
-            LeaveBalance = entitlement,
-        };
-        context.EmployeeProfiles.Add(employeeProfile);
-        await context.SaveChangesAsync();
-
-        var addRolesResult = await userManager.AddToRolesAsync(user, selectedRoles);
-        if (!addRolesResult.Succeeded)
-        {
-            await userManager.DeleteAsync(user);
-            // Optionally remove EmployeeProfile if user creation fails
-            context.EmployeeProfiles.Remove(employeeProfile);
-            await context.SaveChangesAsync();
-            return BadRequest(new
-            {
-                message = "Failed to assign user roles.",
-                errors = addRolesResult.Errors.Select(e => e.Description)
-            });
-        }
-
-        var inviteEmailSent = await accountEmailSender.SendWelcomeInviteAsync(user, HttpContext.RequestAborted);
-        if (!inviteEmailSent)
-        {
-            // Don't fail the request over this: the account exists and its owner
-            // can still get in via "Forgot password?". Report it instead, so the
-            // admin knows to tell them rather than waiting for an email that
-            // never arrives.
-            logger.LogWarning(
-                "Welcome invite email could not be sent to {Email} for new user {UserId}.",
-                user.Email,
-                user.Id);
-        }
-
-        var created = MapUser(user, selectedRoles);
-        created.InviteEmailSent = inviteEmailSent;
-
-        return CreatedAtAction(nameof(GetUser), new { id = user.Id }, created);
+        return HandleResult(result);
     }
 
     [HttpPut("{id}")]
@@ -472,21 +377,10 @@ public class AdminUsersController(
         await context.SaveChangesAsync(cancellationToken);
     }
 
-    private static AdminUserDto MapUser(User user, IEnumerable<string> roles)
-    {
-        return new AdminUserDto
-        {
-            Id = user.Id,
-            UserName = user.UserName ?? string.Empty,
-            Email = user.Email ?? string.Empty,
-            DisplayName = user.DisplayName,
-            ImageUrl = user.ImageUrl ?? string.Empty,
-            PhoneNumber = user.PhoneNumber,
-            DateOfBirth = user.DateOfBirth,
-            EmailConfirmed = user.EmailConfirmed,
-            Roles = roles.OrderBy(r => r).ToList()
-        };
-    }
+    // Delegates to the shared mapper so the actions still handled here and the
+    // ones already on MediatR cannot drift apart on response shape.
+    private static AdminUserDto MapUser(User user, IEnumerable<string> roles) =>
+        AdminUserMapper.ToDto(user, roles);
 
     private async Task<List<string>?> ResolveRolesOrBadRequest(IEnumerable<string>? roles)
     {

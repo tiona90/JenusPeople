@@ -14,6 +14,7 @@ using Application.ProjectActivityTypes.Commands;
 using Application.ProjectActivityTypes.DTOs;
 using Asp.Versioning;
 using Domain;
+using Domain.Interfaces;
 using FluentValidation;
 using Infrastructure;
 using MediatR;
