@@ -40,27 +40,69 @@ public class DbInitializer
 
     private record SeedUser(string DisplayName, string Email, string Role);
 
+    /// <param name="policy">
+    /// What this host allows the seeder to do. See <see cref="SeedPolicy"/> — on
+    /// Production it withholds account creation and password resets, so pass
+    /// <see cref="SeedPolicy.For"/>'s result rather than an unrestricted policy
+    /// unless the caller is a test or a development tool.
+    /// </param>
     public static async Task SeedData(AppDbContext context, UserManager<User> userManager,
-        RoleManager<Role> roleManager, bool seedDemoData = false)
+        RoleManager<Role> roleManager, SeedPolicy policy)
     {
-        // Order matters: each seeder bails out early if its dependencies are
-        // missing, so reference data (departments, projects, profiles) must be in
-        // place before the business data (leaves, timesheets, entries) that hangs
-        // off it — otherwise a fresh database needs several restarts to fill in.
+        ArgumentNullException.ThrowIfNull(policy);
+
+        // ── Reference, structural and maintenance data ──────────────────────────
+        //
+        // Everything a real tenant needs regardless of whether it wants worked
+        // examples: the role and type catalogues the app cannot function without,
+        // the single app-settings row, the department list that every employee
+        // profile hangs off, the admin's own assignment and profile, and the
+        // backfills that repair rows predating a migration. This runs in every
+        // environment.
+        //
+        // Order matters: each seeder bails out early when its dependencies are
+        // missing, so the catalogues must land before the rows that reference them
+        // — otherwise a fresh database needs several restarts to fill in.
         await SeedRoles(roleManager, userManager);
-        await SeedUsers(context, userManager, seedDemoData);
+        await SeedUsers(context, userManager, policy);
         await SeedLeaveTypes(context);
         await BackfillLeaveTypeDesignFields(context);
         await SeedProjectActivityTypes(context);
         await SeedDepartments(context);
-        await SeedProjects(context);
         await SeedUserDepartments(context);
         await SeedEmployeeProfiles(context);
+        // A no-op until projects exist, which is why it belongs here rather than
+        // inside SeedProjects: the rows it repairs are real ones, and they need
+        // repairing whether or not this host wants demo data.
+        await BackfillProjectMetadata(context);
+        await FixZeroEntitlementProfiles(context);
+        await SeedAppSettings(context);
+
+        // SeedUserDepartments and SeedEmployeeProfiles above each add demo rows too
+        // — but only for demo users, and SeedUsers has already deleted those by this
+        // point when the policy withholds them. So they self-limit to the admin's
+        // own assignment and profile without needing the policy passed in.
+
+        if (!policy.SeedDemoData)
+        {
+            return;
+        }
+
+        // ── Illustrative content ────────────────────────────────────────────────
+        //
+        // Three sample projects, plus a leave request, a timesheet and its entries
+        // filed against them. No tenant asked for any of this. On a demo or UAT
+        // site it is the point; on a live database it is indistinguishable from a
+        // member of staff having booked leave and logged a week of hours they never
+        // logged — so it is gated rather than left to degrade on its own. Only
+        // SeedAnnualLeaves and SeedTimesheets would have degraded anyway, and only
+        // by dropping their demo-user half; both still filed rows against the real
+        // admin account, and SeedProjects seeded all three projects regardless of
+        // which users existed.
+        await SeedProjects(context);
         await SeedAnnualLeaves(context);
         await SeedTimesheets(context);
         await SeedTimesheetEntries(context);
-        await FixZeroEntitlementProfiles(context);
-        await SeedAppSettings(context);
     }
 
     private static async Task SeedTimesheets(AppDbContext context)
@@ -122,13 +164,12 @@ public class DbInitializer
         await context.TimesheetEntries.AddRangeAsync(entries);
         await context.SaveChangesAsync();
     }
+    // Demo only. BackfillProjectMetadata used to hang off the early return here;
+    // SeedData calls it directly now so that hosts which skip the demo projects
+    // still get their real project rows repaired.
     private static async Task SeedProjects(AppDbContext context)
     {
-        if (context.Projects.Any())
-        {
-            await BackfillProjectMetadata(context);
-            return;
-        }
+        if (context.Projects.Any()) return;
 
         var engineering = context.Departments.FirstOrDefault(d => d.Code == "ENG");
         var hr = context.Departments.FirstOrDefault(d => d.Code == "HR");
@@ -249,14 +290,14 @@ public class DbInitializer
         }
     }
 
-    private static async Task SeedUsers(AppDbContext context, UserManager<User> userManager, bool seedDemoData)
+    private static async Task SeedUsers(AppDbContext context, UserManager<User> userManager, SeedPolicy policy)
     {
         // Legacy accounts from older versions — always removed.
         await RemoveSeedUsersAsync(context, userManager, DeprecatedSeedEmails);
 
         // On a real deployment, strip the demo manager/employee accounts (in case
         // a previous deploy created them) so only the Admin account remains.
-        if (!seedDemoData)
+        if (!policy.SeedDemoData)
         {
             await RemoveSeedUsersAsync(context, userManager, DemoSeedEmails);
         }
@@ -267,7 +308,7 @@ public class DbInitializer
             new("Admin User", "admin@annualleave.com", AppRoles.Admin),
         };
 
-        if (seedDemoData)
+        if (policy.SeedDemoData)
         {
             users.AddRange(new[]
             {
@@ -330,8 +371,23 @@ public class DbInitializer
                         await userManager.AddToRoleAsync(existingUser, u.Role));
                 }
 
-                // Keep seeded users deterministic across environments.
-                await EnsurePassword(userManager, existingUser);
+                // Keep seeded users deterministic across environments — except
+                // where "deterministic" means "resets a live admin account to a
+                // password published in this repository on every restart". The
+                // reconciliation above is safe to repeat; this is not.
+                if (policy.ManageSeedPasswords)
+                {
+                    await EnsurePassword(userManager, existingUser);
+                }
+            }
+            else if (!policy.ManageSeedPasswords)
+            {
+                // Creating the account means giving it DefaultSeedPassword, which
+                // this policy forbids. Leave it absent rather than plant a known
+                // credential; an operator who wants the account bootstrapped sets
+                // Seed:AllowInProduction. Every downstream seeder that references a
+                // seed account already tolerates its absence.
+                continue;
             }
             else
             {
@@ -411,6 +467,20 @@ public class DbInitializer
         }
     }
 
+    // Detaches everything pointing at a seed account so it can be deleted.
+    //
+    // Every FK handled here is DeleteBehavior.Restrict, which means the database
+    // refuses the DELETE rather than tidying up after it: miss one and
+    // RemoveSeedUsersAsync throws DbUpdateException("FOREIGN KEY constraint
+    // failed"), Program.cs logs it, and the demo accounts survive with the
+    // published password still on them — the exact opposite of what turning
+    // Seed:DemoData off is supposed to achieve.
+    //
+    // This duplicates Application.AdminUsers.Commands.DeleteAdminUser, which is the
+    // canonical version. The copies had drifted: this one was missing five of the
+    // cases that one handles, so the DemoData true→false transition failed on the
+    // demo projects owned by manager1/manager2. Keep them in step, and prefer
+    // fixing DeleteAdminUser first — a case missing there is a user-facing 500.
     private static async Task CleanupUserDependencies(AppDbContext context, string userId, CancellationToken cancellationToken)
     {
         var userProfileId = await context.EmployeeProfiles
@@ -439,12 +509,61 @@ public class DbInitializer
             leave.ApprovedAt = null;
         }
 
+        // Leave this user was covering for someone else.
+        var delegatedLeaves = await context.AnnualLeaves
+            .Where(al => al.DelegateId == userId)
+            .ToListAsync(cancellationToken);
+        foreach (var leave in delegatedLeaves)
+        {
+            leave.DelegateId = null;
+        }
+
         var assignedByRows = await context.UserDepartments
             .Where(ud => ud.AssignedByUserId == userId)
             .ToListAsync(cancellationToken);
         foreach (var row in assignedByRows)
         {
             row.AssignedByUserId = null;
+        }
+
+        var approvedTimesheets = await context.Timesheets
+            .Where(t => t.ApproverId == userId)
+            .ToListAsync(cancellationToken);
+        foreach (var timesheet in approvedTimesheets)
+        {
+            timesheet.ApproverId = null;
+            timesheet.ApprovedAt = null;
+        }
+
+        // The seeded demo projects are owned by manager1/manager2, so this is the
+        // case that blocked turning demo data off on an already-seeded database.
+        var ownedProjects = await context.Projects
+            .Where(p => p.OwnerId == userId)
+            .ToListAsync(cancellationToken);
+        foreach (var project in ownedProjects)
+        {
+            project.OwnerId = null;
+        }
+
+        var timesheetStatusChangesByUser = await context.TimesheetStatusHistories
+            .Where(h => h.ChangedByUserId == userId)
+            .ToListAsync(cancellationToken);
+        if (timesheetStatusChangesByUser.Count > 0)
+        {
+            context.TimesheetStatusHistories.RemoveRange(timesheetStatusChangesByUser);
+        }
+
+        // Timesheet.EmployeeId points at the profile deleted below, and that FK is
+        // Restrict as well, so the timesheets have to go first.
+        if (!string.IsNullOrWhiteSpace(userProfileId))
+        {
+            var userTimesheets = await context.Timesheets
+                .Where(t => t.EmployeeId == userProfileId)
+                .ToListAsync(cancellationToken);
+            if (userTimesheets.Count > 0)
+            {
+                context.Timesheets.RemoveRange(userTimesheets);
+            }
         }
 
         var statusChangesByUser = await context.LeaveStatusHistories

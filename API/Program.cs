@@ -357,8 +357,24 @@ try
     {
         var userManager = services.GetRequiredService<UserManager<User>>();
         var roleManager = services.GetRequiredService<RoleManager<Role>>();
-        var seedDemoData = app.Configuration.GetValue<bool>("Seed:DemoData");
-        await DbInitializer.SeedData(context, userManager, roleManager, seedDemoData);
+
+        // SeedPolicy, not the raw config values: it is what withholds account
+        // creation and password resets on a Production host.
+        var seedPolicy = SeedPolicy.For(
+            app.Environment.EnvironmentName,
+            demoData: app.Configuration.GetValue<bool>("Seed:DemoData"),
+            allowInProduction: app.Configuration.GetValue<bool>("Seed:AllowInProduction"));
+
+        if (seedPolicy.RestrictedForProduction)
+        {
+            services.GetRequiredService<ILogger<Program>>().LogWarning(
+                "Seed:Enabled is set on a Production host. Demo accounts will not be seeded, and "
+                + "no account will be created or have its password reset — doing so would apply the "
+                + "seeder's built-in default password. Set Seed:AllowInProduction=true only to "
+                + "deliberately bootstrap this database, and change the seeded password immediately.");
+        }
+
+        await DbInitializer.SeedData(context, userManager, roleManager, seedPolicy);
     }
 }
 catch (Exception ex)

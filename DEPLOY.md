@@ -80,31 +80,64 @@ GO
 
 ### 3.1 Seeding the demo data
 
-Seeding is controlled by two flags in `appsettings.Production.json` (the
+Seeding is controlled by three flags in `appsettings.Production.json` (the
 git-ignored file that ships in the release folder):
 
 ```jsonc
 "Seed": {
-  "Enabled": true,   // run DbInitializer at all
-  "DemoData": true   // also create the demo managers/employees + their data
+  "Enabled": false,             // run DbInitializer at all
+  "DemoData": false,            // also create the demo managers/employees + their data
+  "AllowInProduction": false    // permit account creation / password resets on a Production host
 }
 ```
 
-Both are currently **`true`**, so a deploy onto an empty database fills it in a
-**single** app-pool start:
+All three default to **`false`**, which is the safe production posture: nothing
+is seeded and no password is ever touched.
+
+> ⚠️ **These flags live in a git-ignored file, so a release does not update
+> them.** Check the `appsettings.Production.json` already on the server — if it
+> still carries `"Enabled": true, "DemoData": true` from an earlier deploy, it
+> keeps that setting until you edit it there.
+
+`AllowInProduction` is the guard rail. When `ASPNETCORE_ENVIRONMENT=Production`
+and it is not set, `DbInitializer` refuses the two things that plant the
+hardcoded password — it will not create a seed account, and it will not reset an
+existing one's password — and it skips the demo accounts regardless of
+`DemoData`. The cleanup that *deletes* stale demo accounts still runs. Startup
+logs a warning whenever it cuts a run back this way.
+
+`DbInitializer` splits what it writes in two, so the flags decide between them:
+
+**Reference, structural and maintenance data — `Enabled: true` is enough**
 
 | Data | Rows |
 |---|---|
-| Users (Admin + 2 managers + 8 employees) | 11 |
 | Roles | 3 |
 | Departments | 5 |
-| Projects | 3 |
-| Employee profiles | 11 |
-| User↔department assignments | 3 |
-| Annual leave requests | 2 |
-| Timesheets / timesheet entries | 1 / 2 |
 | Leave types / activity types | 8 / 8 |
 | App settings | 1 |
+| Admin user, profile, department assignment | 1 / 1 / 1 |
+| Backfills: leave-type design fields, project metadata, zero entitlements | in place |
+
+A real tenant wants all of this. The three backfills repair rows that predate a
+migration and run on every start.
+
+**Illustrative content — also needs `DemoData: true`**
+
+| Data | Rows |
+|---|---|
+| Demo users (2 managers + 8 employees) | 10 |
+| Their profiles / department assignments | 10 / 2 |
+| Projects | 3 |
+| Annual leave requests | 2 |
+| Timesheets / timesheet entries | 1 / 2 |
+
+These are worked examples. On a live database the sample leave request and
+timesheet are indistinguishable from a member of staff having booked leave and
+logged a week of hours they never logged, which is why they are gated rather than
+left to fall away with the demo accounts.
+
+On a Production host you need **all three** flags `true` to get the second table.
 
 Log in as `admin@annualleave.com`; every seeded account uses the password
 `Pa$$w0rd`.
@@ -112,20 +145,53 @@ Log in as `admin@annualleave.com`; every seeded account uses the password
 **Read these before leaving the flags on:**
 
 - ⚠️ **All 11 accounts share the hardcoded password `Pa$$w0rd`**, and
-  `EnsurePassword` **resets it on every startup**. So while `Seed:Enabled` is
-  `true`, changing Admin's password in the UI is undone by the next app-pool
-  recycle. This is fine for a demo/UAT site on `jpeople_dev`; it is **not**
-  acceptable for a real tenant with real staff data.
+  `EnsurePassword` **resets it on every startup**. So with all three flags on,
+  changing Admin's password in the UI is undone by the next app-pool recycle.
+  This is fine for a demo/UAT site on `jpeople_dev`; it is **not** acceptable for
+  a real tenant with real staff data. `AllowInProduction: false` is what stops
+  it — leave it off and the reset cannot happen no matter what the other two
+  flags say.
 - ⚠️ **Flipping `DemoData` back to `false` deletes the demo data.** On the next
   start `SeedUsers` removes all ten demo accounts *and their dependent rows*
   (profiles, leave, timesheets) so only Admin remains. Leave it `true` for as
   long as you want the demo accounts to exist — don't treat it as a one-shot
-  fill.
-- To go live for real: set **both** flags to `false`, restart, then set a strong
-  Admin password. With `Enabled: false` the seeder never runs, so the password
-  sticks.
+  fill. The three sample projects are *not* deleted — they only lose their owner,
+  since a project is real work and losing it with the account that happened to own
+  it would be worse. Remove them by hand if you don't want them.
+- ⚠️ **`Enabled: false` does not clean up demo accounts already in the database.**
+  It stops the seeder running at all, which also stops the teardown. See §3.2.
+- To go live for real: set **all three** flags to `false`, restart, then set a
+  strong Admin password. With `Enabled: false` the seeder never runs; even if
+  something turns it back on, `AllowInProduction: false` keeps the password from
+  being reset.
 - Each individual seeder is a no-op when its table already has rows, so an
   existing database is never overwritten — it only gains what's missing.
+
+### 3.2 Removing demo accounts from a database that already has them
+
+Any database seeded with `DemoData: true` carries ten accounts whose password is
+the published `Pa$$w0rd`. **Setting `Enabled: false` does not remove them** — it
+stops the seeder entirely, and the seeder is what performs the teardown. Run this
+once on each such database:
+
+1. In `appsettings.Production.json`, set `Enabled: true`, `DemoData: false`,
+   `AllowInProduction: false`.
+2. Recycle the app pool. `SeedUsers` deletes the ten demo accounts and their
+   profiles, leave, timesheets and department assignments. `AllowInProduction:
+   false` keeps Admin's password untouched throughout.
+3. Confirm: `SELECT Email FROM AspNetUsers ORDER BY Email` — only
+   `admin@annualleave.com` and accounts you created should remain.
+4. Set `Enabled: false` and recycle again.
+
+> Before this was fixed, step 2 silently did nothing. `DbInitializer`'s cleanup had
+> drifted behind `DeleteAdminUser` and no longer detached `Project.OwnerId`, which
+> the sample projects set to manager1/manager2. Deleting those accounts hit a
+> `Restrict` foreign key, threw, and was swallowed by the migrate/seed `catch` — so
+> the demo accounts survived every restart meant to remove them, and every seeder
+> after `SeedUsers` was skipped for that startup. If you tried this before and the
+> accounts came back, that is why.
+
+If the demo accounts are not present, skip all of this and leave `Enabled: false`.
 
 ---
 
