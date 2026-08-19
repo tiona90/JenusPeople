@@ -14,6 +14,9 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
     <!-- Match the EF Core 9.x version used by Persistence/SqlServer. -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.0" />
+    <!-- Real transactions, which the in-memory provider silently ignores. Used
+         only by the rollback tests. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.0" />
   </ItemGroup>
 
   <ItemGroup>

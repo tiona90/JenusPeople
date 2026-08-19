@@ -99,12 +99,20 @@ public class UpdateLeaveStatus
                 ChangedAt = DateTime.UtcNow
             });
 
+            // One transaction over both saves: the balance sync reads approved leave
+            // back out of the database, so it cannot share the leave's SaveChanges,
+            // and a failure on the second write must not leave the balance stale
+            // against a leave that has already been written.
+            await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+
             try
             {
                 await context.SaveChangesAsync(cancellationToken);
             }
             catch (DbUpdateConcurrencyException)
             {
+                // Nothing is committed, so disposing the transaction rolls the
+                // attempted write back.
                 return Result<Unit>.Failure(ConcurrencyError.Message);
             }
 
@@ -113,6 +121,8 @@ public class UpdateLeaveStatus
                 await AnnualLeaveBalanceCalculator.SyncCurrentYearBalanceAsync(context, employeeProfile, cancellationToken);
                 await context.SaveChangesAsync(cancellationToken);
             }
+
+            await transaction.CommitAsync(cancellationToken);
 
             var employeeContact = await context.Users
                 .AsNoTracking()

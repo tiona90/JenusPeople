@@ -58,6 +58,12 @@ public class DeleteAnnualLeave
 
             context.Remove(annualLeave);
 
+            // One transaction over both saves: the balance sync reads approved leave
+            // back out of the database, so it has to run after the delete is written
+            // (otherwise it still counts this leave), and a failure on the second
+            // write must not leave the balance stale against a leave that is gone.
+            await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+
             await context.SaveChangesAsync(cancellationToken);
 
             if (employeeProfile is not null)
@@ -65,6 +71,8 @@ public class DeleteAnnualLeave
                 await AnnualLeaveBalanceCalculator.SyncCurrentYearBalanceAsync(context, employeeProfile, cancellationToken);
                 await context.SaveChangesAsync(cancellationToken);
             }
+
+            await transaction.CommitAsync(cancellationToken);
 
             return Result<Unit>.Success(Unit.Value);
         }

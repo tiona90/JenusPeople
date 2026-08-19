@@ -70,6 +70,13 @@ public class CreateAnnualLeave
             }
 
             context.AnnualLeaves.Add(annualLeave);
+
+            // One transaction over both saves: the balance sync reads approved leave
+            // back out of the database, so it cannot share the leave's SaveChanges,
+            // and a failure on the second write must not leave the balance stale
+            // against a leave that has already been written.
+            await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+
             await context.SaveChangesAsync(cancellationToken);
 
             if (!leaveType.RequiresApproval)
@@ -77,7 +84,12 @@ public class CreateAnnualLeave
                 await AnnualLeaveBalanceCalculator.SyncCurrentYearBalanceAsync(context, employeeProfile, cancellationToken);
                 await context.SaveChangesAsync(cancellationToken);
             }
-            else
+
+            await transaction.CommitAsync(cancellationToken);
+
+            // Manager notifications go out only once the write is committed: an email
+            // about a request that rolled back is worse than a late one.
+            if (leaveType.RequiresApproval)
             {
                 // Notify the employee's manager(s): the direct manager and every
                 // Manager-role user in the employee's department.
