@@ -51,24 +51,29 @@ public class UpdateAppSettings
     {
         public async Task<Result<AppSettingsDto>> Handle(Command request, CancellationToken cancellationToken)
         {
+            // UpdateAppSettingsValidator runs ahead of this handler and rejects all
+            // of the below, so anything arriving through the API has already been
+            // checked. These stay as a backstop for a direct call, and now report a
+            // validation failure (400, naming the field) instead of Result.Failure,
+            // which maps to 404 — the wrong answer for a malformed request.
             if (request.LeaveYearStartMonth < 1 || request.LeaveYearStartMonth > 12)
-                return Result<AppSettingsDto>.Failure("Leave year start month must be between 1 and 12.");
+                return Invalid(nameof(request.LeaveYearStartMonth), "Leave year start month must be between 1 and 12.");
             if (request.MaxCarryoverDays < 0)
-                return Result<AppSettingsDto>.Failure("Max carryover days cannot be negative.");
+                return Invalid(nameof(request.MaxCarryoverDays), "Max carryover days cannot be negative.");
             if (request.DefaultAnnualEntitlement < 1)
-                return Result<AppSettingsDto>.Failure("Default annual entitlement must be at least 1.");
+                return Invalid(nameof(request.DefaultAnnualEntitlement), "Default annual entitlement must be at least 1.");
             if (request.FinancialYearStartMonth < 1 || request.FinancialYearStartMonth > 12)
-                return Result<AppSettingsDto>.Failure("Financial year start month must be between 1 and 12.");
-            if (!TryNormalizeTime(request.WorkingHoursStart, out var workStart))
-                return Result<AppSettingsDto>.Failure("Working hours start must be a valid time (HH:mm).");
-            if (!TryNormalizeTime(request.WorkingHoursEnd, out var workEnd))
-                return Result<AppSettingsDto>.Failure("Working hours end must be a valid time (HH:mm).");
+                return Invalid(nameof(request.FinancialYearStartMonth), "Financial year start month must be between 1 and 12.");
+            if (!WorkingTimeFormat.TryNormalizeTime(request.WorkingHoursStart, out var workStart))
+                return Invalid(nameof(request.WorkingHoursStart), "Working hours start must be a valid time (HH:mm).");
+            if (!WorkingTimeFormat.TryNormalizeTime(request.WorkingHoursEnd, out var workEnd))
+                return Invalid(nameof(request.WorkingHoursEnd), "Working hours end must be a valid time (HH:mm).");
             if (request.WeeklyHoursTarget < 1 || request.WeeklyHoursTarget > 168)
-                return Result<AppSettingsDto>.Failure("Weekly hours target must be between 1 and 168.");
-            if (!DayOrder.Contains(request.TimesheetSubmissionDeadlineDay?.Trim().ToLowerInvariant()))
-                return Result<AppSettingsDto>.Failure("Timesheet submission deadline day must be a weekday (mon–sun).");
-            if (!TryNormalizeTime(request.TimesheetSubmissionDeadlineTime, out var deadlineTime))
-                return Result<AppSettingsDto>.Failure("Timesheet submission deadline time must be a valid time (HH:mm).");
+                return Invalid(nameof(request.WeeklyHoursTarget), "Weekly hours target must be between 1 and 168.");
+            if (!WorkingTimeFormat.IsKnownDay(request.TimesheetSubmissionDeadlineDay))
+                return Invalid(nameof(request.TimesheetSubmissionDeadlineDay), "Timesheet submission deadline day must be a weekday (mon–sun).");
+            if (!WorkingTimeFormat.TryNormalizeTime(request.TimesheetSubmissionDeadlineTime, out var deadlineTime))
+                return Invalid(nameof(request.TimesheetSubmissionDeadlineTime), "Timesheet submission deadline time must be a valid time (HH:mm).");
 
             var settings = await context.AppSettings.FirstOrDefaultAsync(cancellationToken);
             if (settings is null)
@@ -92,9 +97,9 @@ public class UpdateAppSettings
             settings.TimeZoneId = string.IsNullOrWhiteSpace(request.TimeZoneId) ? "UTC" : request.TimeZoneId.Trim();
             settings.FinancialYearStartMonth = request.FinancialYearStartMonth;
             settings.WorkingDays = string.IsNullOrWhiteSpace(request.WorkingDays) ? "mon-fri" : request.WorkingDays.Trim();
-            settings.WorkingDaysCustom = NormalizeWorkingDaysCustom(request.WorkingDaysCustom);
+            settings.WorkingDaysCustom = WorkingTimeFormat.NormalizeWorkingDaysCustom(request.WorkingDaysCustom);
             if (settings.WorkingDays == "custom" && settings.WorkingDaysCustom.Length == 0)
-                return Result<AppSettingsDto>.Failure("Select at least one working day for the custom schedule.");
+                return Invalid(nameof(request.WorkingDaysCustom), "Select at least one working day for the custom schedule.");
             settings.WeeklyHoursTarget = request.WeeklyHoursTarget;
             settings.TimesheetSubmissionDeadlineDay = request.TimesheetSubmissionDeadlineDay!.Trim().ToLowerInvariant();
             settings.TimesheetSubmissionDeadlineTime = deadlineTime;
@@ -121,31 +126,11 @@ public class UpdateAppSettings
             return Result<AppSettingsDto>.Success(AppSettingsMapper.ToDto(settings));
         }
 
-        // Canonical week order for the custom working-days CSV.
-        private static readonly string[] DayOrder = { "mon", "tue", "wed", "thu", "fri", "sat", "sun" };
-
-        // Keeps only recognised day tokens, de-duplicated and in week order.
-        private static string NormalizeWorkingDaysCustom(string? value)
-        {
-            if (string.IsNullOrWhiteSpace(value)) return string.Empty;
-            var set = value
-                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Select(t => t.ToLowerInvariant())
-                .Where(DayOrder.Contains)
-                .ToHashSet();
-            return string.Join(",", DayOrder.Where(set.Contains));
-        }
-
-        // Accepts "H:mm"/"HH:mm"; emits canonical "HH:mm".
-        private static bool TryNormalizeTime(string? value, out string normalized)
-        {
-            if (TimeOnly.TryParse(value, out var t))
-            {
-                normalized = t.ToString("HH:mm");
-                return true;
-            }
-            normalized = "00:00";
-            return false;
-        }
+        // Parsing and day-name rules live in WorkingTimeFormat, shared with
+        // UpdateAppSettingsValidator so the two agree on what a valid value is.
+        private static Result<AppSettingsDto> Invalid(string field, string message) =>
+            Result<AppSettingsDto>.ValidationFailure(
+                new Dictionary<string, string[]> { [field] = [message] },
+                message);
     }
 }
