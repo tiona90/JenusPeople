@@ -20,6 +20,7 @@ using MediatR;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using API.Security;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Persistence;
@@ -233,6 +234,16 @@ builder.Services.AddIdentityApiEndpoints<User>(opt =>
     opt.User.RequireUniqueEmail = true;
     opt.SignIn.RequireConfirmedEmail = true;
     opt.SignIn.RequireConfirmedAccount = true;
+
+    // Brute-force protection. Stated explicitly rather than inherited from the
+    // framework defaults so the policy is reviewable here and pinned by tests:
+    // the defaults are 5 attempts / 5 minutes, and silently depending on them
+    // means a framework upgrade can change how hard this application is to
+    // guess your way into. AccountController.Login opts in with
+    // lockoutOnFailure: true, without which none of this counts.
+    opt.Lockout.MaxFailedAccessAttempts = LockoutPolicy.MaxFailedAccessAttempts;
+    opt.Lockout.DefaultLockoutTimeSpan = LockoutPolicy.LockoutDuration;
+    opt.Lockout.AllowedForNewUsers = true;
 })
 .AddRoles<Role>()
     .AddEntityFrameworkStores<AppDbContext>();
