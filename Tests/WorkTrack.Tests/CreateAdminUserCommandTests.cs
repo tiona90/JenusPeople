@@ -322,4 +322,36 @@ public class CreateAdminUserCommandTests : IDisposable
 
         Assert.True((await Validate(payload)).IsValid);
     }
+
+    /* ── Registration ───────────────────────────────────────────────────────── */
+
+    /// <summary>
+    /// The migration is only real if the validators run. Program.cs finds them with
+    /// AddValidatorsFromAssemblyContaining&lt;MappingProfiles&gt;, so each command needs a
+    /// public, concrete IValidator in that assembly — otherwise the checks that used
+    /// to be inline in the controller are simply gone, and every test above still
+    /// passes because it constructs the validator by hand.
+    /// </summary>
+    [Fact]
+    public void Every_migrated_admin_user_command_has_a_discoverable_validator()
+    {
+        var scannedAssembly = typeof(Application.Core.MappingProfiles).Assembly;
+
+        Type[] commands =
+        [
+            typeof(CreateAdminUser.Command),
+            typeof(UpdateAdminUser.Command),
+            typeof(SetAdminUserRoles.Command),
+        ];
+
+        foreach (var command in commands)
+        {
+            var validatorInterface = typeof(FluentValidation.IValidator<>).MakeGenericType(command);
+
+            Assert.Contains(
+                scannedAssembly.GetTypes(),
+                type => type is { IsClass: true, IsAbstract: false, IsPublic: true }
+                    && validatorInterface.IsAssignableFrom(type));
+        }
+    }
 }
