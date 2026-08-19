@@ -13,6 +13,10 @@ public enum ResultErrorKind
     /// The resource exists, but the operation conflicts with its current state
     /// (e.g. deleting a department that still has people in it) → 409.
     Conflict = 1,
+
+    /// The resource exists and the caller is authenticated, but it is not
+    /// theirs to act on (another employee's timesheet, say) → 403.
+    Forbidden = 2,
 }
 
 public class Result<T>
@@ -45,6 +49,19 @@ public class Result<T>
         IsSuccess = false,
         Error = error,
         ErrorKind = ResultErrorKind.Conflict
+    };
+
+    /// <summary>
+    /// The caller is authenticated but has no claim on this resource. Distinct
+    /// from <see cref="Failure"/> so that an authorization refusal is not
+    /// reported as a missing resource, which would send the caller hunting for
+    /// a bad id instead of reading the reason.
+    /// </summary>
+    public static Result<T> Forbidden(string error) => new()
+    {
+        IsSuccess = false,
+        Error = error,
+        ErrorKind = ResultErrorKind.Forbidden
     };
 
     public static Result<T> ValidationFailure(IDictionary<string, string[]> validationErrors, string error = "One or more validation errors occurred.") => new()
