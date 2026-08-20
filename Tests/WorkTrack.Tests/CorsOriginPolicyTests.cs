@@ -1,6 +1,4 @@
 using System.Net.Http;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace WorkTrack.Tests;
@@ -45,26 +43,31 @@ public class CorsOriginPolicyTests(ApiRouteTableFixture routeTable)
                     : []));
     }
 
+    /// <summary>
+    /// The allow-list is the only way past the check outside Development, so it has
+    /// to actually let its entries through. The origin comes from a host booted for
+    /// this test rather than from the shared fixture's configuration:
+    /// appsettings.Production.json carries deployment secrets and is not committed,
+    /// so on a clean checkout — CI's, for one — there is no "Cors:AllowedOrigins"
+    /// section to read and nothing to preflight.
+    /// </summary>
     [Fact]
     public async Task A_configured_origin_is_still_allowed()
     {
-        var configured = routeTable.Services
-            .GetRequiredService<IConfiguration>()
-            .GetSection("Cors:AllowedOrigins")
-            .Get<string[]>();
+        const string origin = "https://people.example.com";
 
-        Assert.NotNull(configured);
-        Assert.NotEmpty(configured);
-
-        foreach (var origin in configured)
+        using var factory = new ProductionHostFactory(new Dictionary<string, string>
         {
-            var response = await Preflight(origin);
+            ["Cors:AllowedOrigins:0"] = origin,
+        });
+        using var client = factory.CreateClient();
 
-            Assert.True(
-                response.Headers.TryGetValues("Access-Control-Allow-Origin", out var allowed)
-                    && allowed.Contains(origin),
-                $"{origin} comes from Cors:AllowedOrigins but CORS did not allow it.");
-        }
+        var response = await Preflight(origin, client);
+
+        Assert.True(
+            response.Headers.TryGetValues("Access-Control-Allow-Origin", out var allowed)
+                && allowed.Contains(origin),
+            $"{origin} comes from Cors:AllowedOrigins but CORS did not allow it.");
     }
 
     /// <summary>
@@ -72,12 +75,12 @@ public class CorsOriginPolicyTests(ApiRouteTableFixture routeTable)
     /// The CORS middleware answers it before the request reaches any endpoint, so
     /// the path only has to exist.
     /// </summary>
-    private async Task<HttpResponseMessage> Preflight(string origin)
+    private async Task<HttpResponseMessage> Preflight(string origin, HttpClient? client = null)
     {
         var request = new HttpRequestMessage(HttpMethod.Options, "/api/Account/login");
         request.Headers.Add("Origin", origin);
         request.Headers.Add("Access-Control-Request-Method", "POST");
 
-        return await routeTable.Client.SendAsync(request);
+        return await (client ?? routeTable.Client).SendAsync(request);
     }
 }
