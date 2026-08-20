@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-WorkTrack is a full-stack leave management and timesheet tracking application built with ASP.NET Core 10 (Clean Architecture) and React 19 (TypeScript + Vite).
+WorkTrack is a full-stack leave management and timesheet tracking application built with ASP.NET Core 10 and React 19 (TypeScript + Vite). See [Architecture](#architecture) for the layer layout — it is layered, but deliberately not dependency-inverted.
 
 ## Commands
 
@@ -37,20 +37,41 @@ Run `dotnet run --project API` (port 5000) and `npm run dev` in `client/` concur
 
 ## Architecture
 
-The solution follows **Clean Architecture** with strict layer boundaries:
+The solution is **layered but not dependency-inverted**. Don't assume the textbook
+Clean Architecture graph — `Application` references `Persistence` on purpose. The
+actual project references:
 
 ```
-Domain          → no dependencies
-Persistence     → depends on Domain
-Application     → depends on Domain (MediatR CQRS)
-Infrastructure  → depends on Application (Email, Config)
-API             → depends on all layers
+Domain          → nothing (entities, enums, service contracts)
+Persistence     → Domain (AppDbContext, EF configs, migrations)
+Application     → Domain + Persistence (MediatR CQRS)
+Infrastructure  → Domain (Email, Cloudinary, config)
+API             → Application + Infrastructure
 client/         → React SPA (separate)
 ```
 
+Note `Infrastructure → Domain`, not `Application`: the contracts it implements live in
+`Domain/Interfaces/` (e.g. `IEmailService`).
+
+**EF Core is the persistence abstraction — there is no repository layer.** This is a
+deliberate trade, not drift: roughly 70 of `Application`'s ~150 files inject
+`AppDbContext` straight into handlers, which query with LINQ and project to DTOs. What
+that means when adding code:
+
+- Inject `AppDbContext` into the handler constructor, like every existing handler does.
+  Do **not** introduce `IRepository`/`IUnitOfWork` interfaces for new features.
+- Handler tests run against a real EF provider, not mocks. `Tests/WorkTrack.Tests/`
+  offers two: `TestDb` in `TestSupport.cs` (EF in-memory — fast, but enforces no constraints and
+  ignores transactions) and `TransactionalTestDb` (SQLite in-memory — real transactions,
+  enforced unique indexes and foreign keys). Assert on constraint or transaction
+  behaviour only against the latter.
+- Swapping the ORM would mean touching `Application`. That cost was accepted in exchange
+  for dropping a layer of indirection over `DbContext`, which is already a unit of work
+  plus a set of queryable repositories.
+
 ### Backend Patterns
 
-**CQRS via MediatR:** All business logic lives in `Application/*/Queries/` and `Application/*/Commands/`. Controllers are thin — they dispatch to MediatR and call `HandleResult<T>()`.
+**CQRS via MediatR:** Business logic belongs in `Application/*/Queries/` and `Application/*/Commands/`. Controllers should be thin — dispatch to MediatR, then call `HandleResult<T>()`. Two existing exceptions to follow *away* from, not copy: `API/Controllers/TimesheetEntriesController.cs` does its entry CRUD directly against `AppDbContext`, and `AnnualLeavesController`/`TimesheetsController` query it to resolve SignalR notification audiences. `API/Hubs/`, `API/BackgroundServices/`, and the health checks also use `AppDbContext` directly, which is fine — they sit outside the request/handler path.
 
 **Result<T> pattern:** Handlers return `Result<T>` (never throw for business errors). `BaseApiController.HandleResult<T>()` maps these to HTTP responses consistently.
 
@@ -86,6 +107,15 @@ Status enums: `AnnualLeaveStatus` (Pending, Approved, Rejected, Cancelled); `Tim
 - **DB:** SQL Server, connection string in `API/appsettings.Development.json` (`WorkTrack` database, trusted connection)
 - **Cloudinary:** Used for profile image and evidence file uploads
 - **Email:** Pluggable provider architecture (`Infrastructure/Services/Email/`). `IEmailProvider` has two implementations — `BrevoEmailProvider` (Brevo transactional HTTP API) and `SmtpEmailProvider` (MailKit; Gmail/Office365/Brevo relay). `EmailService` selects one at startup via `Email:Provider` (`"Brevo"` or `"Smtp"`) in `appsettings.json`. Brevo config in the `Brevo` section (`ApiKey`); SMTP config in `MailSettings`. Note: the Brevo account has "Authorised IPs" enabled. This host's public **IPv4** is allowlisted but its rotating IPv6 privacy addresses are not, so the Brevo HTTP client is pinned to IPv4 via a `SocketsHttpHandler.ConnectCallback` in `Infrastructure/DependencyInjection.cs` (otherwise .NET prefers IPv6 → intermittent 401 "unrecognised IP"). See https://app.brevo.com/security/authorised_ips.
+- **Logging:** Serilog (`API/Extensions/LoggingExtensions.cs`). Console plus
+  newline-delimited JSON in `Logs/worktrack-<date>.jsonl` (14 days). Every request
+  log line carries a `CorrelationId`, which is also the `X-Correlation-ID` response
+  header and the `traceId` in error bodies — see `API/Middleware/CorrelationIdMiddleware.cs`.
+  Override levels with a `Serilog` section in appsettings.
+- **Health probes:** `GET /health` is liveness (no checks); `GET /health/ready` checks
+  the database (Unhealthy → 503) and the configured mail provider (Degraded → still
+  200, result cached 5 minutes). Both anonymous and exempt from rate limiting. See
+  `API/Extensions/HealthCheckExtensions.cs`.
 - **OAuth:** Google and GitHub OAuth configured in `appsettings.json`; both are optional (skipped if `ClientId` is empty)
 ## Improvements & Roadmap
 
@@ -99,10 +129,8 @@ The following areas have been identified for future enhancement to improve scala
 ### 2. API & Backend
 - **Versioning:** Implement API versioning (e.g., `/api/v1`) to manage breaking changes.
 - **Soft Deletes:** Add `IsDeleted` support for `EmployeeProfile` and `Project` entities.
-- **Structured Logging:** Integrate Serilog for better production observability.
 
 ### 3. Security & Resilience
-- **Rate Limiting:** Implement built-in ASP.NET Core rate limiting.
 - **Audit Logging:** Add a domain-level audit log to track status changes and sensitive modifications.
 
 ### 4. Developer Experience (DX)

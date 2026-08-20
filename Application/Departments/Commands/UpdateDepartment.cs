@@ -22,7 +22,7 @@ public class UpdateDepartment
             if (department is null)
                 return Result<DepartmentDto>.Failure("Department not found.");
 
-            if (context.Departments.Any(d => d.Code == request.Department.Code && d.Id != request.Id))
+            if (await context.Departments.AnyAsync(d => d.Code == request.Department.Code && d.Id != request.Id, cancellationToken))
                 return Result<DepartmentDto>.Conflict("A department with that code already exists.");
 
             department.Name = request.Department.Name;

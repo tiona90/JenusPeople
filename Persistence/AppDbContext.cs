@@ -122,7 +122,7 @@ public class AppDbContext : IdentityDbContext<
         builder.Entity<Timesheet>(entity =>
         {
             entity.Property(t => t.Id).HasMaxLength(450).IsRequired();
-            entity.Property(t => t.EmployeeId).HasMaxLength(450).IsRequired();
+            entity.Property(t => t.EmployeeProfileId).HasMaxLength(450).IsRequired();
             entity.Property(t => t.DepartmentId).IsRequired();
             entity.Property(t => t.PeriodStart).IsRequired();
             entity.Property(t => t.PeriodEnd).IsRequired();
@@ -130,9 +130,17 @@ public class AppDbContext : IdentityDbContext<
             entity.Property(t => t.Status).IsRequired();
             entity.Property(t => t.ApproverId).HasMaxLength(450);
             entity.Property(t => t.CreatedAt).HasDefaultValueSql("SYSUTCDATETIME()").IsRequired();
-            entity.HasIndex(t => t.EmployeeId);
+            entity.HasIndex(t => t.EmployeeProfileId);
             entity.HasIndex(t => t.DepartmentId);
-            entity.HasOne(t => t.Employee).WithMany(e => e.Timesheets).HasForeignKey(t => t.EmployeeId).OnDelete(DeleteBehavior.Restrict);
+            // One timesheet per employee per period. Both insert paths already
+            // assume this — CreateTimesheet checked nothing at all, and
+            // GenerateDraft reuses an existing row for the period — but two
+            // concurrent creates could still both get past their own checks and
+            // land duplicates. The database is the only place that can settle it.
+            entity.HasIndex(t => new { t.EmployeeProfileId, t.PeriodStart })
+                .IsUnique()
+                .HasDatabaseName("IX_Timesheets_EmployeeProfileId_PeriodStart_Unique");
+            entity.HasOne(t => t.Employee).WithMany(e => e.Timesheets).HasForeignKey(t => t.EmployeeProfileId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(t => t.Department).WithMany(d => d.Timesheets).HasForeignKey(t => t.DepartmentId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(t => t.Approver).WithMany(u => u.ApprovedTimesheets).HasForeignKey(t => t.ApproverId).OnDelete(DeleteBehavior.Restrict);
         });
@@ -169,18 +177,29 @@ public class AppDbContext : IdentityDbContext<
                 .WithMany()
                 .HasForeignKey(al => al.DelegateId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            // AnnualLeaveBalanceCalculator totals an employee's approved leave over
+            // a leave year on every create, edit and status change, and had only the
+            // single-column EmployeeId FK index to work from — so it read every leave
+            // that employee has ever taken and filtered the rest in the engine.
+            //
+            // Equality on EmployeeId and Status, then the range on StartDate; EndDate
+            // rides along so the second date predicate is answered from the index
+            // rather than a lookup.
+            entity.HasIndex(al => new { al.EmployeeId, al.Status, al.StartDate, al.EndDate })
+                .HasDatabaseName("IX_AnnualLeaves_EmployeeId_Status_StartDate_EndDate");
         });
 
         builder.Entity<AttendanceEvent>(entity =>
         {
             entity.Property(e => e.Id).HasMaxLength(450).IsRequired();
-            entity.Property(e => e.EmployeeId).HasMaxLength(450).IsRequired();
+            entity.Property(e => e.EmployeeProfileId).HasMaxLength(450).IsRequired();
             entity.Property(e => e.At).IsRequired();
             entity.Property(e => e.Type).IsRequired();
-            entity.HasIndex(e => new { e.EmployeeId, e.At });
+            entity.HasIndex(e => new { e.EmployeeProfileId, e.At });
             entity.HasOne(e => e.Employee)
                 .WithMany()
-                .HasForeignKey(e => e.EmployeeId)
+                .HasForeignKey(e => e.EmployeeProfileId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 

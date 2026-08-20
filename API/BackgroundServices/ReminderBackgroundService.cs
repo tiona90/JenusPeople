@@ -1,5 +1,5 @@
 using Application.Reminders;
-using Application.Settings;
+using Application.Settings.Support;
 using Domain;
 using Microsoft.EntityFrameworkCore;
 using Persistence;

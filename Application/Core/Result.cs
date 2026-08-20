@@ -13,6 +13,20 @@ public enum ResultErrorKind
     /// The resource exists, but the operation conflicts with its current state
     /// (e.g. deleting a department that still has people in it) → 409.
     Conflict = 1,
+
+    /// The resource exists and the caller is authenticated, but it is not
+    /// theirs to act on (another employee's timesheet, say) → 403.
+    Forbidden = 2,
+
+    /// The request is understood but cannot proceed, typically because of a
+    /// precondition on the caller's own account rather than on any resource
+    /// (an employee with no EmployeeProfile trying to check in) → 400.
+    ///
+    /// Distinct from <c>ValidationFailure</c>, which carries per-field errors:
+    /// the client treats those as form feedback and deliberately withholds the
+    /// global error notification, so routing a precondition through it would
+    /// leave the user with no message at all.
+    Invalid = 3,
 }
 
 public class Result<T>
@@ -45,6 +59,31 @@ public class Result<T>
         IsSuccess = false,
         Error = error,
         ErrorKind = ResultErrorKind.Conflict
+    };
+
+    /// <summary>
+    /// The caller is authenticated but has no claim on this resource. Distinct
+    /// from <see cref="Failure"/> so that an authorization refusal is not
+    /// reported as a missing resource, which would send the caller hunting for
+    /// a bad id instead of reading the reason.
+    /// </summary>
+    public static Result<T> Forbidden(string error) => new()
+    {
+        IsSuccess = false,
+        Error = error,
+        ErrorKind = ResultErrorKind.Forbidden
+    };
+
+    /// <summary>
+    /// The request cannot be carried out as asked. See
+    /// <see cref="ResultErrorKind.Invalid"/> for why this is not
+    /// <see cref="ValidationFailure"/>.
+    /// </summary>
+    public static Result<T> Invalid(string error) => new()
+    {
+        IsSuccess = false,
+        Error = error,
+        ErrorKind = ResultErrorKind.Invalid
     };
 
     public static Result<T> ValidationFailure(IDictionary<string, string[]> validationErrors, string error = "One or more validation errors occurred.") => new()

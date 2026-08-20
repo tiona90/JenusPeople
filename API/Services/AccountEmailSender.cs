@@ -9,42 +9,6 @@ using System.Text;
 
 namespace API.Services;
 
-/// <summary>
-/// Builds and sends the account-lifecycle emails — welcome invite, password
-/// reset, email-change confirmation — along with the client links inside them.
-/// </summary>
-/// <remarks>
-/// Shared by <c>AccountController</c> and <c>AdminUsersController</c>. An
-/// admin-created account deliberately has no password, so creating one has to
-/// send the same kind of choose-a-password link that "forgot password" sends;
-/// keeping both here stops the link shape and the HTML template drifting apart.
-/// </remarks>
-public interface IAccountEmailSender
-{
-    /// <summary>
-    /// Builds a link into the SPA, e.g. <c>{base}/reset-password?email=…&amp;token=…</c>.
-    /// </summary>
-    string BuildClientUrl(string route, IDictionary<string, string?>? query = null);
-
-    /// <summary>
-    /// Invites a newly created account to choose its first password. Returns
-    /// false if the mail provider rejected the send.
-    /// </summary>
-    Task<bool> SendWelcomeInviteAsync(User user, CancellationToken cancellationToken = default);
-
-    Task<bool> SendPasswordResetAsync(User user, CancellationToken cancellationToken = default);
-
-    /// <param name="apiBaseUrlFallback">
-    /// Used when <c>AppUrls:ApiBaseUrl</c> is not configured — callers handling a
-    /// request pass the current scheme + host.
-    /// </param>
-    Task<bool> SendEmailChangeConfirmationAsync(
-        User user,
-        string newEmail,
-        string apiBaseUrlFallback,
-        CancellationToken cancellationToken = default);
-}
-
 public class AccountEmailSender(
     UserManager<User> userManager,
     IEmailService emailService,

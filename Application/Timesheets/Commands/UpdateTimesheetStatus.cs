@@ -57,7 +57,7 @@ public class UpdateTimesheetStatus
                     inScope = await context.EmployeeProfiles
                         .AsNoTracking()
                         .AnyAsync(ep =>
-                            ep.Id == timesheet.EmployeeId
+                            ep.Id == timesheet.EmployeeProfileId
                             && ep.ManagerId != null
                             && scope.ManagerProfileIds.Contains(ep.ManagerId),
                             cancellationToken);
@@ -118,7 +118,7 @@ public class UpdateTimesheetStatus
             var employee = await context.EmployeeProfiles
                 .Include(ep => ep.User)
                 .AsNoTracking()
-                .FirstOrDefaultAsync(ep => ep.Id == timesheet.EmployeeId, cancellationToken);
+                .FirstOrDefaultAsync(ep => ep.Id == timesheet.EmployeeProfileId, cancellationToken);
 
             if (employee?.User is null || string.IsNullOrWhiteSpace(employee.User.Email))
             {

@@ -44,12 +44,14 @@ public class UpdateLeaveType
 
                     if (employeeProfile is not null)
                     {
-                        await AnnualLeaveBalanceCalculator.EnsureSufficientBalanceAsync(
+                        var balanceError = await AnnualLeaveBalanceCalculator.CheckSufficientBalanceAsync(
                             context,
                             employeeProfile,
                             annualLeave,
                             excludeLeaveId: annualLeave.Id,
                             cancellationToken);
+                        if (balanceError is not null)
+                            return Result<LeaveTypeDto>.Conflict(balanceError);
 
                         affectedProfiles[employeeProfile.Id] = employeeProfile;
                     }

@@ -40,6 +40,22 @@ namespace API.Controllers
                 });
             }
 
+            // An authorization refusal is not a missing resource. Answering 404
+            // here would tell a legitimate owner who mistyped an id the same
+            // thing it tells someone reaching for a record that isn't theirs,
+            // and neither of them learns why the call failed.
+            if (result.ErrorKind == ResultErrorKind.Forbidden)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new ApiErrorResponse
+                {
+                    StatusCode = StatusCodes.Status403Forbidden,
+                    Message = string.IsNullOrWhiteSpace(result.Error) ? "You are not authorized to perform this action." : result.Error,
+                    Path = HttpContext.Request.Path.Value ?? string.Empty,
+                    TraceId = HttpContext.TraceIdentifier,
+                    Timestamp = DateTime.UtcNow
+                });
+            }
+
             // A business-rule refusal (the resource exists but the operation is
             // not allowed against its current state) must not be reported as a
             // 404 — that is indistinguishable from a missing route and sends
@@ -50,6 +66,22 @@ namespace API.Controllers
                 {
                     StatusCode = StatusCodes.Status409Conflict,
                     Message = string.IsNullOrWhiteSpace(result.Error) ? "The request conflicts with the current state." : result.Error,
+                    Path = HttpContext.Request.Path.Value ?? string.Empty,
+                    TraceId = HttpContext.TraceIdentifier,
+                    Timestamp = DateTime.UtcNow
+                });
+            }
+
+            // A precondition the caller cannot satisfy is a bad request, not a
+            // missing resource. Carried as a plain 400 with a message rather than
+            // as ValidationErrors, because the client suppresses its global error
+            // notification for field-level validation responses.
+            if (result.ErrorKind == ResultErrorKind.Invalid)
+            {
+                return BadRequest(new ApiErrorResponse
+                {
+                    StatusCode = StatusCodes.Status400BadRequest,
+                    Message = string.IsNullOrWhiteSpace(result.Error) ? "The request could not be completed." : result.Error,
                     Path = HttpContext.Request.Path.Value ?? string.Empty,
                     TraceId = HttpContext.TraceIdentifier,
                     Timestamp = DateTime.UtcNow

@@ -70,6 +70,13 @@ public class CreateAnnualLeave
             }
 
             context.AnnualLeaves.Add(annualLeave);
+
+            // One transaction over both saves: the balance sync reads approved leave
+            // back out of the database, so it cannot share the leave's SaveChanges,
+            // and a failure on the second write must not leave the balance stale
+            // against a leave that has already been written.
+            await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+
             await context.SaveChangesAsync(cancellationToken);
 
             if (!leaveType.RequiresApproval)
@@ -77,7 +84,12 @@ public class CreateAnnualLeave
                 await AnnualLeaveBalanceCalculator.SyncCurrentYearBalanceAsync(context, employeeProfile, cancellationToken);
                 await context.SaveChangesAsync(cancellationToken);
             }
-            else
+
+            await transaction.CommitAsync(cancellationToken);
+
+            // Manager notifications go out only once the write is committed: an email
+            // about a request that rolled back is worse than a late one.
+            if (leaveType.RequiresApproval)
             {
                 // Notify the employee's manager(s): the direct manager and every
                 // Manager-role user in the employee's department.
@@ -97,25 +109,21 @@ public class CreateAnnualLeave
 
                     foreach (var recipient in recipients)
                     {
-                        var greetingName = recipient.DisplayName ?? recipient.Email;
-                        var htmlBody = $"""
-            <p>Hello {greetingName},</p>
-            <p>You have a new <strong>{leaveTypeName}</strong> request from <strong>{employeeName}</strong> for <strong>{dateRange}</strong>.</p>
-            <p><strong>Reason:</strong> {annualLeave.Reason}</p>
-            <p>Please log in to the Annual Leave system to review and take action.</p>
-            """;
-                        var textBody = $"""
-            Hello {greetingName},
-            You have a new {leaveTypeName} request from {employeeName} for {dateRange}.
-            Reason: {annualLeave.Reason}
-            Please log in to the Annual Leave system to review and take action.
-            """;
+                        // NotificationEmail encodes the display names and the
+                        // free-text reason for the HTML rendering. This used to
+                        // interpolate all three raw.
+                        var body = NotificationEmail
+                            .To(recipient.DisplayName ?? recipient.Email)
+                            .Sentence($"You have a new {leaveTypeName} request from {employeeName} for {dateRange}.")
+                            .Detail("Reason", annualLeave.Reason)
+                            .Closing("Please log in to the Annual Leave system to review and take action.")
+                            .Build();
 
                         await emailService.SendEmailAsync(
                             recipient.Email,
                             subject,
-                            htmlBody,
-                            textBody,
+                            body.Html,
+                            body.Text,
                             cancellationToken);
                     }
                 }

@@ -1,4 +1,5 @@
 using API.DTOs;
+using API.Security;
 using API.Services;
 using Application.Accounts.DTOs;
 using AccountCommands = Application.Accounts.Commands;
@@ -48,6 +49,7 @@ public class AccountController(
 
 
     [AllowAnonymous]
+    [EnableRateLimiting("auth-strict")]
     [HttpPost("forgot-password")]
     public async Task<ActionResult> ForgotPassword(ForgotPasswordDto request)
     {
@@ -65,6 +67,7 @@ public class AccountController(
     }
 
     [AllowAnonymous]
+    [EnableRateLimiting("auth-strict")]
     [HttpPost("reset-password")]
     public async Task<ActionResult> ResetPassword(ResetPasswordDto request)
     {
@@ -118,7 +121,25 @@ public class AccountController(
     [HttpPost("login")]
     public async Task<ActionResult> Login(LoginDto request)
     {
-        var result = await signInManager.PasswordSignInAsync(request.Email, request.Password, request.RememberMe, lockoutOnFailure: false);
+        // lockoutOnFailure: true is what makes the configured lockout policy
+        // (API.Security.LockoutPolicy, applied in Program.cs) count failures.
+        // With it false, an attacker got unlimited password guesses per account
+        // and only had to stay under the per-IP rate limit.
+        var result = await signInManager.PasswordSignInAsync(request.Email, request.Password, request.RememberMe, lockoutOnFailure: true);
+
+        if (result.IsLockedOut)
+        {
+            // Said plainly on purpose: a locked-out user who is told only
+            // "invalid email or password" will keep guessing, which keeps the
+            // lockout alive and turns a defence into a self-inflicted outage.
+            // This discloses no more than the IsNotAllowed branch below already
+            // does, since both are reached before any password is verified.
+            return StatusCode(StatusCodes.Status423Locked, new
+            {
+                message = $"Too many failed sign-in attempts. This account is temporarily locked — try again in up to {LockoutPolicy.LockoutDuration.TotalMinutes:0} minutes, or reset your password."
+            });
+        }
+
         if (result.IsNotAllowed)
         {
             return Unauthorized(new

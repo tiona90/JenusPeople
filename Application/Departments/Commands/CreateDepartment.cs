@@ -1,6 +1,7 @@
 using Application.Core;
 using Application.Departments.DTOs;
 using MediatR;
+using Microsoft.EntityFrameworkCore;
 using Persistence;
 
 namespace Application.Departments.Commands;
@@ -16,7 +17,7 @@ public class CreateDepartment
     {
         public async Task<Result<DepartmentDto>> Handle(Command request, CancellationToken cancellationToken)
         {
-            if (context.Departments.Any(d => d.Code == request.Department.Code))
+            if (await context.Departments.AnyAsync(d => d.Code == request.Department.Code, cancellationToken))
                 return Result<DepartmentDto>.Conflict("A department with that code already exists.");
 
             var department = new Domain.Department

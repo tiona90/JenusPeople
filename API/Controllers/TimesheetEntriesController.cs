@@ -1,7 +1,12 @@
-using Application.Timesheets;
+using System.Security.Claims;
+using API.Extensions;
+using API.Models;
+using Application.Core;
+using Application.Timesheets.Support;
 using Asp.Versioning;
 using Domain;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Persistence;
@@ -31,6 +36,34 @@ public class TimesheetEntriesController : ControllerBase
         _context = context;
     }
 
+    /// <summary>
+    /// Returns <c>null</c> when the caller may write to <paramref name="timesheetId"/>,
+    /// otherwise the response to send back. <c>[Authorize]</c> alone only proves the
+    /// caller is signed in — without this, any authenticated user could add, edit or
+    /// delete entries on anyone's timesheet just by supplying its id.
+    /// </summary>
+    private async Task<ActionResult?> DenyIfNotWritableAsync(string timesheetId, CancellationToken cancellationToken)
+    {
+        var access = await TimesheetAccess.AuthorizeWriteAsync(
+            _context,
+            timesheetId,
+            ResolveUserId(),
+            User.IsInRole(AppRoles.Admin),
+            User.IsInRole(AppRoles.Manager),
+            cancellationToken);
+
+        if (access.IsSuccess) return null;
+
+        // Same Result<T> → ApiErrorResponse shape BaseApiController.HandleResult
+        // produces; this controller talks to the DbContext directly rather than
+        // through MediatR, so it maps its own.
+        var statusCode = access.ErrorKind == ResultErrorKind.Forbidden
+            ? StatusCodes.Status403Forbidden
+            : StatusCodes.Status404NotFound;
+
+        return StatusCode(statusCode, ApiErrorResponseExtensions.Create(HttpContext, statusCode, access.Error));
+    }
+
     private async Task RecalculateTotalHoursAsync(string timesheetId)
     {
         var timesheet = await _context.Timesheets.FindAsync(timesheetId);
@@ -46,8 +79,14 @@ public class TimesheetEntriesController : ControllerBase
 
     // POST: api/timesheets/{timesheetId}/entries
     [HttpPost]
-    public async Task<ActionResult<TimesheetEntry>> AddEntry(string timesheetId, CreateEntryRequest request)
+    [ProducesResponseType(typeof(TimesheetEntry), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<TimesheetEntry>> AddEntry(string timesheetId, CreateEntryRequest request, CancellationToken cancellationToken)
     {
+        var denied = await DenyIfNotWritableAsync(timesheetId, cancellationToken);
+        if (denied is not null) return denied;
+
         var entry = new TimesheetEntry
         {
             Id = Guid.NewGuid().ToString(),
@@ -61,7 +100,7 @@ public class TimesheetEntriesController : ControllerBase
 
         var existing = await _context.TimesheetEntries
             .Where(e => e.TimesheetId == timesheetId)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
         var validation = TimesheetEntryValidator.Validate(entry, existing);
         if (!validation.IsValid)
             throw new ArgumentException(validation.Error);
@@ -69,7 +108,7 @@ public class TimesheetEntriesController : ControllerBase
         _context.TimesheetEntries.Add(entry);
         try
         {
-            await _context.SaveChangesAsync();
+            await _context.SaveChangesAsync(cancellationToken);
         }
         catch (DbUpdateException ex)
         {
@@ -84,15 +123,27 @@ public class TimesheetEntriesController : ControllerBase
 
     // PUT: api/timesheets/{timesheetId}/entries/{entryId}
     [HttpPut("{entryId}")]
-    public async Task<IActionResult> UpdateEntry(string timesheetId, string entryId, TimesheetEntry entry)
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> UpdateEntry(string timesheetId, string entryId, TimesheetEntry entry, CancellationToken cancellationToken)
     {
         if (entryId != entry.Id || timesheetId != entry.TimesheetId)
             return BadRequest("Id or TimesheetId mismatch");
 
+        var denied = await DenyIfNotWritableAsync(timesheetId, cancellationToken);
+        if (denied is not null) return denied;
+
         var existing = await _context.TimesheetEntries
             .AsNoTracking()
             .Where(e => e.TimesheetId == timesheetId)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
+
+        // The save below keys off the entry id alone, so an id belonging to some
+        // other timesheet would otherwise be silently reassigned into this one.
+        if (!existing.Any(e => e.Id == entryId))
+            return NotFound();
+
         var validation = TimesheetEntryValidator.Validate(entry, existing);
         if (!validation.IsValid)
             throw new ArgumentException(validation.Error);
@@ -100,11 +151,11 @@ public class TimesheetEntriesController : ControllerBase
         _context.Entry(entry).State = EntityState.Modified;
         try
         {
-            await _context.SaveChangesAsync();
+            await _context.SaveChangesAsync(cancellationToken);
         }
         catch (DbUpdateConcurrencyException)
         {
-            if (!await _context.TimesheetEntries.AnyAsync(e => e.Id == entryId && e.TimesheetId == timesheetId))
+            if (!await _context.TimesheetEntries.AnyAsync(e => e.Id == entryId && e.TimesheetId == timesheetId, cancellationToken))
                 return NotFound();
             throw;
         }
@@ -116,17 +167,29 @@ public class TimesheetEntriesController : ControllerBase
 
     // DELETE: api/timesheets/{timesheetId}/entries/{entryId}
     [HttpDelete("{entryId}")]
-    public async Task<IActionResult> DeleteEntry(string timesheetId, string entryId)
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteEntry(string timesheetId, string entryId, CancellationToken cancellationToken)
     {
+        var denied = await DenyIfNotWritableAsync(timesheetId, cancellationToken);
+        if (denied is not null) return denied;
+
         var entry = await _context.TimesheetEntries
-            .FirstOrDefaultAsync(e => e.Id == entryId && e.TimesheetId == timesheetId);
+            .FirstOrDefaultAsync(e => e.Id == entryId && e.TimesheetId == timesheetId, cancellationToken);
         if (entry == null) return NotFound();
 
         _context.TimesheetEntries.Remove(entry);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
 
         await RecalculateTotalHoursAsync(timesheetId);
 
         return NoContent();
     }
+
+    private string ResolveUserId() =>
+        User.FindFirstValue(ClaimTypes.NameIdentifier)
+        ?? User.FindFirstValue("sub")
+        ?? User.Identity?.Name
+        ?? string.Empty;
 }

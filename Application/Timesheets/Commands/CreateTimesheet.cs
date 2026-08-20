@@ -37,7 +37,7 @@ public class CreateTimesheet
             var timesheet = new Timesheet
             {
                 Id = Guid.NewGuid().ToString(),
-                EmployeeId = profile.Id,
+                EmployeeProfileId = profile.Id,
                 DepartmentId = profile.DepartmentId,
                 PeriodStart = request.PeriodStart,
                 PeriodEnd = request.PeriodEnd,
@@ -47,7 +47,33 @@ public class CreateTimesheet
             };
 
             context.Timesheets.Add(timesheet);
-            await context.SaveChangesAsync(cancellationToken);
+
+            try
+            {
+                await context.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException)
+            {
+                // Two creates for the same period can both get this far — nothing here
+                // reserves the period — so the unique index on
+                // (EmployeeProfileId, PeriodStart) is what settles which one wins.
+                //
+                // Confirm that is what failed rather than reporting every write error
+                // as a duplicate: a genuine fault reported as "you already have one"
+                // would send the caller looking for a timesheet that is not there.
+                // Asking the database works on any provider; matching vendor error
+                // numbers does not.
+                var duplicate = await context.Timesheets
+                    .AsNoTracking()
+                    .AnyAsync(
+                        t => t.EmployeeProfileId == profile.Id && t.PeriodStart == request.PeriodStart,
+                        cancellationToken);
+
+                if (!duplicate)
+                    throw;
+
+                return Result<TimesheetDto>.Conflict("A timesheet for this period already exists.");
+            }
 
             var user = await context.Users
                 .AsNoTracking()
@@ -56,8 +82,8 @@ public class CreateTimesheet
             return Result<TimesheetDto>.Success(new TimesheetDto
             {
                 Id = timesheet.Id,
-                EmployeeId = timesheet.EmployeeId,
-                EmployeeName = user?.DisplayName ?? user?.UserName ?? timesheet.EmployeeId,
+                EmployeeId = timesheet.EmployeeProfileId,
+                EmployeeName = user?.DisplayName ?? user?.UserName ?? timesheet.EmployeeProfileId,
                 DepartmentId = timesheet.DepartmentId,
                 PeriodStart = timesheet.PeriodStart,
                 PeriodEnd = timesheet.PeriodEnd,

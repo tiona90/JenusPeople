@@ -1,5 +1,4 @@
-﻿using System.Net;
-using Application.AnnualLeaves.DTOs;
+﻿using Application.AnnualLeaves.DTOs;
 using Application.Core;
 using Domain;
 using Domain.Interfaces;
@@ -99,12 +98,20 @@ public class UpdateLeaveStatus
                 ChangedAt = DateTime.UtcNow
             });
 
+            // One transaction over both saves: the balance sync reads approved leave
+            // back out of the database, so it cannot share the leave's SaveChanges,
+            // and a failure on the second write must not leave the balance stale
+            // against a leave that has already been written.
+            await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+
             try
             {
                 await context.SaveChangesAsync(cancellationToken);
             }
             catch (DbUpdateConcurrencyException)
             {
+                // Nothing is committed, so disposing the transaction rolls the
+                // attempted write back.
                 return Result<Unit>.Failure(ConcurrencyError.Message);
             }
 
@@ -113,6 +120,8 @@ public class UpdateLeaveStatus
                 await AnnualLeaveBalanceCalculator.SyncCurrentYearBalanceAsync(context, employeeProfile, cancellationToken);
                 await context.SaveChangesAsync(cancellationToken);
             }
+
+            await transaction.CommitAsync(cancellationToken);
 
             var employeeContact = await context.Users
                 .AsNoTracking()
@@ -155,34 +164,22 @@ public class UpdateLeaveStatus
                 : request.Request.StatusComment!;
             var leaveName = leaveTypeName ?? "leave request";
             var dateRange = $"{annualLeave.StartDate:dd MMM yyyy} to {annualLeave.EndDate:dd MMM yyyy}";
-            var safeEmployeeName = WebUtility.HtmlEncode(employeeContact.Name);
-            var safeChangedByName = WebUtility.HtmlEncode(changedByName);
-            var safeLeaveName = WebUtility.HtmlEncode(leaveName);
-            var safeDateRange = WebUtility.HtmlEncode(dateRange);
-            var safeStatusLabel = WebUtility.HtmlEncode(statusLabel);
-            var safeComment = WebUtility.HtmlEncode(comment);
 
-            var htmlBody = $"""
-<p>Hello {safeEmployeeName},</p>
-<p>Your <strong>{safeLeaveName}</strong> request for <strong>{safeDateRange}</strong> has been <strong>{safeStatusLabel}</strong> by {safeChangedByName}.</p>
-<p><strong>Comment:</strong> {safeComment}</p>
-<p>Please log in to the Annual Leave system to review the latest update.</p>
-""";
-
-            var textBody = $"""
-Hello {employeeContact.Name},
-
-Your {leaveName} request for {dateRange} has been {statusLabel} by {changedByName}.
-Comment: {comment}
-
-Please log in to the Annual Leave system to review the latest update.
-""";
+            // Six WebUtility.HtmlEncode calls used to sit here, one per value. They
+            // were correct; the same email in CreateAnnualLeave had none. The
+            // builder does the encoding now, for both.
+            var body = NotificationEmail
+                .To(employeeContact.Name)
+                .Sentence($"Your {leaveName} request for {dateRange} has been {statusLabel} by {NotificationEmail.Plain(changedByName)}.")
+                .Detail("Comment", comment)
+                .Closing("Please log in to the Annual Leave system to review the latest update.")
+                .Build();
 
             await emailService.SendEmailAsync(
                 employeeContact.Email,
                 subject,
-                htmlBody,
-                textBody,
+                body.Html,
+                body.Text,
                 cancellationToken);
 
             // Slack notification — only when the leave flips to Approved.

@@ -87,8 +87,6 @@ namespace Persistence.Migrations
 
                     b.HasIndex("DepartmentId");
 
-                    b.HasIndex("EmployeeId");
-
                     b.HasIndex("EmployeeProfileId");
 
                     b.HasIndex("LeaveTypeId");
@@ -96,6 +94,9 @@ namespace Persistence.Migrations
                     b.HasIndex("UserId");
 
                     b.HasIndex("UserId1");
+
+                    b.HasIndex("EmployeeId", "Status", "StartDate", "EndDate")
+                        .HasDatabaseName("IX_AnnualLeaves_EmployeeId_Status_StartDate_EndDate");
 
                     b.ToTable("AnnualLeaves");
                 });
@@ -205,7 +206,7 @@ namespace Persistence.Migrations
                     b.Property<DateTime>("At")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("EmployeeId")
+                    b.Property<string>("EmployeeProfileId")
                         .IsRequired()
                         .HasMaxLength(450)
                         .HasColumnType("nvarchar(450)");
@@ -215,7 +216,7 @@ namespace Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("EmployeeId", "At");
+                    b.HasIndex("EmployeeProfileId", "At");
 
                     b.ToTable("AttendanceEvents");
                 });
@@ -695,7 +696,7 @@ namespace Persistence.Migrations
                     b.Property<int>("DepartmentId")
                         .HasColumnType("int");
 
-                    b.Property<string>("EmployeeId")
+                    b.Property<string>("EmployeeProfileId")
                         .IsRequired()
                         .HasMaxLength(450)
                         .HasColumnType("nvarchar(450)");
@@ -726,7 +727,11 @@ namespace Persistence.Migrations
 
                     b.HasIndex("DepartmentId");
 
-                    b.HasIndex("EmployeeId");
+                    b.HasIndex("EmployeeProfileId");
+
+                    b.HasIndex("EmployeeProfileId", "PeriodStart")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Timesheets_EmployeeProfileId_PeriodStart_Unique");
 
                     b.ToTable("Timesheets");
                 });
@@ -1075,7 +1080,7 @@ namespace Persistence.Migrations
                 {
                     b.HasOne("Domain.EmployeeProfile", "Employee")
                         .WithMany()
-                        .HasForeignKey("EmployeeId")
+                        .HasForeignKey("EmployeeProfileId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
@@ -1168,7 +1173,7 @@ namespace Persistence.Migrations
 
                     b.HasOne("Domain.EmployeeProfile", "Employee")
                         .WithMany("Timesheets")
-                        .HasForeignKey("EmployeeId")
+                        .HasForeignKey("EmployeeProfileId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 

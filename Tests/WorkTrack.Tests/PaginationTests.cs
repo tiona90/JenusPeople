@@ -16,7 +16,7 @@ public class PaginationTests
     {
         db.Users.Add(new User { Id = "u", UserName = "u", Email = "u@test.local" });
         db.EmployeeProfiles.Add(new EmployeeProfile { Id = "p", UserId = "u", DepartmentId = 1 });
-        db.Timesheets.Add(new Timesheet { Id = "ts", EmployeeId = "p", DepartmentId = 1, PeriodStart = new DateTime(2024, 1, 1), PeriodEnd = new DateTime(2024, 1, 7), Status = TimesheetStatus.Approved });
+        db.Timesheets.Add(new Timesheet { Id = "ts", EmployeeProfileId = "p", DepartmentId = 1, PeriodStart = new DateTime(2024, 1, 1), PeriodEnd = new DateTime(2024, 1, 7), Status = TimesheetStatus.Approved });
         for (var i = 0; i < count; i++)
         {
             db.TimesheetStatusHistories.Add(new TimesheetStatusHistory
