@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { observer } from 'mobx-react-lite'
 import Alert from '@mui/material/Alert'
@@ -12,6 +12,9 @@ import DialogTitle from '@mui/material/DialogTitle'
 import Divider from '@mui/material/Divider'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
+import ChildCareRoundedIcon from '@mui/icons-material/ChildCareRounded'
+import FavoriteBorderRoundedIcon from '@mui/icons-material/FavoriteBorderRounded'
+import HealthAndSafetyRoundedIcon from '@mui/icons-material/HealthAndSafetyRounded'
 import {
     deleteAnnualLeave,
     getAnnualLeaves,
@@ -32,13 +35,20 @@ type StatusFilter = 'All' | 'Pending' | 'Approved' | 'Rejected' | 'Cancelled'
 const STATUS_TABS: StatusFilter[] = ['All', 'Pending', 'Approved', 'Rejected', 'Cancelled']
 
 
-const LEAVE_ICONS: Record<string, string> = {
+// Sized/coloured off the surrounding text so these drop in where an emoji used to sit.
+const neutralIconSx = { fontSize: 'inherit', verticalAlign: '-0.15em' } as const
+
+// Kept in step with ApplyLeavePage: the lighter categories keep their emoji, while
+// sick, bereavement and parental leave use plain icons instead.
+const LEAVE_ICONS: Record<string, ReactNode> = {
     annual: '🌴', vacation: '🌴',
-    sick: '🤒',
+    sick: <HealthAndSafetyRoundedIcon sx={neutralIconSx} />,
     personal: '🏠',
-    bereavement: '🕊️',
+    bereavement: <FavoriteBorderRoundedIcon sx={neutralIconSx} />,
     unpaid: '💼',
-    maternity: '👶', paternity: '👶', parental: '👶',
+    maternity: <ChildCareRoundedIcon sx={neutralIconSx} />,
+    paternity: <ChildCareRoundedIcon sx={neutralIconSx} />,
+    parental: <ChildCareRoundedIcon sx={neutralIconSx} />,
 }
 
 const TYPE_PALETTE: Record<string, { bg: SxColor; fill: string }> = {
@@ -64,7 +74,7 @@ function leaveTypeKey(name?: string | null): keyof typeof TYPE_PALETTE {
     return 'other'
 }
 
-function iconForLeaveType(name?: string | null): string {
+function iconForLeaveType(name?: string | null): ReactNode {
     const n = (name ?? '').toLowerCase()
     for (const k in LEAVE_ICONS) if (n.includes(k)) return LEAVE_ICONS[k]
     return '📅'
@@ -218,6 +228,7 @@ const MyLeavePage = observer(function MyLeavePage({ user }: { user: UserInfo }) 
     }, [myLeaves, leaveTypeById, currentYear])
 
     const totalYearDays = yearUsage.reduce((a, b) => a + b.total, 0)
+    const activeYearMonths = yearUsage.filter((b) => b.total > 0).length
 
     // Group requests for sections
     const pendingLeaves = myLeaves.filter((l) => l.status === 'Pending')
@@ -332,48 +343,58 @@ const MyLeavePage = observer(function MyLeavePage({ user }: { user: UserInfo }) 
                         <Box component="strong" sx={{ color: 'primary.main', fontSize: 15 }}>{totalYearDays} days</Box>
                         {' '}used so far
                     </Box>
-                    <Box sx={{ display: 'flex', gap: '12px', fontSize: 11, color: 'text.secondary' }}>
-                        <LegendSwatch color={TYPE_PALETTE.annual.fill} label="Annual" />
-                        <LegendSwatch color={TYPE_PALETTE.sick.fill} label="Sick" />
-                        <LegendSwatch color={TYPE_PALETTE.personal.fill} label="Personal" />
-                        <LegendSwatch color="#F4F5F7" label="None" bordered />
+                    {activeYearMonths >= 2 && (
+                        <Box sx={{ display: 'flex', gap: '12px', fontSize: 11, color: 'text.secondary' }}>
+                            <LegendSwatch color={TYPE_PALETTE.annual.fill} label="Annual" />
+                            <LegendSwatch color={TYPE_PALETTE.sick.fill} label="Sick" />
+                            <LegendSwatch color={TYPE_PALETTE.personal.fill} label="Personal" />
+                            <LegendSwatch color="#F4F5F7" label="None" bordered />
+                        </Box>
+                    )}
+                </Box>
+                {activeYearMonths < 2 ? (
+                    <Box sx={{ fontSize: 12, color: 'text.secondary', textAlign: 'center', py: '18px' }}>
+                        No activity yet this year.
                     </Box>
-                </Box>
-                <Box sx={{ display: 'grid', gridTemplateColumns: '30px repeat(12, 1fr)', gap: '4px', alignItems: 'center' }}>
-                    <Box sx={{ fontSize: 10, color: 'text.secondary', fontWeight: 500, textAlign: 'right', pr: '4px' }}>Days</Box>
-                    {yearUsage.map((b, i) => {
-                        const isCurrent = i === today.getMonth()
-                        const isFuture = i > today.getMonth()
-                        const palette = b.dominant ? TYPE_PALETTE[b.dominant] : null
-                        return (
-                            <Box
-                                key={i}
-                                title={`${MONTH_INITIALS[i]}: ${b.total > 0 ? `${b.total} day${b.total === 1 ? '' : 's'}` : 'no leave'}`}
-                                sx={{
-                                    height: 28,
-                                    bgcolor: palette ? palette.fill : 'action.hover',
-                                    color: palette ? '#fff' : 'transparent',
-                                    borderRadius: '4px',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    fontSize: 10, fontWeight: 600,
-                                    opacity: isFuture ? 0.55 : 1,
-                                    boxShadow: isCurrent ? `inset 0 0 0 2px ${'text.primary'}` : 'none',
-                                }}
-                            >
-                                {b.total > 0 ? b.total : ''}
-                            </Box>
-                        )
-                    })}
-                </Box>
-                <Box sx={{ display: 'grid', gridTemplateColumns: '30px repeat(12, 1fr)', gap: '4px', mt: '6px' }}>
-                    <Box />
-                    {MONTH_INITIALS.map((m, i) => (
-                        <Box key={i} sx={{
-                            fontSize: 10, color: i === today.getMonth() ? 'text.primary' : 'text.disabled',
-                            textAlign: 'center', fontWeight: i === today.getMonth() ? 700 : 500,
-                        }}>{m}</Box>
-                    ))}
-                </Box>
+                ) : (
+                    <>
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '30px repeat(12, 1fr)', gap: '4px', alignItems: 'center' }}>
+                            <Box sx={{ fontSize: 10, color: 'text.secondary', fontWeight: 500, textAlign: 'right', pr: '4px' }}>Days</Box>
+                            {yearUsage.map((b, i) => {
+                                const isCurrent = i === today.getMonth()
+                                const isFuture = i > today.getMonth()
+                                const palette = b.dominant ? TYPE_PALETTE[b.dominant] : null
+                                return (
+                                    <Box
+                                        key={i}
+                                        title={`${MONTH_INITIALS[i]}: ${b.total > 0 ? `${b.total} day${b.total === 1 ? '' : 's'}` : 'no leave'}`}
+                                        sx={{
+                                            height: 28,
+                                            bgcolor: palette ? palette.fill : 'action.hover',
+                                            color: palette ? '#fff' : 'transparent',
+                                            borderRadius: '4px',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            fontSize: 10, fontWeight: 600,
+                                            opacity: isFuture ? 0.55 : 1,
+                                            boxShadow: isCurrent ? `inset 0 0 0 2px ${'text.primary'}` : 'none',
+                                        }}
+                                    >
+                                        {b.total > 0 ? b.total : ''}
+                                    </Box>
+                                )
+                            })}
+                        </Box>
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '30px repeat(12, 1fr)', gap: '4px', mt: '6px' }}>
+                            <Box />
+                            {MONTH_INITIALS.map((m, i) => (
+                                <Box key={i} sx={{
+                                    fontSize: 10, color: i === today.getMonth() ? 'text.primary' : 'text.disabled',
+                                    textAlign: 'center', fontWeight: i === today.getMonth() ? 700 : 500,
+                                }}>{m}</Box>
+                            ))}
+                        </Box>
+                    </>
+                )}
             </Box>
 
             {/* Tabs + Apply */}

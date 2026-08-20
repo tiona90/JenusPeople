@@ -264,7 +264,6 @@ function EmployeeDashboard({ user }: { user: UserInfo }) {
                 name={`Hi ${firstName(user)} 👋`}
                 summary={summary}
                 meta={[
-                    { l: 'This week', v: `${currentHours.toFixed(1)} / ${WEEKLY_TARGET}h` },
                     { l: 'Leave remaining', v: `${balanceRemaining} days` },
                     { l: 'Pending', v: `${myPendingLeaves.length} request${myPendingLeaves.length === 1 ? '' : 's'}` },
                     { l: 'Streak', v: streak > 0 ? `🔥 ${streak} week${streak === 1 ? '' : 's'} on-time` : '—' },
@@ -306,7 +305,6 @@ function EmployeeDashboard({ user }: { user: UserInfo }) {
                 <ActionCard title="Quick actions" icon="⚡">
                     <QuickActions tiles={[
                         { icon: '📝', label: 'This week', sub: 'Log hours', onClick: () => uiStore.navigateToNewTimesheet() },
-                        { icon: '🌴', label: 'Apply for leave', sub: 'Book time off', onClick: () => uiStore.navigateToApplyLeave() },
                         { icon: '📅', label: 'My leave', sub: 'View history', onClick: () => uiStore.navigateToMyLeave('requests') },
                         { icon: '🕐', label: 'My timesheets', sub: 'Past weeks', onClick: () => uiStore.navigateToTimesheets() },
                     ]} />

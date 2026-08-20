@@ -14,6 +14,7 @@ import Typography from '@mui/material/Typography'
 import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded'
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
+import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import LockRoundedIcon from '@mui/icons-material/LockRounded'
 import {
@@ -214,7 +215,7 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
     const [error, setError] = useState('')
     const [taskErrors, setTaskErrors] = useState<Record<string, TimesheetTaskFieldErrors>>({})
     const [pendingMode, setPendingMode] = useState<'draft' | 'submit' | null>(null)
-    const [savedSnack, setSavedSnack] = useState(false)
+    const [snack, setSnack] = useState<string>('')
 
     const { data: projects = [] } = useQuery({ queryKey: ['projects'], queryFn: getProjects })
     const activeProjects = projects.filter((p) => p.isActive)
@@ -290,6 +291,46 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
             }
             return { ...b, [key]: { ...b[key], tasks: tasks.filter((t) => t._id !== taskId) } }
         })
+    }
+
+    const isDayUntouched = (key: string) => {
+        const bucket = buckets[key]
+        return !!bucket && !bucket.tasks.some((t) => t.projectId || t.hours.trim() || t.notes.trim())
+    }
+
+    // Later weekdays that are still unlocked and completely empty — the days a
+    // "copy to rest of week" is allowed to fill in. Future-locked days and days
+    // that already have something typed into them are left alone.
+    const copyTargets = (key: string) =>
+        dayDates.slice(0, 5)
+            .map(isoDate)
+            .filter((target) => target > key && target <= todayIso && isDayUntouched(target))
+
+    const copyToRestOfWeek = (key: string) => {
+        const seen = new Set<string>()
+        const template = (buckets[key]?.tasks ?? []).filter((t) => {
+            if (!t.projectId) return false
+            const pair = `${t.projectId}|${t.activityTypeId}`
+            if (seen.has(pair)) return false
+            seen.add(pair)
+            return true
+        })
+        const targets = copyTargets(key)
+        if (template.length === 0 || targets.length === 0) return
+
+        setBuckets((b) => {
+            const next = { ...b }
+            for (const target of targets) {
+                next[target] = {
+                    ...b[target],
+                    open: true,
+                    // Hours and notes stay blank — only the repetitive picks carry over.
+                    tasks: template.map((t) => ({ ...newTask(), projectId: t.projectId, activityTypeId: t.activityTypeId })),
+                }
+            }
+            return next
+        })
+        setSnack(`Copied to ${targets.length} day${targets.length === 1 ? '' : 's'}`)
     }
 
     const updateTask = (key: string, taskId: string, field: keyof Omit<Task, '_id' | 'serverId'>, value: string) => {
@@ -423,7 +464,7 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
             if (mode === 'submit') {
                 uiStore.navigateToTimesheets()
             } else {
-                setSavedSnack(true)
+                setSnack('Draft saved')
             }
         } catch {
             setError('Failed to save timesheet. Please try again.')
@@ -541,6 +582,9 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
                                 activeActivityTypes={activeActivityTypes}
                                 onToggle={() => { if (!isFuture) toggleDay(key) }}
                                 onAddTask={() => addTask(key)}
+                                onCopyToWeek={() => copyToRestOfWeek(key)}
+                                copyTargetCount={isWeekend || isFuture ? 0 : copyTargets(key).length}
+                                canCopy={bucket.tasks.some((t) => !!t.projectId)}
                                 onRemoveTask={(taskId) => removeTask(key, taskId)}
                                 onUpdateTask={(taskId, field, value) => updateTask(key, taskId, field, value)}
                                 disabled={isBusy || !isEditable || isFuture}
@@ -630,13 +674,13 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
             </Stack>
 
             <Snackbar
-                open={savedSnack}
+                open={!!snack}
                 autoHideDuration={2200}
-                onClose={() => setSavedSnack(false)}
+                onClose={() => setSnack('')}
                 anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
             >
-                <Alert severity="success" variant="filled" onClose={() => setSavedSnack(false)} sx={{ fontSize: 13 }}>
-                    Draft saved
+                <Alert severity="success" variant="filled" onClose={() => setSnack('')} sx={{ fontSize: 13 }}>
+                    {snack}
                 </Alert>
             </Snackbar>
         </Box>
@@ -719,6 +763,9 @@ type DayCardProps = {
     activeActivityTypes: ProjectActivityType[]
     onToggle: () => void
     onAddTask: () => void
+    onCopyToWeek: () => void
+    copyTargetCount: number
+    canCopy: boolean
     onRemoveTask: (taskId: string) => void
     onUpdateTask: (taskId: string, field: keyof Omit<Task, '_id' | 'serverId'>, value: string) => void
     disabled: boolean
@@ -776,7 +823,7 @@ function DayCard({
     tasks, taskErrors, dayTotal, taskCount,
     activeProjects,
     activeActivityTypes,
-    onToggle, onAddTask, onRemoveTask, onUpdateTask,
+    onToggle, onAddTask, onCopyToWeek, copyTargetCount, canCopy, onRemoveTask, onUpdateTask,
     disabled, readOnly, banner,
 }: DayCardProps) {
     const hasEntries = dayTotal > 0
@@ -1020,29 +1067,61 @@ function DayCard({
                     </Stack>
 
                     {!readOnly && (
-                        <Button
-                            onClick={onAddTask}
-                            disabled={disabled}
-                            fullWidth
-                            sx={{
-                                mt: 1.25,
-                                px: 1.5, py: '7px',
-                                fontSize: 12,
-                                textTransform: 'none',
-                                color: BLUE,
-                                bgcolor: 'transparent',
-                                border: '1px dashed',
-                                borderColor: 'primary.main',
-                                borderRadius: '6px',
-                                '&:hover': {
-                                    bgcolor: softBg('primary'),
-                                    borderStyle: 'solid',
+                        <Stack direction="row" spacing={1} sx={{ mt: 1.25 }}>
+                            <Button
+                                onClick={onAddTask}
+                                disabled={disabled}
+                                sx={{
+                                    flex: 1,
+                                    px: 1.5, py: '7px',
+                                    fontSize: 12,
+                                    textTransform: 'none',
+                                    color: BLUE,
+                                    bgcolor: 'transparent',
+                                    border: '1px dashed',
                                     borderColor: 'primary.main',
-                                },
-                            }}
-                        >
-                            + Add task
-                        </Button>
+                                    borderRadius: '6px',
+                                    '&:hover': {
+                                        bgcolor: softBg('primary'),
+                                        borderStyle: 'solid',
+                                        borderColor: 'primary.main',
+                                    },
+                                }}
+                            >
+                                + Add task
+                            </Button>
+                            {!isWeekend && (
+                                <Tooltip title={
+                                    !canCopy
+                                        ? 'Pick a project on this day first'
+                                        : copyTargetCount === 0
+                                            ? 'No later open days left to fill'
+                                            : 'Fills the project and activity into the remaining empty days — hours and notes stay blank'
+                                }>
+                                    <Box component="span" sx={{ display: 'inline-flex' }}>
+                                        <Button
+                                            onClick={onCopyToWeek}
+                                            disabled={disabled || !canCopy || copyTargetCount === 0}
+                                            startIcon={<ContentCopyRoundedIcon sx={{ fontSize: 14 }} />}
+                                            sx={{
+                                                px: 1.5, py: '7px',
+                                                fontSize: 12,
+                                                whiteSpace: 'nowrap',
+                                                textTransform: 'none',
+                                                color: 'text.secondary',
+                                                bgcolor: 'transparent',
+                                                border: '1px solid',
+                                                borderColor: 'divider',
+                                                borderRadius: '6px',
+                                                '&:hover': { bgcolor: 'action.hover', borderColor: 'divider' },
+                                            }}
+                                        >
+                                            Copy to rest of week
+                                        </Button>
+                                    </Box>
+                                </Tooltip>
+                            )}
+                        </Stack>
                     )}
                 </Box>
             )}

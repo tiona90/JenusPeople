@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -11,6 +11,9 @@ import { getApiErrorMessage } from '../../lib/api/error-utils'
 import { useStore } from '../../lib/mobx'
 import { AppDialog, AppDialogActions, AppDialogContent, AppDialogTitle, cancelBtnSx } from '../ui'
 import Button from '@mui/material/Button'
+import ChildCareRoundedIcon from '@mui/icons-material/ChildCareRounded'
+import FavoriteBorderRoundedIcon from '@mui/icons-material/FavoriteBorderRounded'
+import HealthAndSafetyRoundedIcon from '@mui/icons-material/HealthAndSafetyRounded'
 import type { LeaveType, Teammate, UserInfo } from '../../lib/types'
 import { softBg, type SxColor } from '../../lib/theme-tokens'
 import type { Theme } from '@mui/material/styles'
@@ -62,16 +65,21 @@ function formatBytes(bytes: number): string {
 }
 
 
-const LEAVE_ICONS: Record<string, string> = {
+// Sized/coloured off the surrounding text so these drop in where an emoji used to sit.
+const neutralIconSx = { fontSize: 'inherit', verticalAlign: '-0.15em' } as const
+
+// The lighter categories keep their emoji; sick, bereavement and parental leave use
+// plain icons instead — a cartoon face is the wrong register for those requests.
+const LEAVE_ICONS: Record<string, ReactNode> = {
     annual: '🌴',
     vacation: '🌴',
-    sick: '🤒',
+    sick: <HealthAndSafetyRoundedIcon sx={neutralIconSx} />,
     personal: '🏠',
-    bereavement: '🕊️',
+    bereavement: <FavoriteBorderRoundedIcon sx={neutralIconSx} />,
     unpaid: '💼',
-    maternity: '👶',
-    paternity: '👶',
-    parental: '👶',
+    maternity: <ChildCareRoundedIcon sx={neutralIconSx} />,
+    paternity: <ChildCareRoundedIcon sx={neutralIconSx} />,
+    parental: <ChildCareRoundedIcon sx={neutralIconSx} />,
     study: '📚',
     compassionate: '💙',
 }
@@ -135,7 +143,7 @@ function nextWorkingDay(iso: string, holidays?: Set<string>): string {
     return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
 }
 
-function iconForLeaveType(name: string): string {
+function iconForLeaveType(name: string): ReactNode {
     const key = name.toLowerCase()
     for (const k in LEAVE_ICONS) {
         if (key.includes(k)) return LEAVE_ICONS[k]
@@ -877,7 +885,7 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
                         color: '#fff',
                     })}>
                         <Box sx={{ fontSize: 11, opacity: 0.9, mb: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                            {selectedType ? `${iconForLeaveType(selectedType.name)} ${selectedType.name}` : '—'}
+                            {selectedType ? <>{iconForLeaveType(selectedType.name)} {selectedType.name}</> : '—'}
                         </Box>
                         <Box sx={{ fontSize: 32, fontWeight: 700, lineHeight: 1 }}>{summaryBig}</Box>
                         <Box sx={{ fontSize: 12, opacity: 0.9, mt: '6px' }}>

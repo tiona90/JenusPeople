@@ -634,6 +634,8 @@ function YearActivity({ monthHours, maxMonth, currentMonth, totalYTD }: {
     currentMonth: number
     totalYTD: number
 }) {
+    const activeMonths = monthHours.filter((h) => h > 0).length
+
     return (
         <Box sx={{ bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider', borderRadius: '12px', p: '18px 20px', mb: '14px' }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', mb: '14px', flexWrap: 'wrap', gap: '8px' }}>
@@ -642,54 +644,62 @@ function YearActivity({ monthHours, maxMonth, currentMonth, totalYTD }: {
                     <Box component="strong" sx={{ color: 'primary.main', fontSize: 15 }}>{totalYTD.toFixed(0)}h</Box>
                     {' '}year to date
                 </Box>
-                <Box sx={{ display: 'flex', gap: '12px', fontSize: 11, color: 'text.secondary' }}>
-                    <LegendSwatch color={'primary.main'} label="Logged" />
-                    <LegendSwatch color="linear-gradient(180deg, #4F8EF7 0%, #3A7AE4 100%)" label="Current" />
-                    <LegendSwatch color="#E4E6EA" label="Future" />
-                </Box>
+                {activeMonths >= 2 && (
+                    <Box sx={{ display: 'flex', gap: '12px', fontSize: 11, color: 'text.secondary' }}>
+                        <LegendSwatch color={'primary.main'} label="Logged" />
+                        <LegendSwatch color="linear-gradient(180deg, #4F8EF7 0%, #3A7AE4 100%)" label="Current" />
+                        <LegendSwatch color="#E4E6EA" label="Future" />
+                    </Box>
+                )}
             </Box>
-            <Box sx={{ position: 'relative', height: 110, pt: '14px' }}>
-                <Box sx={{
-                    position: 'absolute', left: 0, right: 0,
-                    top: `${14 + (1 - MONTHLY_TARGET / maxMonth) * (110 - 14 - 18)}px`,
-                    borderTop: '1px dashed #F59E0B', pointerEvents: 'none',
-                }}>
-                    <Box component="span" sx={{
-                        position: 'absolute', right: 0, top: -16,
-                        fontSize: 10, color: 'warning.dark', bgcolor: softBg('warning'),
-                        px: '6px', py: '1px', borderRadius: '3px', border: '1px solid #FDE68A',
-                    }}>Target {MONTHLY_TARGET}h/mo</Box>
+            {activeMonths < 2 ? (
+                <Box sx={{ fontSize: 12, color: 'text.secondary', textAlign: 'center', py: '18px' }}>
+                    {totalYTD > 0 ? `${totalYTD.toFixed(0)}h logged so far` : 'No hours logged yet this year.'}
                 </Box>
-                <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: '6px', height: '100%', alignItems: 'flex-end' }}>
-                    {monthHours.map((h, i) => {
-                        const isFuture = i > currentMonth
-                        const isCurrent = i === currentMonth
-                        const heightPct = maxMonth > 0 ? (h / maxMonth) * 100 : 0
-                        const bg = isFuture ? 'divider'
-                            : isCurrent ? 'linear-gradient(180deg, #4F8EF7 0%, #3A7AE4 100%)'
-                            : 'primary.main'
-                        return (
-                            <Box key={i} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', height: '100%', justifyContent: 'flex-end' }}>
-                                <Box sx={{ fontSize: 10, color: isFuture ? 'text.disabled' : 'text.primary', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-                                    {h > 0 ? Math.round(h) : ''}
+            ) : (
+                <Box sx={{ position: 'relative', height: 110, pt: '14px' }}>
+                    <Box sx={{
+                        position: 'absolute', left: 0, right: 0,
+                        top: `${14 + (1 - MONTHLY_TARGET / maxMonth) * (110 - 14 - 18)}px`,
+                        borderTop: '1px dashed #F59E0B', pointerEvents: 'none',
+                    }}>
+                        <Box component="span" sx={{
+                            position: 'absolute', right: 0, top: -16,
+                            fontSize: 10, color: 'warning.dark', bgcolor: softBg('warning'),
+                            px: '6px', py: '1px', borderRadius: '3px', border: '1px solid #FDE68A',
+                        }}>Target {MONTHLY_TARGET}h/mo</Box>
+                    </Box>
+                    <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: '6px', height: '100%', alignItems: 'flex-end' }}>
+                        {monthHours.map((h, i) => {
+                            const isFuture = i > currentMonth
+                            const isCurrent = i === currentMonth
+                            const heightPct = maxMonth > 0 ? (h / maxMonth) * 100 : 0
+                            const bg = isFuture ? 'divider'
+                                : isCurrent ? 'linear-gradient(180deg, #4F8EF7 0%, #3A7AE4 100%)'
+                                : 'primary.main'
+                            return (
+                                <Box key={i} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', height: '100%', justifyContent: 'flex-end' }}>
+                                    <Box sx={{ fontSize: 10, color: isFuture ? 'text.disabled' : 'text.primary', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                                        {h > 0 ? Math.round(h) : ''}
+                                    </Box>
+                                    <Box sx={{ width: '100%', height: 'calc(100% - 18px)', display: 'flex', alignItems: 'flex-end' }}>
+                                        <Box title={`${MONTH_LABELS[i]}: ${h.toFixed(0)}h`} sx={{
+                                            width: '100%', height: `${heightPct}%`, minHeight: 2,
+                                            background: bg, borderRadius: '4px 4px 0 0',
+                                            boxShadow: isCurrent ? '0 0 0 2px rgba(79,142,247,0.2)' : 'none',
+                                            transition: 'opacity 0.15s', cursor: 'pointer',
+                                            '&:hover': { opacity: 0.85 },
+                                        }} />
+                                    </Box>
+                                    <Box sx={{ fontSize: 10, color: isCurrent ? 'text.primary' : 'text.secondary', fontWeight: isCurrent ? 700 : 500 }}>
+                                        {MONTH_LABELS[i]}
+                                    </Box>
                                 </Box>
-                                <Box sx={{ width: '100%', height: 'calc(100% - 18px)', display: 'flex', alignItems: 'flex-end' }}>
-                                    <Box title={`${MONTH_LABELS[i]}: ${h.toFixed(0)}h`} sx={{
-                                        width: '100%', height: `${heightPct}%`, minHeight: 2,
-                                        background: bg, borderRadius: '4px 4px 0 0',
-                                        boxShadow: isCurrent ? '0 0 0 2px rgba(79,142,247,0.2)' : 'none',
-                                        transition: 'opacity 0.15s', cursor: 'pointer',
-                                        '&:hover': { opacity: 0.85 },
-                                    }} />
-                                </Box>
-                                <Box sx={{ fontSize: 10, color: isCurrent ? 'text.primary' : 'text.secondary', fontWeight: isCurrent ? 700 : 500 }}>
-                                    {MONTH_LABELS[i]}
-                                </Box>
-                            </Box>
-                        )
-                    })}
+                            )
+                        })}
+                    </Box>
                 </Box>
-            </Box>
+            )}
         </Box>
     )
 }

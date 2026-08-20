@@ -212,6 +212,7 @@ export default function AttendancePage() {
                     label="This Week"
                     value={formatElapsed(thisWeekMinutes)}
                     sub={`${daysLoggedThisWeek} day${daysLoggedThisWeek === 1 ? '' : 's'} logged`}
+                    caption="Time clocked in — separate from your logged timesheet hours"
                 />
                 <StatCard
                     accent={BLUE}
@@ -441,7 +442,7 @@ function ClockButton({
     )
 }
 
-function StatCard({ accent, label, value, sub }: { accent: string; label: string; value: string; sub: string }) {
+function StatCard({ accent, label, value, sub, caption }: { accent: string; label: string; value: string; sub: string; caption?: string }) {
     return (
         <Paper elevation={0} sx={{
             bgcolor: 'background.paper',
@@ -453,6 +454,11 @@ function StatCard({ accent, label, value, sub }: { accent: string; label: string
             <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 1 }}>{label}</Typography>
             <Typography sx={{ fontSize: 22, fontWeight: 700, color: 'text.primary', lineHeight: 1 }}>{value}</Typography>
             <Typography sx={{ fontSize: 11, color: 'text.secondary', mt: 0.5 }}>{sub}</Typography>
+            {caption && (
+                <Typography sx={{ fontSize: 11, color: 'text.disabled', mt: 0.75, lineHeight: 1.4 }}>
+                    {caption}
+                </Typography>
+            )}
         </Paper>
     )
 }
