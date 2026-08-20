@@ -214,6 +214,22 @@ If the demo accounts are not present, skip all of this and leave `Enabled: false
   folder and **Modify** on a `logs\` subfolder (used if you enable stdout
   logging for troubleshooting — see §6).
 
+### Reverse proxy (only if you add one)
+ANCM in-process needs no configuration here: IIS hands the app the real client
+address, which is what the rate limiters partition on. If you ever put another
+tier in front (nginx, ARR, Cloudflare), list its addresses in
+`appsettings.Production.json` so the app trusts their `X-Forwarded-For`:
+
+```json
+"ForwardedHeaders": { "KnownProxies": [ "10.0.0.9" ] }
+```
+
+Leave it empty otherwise. The header is only honoured from the addresses listed,
+and while the list is empty it is ignored entirely — a caller that could set its
+own forwarded address would get a fresh rate-limit partition per request and
+neither the 100/min global cap nor the 5/min login cap would hold. A value that
+is not an IP address stops startup rather than being skipped.
+
 The environment is already pinned to **Production** in `web.config`
 (`ASPNETCORE_ENVIRONMENT=Production`), so `appsettings.Production.json` loads
 automatically.
@@ -243,7 +259,8 @@ If the site returns **HTTP 500.30/500.31/502.5** (ANCM startup failure):
 - Temporarily set `stdoutLogEnabled="true"` in `web.config`, create the
   `logs\` folder, recycle the pool, reproduce, then read `logs\stdout_*.log`.
 - Usual causes: Hosting Bundle missing/older than the app, DB unreachable, or a
-  bad connection string.
+  bad connection string. A database the app cannot migrate is fatal by design
+  outside Development, and the reason is the first thing in `stdout_*.log`.
 
 ---
 

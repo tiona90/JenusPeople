@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -43,9 +44,16 @@ public sealed record RouteEntry(
     /// attribute, so each action appears twice in the table. Folding
     /// <c>api/v{version:apiVersion}/…</c> onto <c>api/…</c> lets a test name the
     /// surface once instead of listing both spellings of every route.
+    ///
+    /// The leading slash goes too. A controller's route attribute produces
+    /// <c>api/Account/login</c> while a minimal API mapped as "/health" produces
+    /// <c>/health</c>, and a test that formats these into one list should not have to
+    /// know which kind each route came from.
     /// </summary>
     public string UnversionedPattern =>
-        Pattern.Replace("v{version:apiVersion}/", string.Empty, StringComparison.Ordinal);
+        Pattern
+            .Replace("v{version:apiVersion}/", string.Empty, StringComparison.Ordinal)
+            .TrimStart('/');
 
     /// <summary>Method, path and handler — what a failure message needs.</summary>
     public string Describe() => $"{this} → {DisplayName}";
@@ -68,9 +76,9 @@ public sealed record RouteEntry(
 /// The host is started against an in-memory store, with seeding off and the
 /// connection string blanked. That is not tidiness: appsettings.Production.json
 /// points DefaultConnection at a remote server, so a fixture that booted Production
-/// as configured would run migrations against a live database. The startup
-/// migration then fails against the in-memory provider and is swallowed by the
-/// try/catch in Program.cs, which is fine — routing needs no database.
+/// as configured would run migrations against a live database. Program.cs skips
+/// migrating a non-relational provider, so startup gets past that block without
+/// touching a database — which is all routing needs.
 /// </summary>
 /// <summary>
 /// Booting the real API costs a second or two, so every class that asserts on the
@@ -99,6 +107,14 @@ public sealed class ApiRouteTableFixture : IAsyncLifetime
         ?? throw new InvalidOperationException("The fixture has not been initialised.");
 
     /// <summary>
+    /// The TestServer hosting the application. Tests that need to set connection
+    /// details a plain HttpClient cannot reach — the caller's remote IP, say — drive
+    /// the pipeline through <c>Server.SendAsync</c>.
+    /// </summary>
+    public TestServer Server => _factory?.Server
+        ?? throw new InvalidOperationException("The fixture has not been initialised.");
+
+    /// <summary>
     /// The running application's root service provider. Resolve scoped services
     /// through <c>CreateScope()</c> — most handlers depend on AppDbContext, which is
     /// scoped, and the root provider refuses those.
@@ -108,7 +124,7 @@ public sealed class ApiRouteTableFixture : IAsyncLifetime
 
     public Task InitializeAsync()
     {
-        _factory = new RouteTableFactory();
+        _factory = new ProductionHostFactory();
 
         // Creating the client starts the host and builds the endpoint middleware;
         // the route table is not populated until then.
@@ -164,62 +180,94 @@ public sealed class ApiRouteTableFixture : IAsyncLifetime
             endpoint.DisplayName ?? pattern,
             string.IsNullOrEmpty(roles) ? null : roles);
     }
+}
 
-    private sealed class RouteTableFactory : WebApplicationFactory<Program>
+/// <summary>
+/// Boots the application the way it ships: the Production environment, an
+/// in-memory store, no seeding and no reminder scheduler.
+///
+/// <paramref name="settings"/> overrides configuration for one host — used by
+/// tests that have to see how startup reacts to a setting, rather than to the
+/// configuration files as committed. <paramref name="environment"/> names the
+/// environment to boot as, for the handful of behaviours that differ outside
+/// Production. <paramref name="keepConfiguredDatabase"/> leaves the SQL Server
+/// provider from configuration in place instead of swapping in the in-memory
+/// store — only for tests about what startup does when the database cannot be
+/// reached, and then only with a connection string that goes nowhere.
+/// </summary>
+internal sealed class ProductionHostFactory(
+    IReadOnlyDictionary<string, string>? settings = null,
+    string environment = "Production",
+    bool keepConfiguredDatabase = false)
+    : WebApplicationFactory<Program>
+{
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        // Production is the configuration that ships, and the one whose
+        // anonymous surface matters. It also keeps the Swagger UI's routes
+        // out of the table, since Program.cs maps those only in Development.
+        builder.UseEnvironment(environment);
+        builder.UseSetting("ConnectionStrings:DefaultConnection", string.Empty);
+        builder.UseSetting("Seed:Enabled", "false");
+        builder.UseSetting("Seed:DemoData", "false");
+
+        // Production pins AllowedHosts to the deployed domain, and
+        // TestServer sends "Host: localhost", so host filtering would answer
+        // every probe 400 before routing ran. Which hostnames are accepted is
+        // a separate concern from which routes exist.
+        builder.UseSetting("AllowedHosts", "*");
+
+        // Overrides for a host that has to be booted with a particular setting.
+        // Applied last so a test wins over the lines above.
+        foreach (var (key, value) in settings ?? new Dictionary<string, string>())
         {
-            // Production is the configuration that ships, and the one whose
-            // anonymous surface matters. It also keeps the Swagger UI's routes
-            // out of the table, since Program.cs maps those only in Development.
-            builder.UseEnvironment("Production");
-            builder.UseSetting("ConnectionStrings:DefaultConnection", string.Empty);
-            builder.UseSetting("Seed:Enabled", "false");
-            builder.UseSetting("Seed:DemoData", "false");
-
-            // Production pins AllowedHosts to the deployed domain, and
-            // TestServer sends "Host: localhost", so host filtering would answer
-            // every probe 400 before routing ran. Which hostnames are accepted is
-            // a separate concern from which routes exist.
-            builder.UseSetting("AllowedHosts", "*");
-
-            builder.ConfigureServices(services =>
-            {
-                // Point AppDbContext at an in-memory store so nothing in the host
-                // can open a connection to the SQL Server named in the config.
-                //
-                // Dropping DbContextOptions alone is not enough: AddDbContext also
-                // registers the options callback itself (as
-                // IDbContextOptionsConfiguration<AppDbContext> on current EF), and
-                // leaving that behind applies UseSqlServer on top of
-                // UseInMemoryDatabase — EF then refuses to build the context at
-                // all, complaining that two providers are registered. Sweeping
-                // every AppDbContext-parameterised service takes the callback with
-                // it without this fixture having to name EF's internal types.
-                foreach (var registration in services
-                    .Where(s => s.ServiceType == typeof(AppDbContext)
-                        || s.ServiceType == typeof(DbContextOptions)
-                        || (s.ServiceType.IsGenericType
-                            && s.ServiceType.GenericTypeArguments.Contains(typeof(AppDbContext))))
-                    .ToList())
-                {
-                    services.Remove(registration);
-                }
-
-                services.AddDbContext<AppDbContext>((sp, options) => options
-                    .UseInMemoryDatabase($"route-table-{Guid.NewGuid()}")
-                    .AddInterceptors(sp.GetRequiredService<AuditingSaveChangesInterceptor>()));
-
-                // Nothing about routing needs the reminder scheduler, and it wakes
-                // up immediately on startup.
-                foreach (var hostedService in services
-                    .Where(s => s.ServiceType == typeof(IHostedService)
-                        && s.ImplementationType == typeof(ReminderBackgroundService))
-                    .ToList())
-                {
-                    services.Remove(hostedService);
-                }
-            });
+            builder.UseSetting(key, value);
         }
+
+        builder.ConfigureServices(services =>
+        {
+            // Nothing about routing needs the reminder scheduler, and it wakes
+            // up immediately on startup.
+            foreach (var hostedService in services
+                .Where(s => s.ServiceType == typeof(IHostedService)
+                    && s.ImplementationType == typeof(ReminderBackgroundService))
+                .ToList())
+            {
+                services.Remove(hostedService);
+            }
+
+            if (keepConfiguredDatabase)
+            {
+                // Such a host exists to show what startup does when the
+                // configured database cannot be reached, so the configured
+                // provider has to survive.
+                return;
+            }
+
+            // Point AppDbContext at an in-memory store so nothing in the host
+            // can open a connection to the SQL Server named in the config.
+            //
+            // Dropping DbContextOptions alone is not enough: AddDbContext also
+            // registers the options callback itself (as
+            // IDbContextOptionsConfiguration<AppDbContext> on current EF), and
+            // leaving that behind applies UseSqlServer on top of
+            // UseInMemoryDatabase — EF then refuses to build the context at
+            // all, complaining that two providers are registered. Sweeping
+            // every AppDbContext-parameterised service takes the callback with
+            // it without this fixture having to name EF's internal types.
+            foreach (var registration in services
+                .Where(s => s.ServiceType == typeof(AppDbContext)
+                    || s.ServiceType == typeof(DbContextOptions)
+                    || (s.ServiceType.IsGenericType
+                        && s.ServiceType.GenericTypeArguments.Contains(typeof(AppDbContext))))
+                .ToList())
+            {
+                services.Remove(registration);
+            }
+
+            services.AddDbContext<AppDbContext>((sp, options) => options
+                .UseInMemoryDatabase($"route-table-{Guid.NewGuid()}")
+                .AddInterceptors(sp.GetRequiredService<AuditingSaveChangesInterceptor>()));
+        });
     }
 }
