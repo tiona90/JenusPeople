@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { observer } from 'mobx-react-lite'
 import Alert from '@mui/material/Alert'
@@ -12,9 +12,7 @@ import DialogTitle from '@mui/material/DialogTitle'
 import Divider from '@mui/material/Divider'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
-import ChildCareRoundedIcon from '@mui/icons-material/ChildCareRounded'
-import FavoriteBorderRoundedIcon from '@mui/icons-material/FavoriteBorderRounded'
-import HealthAndSafetyRoundedIcon from '@mui/icons-material/HealthAndSafetyRounded'
+import { iconForLeaveType } from './leave-icons'
 import {
     deleteAnnualLeave,
     getAnnualLeaves,
@@ -34,22 +32,6 @@ type StatusFilter = 'All' | 'Pending' | 'Approved' | 'Rejected' | 'Cancelled'
 
 const STATUS_TABS: StatusFilter[] = ['All', 'Pending', 'Approved', 'Rejected', 'Cancelled']
 
-
-// Sized/coloured off the surrounding text so these drop in where an emoji used to sit.
-const neutralIconSx = { fontSize: 'inherit', verticalAlign: '-0.15em' } as const
-
-// Kept in step with ApplyLeavePage: the lighter categories keep their emoji, while
-// sick, bereavement and parental leave use plain icons instead.
-const LEAVE_ICONS: Record<string, ReactNode> = {
-    annual: '🌴', vacation: '🌴',
-    sick: <HealthAndSafetyRoundedIcon sx={neutralIconSx} />,
-    personal: '🏠',
-    bereavement: <FavoriteBorderRoundedIcon sx={neutralIconSx} />,
-    unpaid: '💼',
-    maternity: <ChildCareRoundedIcon sx={neutralIconSx} />,
-    paternity: <ChildCareRoundedIcon sx={neutralIconSx} />,
-    parental: <ChildCareRoundedIcon sx={neutralIconSx} />,
-}
 
 const TYPE_PALETTE: Record<string, { bg: SxColor; fill: string }> = {
     annual:      { bg: softBg('info'), fill: 'primary.main' },
@@ -72,12 +54,6 @@ function leaveTypeKey(name?: string | null): keyof typeof TYPE_PALETTE {
     if (n.includes('unpaid')) return 'unpaid'
     if (n.includes('maternity') || n.includes('paternity') || n.includes('parental')) return 'maternity'
     return 'other'
-}
-
-function iconForLeaveType(name?: string | null): ReactNode {
-    const n = (name ?? '').toLowerCase()
-    for (const k in LEAVE_ICONS) if (n.includes(k)) return LEAVE_ICONS[k]
-    return '📅'
 }
 
 function formatDate(date: string) {

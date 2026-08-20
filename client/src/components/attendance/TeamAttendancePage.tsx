@@ -171,7 +171,7 @@ export default function TeamAttendancePage() {
                 <StatCard accent={GREEN} label="Working now" value={inCount} sub={`of ${members.length} team members`} />
                 <StatCard accent={AMBER} label="On break" value={breakCount} sub="team members" />
                 <StatCard accent={BLUE} label="On leave" value={leaveCount} sub="today" />
-                <StatCard accent={RED} label="Not checked in" value={outCount} sub={outCount === 0 ? 'all accounted for' : 'follow up?'} />
+                <StatCard accent={RED} label="Not checked in" value={outCount} sub={outCount === 0 ? 'all accounted for' : 'no check-in today'} />
             </Box>
 
             <Paper elevation={0} sx={{ bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider', borderRadius: '10px', overflow: 'hidden' }}>
@@ -202,7 +202,12 @@ export default function TeamAttendancePage() {
             {week.length > 0 && (
                 <Paper elevation={0} sx={{ bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider', borderRadius: '10px', overflow: 'hidden' }}>
                     <Box sx={{ p: '14px 18px', borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <Typography sx={{ fontSize: 14, fontWeight: 600, color: 'text.primary' }}>Weekly Attendance Log</Typography>
+                        <Box>
+                            <Typography sx={{ fontSize: 14, fontWeight: 600, color: 'text.primary' }}>Weekly Attendance Log</Typography>
+                            <Typography sx={{ fontSize: 11, color: 'text.disabled', mt: 0.25, lineHeight: 1.4 }}>
+                                Time clocked in — separate from the hours your team logs on timesheets
+                            </Typography>
+                        </Box>
                         <Select size="small" value="this-week" sx={{ fontSize: 12, '& .MuiSelect-select': { py: 0.5, px: 1.25 } }}>
                             <MenuItem value="this-week">This week</MenuItem>
                         </Select>

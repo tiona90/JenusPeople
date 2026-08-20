@@ -17,14 +17,8 @@ import { RejectReasonDialog } from '../ui'
 import Heatmap from './Heatmap'
 import DeptBreakdown from './DeptBreakdown'
 import { fmtShort, isoDate } from './leave-format'
+import { iconForLeaveType, labelWithEmoji } from './leave-icons'
 
-
-const LEAVE_ICONS: Record<string, string> = {
-    annual: '🌴', vacation: '🌴',
-    sick: '🤒', personal: '🏠',
-    bereavement: '🕊️', unpaid: '💼',
-    maternity: '👶', paternity: '👶', parental: '👶',
-}
 
 type TypeKey = 'annual' | 'sick' | 'personal' | 'bereavement' | 'unpaid' | 'maternity' | 'other'
 
@@ -52,12 +46,6 @@ function leaveTypeKey(name?: string | null): TypeKey {
     if (n.includes('unpaid')) return 'unpaid'
     if (n.includes('maternity') || n.includes('paternity') || n.includes('parental')) return 'maternity'
     return 'other'
-}
-
-function iconFor(name?: string | null) {
-    const n = (name ?? '').toLowerCase()
-    for (const k in LEAVE_ICONS) if (n.includes(k)) return LEAVE_ICONS[k]
-    return '📅'
 }
 
 function initials(name: string) {
@@ -492,7 +480,7 @@ const AllLeaveAdminPage = observer(function AllLeaveAdminPage({ user: _user }: {
                 ]} />
                 <SelectFilter value={typeFilter} onChange={setTypeFilter} options={[
                     { value: 'all', label: 'All leave types' },
-                    ...leaveTypes.filter((lt) => lt.isActive).map((lt) => ({ value: String(lt.id), label: `${iconFor(lt.name)} ${lt.name}` })),
+                    ...leaveTypes.filter((lt) => lt.isActive).map((lt) => ({ value: String(lt.id), label: labelWithEmoji(lt.name) })),
                 ]} />
                 <SelectFilter value={dateRange} onChange={(v) => setDateRange(v as DateRange)} options={[
                     { value: 'this-month', label: 'This month' },
@@ -834,7 +822,7 @@ function LeaveRow({
                         fontSize: 11, fontWeight: 500, px: '8px', py: '3px',
                         borderRadius: '12px', whiteSpace: 'nowrap',
                     }}>
-                        {iconFor(typeName)} {typeName ?? '—'}
+                        {iconForLeaveType(typeName)} {typeName ?? '—'}
                     </Box>
                 </Box>
 

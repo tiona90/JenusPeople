@@ -147,7 +147,10 @@ const TeamTimesheetPage = observer(function TeamTimesheetPage({ user }: { user: 
     })
 
     const activeProjects = projects.filter((p) => p.isActive)
-    const entries = (tsDetail?.entries as TimesheetEntry[] | undefined) ?? []
+    // Ascending by date: the dialog is read as a week under review, so Mon→Fri
+    // rather than the API's newest-first order.
+    const entries = [...((tsDetail?.entries as TimesheetEntry[] | undefined) ?? [])]
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
 
     const deptById = useMemo(
         () => new Map(departments.map((d) => [d.id, d.name])),
@@ -542,6 +545,23 @@ const TeamTimesheetPage = observer(function TeamTimesheetPage({ user }: { user: 
                                         variant="contained"
                                         disabled={isActioning}
                                         onClick={() => {
+                                            setActionTarget(viewTs.id)
+                                            approveMutation.mutate(viewTs.id)
+                                        }}
+                                        startIcon={isActioning && approveMutation.isPending ? <CircularProgress size={14} color="inherit" /> : null}
+                                        sx={{
+                                            textTransform: 'none',
+                                            bgcolor: 'success.main',
+                                            '&:hover': { bgcolor: 'success.dark' },
+                                            boxShadow: 'none',
+                                        }}
+                                    >
+                                        Approve
+                                    </Button>
+                                    <Button
+                                        variant="contained"
+                                        disabled={isActioning}
+                                        onClick={() => {
                                             const target = viewTs
                                             setViewTs(null)
                                             openRejectDialog(target)
@@ -555,23 +575,6 @@ const TeamTimesheetPage = observer(function TeamTimesheetPage({ user }: { user: 
                                         }}
                                     >
                                         Reject
-                                    </Button>
-                                    <Button
-                                        variant="contained"
-                                        disabled={isActioning}
-                                        onClick={() => {
-                                            setActionTarget(viewTs.id)
-                                            approveMutation.mutate(viewTs.id)
-                                        }}
-                                        startIcon={isActioning && approveMutation.isPending ? <CircularProgress size={14} color="inherit" /> : null}
-                                        sx={{
-                                            textTransform: 'none',
-                                            bgcolor: 'success.main',
-                                            '&:hover': { bgcolor: 'success.dark' },
-                                            boxShadow: 'none',
-                                        }}
-                                    >
-                                        Approve
                                     </Button>
                                 </>
                             )}

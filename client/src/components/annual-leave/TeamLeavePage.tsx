@@ -260,6 +260,11 @@ const TeamLeavePage = observer(function TeamLeavePage({ user }: { user: UserInfo
     ]
     const tabs = isAdmin ? adminTabs : managerTabs
 
+    // On a single-status tab every badge in the column reads the same word, so it
+    // carries no information. Give the slot to the reason instead — the one field
+    // that previously required opening View on every row.
+    const showStatus = statusTab === 'all'
+
     return (
         <Stack spacing={2.5}>
             {/* Status tabs */}
@@ -346,7 +351,9 @@ const TeamLeavePage = observer(function TeamLeavePage({ user }: { user: UserInfo
                                     <TableCell sx={TH}>Start</TableCell>
                                     <TableCell sx={TH}>End</TableCell>
                                     <TableCell sx={TH}>Days</TableCell>
-                                    <TableCell sx={TH}>Status</TableCell>
+                                    {showStatus
+                                        ? <TableCell sx={TH}>Status</TableCell>
+                                        : <TableCell sx={TH}>Reason</TableCell>}
                                     <TableCell sx={TH}>Actions</TableCell>
                                 </TableRow>
                             </TableHead>
@@ -370,9 +377,23 @@ const TeamLeavePage = observer(function TeamLeavePage({ user }: { user: UserInfo
                                             <TableCell sx={TD}>{formatDate(leave.startDate)}</TableCell>
                                             <TableCell sx={TD}>{formatDate(leave.endDate)}</TableCell>
                                             <TableCell sx={TD}>{leave.totalDays}</TableCell>
-                                            <TableCell sx={TD}>
-                                                <StatusBadge status={leave.status} />
-                                            </TableCell>
+                                            {showStatus ? (
+                                                <TableCell sx={TD}>
+                                                    <StatusBadge status={leave.status} />
+                                                </TableCell>
+                                            ) : (
+                                                <TableCell sx={TD} title={leave.reason ?? undefined}>
+                                                    <Box sx={{
+                                                        maxWidth: 260,
+                                                        overflow: 'hidden',
+                                                        textOverflow: 'ellipsis',
+                                                        whiteSpace: 'nowrap',
+                                                        color: leave.reason ? 'text.secondary' : 'text.disabled',
+                                                    }}>
+                                                        {leave.reason || '—'}
+                                                    </Box>
+                                                </TableCell>
+                                            )}
                                             <TableCell sx={TD}>
                                                 {isPending ? (
                                                     <Stack direction="row" spacing={0.75}>

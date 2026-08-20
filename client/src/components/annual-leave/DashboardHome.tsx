@@ -21,6 +21,7 @@ import {
     getMyTimesheets, getTeamAttendance, getTeamAttendanceHistory, getTimesheets, rejectTimesheet, updateLeaveStatus,
 } from '../../lib/api'
 import { useStore } from '../../lib/mobx'
+import { iconForLeaveType } from './leave-icons'
 import { ActivityTypesPanel, AdminUsersPanel, AppSettingsPanel, DepartmentsPanel, LeaveTypesPanel, OrgSettingsPanel, ProjectsPanel } from '..'
 import type {
     AnnualLeave, AnnualLeaveStatus, AttendanceIssue, DepartmentAttendance,
@@ -40,15 +41,6 @@ const softBg = (palette: keyof Theme['palette']) => (theme: Theme) => {
     return 'transparent'
 }
 
-const LEAVE_ICONS: Record<string, string> = {
-    annual: '🌴', vacation: '🌴',
-    sick: '🤒',
-    personal: '🏠',
-    bereavement: '🕊️',
-    unpaid: '💼',
-    maternity: '👶', paternity: '👶', parental: '👶',
-}
-
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']
 
 function greetingForHour(h: number) {
@@ -66,12 +58,6 @@ function firstName(user: UserInfo) {
 function initials(name: string) {
     const parts = name.trim().split(/\s+/)
     return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase() || '?'
-}
-
-function iconForLeaveType(name?: string | null) {
-    const n = (name ?? '').toLowerCase()
-    for (const k in LEAVE_ICONS) if (n.includes(k)) return LEAVE_ICONS[k]
-    return '📅'
 }
 
 function formatDateShort(iso: string) {
@@ -368,6 +354,11 @@ function ManagerDashboard({ user }: { user: UserInfo }) {
 
     const leaveTypeById = useMemo(() => new Map(leaveTypes.map((lt) => [lt.id, lt])), [leaveTypes])
 
+    // The manager's own EmployeeProfile id. AnnualLeave.employeeId is an Identity
+    // user id, but TimesheetDto.employeeId is an EmployeeProfile id, so excluding
+    // the manager's own timesheet needs the profile id, not user.id.
+    const myProfileId = useMemo(() => profiles.find((p) => p.userId === user.id)?.id, [profiles, user.id])
+
     // Pending items NOT submitted by manager themselves
     const pendingLeaves = useMemo(
         () => leaves.filter((l) => l.status === 'Pending' && l.employeeId !== user.id)
@@ -375,9 +366,9 @@ function ManagerDashboard({ user }: { user: UserInfo }) {
         [leaves, user.id]
     )
     const pendingTs = useMemo(
-        () => timesheets.filter((t) => (t.status === 'Submitted' || t.status === 'Resubmitted') && t.employeeId !== user.id)
+        () => timesheets.filter((t) => (t.status === 'Submitted' || t.status === 'Resubmitted') && t.employeeId !== myProfileId)
             .sort((a, b) => new Date(a.submittedAt ?? a.createdAt).getTime() - new Date(b.submittedAt ?? b.createdAt).getTime()),
-        [timesheets, user.id]
+        [timesheets, myProfileId]
     )
 
     // Detect conflicts: leave requests overlapping same dept on same dates
@@ -475,7 +466,7 @@ function ManagerDashboard({ user }: { user: UserInfo }) {
                 id: l.id,
                 name: l.employeeName,
                 title: `${l.employeeName} · ${lt?.name ?? 'Leave'}`,
-                meta: `${iconForLeaveType(lt?.name)} ${l.totalDays} day${l.totalDays === 1 ? '' : 's'} · ${formatRange(l.startDate, l.endDate)}`,
+                meta: <>{iconForLeaveType(lt?.name)} {l.totalDays} day{l.totalDays === 1 ? '' : 's'} · {formatRange(l.startDate, l.endDate)}</>,
                 tags,
                 createdAt: l.createdAt,
                 urgent: daysNotice >= 0 && daysNotice < 1,
@@ -529,29 +520,25 @@ function ManagerDashboard({ user }: { user: UserInfo }) {
                 if (start >= weekStart && start <= weekEnd) submitted.add(t.employeeId)
             }
         }
-        const memberByName = new Map(teammates.map((m) => [m.employeeName, m]))
-        const memberProfilesById = new Map(profiles.map((p) => [p.userId, p]))
+        // Both sides are EmployeeProfile ids: team.members[].employeeId is projected
+        // from EmployeeProfile.Id, as is TimesheetDto.EmployeeId.
         const missing: { name: string; note: string }[] = []
+        let submittedCount = 0
         for (const m of teammates) {
-            const profile = [...memberProfilesById.values()].find((p) => p.displayName === m.employeeName)
-            const userId = profile?.userId
-            if (!userId) continue
-            if (submitted.has(userId)) continue
+            if (submitted.has(m.employeeId)) { submittedCount++; continue }
             // Find any in-progress (draft) for current week
-            const draft = timesheets.find((t) => t.employeeId === userId && t.status === 'Draft' && new Date(t.periodStart) >= weekStart && new Date(t.periodStart) <= weekEnd)
+            const draft = timesheets.find((t) => t.employeeId === m.employeeId && t.status === 'Draft' && new Date(t.periodStart) >= weekStart && new Date(t.periodStart) <= weekEnd)
             const note = draft
                 ? `Currently ${Number(draft.totalHours).toFixed(0)}h logged · in progress`
                 : (() => {
-                    const last = [...timesheets].filter((t) => t.employeeId === userId && t.submittedAt)
+                    const last = [...timesheets].filter((t) => t.employeeId === m.employeeId && t.submittedAt)
                         .sort((a, b) => new Date(b.submittedAt!).getTime() - new Date(a.submittedAt!).getTime())[0]
                     return last ? `Last submitted: ${formatDateShort(last.submittedAt!)}` : 'No timesheets yet'
                 })()
             missing.push({ name: m.employeeName, note })
-            // Mark seen so memberByName doesn't get used elsewhere
-            memberByName.delete(m.employeeName)
         }
-        return { submitted: submitted.size, total: teammates.length, missing: missing.slice(0, 5) }
-    }, [team, timesheets, profiles, today])
+        return { submitted: submittedCount, total: teammates.length, missing: missing.slice(0, 5) }
+    }, [team, timesheets, today])
 
     if (lLoading || tLoading) return <CenterSpinner />
 
@@ -570,7 +557,6 @@ function ManagerDashboard({ user }: { user: UserInfo }) {
                 meta={[
                     { l: 'Team size', v: `${team?.members.length ?? 0} people` },
                     { l: 'Working now', v: team ? `${team.members.filter((m) => m.status === 'in').length} of ${team.members.length}` : '—' },
-                    { l: 'Approvals due', v: `${pendingLeaves.length + pendingTs.length} items` },
                     { l: 'On leave', v: team ? `${team.members.filter((m) => m.status === 'leave').length}` : '—' },
                 ]}
             />
@@ -598,8 +584,6 @@ function ManagerDashboard({ user }: { user: UserInfo }) {
 
             <ActionCard title="Quick actions" icon="⚡">
                 <QuickActions tiles={[
-                    { icon: '📅', label: 'Team leave', sub: `${pendingLeaves.length} pending`, onClick: () => uiStore.navigateToTeamLeave() },
-                    { icon: '📋', label: 'Team timesheets', sub: `${pendingTs.length} pending`, onClick: () => uiStore.navigateToTeamTimesheets() },
                     { icon: '📝', label: 'My timesheet', sub: 'For this week', onClick: () => uiStore.navigateToNewTimesheet() },
                     { icon: '🌴', label: 'Apply leave', sub: 'For yourself', onClick: () => uiStore.navigateToApplyLeave() },
                 ]} />
@@ -791,7 +775,8 @@ interface QueueItem {
     id: string
     name: string
     title: string
-    meta: string
+    // A node, not a string: the leave icon is an SVG for the sensitive types.
+    meta: React.ReactNode
     tags: QueueTag[]
     createdAt: string
     urgent: boolean
@@ -1522,6 +1507,25 @@ function TeamHealthCard({ leaves, teamHistory }: {
     const noCheckInData = lineSeries.series.length === 0
         || lineSeries.series.every((s) => s.data.every((v) => v == null))
 
+    // y-axis bounds for the check-in chart. A fixed 06:00–12:00 window silently
+    // dropped anyone checking in outside it — the line vanished while the axis
+    // and legend still drew — so bracket the real values to the whole hour
+    // either side, with a two-hour floor on the span so a tight cluster of
+    // check-ins still gets a readable axis.
+    const checkInBounds = useMemo(() => {
+        const values = lineSeries.series
+            .flatMap((s) => s.data)
+            .filter((v): v is number => v != null)
+        if (values.length === 0) return { min: 6 * 60, max: 12 * 60 }
+        let min = Math.max(0, (Math.floor(Math.min(...values) / 60) - 1) * 60)
+        let max = Math.min(24 * 60, (Math.ceil(Math.max(...values) / 60) + 1) * 60)
+        if (max - min < 120) {
+            max = Math.min(24 * 60, min + 120)
+            min = Math.max(0, max - 120)
+        }
+        return { min, max }
+    }, [lineSeries])
+
     // y-axis tick labels for the line chart: minutes-from-midnight → "HH:mm".
     const formatMinutes = (mins: number | null) => {
         if (mins == null) return ''
@@ -1602,8 +1606,8 @@ function TeamHealthCard({ leaves, teamHistory }: {
                                 valueFormatter: shortDate,
                             }]}
                             yAxis={[{
-                                min: 6 * 60,
-                                max: 12 * 60,
+                                min: checkInBounds.min,
+                                max: checkInBounds.max,
                                 valueFormatter: (v: number) => formatMinutes(v),
                                 label: 'Check-in',
                             }]}
