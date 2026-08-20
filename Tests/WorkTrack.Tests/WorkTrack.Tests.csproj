@@ -21,6 +21,11 @@
     <!-- Real transactions, which the in-memory provider silently ignores. Used
          only by the rollback tests. -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.0" />
+    <!-- Pinned above the version EF Core 9.0.0 asks for (2.1.10), which bundles a
+         native SQLite carrying GHSA-2m69-gcr7-jv3q. The whole SQLitePCLRaw set
+         ships in lockstep, so pinning the bundle moves lib.e_sqlite3 with it.
+         Drop this once the EF Sqlite reference asks for 2.1.11 or later. -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.13" />
   </ItemGroup>
 
   <ItemGroup>
