@@ -5,7 +5,7 @@ using Domain.Services;
 using Microsoft.EntityFrameworkCore;
 using Persistence;
 
-namespace Application.Attendance;
+namespace Application.Attendance.Support;
 
 /// <summary>
 /// The loading, bucketing and wire-mapping every attendance handler shares.

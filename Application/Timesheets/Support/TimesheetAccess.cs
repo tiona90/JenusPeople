@@ -3,7 +3,7 @@ using Domain;
 using Microsoft.EntityFrameworkCore;
 using Persistence;
 
-namespace Application.Timesheets;
+namespace Application.Timesheets.Support;
 
 /// <summary>
 /// Who may modify a timesheet — and therefore its entries: the employee it

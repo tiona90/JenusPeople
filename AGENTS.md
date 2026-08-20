@@ -4,7 +4,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 ## Project Overview
 
-WorkTrack is a full-stack leave management and timesheet tracking application built with ASP.NET Core 10 (Clean Architecture) and React 19 (TypeScript + Vite).
+WorkTrack is a full-stack leave management and timesheet tracking application built with ASP.NET Core 10 and React 19 (TypeScript + Vite). See [Architecture](#architecture) for the layer layout — it is layered, but deliberately not dependency-inverted.
 
 ## Commands
 
@@ -37,20 +37,41 @@ Run `dotnet run --project API` (port 5000) and `npm run dev` in `client/` concur
 
 ## Architecture
 
-The solution follows **Clean Architecture** with strict layer boundaries:
+The solution is **layered but not dependency-inverted**. Don't assume the textbook
+Clean Architecture graph — `Application` references `Persistence` on purpose. The
+actual project references:
 
 ```
-Domain          → no dependencies
-Persistence     → depends on Domain
-Application     → depends on Domain (MediatR CQRS)
-Infrastructure  → depends on Application (Email, Config)
-API             → depends on all layers
+Domain          → nothing (entities, enums, service contracts)
+Persistence     → Domain (AppDbContext, EF configs, migrations)
+Application     → Domain + Persistence (MediatR CQRS)
+Infrastructure  → Domain (Email, Cloudinary, config)
+API             → Application + Infrastructure
 client/         → React SPA (separate)
 ```
 
+Note `Infrastructure → Domain`, not `Application`: the contracts it implements live in
+`Domain/Interfaces/` (e.g. `IEmailService`).
+
+**EF Core is the persistence abstraction — there is no repository layer.** This is a
+deliberate trade, not drift: roughly 70 of `Application`'s ~150 files inject
+`AppDbContext` straight into handlers, which query with LINQ and project to DTOs. What
+that means when adding code:
+
+- Inject `AppDbContext` into the handler constructor, like every existing handler does.
+  Do **not** introduce `IRepository`/`IUnitOfWork` interfaces for new features.
+- Handler tests run against a real EF provider, not mocks. `Tests/WorkTrack.Tests/`
+  offers two: `TestDb` in `TestSupport.cs` (EF in-memory — fast, but enforces no
+  constraints and ignores transactions) and `TransactionalTestDb` (SQLite in-memory —
+  real transactions, enforced unique indexes and foreign keys). Assert on constraint or
+  transaction behaviour only against the latter.
+- Swapping the ORM would mean touching `Application`. That cost was accepted in
+  exchange for dropping a layer of indirection over `DbContext`, which is already a
+  unit of work plus a set of queryable repositories.
+
 ### Backend Patterns
 
-**CQRS via MediatR:** All business logic lives in `Application/*/Queries/` and `Application/*/Commands/`. Controllers are thin — they dispatch to MediatR and call `HandleResult<T>()`.
+**CQRS via MediatR:** Business logic belongs in `Application/*/Queries/` and `Application/*/Commands/`. Controllers should be thin — dispatch to MediatR, then call `HandleResult<T>()`. Two existing exceptions to follow *away* from, not copy: `API/Controllers/TimesheetEntriesController.cs` does its entry CRUD directly against `AppDbContext`, and `AnnualLeavesController`/`TimesheetsController` query it to resolve SignalR notification audiences. `API/Hubs/`, `API/BackgroundServices/`, and the health checks also use `AppDbContext` directly, which is fine — they sit outside the request/handler path.
 
 **Result<T> pattern:** Handlers return `Result<T>` (never throw for business errors). `BaseApiController.HandleResult<T>()` maps these to HTTP responses consistently.
 

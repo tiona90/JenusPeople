@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Application.Settings.DTOs;
 
-namespace Application.Settings;
+namespace Application.Settings.Support;
 
 // (De)serialization for the AppSettings.RemindersJson column, with a merge step
 // that keeps the stored state aligned to the ReminderDefaults catalogue.

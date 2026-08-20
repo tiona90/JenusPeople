@@ -1,7 +1,8 @@
+using Application.Timesheets.Commands;
 using Domain;
 using FluentValidation;
 
-namespace Application.Timesheets.Commands;
+namespace Application.Timesheets.Validators;
 
 /// <summary>
 /// Auto-registered and executed by the MediatR <c>ValidationBehavior</c> pipeline

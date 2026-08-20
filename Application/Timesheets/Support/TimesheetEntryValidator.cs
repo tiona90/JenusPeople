@@ -1,6 +1,6 @@
 using Domain;
 
-namespace Application.Timesheets;
+namespace Application.Timesheets.Support;
 
 /// <summary>
 /// Pure rules for individual timesheet entries. Caller is responsible for

@@ -1,4 +1,4 @@
-namespace Application.Settings;
+namespace Application.Settings.Support;
 
 /// <summary>
 /// Parsing and normalising for the working-time settings fields.

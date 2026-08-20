@@ -2,7 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Application.Holidays.DTOs;
 
-namespace Application.Holidays;
+namespace Application.Holidays.Support;
 
 public class NagerHolidayClient(HttpClient httpClient)
 {

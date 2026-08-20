@@ -1,6 +1,6 @@
 using Application.Settings.DTOs;
 
-namespace Application.Settings;
+namespace Application.Settings.Support;
 
 public static class AppSettingsMapper
 {

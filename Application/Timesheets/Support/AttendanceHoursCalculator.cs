@@ -1,6 +1,6 @@
 using Domain;
 
-namespace Application.Timesheets;
+namespace Application.Timesheets.Support;
 
 // Pure calculator that turns a sequence of AttendanceEvents into worked
 // hours per UTC day. Mirrors the pairing logic in AttendanceController's

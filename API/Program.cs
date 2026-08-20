@@ -7,7 +7,7 @@ using API.Services;
 using Application.Core;
 using Application.Reminders;
 using Application.AnnualLeaves.Queries;
-using Application.Holidays;
+using Application.Holidays.Support;
 using Asp.Versioning;
 using Domain;
 using Domain.Interfaces;

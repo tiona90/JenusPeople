@@ -1,6 +1,6 @@
 using Application.Settings.DTOs;
 
-namespace Application.Settings;
+namespace Application.Settings.Support;
 
 // Canonical reminder catalogue. The Ids here are the contract shared with the
 // client (client-side display metadata is keyed by the same Ids). Stored

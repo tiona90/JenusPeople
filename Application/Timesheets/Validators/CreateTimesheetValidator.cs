@@ -1,8 +1,9 @@
+using Application.Timesheets.Commands;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Persistence;
 
-namespace Application.Timesheets.Commands;
+namespace Application.Timesheets.Validators;
 
 /// <summary>
 /// Auto-registered (AddValidatorsFromAssemblyContaining) and executed by the

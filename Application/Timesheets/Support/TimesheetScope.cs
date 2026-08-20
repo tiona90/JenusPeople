@@ -3,7 +3,7 @@ using Domain;
 using Microsoft.EntityFrameworkCore;
 using Persistence;
 
-namespace Application.Timesheets;
+namespace Application.Timesheets.Support;
 
 /// <summary>
 /// What a caller is allowed to *read*: every timesheet for an Admin; their own

@@ -1,7 +1,7 @@
 using Application.AdminUsers.DTOs;
 using Domain;
 
-namespace Application.AdminUsers;
+namespace Application.AdminUsers.Support;
 
 /// <summary>
 /// Builds the response body for every admin-user endpoint.
