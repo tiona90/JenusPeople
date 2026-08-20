@@ -109,25 +109,21 @@ public class CreateAnnualLeave
 
                     foreach (var recipient in recipients)
                     {
-                        var greetingName = recipient.DisplayName ?? recipient.Email;
-                        var htmlBody = $"""
-            <p>Hello {greetingName},</p>
-            <p>You have a new <strong>{leaveTypeName}</strong> request from <strong>{employeeName}</strong> for <strong>{dateRange}</strong>.</p>
-            <p><strong>Reason:</strong> {annualLeave.Reason}</p>
-            <p>Please log in to the Annual Leave system to review and take action.</p>
-            """;
-                        var textBody = $"""
-            Hello {greetingName},
-            You have a new {leaveTypeName} request from {employeeName} for {dateRange}.
-            Reason: {annualLeave.Reason}
-            Please log in to the Annual Leave system to review and take action.
-            """;
+                        // NotificationEmail encodes the display names and the
+                        // free-text reason for the HTML rendering. This used to
+                        // interpolate all three raw.
+                        var body = NotificationEmail
+                            .To(recipient.DisplayName ?? recipient.Email)
+                            .Sentence($"You have a new {leaveTypeName} request from {employeeName} for {dateRange}.")
+                            .Detail("Reason", annualLeave.Reason)
+                            .Closing("Please log in to the Annual Leave system to review and take action.")
+                            .Build();
 
                         await emailService.SendEmailAsync(
                             recipient.Email,
                             subject,
-                            htmlBody,
-                            textBody,
+                            body.Html,
+                            body.Text,
                             cancellationToken);
                     }
                 }
