@@ -211,8 +211,10 @@ If the demo accounts are not present, skip all of this and leave `Enabled: false
 
 ### Permissions
 - Grant the app-pool identity (`IIS AppPool\jpeople`) **Read** on the site
-  folder and **Modify** on a `logs\` subfolder (used if you enable stdout
-  logging for troubleshooting — see §6).
+  folder and **Modify** on `Logs\` and `logs\`. `Logs\` is where the app writes
+  its own structured log (§7) and is **required**, not optional — without it
+  Serilog's file sink cannot open a file. `logs\` is the separate ANCM stdout
+  directory used only when you enable stdout logging for troubleshooting (§6).
 
 ### Reverse proxy (only if you add one)
 ANCM in-process needs no configuration here: IIS hands the app the real client
@@ -261,6 +263,63 @@ If the site returns **HTTP 500.30/500.31/502.5** (ANCM startup failure):
 - Usual causes: Hosting Bundle missing/older than the app, DB unreachable, or a
   bad connection string. A database the app cannot migrate is fatal by design
   outside Development, and the reason is the first thing in `stdout_*.log`.
+
+---
+
+## 7. Logging and health probes
+
+### Logs
+Serilog writes two places:
+
+- **Console** — a readable line per event. IIS discards it unless you enable ANCM
+  stdout logging (§6).
+- **`Logs\worktrack-<date>.jsonl`** in the site folder — one JSON object per line,
+  a file per day, the last 14 kept. This is the one to query.
+
+Every log line from a request carries a `CorrelationId`, which is also returned to
+the caller in the `X-Correlation-ID` response header and appears as `traceId` in
+error response bodies. So a user reporting an error can be answered from the log
+without guessing at timestamps:
+
+```powershell
+Get-Content Logs\worktrack-*.jsonl | Select-String '"CorrelationId":"<the id>"'
+```
+
+A caller may send its own `X-Correlation-ID` to tie a chain of calls together; the
+app accepts it only if it is url-safe and under 64 characters, and generates one
+otherwise.
+
+To change levels on a deployed host, add a `Serilog` section to
+`appsettings.Production.json` and recycle the app pool — it overrides the defaults
+compiled in (`Information`, with `Microsoft.AspNetCore` at `Warning`). For example,
+to see EF Core SQL:
+
+```json
+"Serilog": {
+  "MinimumLevel": {
+    "Override": { "Microsoft.EntityFrameworkCore.Database.Command": "Information" }
+  }
+}
+```
+
+### Probes
+
+| Endpoint | Checks | Answers |
+|---|---|---|
+| `GET /health` | none | 200 while the process serves requests |
+| `GET /health/ready` | database, mail provider | 200 healthy or degraded, 503 unhealthy |
+
+Both are anonymous and exempt from rate limiting, and both return status names
+only — no exception text, no connection details.
+
+Point a monitor at **`/health/ready`** and a restart-style probe at **`/health`**.
+The split matters: `/health` deliberately ignores dependencies, because restarting
+this app does not repair a database it cannot reach. A **database** failure is
+`Unhealthy` (503, stop sending traffic here). A **mail provider** failure is only
+`Degraded` — notifications are late, but booking leave and filling timesheets still
+work, so the instance stays in rotation and the named check is what should raise an
+alert. The mail probe result is cached for 5 minutes, so a provider that has just
+recovered can read as degraded for that long.
 
 ---
 

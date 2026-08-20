@@ -86,6 +86,15 @@ Status enums: `AnnualLeaveStatus` (Pending, Approved, Rejected, Cancelled); `Tim
 - **DB:** SQL Server, connection string in `API/appsettings.Development.json` (`WorkTrack` database, trusted connection)
 - **Cloudinary:** Used for profile image and evidence file uploads
 - **Email:** Pluggable provider architecture (`Infrastructure/Services/Email/`). `IEmailProvider` has two implementations — `BrevoEmailProvider` (Brevo transactional HTTP API) and `SmtpEmailProvider` (MailKit; Gmail/Office365/Brevo relay). `EmailService` selects one at startup via `Email:Provider` (`"Brevo"` or `"Smtp"`) in `appsettings.json`. Brevo config in the `Brevo` section (`ApiKey`); SMTP config in `MailSettings`. Note: the Brevo account has "Authorised IPs" enabled. This host's public **IPv4** is allowlisted but its rotating IPv6 privacy addresses are not, so the Brevo HTTP client is pinned to IPv4 via a `SocketsHttpHandler.ConnectCallback` in `Infrastructure/DependencyInjection.cs` (otherwise .NET prefers IPv6 → intermittent 401 "unrecognised IP"). See https://app.brevo.com/security/authorised_ips.
+- **Logging:** Serilog (`API/Extensions/LoggingExtensions.cs`). Console plus
+  newline-delimited JSON in `Logs/worktrack-<date>.jsonl` (14 days). Every request
+  log line carries a `CorrelationId`, which is also the `X-Correlation-ID` response
+  header and the `traceId` in error bodies — see `API/Middleware/CorrelationIdMiddleware.cs`.
+  Override levels with a `Serilog` section in appsettings.
+- **Health probes:** `GET /health` is liveness (no checks); `GET /health/ready` checks
+  the database (Unhealthy → 503) and the configured mail provider (Degraded → still
+  200, result cached 5 minutes). Both anonymous and exempt from rate limiting. See
+  `API/Extensions/HealthCheckExtensions.cs`.
 - **OAuth:** Google and GitHub OAuth configured in `appsettings.json`; both are optional (skipped if `ClientId` is empty)
 ## Improvements & Roadmap
 
@@ -99,10 +108,8 @@ The following areas have been identified for future enhancement to improve scala
 ### 2. API & Backend
 - **Versioning:** Implement API versioning (e.g., `/api/v1`) to manage breaking changes.
 - **Soft Deletes:** Add `IsDeleted` support for `EmployeeProfile` and `Project` entities.
-- **Structured Logging:** Integrate Serilog for better production observability.
 
 ### 3. Security & Resilience
-- **Rate Limiting:** Implement built-in ASP.NET Core rate limiting.
 - **Audit Logging:** Add a domain-level audit log to track status changes and sensitive modifications.
 
 ### 4. Developer Experience (DX)

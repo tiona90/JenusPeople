@@ -490,5 +490,8 @@ API/appsettings.Production.json
 /publish/
 API/wwwroot/
 
+# Serilog file sink output (Logs/worktrack-<date>.jsonl next to the app)
+Logs/
+
 # Claude Code local state
 .claude/

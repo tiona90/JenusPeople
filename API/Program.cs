@@ -35,6 +35,12 @@ if (builder.Environment.IsDevelopment())
     builder.Configuration.AddUserSecrets<Program>(optional: true);
 }
 
+// Serilog replaces the default logger for the whole host: console for ANCM's
+// stdout capture, newline-delimited JSON under Logs/ for anything that has to be
+// queried. Registered before the services below so their startup logging goes
+// through it too. See LoggingExtensions.
+builder.UseSerilogLogging();
+
 // Add services to the container.
 
 builder.Services.AddControllers().AddJsonOptions(options =>
@@ -204,6 +210,10 @@ builder.Services.AddHsts(options =>
     options.Preload = false;
 });
 builder.Services.AddHttpContextAccessor();
+
+// Liveness (/health) and readiness (/health/ready, checking the database and the
+// configured mail provider). See HealthCheckExtensions for what each answers.
+builder.Services.AddHealthCheckEndpoints();
 builder.Services.AddInfrastructureServices(builder.Configuration);
 // Account-lifecycle emails (welcome invite, password reset, email change) and
 // the client links inside them. Shared by AccountController and
@@ -355,6 +365,14 @@ if (knownProxies.Length > 0)
     app.UseForwardedHeaders();
 }
 
+// Before anything that logs or can fail: it stamps the request with the id that
+// its log lines, its error response and its X-Correlation-ID header all carry.
+app.UseMiddleware<CorrelationIdMiddleware>();
+
+// One line per request, at the level its outcome deserves. After the middleware
+// above so the line carries the correlation id.
+app.UseRequestLogging();
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwaggerDocumentation();
@@ -389,6 +407,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHealthCheckEndpoints();
 
 // MapIdentityApi is deliberately NOT mapped. It publishes an anonymous
 // POST /register (plus /resendConfirmationEmail, /refresh and /manage/*), which

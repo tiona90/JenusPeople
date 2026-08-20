@@ -217,6 +217,10 @@ public class PublicRegistrationRemovedTests(ApiRouteTableFixture routeTable)
     {
         var expected = new[]
         {
+            // Probes, and a probe has no account. Both answer status names only —
+            // no exception text, no connection details. See HealthCheckExtensions.
+            "* /health",
+            "* /health/ready",
             "* /{*path:nonfile}",
             "GET /api/Account/confirm-email-change",
             "GET /api/Account/verify-email",
