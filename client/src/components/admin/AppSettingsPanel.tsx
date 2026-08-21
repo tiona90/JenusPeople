@@ -16,6 +16,8 @@ import TableCell from '@mui/material/TableCell'
 import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import TextField from '@mui/material/TextField'
+import ToggleButton from '@mui/material/ToggleButton'
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Typography from '@mui/material/Typography'
 import { getAppSettings, getDepartments, getEmployeeProfiles, getHolidayCountries, getLeaveTypes, updateAppSettings } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
@@ -34,6 +36,27 @@ const TD = { py: '11px', px: '14px', fontSize: 13, color: 'text.primary', border
 const MONTHS = [
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December',
+]
+
+const TIMEZONES = ['UTC', 'UTC-5 (Eastern)', 'UTC-6 (Central)', 'UTC-7 (Mountain)', 'UTC-8 (Pacific)']
+
+const WORKING_DAYS: { value: string; label: string }[] = [
+    { value: 'mon-fri',  label: 'Monday – Friday (5-day week)' },
+    { value: 'mon-sat',  label: 'Monday – Saturday (6-day week)' },
+    { value: 'sun-fri',  label: 'Sunday – Friday (custom)' },
+    { value: 'custom',   label: 'Custom days' },
+]
+
+// Day tokens in week order, for the "Custom days" picker. Tokens match the
+// backend contract (lowercase 3-letter, stored as a CSV).
+const CUSTOM_DAYS: { token: string; label: string }[] = [
+    { token: 'mon', label: 'Mon' },
+    { token: 'tue', label: 'Tue' },
+    { token: 'wed', label: 'Wed' },
+    { token: 'thu', label: 'Thu' },
+    { token: 'fri', label: 'Fri' },
+    { token: 'sat', label: 'Sat' },
+    { token: 'sun', label: 'Sun' },
 ]
 
 // Week tokens (matching the backend) in Monday-first order, with display labels.
@@ -95,6 +118,18 @@ function ScheduleRow({ label, date, color, bg, border, badge, badgeBg, badgeColo
     )
 }
 
+function SettingRow({ label, desc, control }: { label: string; desc: string; control: React.ReactNode }) {
+    return (
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 2, py: 1.5, borderBottom: '1px solid', borderColor: 'divider', '&:last-of-type': { borderBottom: 'none' } }}>
+            <Box sx={{ flex: 1 }}>
+                <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'text.primary' }}>{label}</Typography>
+                <Typography sx={{ fontSize: 12, color: 'text.secondary', lineHeight: 1.4 }}>{desc}</Typography>
+            </Box>
+            <Box sx={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 1.5 }}>{control}</Box>
+        </Box>
+    )
+}
+
 const DEFAULT: AppSettings = {
     leaveYearStartMonth: 1,
     maxCarryoverDays: 5,
@@ -152,8 +187,12 @@ export default function AppSettingsPanel() {
     const set = <K extends keyof AppSettings>(key: K, val: AppSettings[K]) =>
         setForm(f => ({ ...f, [key]: val }))
 
+    /* FinancialYearStartMonth used to be edited separately, on Reminders &
+       Notifications, as "Financial year · When leave allocations reset" — the same
+       concept as the leave year, in a second column nothing reads. The leave year is
+       now the only control, and saving mirrors it so the column cannot drift. */
     const mutation = useMutation({
-        mutationFn: () => updateAppSettings(form),
+        mutationFn: () => updateAppSettings({ ...form, financialYearStartMonth: form.leaveYearStartMonth }),
         onSuccess: (data) => {
             queryClient.setQueryData(['appSettings'], data)
             setShowSaved(true)
@@ -169,6 +208,12 @@ export default function AppSettingsPanel() {
     const endDate = useMemo(
         () => getLeaveYearBounds(form.leaveYearStartMonth, now).lyEnd,
         [form.leaveYearStartMonth, now])
+
+    const customDaysInvalid =
+        form.workingDays === 'custom' && (form.workingDaysCustom ?? '').split(',').filter(Boolean).length === 0
+
+    const resetOrgDefaults = () =>
+        setForm((prev) => ({ ...prev, workingHoursStart: '09:00', workingHoursEnd: '18:00', timeZoneId: 'UTC', workingDays: 'mon-fri' }))
 
     const nextReset = addDays(lyEnd, 1)
     const daysRemaining = Math.max(0, diffDays(now, lyEnd))
@@ -246,6 +291,9 @@ export default function AppSettingsPanel() {
                                         >
                                             {MONTHS.map((name, i) => <MenuItem key={i + 1} value={i + 1}>{name}</MenuItem>)}
                                         </Select>
+                                        <Typography sx={{ fontSize: 11, color: 'text.disabled', mt: 0.5 }}>
+                                            Also the financial year — when leave allocations reset
+                                        </Typography>
                                     </Grid>
                                     <Grid size={{ xs: 12, sm: 6 }}>
                                         <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'text.primary', mb: 0.75 }}>Leave Year End Date</Typography>
@@ -406,7 +454,7 @@ export default function AppSettingsPanel() {
                                         sx={{ textTransform: 'none', borderColor: 'divider', color: 'text.secondary' }}>
                                         Cancel
                                     </Button>
-                                    <Button variant="contained" size="small" onClick={() => mutation.mutate()} disabled={!isDirty || mutation.isPending}
+                                    <Button variant="contained" size="small" onClick={() => mutation.mutate()} disabled={!isDirty || mutation.isPending || customDaysInvalid}
                                         startIcon={mutation.isPending ? <CircularProgress size={13} color="inherit" /> : null}
                                         sx={{ textTransform: 'none', bgcolor: 'primary.main', '&:hover': { bgcolor: 'primary.dark' }, boxShadow: 'none' }}>
                                         {mutation.isPending ? 'Saving…' : 'Save Settings'}
@@ -494,6 +542,70 @@ export default function AppSettingsPanel() {
                     </Stack>
                 </Grid>
             </Grid>
+
+            {/* ── Organization ──────────────────────────────────────────────────
+                 Moved off Reminders & Notifications: the working week and the office
+                 clock are org-wide configuration, not notification preferences. The
+                 financial-year row did not come with them — see the leave year above. */}
+            <Box sx={{ bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider', borderRadius: '10px', overflow: 'hidden' }}>
+                <Box sx={{ px: 2.25, py: 1.75, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Typography sx={{ fontSize: 14, fontWeight: 600, color: 'text.primary', display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Box component="span" sx={{ fontSize: 16 }}>🏢</Box>Organization
+                    </Typography>
+                    <Box component="span" sx={{ fontSize: 11, fontWeight: 500, px: 1.1, py: 0.4, borderRadius: '20px', bgcolor: softBg('info'), color: 'info.dark' }}>Admin Only</Box>
+                </Box>
+                <Box sx={{ p: 2.25 }}>
+                    <SettingRow label="Working hours start" desc="Used for check-in alerts and attendance reports"
+                        control={<TextField type="time" size="small" value={form.workingHoursStart} onChange={(e) => set('workingHoursStart', e.target.value)} sx={{ '& .MuiInputBase-input': { fontSize: 13 }, minWidth: 130 }} />} />
+                    <SettingRow label="Working hours end" desc="Default work day ends"
+                        control={<TextField type="time" size="small" value={form.workingHoursEnd} onChange={(e) => set('workingHoursEnd', e.target.value)} sx={{ '& .MuiInputBase-input': { fontSize: 13 }, minWidth: 130 }} />} />
+                    <SettingRow label="Timezone" desc="Used for all time-based calculations"
+                        control={<Select size="small" value={form.timeZoneId} onChange={(e) => set('timeZoneId', e.target.value)} sx={{ fontSize: 13, minWidth: 190 }}>
+                            {TIMEZONES.map((tz) => <MenuItem key={tz} value={tz} sx={{ fontSize: 13 }}>{tz}</MenuItem>)}
+                        </Select>} />
+                    <SettingRow label="Weekends" desc="Define which days are working days"
+                        control={<Select size="small" value={form.workingDays} onChange={(e) => set('workingDays', e.target.value)} sx={{ fontSize: 13, minWidth: 250 }}>
+                            {WORKING_DAYS.map((w) => <MenuItem key={w.value} value={w.value} sx={{ fontSize: 13 }}>{w.label}</MenuItem>)}
+                        </Select>} />
+
+                    {form.workingDays === 'custom' && (() => {
+                        const selected = (form.workingDaysCustom ?? '').split(',').map((t) => t.trim()).filter(Boolean)
+                        return (
+                            <Box sx={{ py: 1.5, borderTop: '1px solid', borderColor: 'divider' }}>
+                                <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.04em', mb: 1 }}>
+                                    Custom working days
+                                </Typography>
+                                <ToggleButtonGroup
+                                    size="small"
+                                    value={selected}
+                                    onChange={(_, vals: string[]) =>
+                                        set('workingDaysCustom', CUSTOM_DAYS.filter((d) => vals.includes(d.token)).map((d) => d.token).join(','))}
+                                    sx={{ flexWrap: 'wrap' }}
+                                >
+                                    {CUSTOM_DAYS.map((d) => (
+                                        <ToggleButton key={d.token} value={d.token} sx={{ textTransform: 'none', fontSize: 12, px: 1.75 }}>{d.label}</ToggleButton>
+                                    ))}
+                                </ToggleButtonGroup>
+                                {selected.length === 0 && (
+                                    <Typography sx={{ fontSize: 12, color: 'error.main', mt: 0.75 }}>Select at least one working day.</Typography>
+                                )}
+                            </Box>
+                        )
+                    })()}
+
+                    <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', pt: 2, mt: 1, borderTop: '1px solid', borderColor: 'divider' }}>
+                        <Button variant="outlined" size="small" onClick={resetOrgDefaults} disabled={mutation.isPending}
+                            sx={{ textTransform: 'none', borderColor: 'divider', color: 'text.secondary' }}>
+                            Reset to defaults
+                        </Button>
+                        <Button variant="contained" size="small" onClick={() => mutation.mutate()} disabled={!isDirty || mutation.isPending || customDaysInvalid}
+                            startIcon={mutation.isPending ? <CircularProgress size={13} color="inherit" /> : null}
+                            sx={{ textTransform: 'none', boxShadow: 'none' }}>
+                            {mutation.isPending ? 'Saving…' : '💾 Save changes'}
+                        </Button>
+                    </Box>
+                </Box>
+            </Box>
 
             {/* ── Carryover Preview ─────────────────────────────────────────── */}
             <Box sx={{ bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider', borderRadius: '10px', overflow: 'hidden' }}>

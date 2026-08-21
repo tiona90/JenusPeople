@@ -17,6 +17,7 @@ import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded'
 import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
 import LabelRoundedIcon from '@mui/icons-material/LabelRounded'
 import CategoryRoundedIcon from '@mui/icons-material/CategoryRounded'
+import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
 import EventRoundedIcon from '@mui/icons-material/EventRounded'
 import NotificationsActiveRoundedIcon from '@mui/icons-material/NotificationsActiveRounded'
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
@@ -211,8 +212,11 @@ const Sidebar = observer(function Sidebar() {
             { kind: 'item', label: 'Leave Types', icon: <LabelRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('leave-types'), active: onAdminSection('leave-types', 'leave') },
             { kind: 'item', label: 'Projects', icon: <FolderRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('projects'), active: onAdminSection('projects') },
             { kind: 'item', label: 'Project Activity Types', icon: <CategoryRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('activity-types'), active: onAdminSection('activity-types') },
+            { kind: 'item', label: 'Data Maintenance', icon: <StorageRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('maintenance'), active: onAdminSection('maintenance') },
             { kind: 'section', label: 'Settings' },
-            { kind: 'item', label: 'Leave Settings', icon: <EventRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('settings'), active: onAdminSection('settings') },
+            // Named for everything it holds: the leave year, the timesheet policy, the
+            // public-holiday country and the working week all live on this one page.
+            { kind: 'item', label: 'Leave & Organization', icon: <EventRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('settings'), active: onAdminSection('settings') },
             { kind: 'item', label: 'Reminders & Notifications', icon: <NotificationsActiveRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('reminders-notifications'), active: onAdminSection('reminders-notifications') },
         ]
     } else if (isManagerUser) {

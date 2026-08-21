@@ -5,15 +5,13 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import Grid from '@mui/material/Grid'
-import MenuItem from '@mui/material/MenuItem'
-import Select from '@mui/material/Select'
 import Stack from '@mui/material/Stack'
 import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Typography from '@mui/material/Typography'
-import { clearApprovalHistory, getAppSettings, resetReminders, updateAppSettings } from '../../lib/api'
+import { getAppSettings, resetReminders, updateAppSettings } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
 import type { AppSettings, ReminderFrequency, ReminderSetting } from '../../lib/types'
 import { softBg, type SxColor } from '../../lib/theme-tokens'
@@ -34,32 +32,6 @@ const REMINDERS_META: ReminderMeta[] = [
     { id: 'check-out', emoji: '🔴', name: 'Check-Out Reminder', desc: 'Remind employees to check out at the end of their workday.', tail: 'employees still checked in will be reminded to check out and complete their timesheet.' },
 ]
 const META_BY_ID = new Map(REMINDERS_META.map((m) => [m.id, m]))
-
-const TIMEZONES = ['UTC', 'UTC-5 (Eastern)', 'UTC-6 (Central)', 'UTC-7 (Mountain)', 'UTC-8 (Pacific)']
-const FINANCIAL_YEARS: { month: number; label: string }[] = [
-    { month: 1, label: 'January 1 – December 31' },
-    { month: 4, label: 'April 1 – March 31' },
-    { month: 7, label: 'July 1 – June 30' },
-]
-
-const WORKING_DAYS: { value: string; label: string }[] = [
-    { value: 'mon-fri',  label: 'Monday – Friday (5-day week)' },
-    { value: 'mon-sat',  label: 'Monday – Saturday (6-day week)' },
-    { value: 'sun-fri',  label: 'Sunday – Friday (custom)' },
-    { value: 'custom',   label: 'Custom days' },
-]
-
-// Day tokens in week order, for the "Custom days" picker. Tokens match the
-// backend contract (lowercase 3-letter, stored as a CSV).
-const CUSTOM_DAYS: { token: string; label: string }[] = [
-    { token: 'mon', label: 'Mon' },
-    { token: 'tue', label: 'Tue' },
-    { token: 'wed', label: 'Wed' },
-    { token: 'thu', label: 'Thu' },
-    { token: 'fri', label: 'Fri' },
-    { token: 'sat', label: 'Sat' },
-    { token: 'sun', label: 'Sun' },
-]
 
 function formatTime(hhmm: string): string {
     const [h, m] = (hhmm ?? '').split(':').map(Number)
@@ -137,19 +109,8 @@ export default function OrgSettingsPanel() {
         onError: (err) => SweetAlert.fire({ icon: 'error', title: 'Failed', text: getApiErrorMessage(err, 'Could not reset reminders.') }),
     })
 
-    const clearHistoryMutation = useMutation({
-        mutationFn: clearApprovalHistory,
-        onSuccess: (count) => {
-            void queryClient.invalidateQueries()
-            void SweetAlert.fire({ icon: 'success', title: 'History cleared', text: `${count} approval record${count === 1 ? '' : 's'} from the past 30 days deleted.`, timer: 2600, showConfirmButton: false })
-        },
-        onError: (err) => SweetAlert.fire({ icon: 'error', title: 'Failed', text: getApiErrorMessage(err, 'Could not clear approval history.') }),
-    })
-
     const isDirty = useMemo(() => JSON.stringify(form) !== JSON.stringify(saved), [form, saved])
     const enabledCount = form?.reminders.filter((r) => r.enabled).length ?? 0
-    const customDaysInvalid =
-        form?.workingDays === 'custom' && (form.workingDaysCustom ?? '').split(',').filter(Boolean).length === 0
 
     if (isLoading || !form) {
         return <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress size={28} /></Box>
@@ -159,19 +120,6 @@ export default function OrgSettingsPanel() {
 
     const setReminder = (id: string, patch: Partial<ReminderSetting>) =>
         setForm((f) => (f ? { ...f, reminders: f.reminders.map((r) => (r.id === id ? { ...r, ...patch } : r)) } : f))
-
-    const resetOrgDefaults = () =>
-        setForm((f) => (f ? { ...f, workingHoursStart: '09:00', workingHoursEnd: '18:00', timeZoneId: 'UTC', financialYearStartMonth: 1, workingDays: 'mon-fri' } : f))
-
-    const onClearHistory = async () => {
-        const res = await SweetAlert.fire({
-            title: 'Clear approval history?',
-            text: 'This deletes all leave & timesheet approval records from the past 30 days. This action cannot be undone.',
-            icon: 'warning', showCancelButton: true, confirmButtonText: 'Yes, clear history',
-            cancelButtonText: 'Cancel', confirmButtonColor: '#EF4444', reverseButtons: true,
-        })
-        if (res.isConfirmed) clearHistoryMutation.mutate()
-    }
 
     const onResetReminders = async () => {
         const res = await SweetAlert.fire({
@@ -286,86 +234,21 @@ export default function OrgSettingsPanel() {
                 </Grid>
             </Grid>
 
-            {/* Organization settings */}
-            <Card title="Organization Settings" icon="🏢">
-                <SettingRow label="Working hours start" desc="Used for check-in alerts and attendance reports"
-                    control={<TextField type="time" size="small" value={form.workingHoursStart} onChange={(e) => set('workingHoursStart', e.target.value)} sx={{ '& .MuiInputBase-input': { fontSize: 13 }, minWidth: 130 }} />} />
-                <SettingRow label="Working hours end" desc="Default work day ends"
-                    control={<TextField type="time" size="small" value={form.workingHoursEnd} onChange={(e) => set('workingHoursEnd', e.target.value)} sx={{ '& .MuiInputBase-input': { fontSize: 13 }, minWidth: 130 }} />} />
-                <SettingRow label="Timezone" desc="Used for all time-based calculations"
-                    control={<Select size="small" value={form.timeZoneId} onChange={(e) => set('timeZoneId', e.target.value)} sx={{ fontSize: 13, minWidth: 190 }}>
-                        {TIMEZONES.map((tz) => <MenuItem key={tz} value={tz} sx={{ fontSize: 13 }}>{tz}</MenuItem>)}
-                    </Select>} />
-                <SettingRow label="Financial year" desc="When leave allocations reset"
-                    control={<Select size="small" value={form.financialYearStartMonth} onChange={(e) => set('financialYearStartMonth', Number(e.target.value))} sx={{ fontSize: 13, minWidth: 220 }}>
-                        {FINANCIAL_YEARS.map((fy) => <MenuItem key={fy.month} value={fy.month} sx={{ fontSize: 13 }}>{fy.label}</MenuItem>)}
-                    </Select>} />
-                <SettingRow label="Weekends" desc="Define which days are working days"
-                    control={<Select size="small" value={form.workingDays} onChange={(e) => set('workingDays', e.target.value)} sx={{ fontSize: 13, minWidth: 250 }}>
-                        {WORKING_DAYS.map((w) => <MenuItem key={w.value} value={w.value} sx={{ fontSize: 13 }}>{w.label}</MenuItem>)}
-                    </Select>} />
-
-                {form.workingDays === 'custom' && (() => {
-                    const selected = (form.workingDaysCustom ?? '').split(',').map((t) => t.trim()).filter(Boolean)
-                    return (
-                        <Box sx={{ py: 1.5, borderBottom: '1px solid', borderColor: 'divider' }}>
-                            <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.04em', mb: 1 }}>
-                                Custom working days
-                            </Typography>
-                            <ToggleButtonGroup
-                                size="small"
-                                value={selected}
-                                onChange={(_, vals: string[]) =>
-                                    set('workingDaysCustom', CUSTOM_DAYS.filter((d) => vals.includes(d.token)).map((d) => d.token).join(','))}
-                                sx={{ flexWrap: 'wrap' }}
-                            >
-                                {CUSTOM_DAYS.map((d) => (
-                                    <ToggleButton key={d.token} value={d.token} sx={{ textTransform: 'none', fontSize: 12, px: 1.75 }}>{d.label}</ToggleButton>
-                                ))}
-                            </ToggleButtonGroup>
-                            {selected.length === 0 && (
-                                <Typography sx={{ fontSize: 12, color: 'error.main', mt: 0.75 }}>Select at least one working day.</Typography>
-                            )}
-                        </Box>
-                    )
-                })()}
-
-                <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', pt: 2, mt: 1, borderTop: '1px solid', borderColor: 'divider' }}>
-                    <Button variant="outlined" size="small" onClick={resetOrgDefaults} disabled={mutation.isPending}
-                        sx={{ textTransform: 'none', borderColor: 'divider', color: 'text.secondary' }}>
-                        Reset to defaults
-                    </Button>
-                    <Button variant="contained" size="small" onClick={() => form && mutation.mutate(form)} disabled={!isDirty || mutation.isPending || customDaysInvalid}
-                        startIcon={mutation.isPending ? <CircularProgress size={13} color="inherit" /> : null}
-                        sx={{ textTransform: 'none', boxShadow: 'none' }}>
-                        {mutation.isPending ? 'Saving…' : '💾 Save changes'}
-                    </Button>
-                </Box>
-            </Card>
-
-            {/* Danger zone */}
-            <Card title="Danger Zone" icon="⚠️" headBg={softBg('error')} borderColor="error.light">
-                <Stack spacing={1.5}>
-                    <Box sx={{ bgcolor: softBg('error'), border: '1px solid', borderColor: 'error.light', borderRadius: '8px', p: '12px 14px' }}>
-                        <Typography sx={{ fontSize: 12, fontWeight: 700, color: 'error.dark', mb: 0.5 }}>Clear all approval history</Typography>
-                        <Typography sx={{ fontSize: 12, color: 'error.dark', mb: 1.25 }}>This will delete all approval records from the past 30 days. This action cannot be undone.</Typography>
-                        <Button onClick={onClearHistory} disabled={clearHistoryMutation.isPending} variant="contained" size="small"
-                            startIcon={clearHistoryMutation.isPending ? <CircularProgress size={13} color="inherit" /> : null}
-                            sx={{ textTransform: 'none', bgcolor: 'error.main', '&:hover': { bgcolor: 'error.dark' }, boxShadow: 'none' }}>
-                            🗑️ Clear history
-                        </Button>
-                    </Box>
-                    <Box sx={{ bgcolor: softBg('error'), border: '1px solid', borderColor: 'error.light', borderRadius: '8px', p: '12px 14px' }}>
-                        <Typography sx={{ fontSize: 12, fontWeight: 700, color: 'error.dark', mb: 0.5 }}>Reset all reminders to defaults</Typography>
-                        <Typography sx={{ fontSize: 12, color: 'error.dark', mb: 1.25 }}>Restore all reminder settings to factory defaults. Your custom preferences will be lost.</Typography>
-                        <Button onClick={onResetReminders} disabled={resetRemindersMutation.isPending} variant="contained" size="small"
-                            startIcon={resetRemindersMutation.isPending ? <CircularProgress size={13} color="inherit" /> : null}
-                            sx={{ textTransform: 'none', bgcolor: 'error.main', '&:hover': { bgcolor: 'error.dark' }, boxShadow: 'none' }}>
-                            ↻ Reset reminders
-                        </Button>
-                    </Box>
-                </Stack>
-            </Card>
+            {/* Reset lives with the reminders it resets, and is a preference reset — the
+                irreversible data deletion that used to sit beside it under a "Danger
+                Zone" heading is now on Administration › Data Maintenance. */}
+            <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', alignItems: 'center' }}>
+                <Button variant="outlined" size="small" onClick={onResetReminders} disabled={resetRemindersMutation.isPending}
+                    startIcon={resetRemindersMutation.isPending ? <CircularProgress size={13} color="inherit" /> : null}
+                    sx={{ textTransform: 'none', borderColor: 'divider', color: 'text.secondary' }}>
+                    ↻ Reset reminders to defaults
+                </Button>
+                <Button variant="contained" size="small" onClick={() => form && mutation.mutate(form)} disabled={!isDirty || mutation.isPending}
+                    startIcon={mutation.isPending ? <CircularProgress size={13} color="inherit" /> : null}
+                    sx={{ textTransform: 'none', boxShadow: 'none' }}>
+                    {mutation.isPending ? 'Saving…' : '💾 Save changes'}
+                </Button>
+            </Box>
         </Stack>
     )
 }
