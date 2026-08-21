@@ -84,7 +84,7 @@ export default function Heatmap({ month, year, heatmap, holidays, today, onNav, 
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', mb: '12px' }}>
                 <Box>
                     <Box sx={{ fontSize: 13, fontWeight: 600, color: 'text.primary' }}>{MONTH_NAMES[month]} {year} · Leave Calendar</Box>
-                    <Box sx={{ fontSize: 11, color: 'text.secondary', mt: '2px' }}>Click a request below to see details</Box>
+                    <Box sx={{ fontSize: 11, color: 'text.secondary', mt: '2px' }}>Click a request in the list above to see details</Box>
                 </Box>
                 <Box sx={{ display: 'flex', gap: '14px', alignItems: 'center', flexWrap: 'wrap' }}>
                     <Box sx={{ display: 'flex', gap: '10px', fontSize: 10, color: 'text.secondary', flexWrap: 'wrap' }}>

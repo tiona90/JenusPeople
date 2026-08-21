@@ -11,14 +11,20 @@ import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import Typography from '@mui/material/Typography'
 import { getCompanyAttendance } from '../../lib/api'
-import { formatElapsed, formatTime } from '../../lib/hooks/useAttendance'
-import type { AttendanceIssue, CompanyAttendance, IssueSeverity, RecentActivity } from '../../lib/types'
-import { softBg, type SxColor } from '../../lib/theme-tokens'
+import { activityIcon, formatElapsed, formatTime } from '../../lib/hooks/useAttendance'
+import type { CompanyAttendance, RecentActivity } from '../../lib/types'
+import { softBg } from '../../lib/theme-tokens'
 
 const BLUE = 'primary.main'
 const GREEN = 'success.main'
 const AMBER = 'warning.main'
 const RED = 'error.main'
+
+// Not-checked-in is stated, not diagnosed. At the late-check-in hour the data
+// cannot separate an unscheduled absence from someone who has not arrived yet,
+// so the count and the feed rows both read neutral — the same grey the admin
+// dashboard gives its "Not in" segment and its not-checked-in activity rows.
+const NEUTRAL = 'text.disabled'
 
 const TH = {
     py: '10px',
@@ -73,14 +79,6 @@ function StatCard({
     )
 }
 
-function activityIcon(action: string) {
-    if (action.includes('Late')) return '⚠️'
-    if (action.includes('Not')) return '🔴'
-    if (action.includes('break')) return '☕'
-    if (action.includes('out')) return '🔴'
-    return '🟢'
-}
-
 function ActivityRow({ r }: { r: RecentActivity }) {
     return (
         <Box sx={{
@@ -112,38 +110,12 @@ function ActivityRow({ r }: { r: RecentActivity }) {
             </Box>
             <Typography sx={{ fontSize: 11, color: 'text.secondary', fontVariantNumeric: 'tabular-nums' }}>
                 {r.minutesAgo == null
-                    ? 'flagged'
+                    ? '—'
                     : r.minutesAgo < 1
                         ? 'just now'
                         : r.minutesAgo < 60
                             ? `${r.minutesAgo} min ago`
                             : formatElapsed(r.minutesAgo) + ' ago'}
-            </Typography>
-        </Box>
-    )
-}
-
-const ISSUE_STYLES: Record<IssueSeverity, { bg: SxColor; border: string; title: string; detail: string }> = {
-    danger:  { bg: softBg('error'), border: RED,   title: 'error.dark', detail: 'error.dark' },
-    warning: { bg: softBg('warning'), border: AMBER, title: 'warning.dark', detail: 'warning.dark' },
-    info:    { bg: softBg('info'), border: BLUE,  title: 'info.dark', detail: 'info.dark' },
-    success: { bg: softBg('success'), border: GREEN, title: 'success.dark', detail: 'success.dark' },
-}
-
-function IssueCard({ issue }: { issue: AttendanceIssue }) {
-    const s = ISSUE_STYLES[issue.severity]
-    return (
-        <Box sx={{
-            bgcolor: s.bg,
-            borderLeft: `3px solid ${s.border}`,
-            borderRadius: '6px',
-            p: '10px 12px',
-        }}>
-            <Typography sx={{ fontSize: 12, fontWeight: 600, color: s.title, mb: 0.5 }}>
-                {issue.title}
-            </Typography>
-            <Typography sx={{ fontSize: 11, color: s.detail }}>
-                {issue.detail}
             </Typography>
         </Box>
     )
@@ -225,11 +197,11 @@ export default function CompanyAttendancePage() {
                     sub="employees"
                 />
                 <StatCard
-                    accent={RED}
+                    accent={NEUTRAL}
                     icon="⚪"
                     label="Not Checked In"
                     value={data.out}
-                    sub={data.out > 0 ? 'requires follow-up' : 'all in'}
+                    sub={data.out > 0 ? 'no check-in recorded yet' : 'all in'}
                 />
                 <StatCard
                     accent={BLUE}
@@ -301,7 +273,7 @@ export default function CompanyAttendancePage() {
                                         </TableCell>
                                         <TableCell sx={TD}>
                                             {d.out > 0
-                                                ? <Box component="strong" sx={{ color: RED }}>{d.out}</Box>
+                                                ? <Box component="strong" sx={{ color: 'text.primary' }}>{d.out}</Box>
                                                 : <Box component="span" sx={{ color: 'text.disabled' }}>0</Box>}
                                         </TableCell>
                                         <TableCell sx={TD}>
@@ -345,64 +317,47 @@ export default function CompanyAttendancePage() {
                 </Box>
             </Paper>
 
-            {/* Recent activity + Issues */}
-            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.75 }}>
-                <Paper elevation={0} sx={{ bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider', borderRadius: '10px', overflow: 'hidden' }}>
-                    <Box sx={{
-                        p: '14px 18px',
-                        borderBottom: '1px solid', borderColor: 'divider',
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    }}>
-                        <Typography sx={{ fontSize: 14, fontWeight: 600, color: 'text.primary' }}>Recent Activity</Typography>
-                        <Button
-                            variant="outlined"
-                            size="small"
-                            onClick={() => exportRecentToCsv(data)}
-                            disabled={data.recent.length === 0}
-                            sx={{
-                                fontSize: 12,
-                                textTransform: 'none',
-                                color: BLUE,
-                                borderColor: BLUE,
-                                px: 1.5, py: 0.5,
-                                '&:hover': { bgcolor: softBg('primary'), borderColor: BLUE },
-                            }}
-                        >
-                            Export Log
-                        </Button>
-                    </Box>
-                    <Box sx={{ p: 2.25 }}>
-                        <Stack spacing={1}>
-                            {data.recent.length === 0 ? (
-                                <Typography sx={{ fontSize: 13, color: 'text.disabled', textAlign: 'center', py: 3 }}>
-                                    No activity yet today.
-                                </Typography>
-                            ) : (
-                                data.recent.map((r, idx) => <ActivityRow key={`${r.employeeName}-${idx}`} r={r} />)
-                            )}
-                        </Stack>
-                    </Box>
-                </Paper>
-
-                <Paper elevation={0} sx={{ bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider', borderRadius: '10px', overflow: 'hidden' }}>
-                    <Box sx={{ p: '14px 18px', borderBottom: '1px solid', borderColor: 'divider' }}>
-                        <Typography sx={{ fontSize: 14, fontWeight: 600, color: 'text.primary' }}>
-                            ⚠️ Today's Issues
-                        </Typography>
-                    </Box>
-                    <Box sx={{ p: 2.25 }}>
-                        <Stack spacing={1.25}>
-                            {data.issues.length === 0 ? (
-                                <Typography sx={{ fontSize: 13, color: 'text.disabled', textAlign: 'center', py: 3 }}>
-                                    No issues flagged.
-                                </Typography>
-                            ) : (
-                                data.issues.map((issue, idx) => <IssueCard key={idx} issue={issue} />)
-                            )}
-                        </Stack>
-                    </Box>
-                </Paper>
-            </Box>
+            {/* Recent activity. Today's issues are not repeated here: the admin
+                dashboard already leads with that card (DashboardHome's
+                TodaysIssuesCard), off the same query, and the four stat cards
+                plus the department table above are the same day stated as
+                numbers. */}
+            <Paper elevation={0} sx={{ bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider', borderRadius: '10px', overflow: 'hidden' }}>
+                <Box sx={{
+                    p: '14px 18px',
+                    borderBottom: '1px solid', borderColor: 'divider',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                }}>
+                    <Typography sx={{ fontSize: 14, fontWeight: 600, color: 'text.primary' }}>Recent Activity</Typography>
+                    <Button
+                        variant="outlined"
+                        size="small"
+                        onClick={() => exportRecentToCsv(data)}
+                        disabled={data.recent.length === 0}
+                        sx={{
+                            fontSize: 12,
+                            textTransform: 'none',
+                            color: BLUE,
+                            borderColor: BLUE,
+                            px: 1.5, py: 0.5,
+                            '&:hover': { bgcolor: softBg('primary'), borderColor: BLUE },
+                        }}
+                    >
+                        Export Log
+                    </Button>
+                </Box>
+                <Box sx={{ p: 2.25 }}>
+                    <Stack spacing={1}>
+                        {data.recent.length === 0 ? (
+                            <Typography sx={{ fontSize: 13, color: 'text.disabled', textAlign: 'center', py: 3 }}>
+                                No activity yet today.
+                            </Typography>
+                        ) : (
+                            data.recent.map((r, idx) => <ActivityRow key={`${r.employeeName}-${idx}`} r={r} />)
+                        )}
+                    </Stack>
+                </Box>
+            </Paper>
         </Stack>
     )
 }

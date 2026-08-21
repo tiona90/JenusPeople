@@ -183,3 +183,28 @@ export function formatTime(iso: string) {
 export function formatTime12(iso: string) {
     return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true })
 }
+
+// One reading of the recent-activity feed, shared by every surface that renders
+// it — the admin dashboard's "Recent activity" card and the company attendance
+// log — so the same person never reads two ways depending on which page you are
+// on. The backend emits exactly six actions (GetCompanyAttendance.ActionName
+// plus the synthetic row): Checked in, Late check-in, Checked out, Started
+// break, Back from break, Not checked in.
+//
+// Order matters. "Not checked in" and "Late check-in" both contain the
+// check-in substring, so they must be tested first — matching the plain
+// check-in rule ahead of them badged the people who had *not* arrived as
+// working, the same collision that once broke AdminUsersPanel's presence dots.
+//
+// Not-checked-in is neutral, not an alarm: at the late-check-in hour the app
+// cannot tell an unscheduled absence from someone who simply has not arrived
+// yet, so it gets the same ⚪ as a completed day rather than a red 🔴.
+export function activityIcon(action: string) {
+    const a = action.toLowerCase()
+    if (a.includes('not check')) return '⚪'
+    if (a.includes('late')) return '⚠️'
+    if (a.includes('break')) return '☕'
+    if (a.includes('checked in') || a.includes('check-in')) return '🟢'
+    if (a.includes('checked out') || a.includes('check-out')) return '⚪'
+    return '·'
+}

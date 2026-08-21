@@ -43,7 +43,16 @@ const DEPT_GRADIENTS = [
     'linear-gradient(135deg, #84CC16 0%, #65A30D 100%)',  // lime
 ]
 
-type StatusFilter = 'all' | 'active' | 'attention' | 'inactive'
+type StatusFilter = 'all' | 'active' | 'attention' | 'unconfigured' | 'inactive'
+
+/**
+ * How a department reads on the card. "Active" means the entity's `isActive` flag and
+ * nothing else, which is what the dashboard counts as "N active" — the two must agree.
+ * Within the active ones, `attention` is for a department in use that has a problem,
+ * and `unconfigured` for one nobody has set up yet: no members, no manager. An empty
+ * shell is not a fault, so it does not get flagged like one.
+ */
+type DeptStatus = 'inactive' | 'attention' | 'unconfigured' | 'ok'
 type ViewMode = 'cards' | 'table'
 
 /* ─── helpers ───────────────────────────────────────────────────────────── */
@@ -80,7 +89,7 @@ interface DerivedDept {
     pendingTs: number
     leaveUsedYTD: number
     leaveAllowance: number
-    needsAttention: boolean
+    status: DeptStatus
     alert: string | null
     gradient: string
 }
@@ -164,13 +173,22 @@ function DepartmentsPanel() {
                 0
             )
 
-            // Needs attention: no manager OR > 25% not checked in
+            // A vacant manager post only matters once there are people whose approvals
+            // fall through to Admin; with nobody in the department there is nothing to
+            // approve, so an empty unmanaged department is unconfigured, not broken.
             const outPct = counts.total > 0 ? counts.out / counts.total : 0
-            const needsAttention = !managerName || outPct >= 0.25
-            const alertParts: string[] = []
-            if (!managerName) alertParts.push('Manager position vacant')
-            if (counts.out > 0 && outPct >= 0.25) alertParts.push(`${counts.out} employees not checked in`)
-            const alert = alertParts.length > 0 ? alertParts.join(' · ') : null
+            const understaffed = counts.out > 0 && outPct >= 0.25
+            const managerVacant = !managerName && headcount > 0
+            const status: DeptStatus = !dept.isActive ? 'inactive'
+                : headcount === 0 && !managerName ? 'unconfigured'
+                : managerVacant || understaffed ? 'attention'
+                : 'ok'
+
+            // The vacant manager post is already spelled out by the amber manager block
+            // below, which also says what it costs; repeating it here said it twice.
+            const alert = understaffed
+                ? `${counts.out} employee${counts.out === 1 ? '' : 's'} not checked in`
+                : null
 
             return {
                 dept,
@@ -184,7 +202,7 @@ function DepartmentsPanel() {
                 pendingTs,
                 leaveUsedYTD,
                 leaveAllowance,
-                needsAttention,
+                status,
                 alert,
                 gradient: gradientForDept(dept.id),
             }
@@ -193,8 +211,9 @@ function DepartmentsPanel() {
 
     const filtered = useMemo(() => {
         let out = derivedAll
-        if (statusFilter === 'active') out = out.filter((d) => d.dept.isActive && !d.needsAttention)
-        else if (statusFilter === 'attention') out = out.filter((d) => d.dept.isActive && d.needsAttention)
+        if (statusFilter === 'active') out = out.filter((d) => d.dept.isActive)
+        else if (statusFilter === 'attention') out = out.filter((d) => d.status === 'attention')
+        else if (statusFilter === 'unconfigured') out = out.filter((d) => d.status === 'unconfigured')
         else if (statusFilter === 'inactive') out = out.filter((d) => !d.dept.isActive)
 
         if (searchText.trim()) {
@@ -210,7 +229,13 @@ function DepartmentsPanel() {
     const totalHeadcount = derivedAll.reduce((s, d) => s + d.headcount, 0)
     const totalOnline = derivedAll.reduce((s, d) => s + d.counts.in, 0)
     const totalPending = derivedAll.reduce((s, d) => s + d.pendingLeave + d.pendingTs, 0)
-    const needAttentionCount = derivedAll.filter((d) => d.needsAttention).length
+    /* The buckets the status filter offers, counted once so the cards and the filter
+       cannot drift apart. `active` is the isActive flag, matching the dashboard's
+       "N active"; attention and unconfigured are subsets of it. */
+    const activeCount = derivedAll.filter((d) => d.dept.isActive).length
+    const inactiveCount = derivedAll.length - activeCount
+    const needAttentionCount = derivedAll.filter((d) => d.status === 'attention').length
+    const unconfiguredCount = derivedAll.filter((d) => d.status === 'unconfigured').length
 
     /* Mutations */
     const createMutation = useMutation({
@@ -295,15 +320,19 @@ function DepartmentsPanel() {
                 gap: '12px', mb: '14px',
             }}>
                 <StatCard label="🏢 Departments" value={String(departments.length)}
-                          sub={`${derivedAll.filter((d) => !d.needsAttention).length} healthy · ${derivedAll.filter((d) => !d.dept.isActive).length} inactive`} />
+                          sub={`${activeCount} active · ${inactiveCount} inactive`} />
                 <StatCard label="👥 Total Headcount" value={String(totalHeadcount)} valueColor={'primary.main'}
                           sub={`${departments.length > 0 ? Math.round(totalHeadcount / departments.length) : 0} per dept · ${totalOnline} working now`} />
                 <StatCard label="⏳ Pending Approvals" value={String(totalPending)} valueColor="#F59E0B"
                           sub="across all departments" />
                 <StatCard label="⚠️ Need Attention" value={String(needAttentionCount)}
                           valueColor={needAttentionCount > 0 ? 'error.main' : 'success.main'}
-                          sub={needAttentionCount === 0 ? 'all departments OK'
-                                : `department${needAttentionCount === 1 ? '' : 's'} flagged`} />
+                          sub={[
+                              needAttentionCount === 0
+                                  ? 'all departments OK'
+                                  : `department${needAttentionCount === 1 ? '' : 's'} flagged`,
+                              unconfiguredCount > 0 ? `${unconfiguredCount} not set up yet` : null,
+                          ].filter(Boolean).join(' · ')} />
             </Box>
 
             {/* Toolbar */}
@@ -330,9 +359,10 @@ function DepartmentsPanel() {
                 </Box>
                 <SelectFilter value={statusFilter} onChange={(v) => setStatusFilter(v as StatusFilter)} options={[
                     { value: 'all', label: `All statuses (${derivedAll.length})` },
-                    { value: 'active', label: `Active (${derivedAll.filter((d) => d.dept.isActive && !d.needsAttention).length})` },
-                    { value: 'attention', label: `Needs attention (${derivedAll.filter((d) => d.dept.isActive && d.needsAttention).length})` },
-                    { value: 'inactive', label: `Inactive (${derivedAll.filter((d) => !d.dept.isActive).length})` },
+                    { value: 'active', label: `Active (${activeCount})` },
+                    { value: 'attention', label: `Needs attention (${needAttentionCount})` },
+                    { value: 'unconfigured', label: `Not set up yet (${unconfiguredCount})` },
+                    { value: 'inactive', label: `Inactive (${inactiveCount})` },
                 ]} />
                 <ViewToggle mode={viewMode} onChange={setViewMode} />
                 <Box
@@ -427,16 +457,21 @@ function DepartmentCard({ derived, onEdit, onDelete, onViewTeam, onReport }: {
     const visibleMembers = derived.members.slice(0, 7)
     const remaining = derived.headcount - visibleMembers.length
 
-    const showStatusPill = !dept.isActive ? 'Inactive' : derived.needsAttention ? 'Needs attention' : 'Active'
-    const statusPillBg = !dept.isActive ? 'rgba(255,255,255,0.2)' : derived.needsAttention ? softBg('warning') : 'rgba(255,255,255,0.2)'
-    const statusPillFg = !dept.isActive ? '#fff' : derived.needsAttention ? 'warning.dark' : '#fff'
+    const needsAttention = derived.status === 'attention'
+    const showStatusPill = derived.status === 'inactive' ? 'Inactive'
+        : needsAttention ? 'Needs attention'
+        : derived.status === 'unconfigured' ? 'Not set up yet'
+        : 'Active'
+    // Only a real problem gets the warning colour; the other states stay neutral.
+    const statusPillBg = needsAttention ? softBg('warning') : 'rgba(255,255,255,0.2)'
+    const statusPillFg = needsAttention ? 'warning.dark' : '#fff'
 
     return (
         <Box sx={{
-            bgcolor: 'background.paper', border: `1px solid ${derived.needsAttention ? 'error.main' : 'divider'}`,
+            bgcolor: 'background.paper', border: `1px solid ${needsAttention ? 'error.main' : 'divider'}`,
             borderRadius: '12px', overflow: 'hidden',
             display: 'flex', flexDirection: 'column',
-            ...(derived.needsAttention && { boxShadow: '0 0 0 1px #FECACA' }),
+            ...(needsAttention && { boxShadow: '0 0 0 1px #FECACA' }),
         }}>
             {/* Header */}
             <Box sx={{
@@ -723,10 +758,14 @@ function TableView({ rows, onEdit, onDelete }: {
                                         <Box component="span" sx={{
                                             display: 'inline-flex', px: 1.25, py: 0.35, borderRadius: '20px',
                                             fontSize: 11, fontWeight: 500, whiteSpace: 'nowrap',
-                                            bgcolor: !d.dept.isActive ? 'divider' : d.needsAttention ? softBg('error') : softBg('success'),
-                                            color: !d.dept.isActive ? 'text.secondary' : d.needsAttention ? 'error.dark' : 'success.dark',
+                                            bgcolor: d.status === 'attention' ? softBg('error')
+                                                : d.status === 'ok' ? softBg('success') : 'divider',
+                                            color: d.status === 'attention' ? 'error.dark'
+                                                : d.status === 'ok' ? 'success.dark' : 'text.secondary',
                                         }}>
-                                            {!d.dept.isActive ? 'Inactive' : d.needsAttention ? 'Attention' : 'Active'}
+                                            {d.status === 'inactive' ? 'Inactive'
+                                                : d.status === 'attention' ? 'Attention'
+                                                : d.status === 'unconfigured' ? 'Not set up' : 'Active'}
                                         </Box>
                                     </TableCell>
                                     <TableCell sx={{ ...TD, color: 'text.secondary' }}>{fmtJoined(d.dept.createdAt)}</TableCell>

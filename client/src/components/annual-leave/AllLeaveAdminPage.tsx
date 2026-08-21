@@ -48,6 +48,15 @@ function leaveTypeKey(name?: string | null): TypeKey {
     return 'other'
 }
 
+/* The DTO sends an empty DepartmentName for a request whose owner has no
+   EmployeeProfile (or whose profile has no department). Those requests still have to
+   land somewhere in the rollups instead of being silently dropped. */
+const NO_DEPARTMENT = 'No department'
+
+function deptOf(leave: AnnualLeave) {
+    return leave.departmentName?.trim() ? leave.departmentName : NO_DEPARTMENT
+}
+
 function initials(name: string) {
     const parts = (name ?? '').trim().split(/\s+/)
     return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase() || '?'
@@ -90,7 +99,7 @@ const AllLeaveAdminPage = observer(function AllLeaveAdminPage({ user: _user }: {
     const [statusTab, setStatusTab] = useState<StatusTab>('all')
     const [deptFilter, setDeptFilter] = useState<string>('all')
     const [typeFilter, setTypeFilter] = useState<string>('all')
-    const [dateRange, setDateRange] = useState<DateRange>('this-month')
+    const [dateRange, setDateRange] = useState<DateRange>('all-time')
     const [searchText, setSearchText] = useState('')
     const [selected, setSelected] = useState<Set<string>>(new Set())
     const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -115,18 +124,13 @@ const AllLeaveAdminPage = observer(function AllLeaveAdminPage({ user: _user }: {
     const leaveTypeById = useMemo(() => new Map(leaveTypes.map((lt) => [lt.id, lt])), [leaveTypes])
     const profileByUserId = useMemo(() => new Map(profiles.map((p) => [p.userId, p])), [profiles])
 
-    const departments = useMemo(
-        () => Array.from(new Set(leaves.map((l) => l.departmentName).filter(Boolean))).sort(),
-        [leaves]
-    )
-
     /* Detect conflicts (overlapping in same dept, both pending/approved) */
     const conflictMap = useMemo(() => {
         const map = new Map<string, AnnualLeave[]>()
         for (const a of leaves) {
             if (a.status !== 'Pending' && a.status !== 'Approved') continue
             const collisions = leaves.filter((b) =>
-                b.departmentName === a.departmentName && overlaps(a, b)
+                deptOf(b) === deptOf(a) && overlaps(a, b)
             )
             if (collisions.length > 0) map.set(a.id, collisions)
         }
@@ -151,37 +155,37 @@ const AllLeaveAdminPage = observer(function AllLeaveAdminPage({ user: _user }: {
         return start.getTime() - created.getTime() < 86_400_000 && start.getTime() >= Date.now() - 86_400_000
     }
 
-    /* Apply filters */
-    const filtered = useMemo(() => {
+    const dateWindow = useMemo(() => {
+        if (dateRange === 'this-month') {
+            return {
+                from: new Date(today.getFullYear(), today.getMonth(), 1),
+                to: new Date(today.getFullYear(), today.getMonth() + 1, 0),
+            }
+        }
+        if (dateRange === 'next-30' || dateRange === 'next-90') {
+            const to = new Date(today); to.setDate(to.getDate() + (dateRange === 'next-30' ? 30 : 90))
+            return { from: today, to }
+        }
+        if (dateRange === 'past-month') {
+            const from = new Date(today); from.setDate(from.getDate() - 30)
+            return { from, to: today }
+        }
+        return null
+    }, [dateRange, today])
+
+    /* Everything the page reports on: leaves narrowed by type, date range and search,
+       but not yet by department or status tab. The department rollup counts against
+       this, so its pending column sums to the page's pending total. */
+    const inScope = useMemo(() => {
         let out = leaves.slice()
-
-        if (statusTab === 'pending') out = out.filter((l) => l.status === 'Pending')
-        else if (statusTab === 'urgent') out = out.filter(isUrgent)
-        else if (statusTab === 'conflict') out = out.filter((l) => conflictMap.has(l.id))
-        else if (statusTab === 'approved') out = out.filter((l) => l.status === 'Approved')
-        else if (statusTab === 'rejected') out = out.filter((l) => l.status === 'Rejected')
-
-        if (deptFilter !== 'all') out = out.filter((l) => l.departmentName === deptFilter)
 
         if (typeFilter !== 'all') {
             const tid = Number(typeFilter)
             out = out.filter((l) => l.leaveTypeId === tid)
         }
 
-        const now = new Date(); now.setHours(0, 0, 0, 0)
-        if (dateRange === 'this-month') {
-            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-            const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0)
-            out = out.filter((l) => new Date(l.endDate) >= monthStart && new Date(l.startDate) <= monthEnd)
-        } else if (dateRange === 'next-30') {
-            const limit = new Date(now); limit.setDate(limit.getDate() + 30)
-            out = out.filter((l) => new Date(l.endDate) >= now && new Date(l.startDate) <= limit)
-        } else if (dateRange === 'next-90') {
-            const limit = new Date(now); limit.setDate(limit.getDate() + 90)
-            out = out.filter((l) => new Date(l.endDate) >= now && new Date(l.startDate) <= limit)
-        } else if (dateRange === 'past-month') {
-            const start = new Date(now); start.setDate(start.getDate() - 30)
-            out = out.filter((l) => new Date(l.endDate) >= start && new Date(l.startDate) <= now)
+        if (dateWindow) {
+            out = out.filter((l) => new Date(l.endDate) >= dateWindow.from && new Date(l.startDate) <= dateWindow.to)
         }
 
         if (searchText.trim()) {
@@ -189,21 +193,41 @@ const AllLeaveAdminPage = observer(function AllLeaveAdminPage({ user: _user }: {
             out = out.filter((l) => l.employeeName.toLowerCase().includes(q))
         }
 
-        return out.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    }, [leaves, statusTab, deptFilter, typeFilter, dateRange, searchText, conflictMap])
+        return out
+    }, [leaves, typeFilter, dateWindow, searchText])
 
-    /* Counts (computed against raw leaves, NOT filtered) */
-    const counts = useMemo(() => {
-        const c = {
-            all: leaves.length,
-            pending: leaves.filter((l) => l.status === 'Pending').length,
-            approved: leaves.filter((l) => l.status === 'Approved').length,
-            rejected: leaves.filter((l) => l.status === 'Rejected').length,
-            urgent: leaves.filter(isUrgent).length,
-            conflict: conflictMap.size,
-        }
-        return c
-    }, [leaves, conflictMap])
+    /* The same scope narrowed to the selected department — what the stat cards and the
+       tab badges count, so no number claims more requests than the list can show. */
+    const scoped = useMemo(
+        () => (deptFilter === 'all' ? inScope : inScope.filter((l) => deptOf(l) === deptFilter)),
+        [inScope, deptFilter]
+    )
+
+    /* The rows themselves: the scope narrowed by the active status tab. */
+    const filtered = useMemo(() => {
+        let out = scoped
+
+        if (statusTab === 'pending') out = out.filter((l) => l.status === 'Pending')
+        else if (statusTab === 'urgent') out = out.filter(isUrgent)
+        else if (statusTab === 'conflict') out = out.filter((l) => conflictMap.has(l.id))
+        else if (statusTab === 'approved') out = out.filter((l) => l.status === 'Approved')
+        else if (statusTab === 'rejected') out = out.filter((l) => l.status === 'Rejected')
+
+        return out.slice().sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    }, [scoped, statusTab, conflictMap])
+
+    /* Counts for the stat cards and tab badges — the same scope as the list, minus the
+       status tab (a badge has to advertise the tab you are not on). */
+    const counts = useMemo(() => ({
+        all: scoped.length,
+        pending: scoped.filter((l) => l.status === 'Pending').length,
+        approved: scoped.filter((l) => l.status === 'Approved').length,
+        rejected: scoped.filter((l) => l.status === 'Rejected').length,
+        urgent: scoped.filter(isUrgent).length,
+        conflict: scoped.filter((l) => conflictMap.has(l.id)).length,
+        /* Distinct requests, not urgent + conflict: one request can be both. */
+        attention: scoped.filter((l) => isUrgent(l) || conflictMap.has(l.id)).length,
+    }), [scoped, conflictMap])
 
     /* Stats */
     const daysOffThisMonth = useMemo(() => {
@@ -240,33 +264,65 @@ const AllLeaveAdminPage = observer(function AllLeaveAdminPage({ user: _user }: {
         return map
     }, [leaves, calMonth, calYear])
 
-    /* Dept breakdown */
-    const deptStats = useMemo(() => {
+    /* Dept breakdown. Buckets come from profiles *and* from the requests themselves, so
+       a request whose owner has no profile shows up under NO_DEPARTMENT instead of
+       vanishing from the rollup while still counting towards the totals above. */
+    const deptBuckets = useMemo(() => {
         const deptNameById = new Map(departmentList.map((d) => [d.id, d.name]))
-        const map = new Map<string, { total: number; used: number; pending: number; entitled: number }>()
-        for (const p of profiles) {
-            const dept = deptNameById.get(p.departmentId) ?? 'Unassigned'
-            const cur = map.get(dept) ?? { total: 0, used: 0, pending: 0, entitled: 0 }
-            cur.total++
-            cur.entitled += p.annualLeaveEntitlement > 0 ? p.annualLeaveEntitlement : 20
-            map.set(dept, cur)
+        const map = new Map<string, { people: Set<string>; used: number; pending: number; entitled: number }>()
+        const bucket = (name: string) => {
+            let cur = map.get(name)
+            if (!cur) { cur = { people: new Set<string>(), used: 0, pending: 0, entitled: 0 }; map.set(name, cur) }
+            return cur
         }
+
+        for (const p of profiles) {
+            const cur = bucket(deptNameById.get(p.departmentId) ?? NO_DEPARTMENT)
+            cur.people.add(p.userId)
+            cur.entitled += p.annualLeaveEntitlement > 0 ? p.annualLeaveEntitlement : 20
+        }
+
+        /* Usage is the panel's own YTD window, so it reads every leave regardless of filters. */
         const year = today.getFullYear()
         for (const l of leaves) {
-            const dept = l.departmentName ?? 'Unassigned'
-            const cur = map.get(dept)
-            if (!cur) continue
-            if (l.status === 'Approved' && new Date(l.startDate).getFullYear() === year) {
-                cur.used += l.totalDays
-            } else if (l.status === 'Pending') {
-                cur.pending++
-            }
+            if (l.status !== 'Approved' || new Date(l.startDate).getFullYear() !== year) continue
+            const cur = bucket(deptOf(l))
+            cur.people.add(l.employeeId)
+            cur.used += l.totalDays
         }
+
+        /* Pending reports the page scope, so these numbers sum to the awaiting-review total. */
+        for (const l of inScope) {
+            if (l.status !== 'Pending') continue
+            const cur = bucket(deptOf(l))
+            cur.people.add(l.employeeId)
+            cur.pending++
+        }
+
         return Array.from(map.entries())
-            .map(([name, v]) => ({ name, ...v }))
+            .map(([name, v]) => ({ name, total: v.people.size, used: v.used, pending: v.pending, entitled: v.entitled }))
             .filter((d) => d.total > 0)
-            .sort((a, b) => a.name.localeCompare(b.name))
-    }, [profiles, leaves, departmentList, today])
+            .sort((a, b) => (
+                a.name === NO_DEPARTMENT ? 1 : b.name === NO_DEPARTMENT ? -1 : a.name.localeCompare(b.name)
+            ))
+    }, [profiles, leaves, inScope, departmentList, today])
+
+    /* A selected department drops the other rows: a row still claiming pending requests
+       you cannot see in the list below is the disagreement being fixed here. Widening
+       again is the department dropdown's job. */
+    const deptStats = useMemo(
+        () => (deptFilter === 'all' ? deptBuckets : deptBuckets.filter((d) => d.name === deptFilter)),
+        [deptBuckets, deptFilter]
+    )
+
+    /* Every department the dropdown needs to offer — taken from the unfiltered buckets,
+       so each rollup row's "Filter" link resolves to an option that stays selectable. */
+    const departments = useMemo(
+        () => Array.from(new Set([...leaves.map(deptOf), ...deptBuckets.map((d) => d.name)])).sort(
+            (a, b) => (a === NO_DEPARTMENT ? 1 : b === NO_DEPARTMENT ? -1 : a.localeCompare(b))
+        ),
+        [leaves, deptBuckets]
+    )
 
     const totalUsed = deptStats.reduce((s, d) => s + d.used, 0)
     const totalAllowance = deptStats.reduce((s, d) => s + d.entitled, 0)
@@ -363,6 +419,8 @@ const AllLeaveAdminPage = observer(function AllLeaveAdminPage({ user: _user }: {
 
     const pending = filtered.filter((l) => l.status === 'Pending')
     const decided = filtered.filter((l) => l.status !== 'Pending')
+    const pendingUrgent = pending.filter(isUrgent).length
+    const pendingConflict = pending.filter((l) => conflictMap.has(l.id)).length
     const showHeatmapAlert = Array.from(heatmap.entries())
         .map(([iso, v]) => ({ iso, ...v }))
         .filter((d) => d.count >= 3)
@@ -381,21 +439,10 @@ const AllLeaveAdminPage = observer(function AllLeaveAdminPage({ user: _user }: {
                 gap: '12px', mb: '14px',
             }}>
                 <StatCard label="⏳ Awaiting Review" value={String(counts.pending)} valueColor="#F59E0B" sub="leave requests pending" />
-                <StatCard label="⚠️ Need Attention" value={String(counts.urgent + counts.conflict)} valueColor="#FF4D4F" sub={`${counts.urgent} urgent · ${counts.conflict} conflicts`} />
+                <StatCard label="⚠️ Need Attention" value={String(counts.attention)} valueColor="#FF4D4F" sub={`${counts.urgent} urgent · ${counts.conflict} conflicts`} />
                 <StatCard label="📅 Days Off This Month" value={String(daysOffThisMonth)} valueColor={'primary.main'} sub="across all departments" />
                 <StatCard label="🏖️ Currently On Leave" value={String(onLeaveToday)} valueColor="#22C47A" sub="employees out today" />
             </Box>
-
-            {/* Heatmap calendar */}
-            <Heatmap
-                month={calMonth}
-                year={calYear}
-                heatmap={heatmap}
-                holidays={new Map(holidays.map((h) => [h.date.slice(0, 10), h.localName || h.englishName]))}
-                today={today}
-                onNav={navMonth}
-                alert={showHeatmapAlert}
-            />
 
             {/* Dept breakdown */}
             <DeptBreakdown stats={deptStats} totalUsed={totalUsed} totalAllowance={totalAllowance} onFilter={(d) => setDeptFilter(d)} />
@@ -494,7 +541,7 @@ const AllLeaveAdminPage = observer(function AllLeaveAdminPage({ user: _user }: {
             {/* Pending section */}
             {pending.length > 0 && (
                 <SectionHeader title="⏳ Awaiting Review" subtitle={`${pending.length} request${pending.length === 1 ? '' : 's'}`}
-                               meta={`${counts.urgent > 0 ? `${counts.urgent} urgent · ` : ''}${counts.conflict > 0 ? `${counts.conflict} with conflicts` : 'priority review'}`} />
+                               meta={`${pendingUrgent > 0 ? `${pendingUrgent} urgent · ` : ''}${pendingConflict > 0 ? `${pendingConflict} with conflicts` : 'priority review'}`} />
             )}
             {pending.map((l) => (
                 <LeaveRow
@@ -552,6 +599,18 @@ const AllLeaveAdminPage = observer(function AllLeaveAdminPage({ user: _user }: {
                     No leave requests match the current filters.
                 </Box>
             )}
+
+            {/* Heatmap calendar. Below the queue on purpose: it is a month-at-a-glance
+                overview, while the rows above are the only place leave gets approved. */}
+            <Heatmap
+                month={calMonth}
+                year={calYear}
+                heatmap={heatmap}
+                holidays={new Map(holidays.map((h) => [h.date.slice(0, 10), h.localName || h.englishName]))}
+                today={today}
+                onNav={navMonth}
+                alert={showHeatmapAlert}
+            />
 
             {/* Reject reason dialog */}
             <RejectReasonDialog

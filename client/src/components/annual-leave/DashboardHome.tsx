@@ -20,6 +20,7 @@ import {
     getCompanyAttendance, getDepartments, getEmployeeProfiles, getLeaveTypes,
     getMyTimesheets, getTeamAttendance, getTeamAttendanceHistory, getTimesheets, rejectTimesheet, updateLeaveStatus,
 } from '../../lib/api'
+import { activityIcon } from '../../lib/hooks/useAttendance'
 import { useStore } from '../../lib/mobx'
 import { iconForLeaveType } from './leave-icons'
 import { ActivityTypesPanel, AdminUsersPanel, AppSettingsPanel, DepartmentsPanel, LeaveTypesPanel, OrgSettingsPanel, ProjectsPanel } from '..'
@@ -1779,7 +1780,7 @@ function RecentActivityCard({ activity }: { activity: RecentActivity[] }) {
                             alignItems: 'center', py: '8px',
                             borderBottom: i === Math.min(activity.length, 8) - 1 ? 'none' : (theme: Theme) => `1px solid ${theme.palette.divider}`,
                         }}>
-                            <Box sx={{ fontSize: 14 }}>{iconForActivity(a.action)}</Box>
+                            <Box sx={{ fontSize: 14 }}>{activityIcon(a.action)}</Box>
                             <Box sx={{ fontSize: 12, color: 'text.primary' }}>
                                 <Box component="strong" sx={{ color: 'text.primary', fontWeight: 600 }}>{a.employeeName}</Box>{' '}
                                 {a.action}
@@ -1796,18 +1797,6 @@ function RecentActivityCard({ activity }: { activity: RecentActivity[] }) {
             )}
         </ActionCard>
     )
-}
-
-function iconForActivity(action: string) {
-    const lower = action.toLowerCase()
-    if (lower.includes('check-in') || lower.includes('checked in')) return '🟢'
-    if (lower.includes('break')) return '☕'
-    if (lower.includes('approve')) return '✓'
-    if (lower.includes('timesheet')) return '📋'
-    if (lower.includes('late')) return '⚠️'
-    if (lower.includes('not check')) return '🔴'
-    if (lower.includes('leave')) return '🌴'
-    return '·'
 }
 
 function formatMinutesAgo(mins: number) {

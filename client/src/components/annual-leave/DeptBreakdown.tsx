@@ -28,15 +28,22 @@ export default function DeptBreakdown({ stats, totalUsed, totalAllowance, onFilt
                                 <Box sx={{ fontSize: 12, fontWeight: 600, color: 'text.primary' }}>{d.name}</Box>
                                 <Box sx={{ fontSize: 11, color: 'text.disabled' }}>{d.total} {d.total === 1 ? 'person' : 'people'}</Box>
                             </Box>
-                            <Box sx={{ position: 'relative', height: 22, bgcolor: 'action.hover', borderRadius: '4px', overflow: 'hidden' }}>
-                                <Box sx={{
-                                    height: '100%', bgcolor: fillColor, width: `${Math.min(100, pct)}%`,
-                                    display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
-                                    pr: '8px', fontSize: 10, color: '#fff', fontWeight: 600,
-                                }}>
-                                    {pct >= 14 && `${d.used}d · ${Math.round(pct)}%`}
+                            {d.entitled === 0 ? (
+                                /* No profile on record, so there is no entitlement to draw a bar against. */
+                                <Box sx={{ fontSize: 11, color: 'text.disabled' }}>
+                                    {d.used}d used · no entitlement on record
                                 </Box>
-                            </Box>
+                            ) : (
+                                <Box sx={{ position: 'relative', height: 22, bgcolor: 'action.hover', borderRadius: '4px', overflow: 'hidden' }}>
+                                    <Box sx={{
+                                        height: '100%', bgcolor: fillColor, width: `${Math.min(100, pct)}%`,
+                                        display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+                                        pr: '8px', fontSize: 10, color: '#fff', fontWeight: 600,
+                                    }}>
+                                        {pct >= 14 && `${d.used}d · ${Math.round(pct)}%`}
+                                    </Box>
+                                </Box>
+                            )}
                             <Box sx={{ fontSize: 12, color: 'text.secondary' }}>
                                 {d.pending > 0
                                     ? <><Box component="strong" sx={{ color: 'warning.main' }}>{d.pending}</Box> pending</>
