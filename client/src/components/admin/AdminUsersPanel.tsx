@@ -668,7 +668,7 @@ function UserRow({
                     display: 'grid',
                     gridTemplateColumns: {
                         xs: '24px 1fr auto',
-                        md: '24px 240px 110px 140px 130px 150px auto',
+                        md: '24px minmax(0, 240px) minmax(0, 110px) minmax(0, 140px) minmax(0, 130px) minmax(0, 150px) minmax(80px, 1fr) auto',
                     },
                     gap: '12px', alignItems: 'center',
                     p: '14px 16px', cursor: 'pointer',
@@ -786,9 +786,11 @@ function UserRow({
                     <Box sx={{ fontSize: 12, fontWeight: 600, color: presence === 'online' ? 'success.main' : 'text.primary' }}>
                         {derived.lastSeenLabel}
                     </Box>
-                    <Box sx={{ fontSize: 10, color: 'text.secondary', mt: '2px' }}>
-                        {presence === 'online' ? 'right now' : 'last active'}
-                    </Box>
+                    {derived.lastSeenLabel !== 'No activity' && (
+                        <Box sx={{ fontSize: 10, color: 'text.secondary', mt: '2px' }}>
+                            {presence === 'online' ? 'right now' : 'last active'}
+                        </Box>
+                    )}
                 </Box>
 
                 {/* Actions */}
