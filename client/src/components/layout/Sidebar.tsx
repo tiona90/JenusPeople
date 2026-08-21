@@ -268,7 +268,7 @@ const Sidebar = observer(function Sidebar() {
                 }}
             >
                 {/* Logo */}
-                <Box sx={{ px: 2.5, py: 2.5, borderBottom: 1, borderColor: 'divider' }}>
+                <Box sx={{ px: 2.5, py: 2.5, borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}>
                     <Typography sx={{ fontSize: 16, fontWeight: 600, color: 'text.primary', letterSpacing: '0.02em' }}>
                         Jenus People
                     </Typography>
@@ -281,6 +281,11 @@ const Sidebar = observer(function Sidebar() {
                 <Box
                     sx={{
                         flex: 1,
+                        // Without this the list grows past the drawer instead of
+                        // scrolling inside it, and the account footer below overlaps
+                        // whichever entry is last (flex items default to
+                        // min-height: auto, which refuses to shrink below content).
+                        minHeight: 0,
                         py: 1,
                         overflowY: 'auto',
                         // Keep scrolling functional but hide the scrollbar chrome.
@@ -345,7 +350,7 @@ const Sidebar = observer(function Sidebar() {
                 </Box>
 
                 {/* Footer */}
-                <Box sx={{ px: 1.75, py: 1.75, borderTop: 1, borderColor: 'divider' }}>
+                <Box sx={{ px: 1.75, py: 1.75, borderTop: 1, borderColor: 'divider', flexShrink: 0 }}>
                     <Tooltip title="Account options" placement="right">
                         <Stack
                             direction="row"
