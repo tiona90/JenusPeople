@@ -19,6 +19,7 @@ import LabelRoundedIcon from '@mui/icons-material/LabelRounded'
 import CategoryRoundedIcon from '@mui/icons-material/CategoryRounded'
 import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
 import EventRoundedIcon from '@mui/icons-material/EventRounded'
+import FactCheckRoundedIcon from '@mui/icons-material/FactCheckRounded'
 import NotificationsActiveRoundedIcon from '@mui/icons-material/NotificationsActiveRounded'
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
 import NoteAddRoundedIcon from '@mui/icons-material/NoteAddRounded'
@@ -220,19 +221,25 @@ const Sidebar = observer(function Sidebar() {
             { kind: 'item', label: 'Reminders & Notifications', icon: <NotificationsActiveRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('reminders-notifications'), active: onAdminSection('reminders-notifications') },
         ]
     } else if (isManagerUser) {
+        // A manager reads two kinds of page: their own records and their team's.
+        // Grouping by domain (Annual Leave / Time) interleaved the two, so
+        // "My Leave" sat next to "Team Leave" and "My Timesheets" next to
+        // "Team Timesheets". Group by whose records a page shows instead.
         navEntries = [
             { kind: 'section', label: 'Overview' },
             { kind: 'item', label: 'Dashboard', icon: <DashboardRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToDashboard(), active: onPage('/dashboard') },
-            { kind: 'section', label: 'Annual Leave' },
+            { kind: 'section', label: 'My Leave & Time' },
             { kind: 'item', label: 'My Leave', icon: <CalendarMonthRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToMyLeave('requests'), active: onPage('/my-leave') },
-            { kind: 'item', label: 'Team Leave', icon: <GroupRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamLeave(), active: onPage('/team-leave') },
             { kind: 'item', label: 'Apply Leave', icon: <AddCircleOutlineRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToApplyLeave(), active: onPage('/apply-leave') },
-            { kind: 'section', label: 'Time' },
             { kind: 'item', label: 'My Attendance', icon: <AccessAlarmRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAttendance(), active: onPage('/attendance') },
-            { kind: 'item', label: 'Team Attendance', icon: <VisibilityRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamAttendance(), active: onPage('/team-attendance') },
             { kind: 'item', label: 'Apply Timesheet', icon: <NoteAddRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToNewTimesheet(), active: onPage('/new-timesheet') },
             { kind: 'item', label: 'My Timesheets', icon: <AccessTimeRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTimesheets(), active: onPage('/timesheets') },
-            { kind: 'item', label: 'Team Timesheets', icon: <GroupRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamTimesheets(), active: onPage('/team-timesheets') },
+            { kind: 'section', label: 'My Team' },
+            { kind: 'item', label: 'Team Leave', icon: <GroupRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamLeave(), active: onPage('/team-leave') },
+            { kind: 'item', label: 'Team Attendance', icon: <VisibilityRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamAttendance(), active: onPage('/team-attendance') },
+            // Not GroupRounded like Team Leave above: two entries in the same
+            // section reading as the same icon is what made them hard to tell apart.
+            { kind: 'item', label: 'Team Timesheets', icon: <FactCheckRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamTimesheets(), active: onPage('/team-timesheets') },
         ]
     } else {
         navEntries = [
