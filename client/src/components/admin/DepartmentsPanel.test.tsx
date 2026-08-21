@@ -10,7 +10,9 @@ import DepartmentsPanel from './DepartmentsPanel'
 // breakdown ("0 healthy · 0 inactive") and the filter ("Active (0)") accounting for
 // nothing. "Active" now means the isActive flag, the same as the dashboard's "N active".
 vi.mock('../../lib/api', () => ({
+    getAppSettings: vi.fn(),
     getDepartments: vi.fn(),
+    getLeaveTypes: vi.fn(),
     getEmployeeProfiles: vi.fn(),
     getAdminUsers: vi.fn(),
     getCompanyAttendance: vi.fn(),
@@ -76,6 +78,8 @@ beforeEach(() => {
     api.getCompanyAttendance.mockResolvedValue(ATTENDANCE)
     api.getAnnualLeaves.mockResolvedValue([])
     api.getTimesheets.mockResolvedValue([])
+    api.getLeaveTypes.mockResolvedValue([])
+    api.getAppSettings.mockResolvedValue({ defaultAnnualEntitlement: 20 } as never)
 })
 
 async function renderPanel() {

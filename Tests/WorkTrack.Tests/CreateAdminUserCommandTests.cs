@@ -141,6 +141,46 @@ public class CreateAdminUserCommandTests : IDisposable
         Assert.Equal("Engineer", profile.JobTitle);
     }
 
+    /// <summary>
+    /// A blank entitlement field means "use the default", and the default an admin can
+    /// actually see is the one on Leave Settings — not a constant compiled in here.
+    /// </summary>
+    [Fact]
+    public async Task A_blank_entitlement_takes_the_default_configured_in_settings()
+    {
+        await SeedAsync();
+        var db = Db;
+        db.AppSettings.Add(new AppSettings { DefaultAnnualEntitlement = 26 });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var result = await Handle(Payload(), new FakeAccountEmailSender());
+
+        Assert.True(result.IsSuccess, result.Error);
+        var profile = await Db.EmployeeProfiles.AsNoTracking().SingleAsync();
+        Assert.Equal(26, profile.AnnualLeaveEntitlement);
+        Assert.Equal(26, profile.LeaveBalance);
+    }
+
+    [Fact]
+    public async Task An_explicit_entitlement_still_wins_over_the_configured_default()
+    {
+        await SeedAsync();
+        var db = Db;
+        db.AppSettings.Add(new AppSettings { DefaultAnnualEntitlement = 26 });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var payload = Payload();
+        payload.AnnualLeaveEntitlement = 12;
+
+        var result = await Handle(payload, new FakeAccountEmailSender());
+
+        Assert.True(result.IsSuccess, result.Error);
+        var profile = await Db.EmployeeProfiles.AsNoTracking().SingleAsync();
+        Assert.Equal(12, profile.AnnualLeaveEntitlement);
+    }
+
     [Fact]
     public async Task An_omitted_role_defaults_to_Employee()
     {

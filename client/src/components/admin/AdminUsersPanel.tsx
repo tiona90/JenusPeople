@@ -19,9 +19,11 @@ import {
     deleteAdminUser,
     getAdminUsers,
     getAnnualLeaves,
+    getAppSettings,
     getDepartments,
     getEmployeeProfiles,
     getLeaveStatusHistories,
+    getLeaveTypes,
     getTimesheetStatusHistories,
     getUserPresence,
     setAdminUserRoles,
@@ -29,6 +31,7 @@ import {
     updateEmployeeProfile,
 } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
+import { annualLeaveAllowance } from '../../lib/leave-allowance'
 import { softBg, type SxColor } from '../../lib/theme-tokens'
 import type {
     AdminUser, Department, EmployeeProfile, LeaveStatusHistory, PresenceStatus, TimesheetStatusHistory, UserRole,
@@ -123,6 +126,16 @@ function AdminUsersPanel() {
     const { data: leaveHistories = [] } = useQuery({ queryKey: ['leaveStatusHistories'], queryFn: getLeaveStatusHistories })
     const { data: timesheetHistories = [] } = useQuery({ queryKey: ['timesheetStatusHistories'], queryFn: getTimesheetStatusHistories })
     const { data: leaves = [] } = useQuery({ queryKey: ['annualLeaves'], queryFn: getAnnualLeaves })
+    const { data: leaveTypes = [] } = useQuery({ queryKey: ['leaveTypes'], queryFn: getLeaveTypes })
+    const { data: appSettings } = useQuery({ queryKey: ['appSettings'], queryFn: getAppSettings })
+
+    /* What a row's leave bar is measured against is the employee's own entitlement, which
+       overrides the annual-leave allowance from Leave Types. The dialogs below say so, and
+       a new employee starts from that allowance rather than a number hard-coded here.
+       See lib/leave-allowance.ts. */
+    const annualAllowance = useMemo(
+        () => annualLeaveAllowance(leaveTypes, appSettings?.defaultAnnualEntitlement ?? 0),
+        [leaveTypes, appSettings?.defaultAnnualEntitlement])
 
     const profilesByUserId = useMemo(() => new Map(profiles.map((p) => [p.userId, p])), [profiles])
     const deptById = useMemo(() => new Map(departments.map((d) => [d.id, d])), [departments])
@@ -558,12 +571,14 @@ function AdminUsersPanel() {
                 departments={departments}
                 profiles={profiles}
                 users={users}
+                annualAllowance={annualAllowance}
             />
             <EditUserDialog
                 data={editData}
                 departments={departments}
                 profiles={profiles}
                 users={users}
+                annualAllowance={annualAllowance}
                 isPending={editMutation.isPending}
                 error={editMutation.error}
                 onClose={() => setEditData(null)}
@@ -1087,6 +1102,7 @@ function EditUserDialog(props: {
     departments: Department[]
     profiles: EmployeeProfile[]
     users: AdminUser[]
+    annualAllowance: number
     onClose: () => void
     isPending: boolean
     error: unknown
@@ -1198,6 +1214,7 @@ function EditUserDialog(props: {
                                 onChange={(e) => setAnnualLeaveEntitlement(Number(e.target.value))}
                                 inputProps={{ min: 0, step: 0.5 }}
                                 fullWidth
+                                helperText={`This employee's own allowance, overriding the ${props.annualAllowance} days/year Leave Types sets for annual leave.`}
                             />
                         </>
                     )}
@@ -1224,6 +1241,7 @@ function EditUserDialog(props: {
 
 function CreateUserDialog(props: {
     open: boolean
+    annualAllowance: number
     onClose: () => void
     isPending: boolean
     error: unknown
@@ -1248,9 +1266,17 @@ function CreateUserDialog(props: {
     const [role, setRole] = useState<UserRole>('Employee')
     const [departmentId, setDepartmentId] = useState<number>(0)
     const [jobTitle, setJobTitle] = useState('')
-    const [annualLeaveEntitlement, setAnnualLeaveEntitlement] = useState(20)
+    const [annualLeaveEntitlement, setAnnualLeaveEntitlement] = useState(props.annualAllowance)
     const [phoneNumber, setPhoneNumber] = useState('')
     const [dateOfBirth, setDateOfBirth] = useState('')
+
+    /* The allowance arrives with the leave-types query, which can settle after this
+       dialog has mounted, so the field is seeded when it opens rather than at mount. */
+    useEffect(() => {
+        if (props.open) {
+            Promise.resolve().then(() => setAnnualLeaveEntitlement(props.annualAllowance))
+        }
+    }, [props.open, props.annualAllowance])
 
     // Same rule as EditUserDialog: a new hire reports to whoever manages the
     // department they're placed in — not a free pick.
@@ -1265,7 +1291,7 @@ function CreateUserDialog(props: {
         setRole('Employee')
         setDepartmentId(0)
         setJobTitle('')
-        setAnnualLeaveEntitlement(20)
+        setAnnualLeaveEntitlement(props.annualAllowance)
         setPhoneNumber('')
         setDateOfBirth('')
         props.onClose()
@@ -1339,6 +1365,7 @@ function CreateUserDialog(props: {
                         onChange={(e) => setAnnualLeaveEntitlement(Number(e.target.value))}
                         inputProps={{ min: 0, step: 0.5 }}
                         fullWidth
+                        helperText={`Starts from the ${props.annualAllowance}-day annual leave allowance on Leave Types; change it to give this employee a different one.`}
                     />
 
                     {props.error ? <Alert severity="error">{getApiErrorMessage(props.error, 'Failed.')}</Alert> : null}

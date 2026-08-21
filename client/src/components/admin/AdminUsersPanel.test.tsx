@@ -8,8 +8,10 @@ import AdminUsersPanel from './AdminUsersPanel'
 // own from the welcome email — and a display name is now mandatory.
 vi.mock('../../lib/api', () => ({
     getAdminUsers: vi.fn(),
+    getAppSettings: vi.fn(),
     getEmployeeProfiles: vi.fn(),
     getDepartments: vi.fn(),
+    getLeaveTypes: vi.fn(),
     getUserPresence: vi.fn(),
     getLeaveStatusHistories: vi.fn(),
     getTimesheetStatusHistories: vi.fn(),
@@ -26,6 +28,13 @@ const api = vi.mocked(await import('../../lib/api'))
 
 const DEPARTMENT = { id: 7, name: 'Engineering', code: 'ENG', isActive: true }
 
+/* The annual-leave allowance an employee's entitlement is measured against comes from
+   Leave Types (25 days/year as seeded), not from a number hard-coded in the panel. */
+const ANNUAL_LEAVE_TYPE = {
+    id: 1, name: 'Annual Leave', isActive: true, affectsBalance: true, defaultAllowance: 25,
+    allowanceUnit: 'days/year',
+}
+
 beforeEach(() => {
     vi.clearAllMocks()
 
@@ -36,6 +45,8 @@ beforeEach(() => {
     api.getLeaveStatusHistories.mockResolvedValue([])
     api.getTimesheetStatusHistories.mockResolvedValue([])
     api.getAnnualLeaves.mockResolvedValue([])
+    api.getLeaveTypes.mockResolvedValue([ANNUAL_LEAVE_TYPE] as never)
+    api.getAppSettings.mockResolvedValue({ defaultAnnualEntitlement: 20 } as never)
 })
 
 function renderPanel() {
@@ -117,7 +128,9 @@ describe('AdminUsersPanel — Create User', () => {
             departmentId: DEPARTMENT.id,
             managerId: null,
             jobTitle: null,
-            annualLeaveEntitlement: 20,
+            // The annual-leave allowance from Leave Types, not a number typed into
+            // the panel's source.
+            annualLeaveEntitlement: ANNUAL_LEAVE_TYPE.defaultAllowance,
             phoneNumber: null,
             dateOfBirth: null,
         })

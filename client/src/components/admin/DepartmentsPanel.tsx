@@ -19,13 +19,16 @@ import {
     deleteDepartment,
     getAdminUsers,
     getAnnualLeaves,
+    getAppSettings,
     getCompanyAttendance,
     getDepartments,
     getEmployeeProfiles,
+    getLeaveTypes,
     getTimesheets,
     updateDepartment,
     type UpsertDepartmentRequest,
 } from '../../lib/api'
+import { annualLeaveAllowance, employeeAnnualEntitlement } from '../../lib/leave-allowance'
 import { useStore } from '../../lib/mobx'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
 import type { AdminUser, Department, DepartmentAttendance, EmployeeProfile } from '../../lib/types'
@@ -116,6 +119,14 @@ function DepartmentsPanel() {
     const { data: company } = useQuery({ queryKey: ['attendance', 'company'], queryFn: getCompanyAttendance })
     const { data: leaves = [] } = useQuery({ queryKey: ['annualLeaves'], queryFn: getAnnualLeaves })
     const { data: timesheets = [] } = useQuery({ queryKey: ['timesheets'], queryFn: getTimesheets })
+    const { data: leaveTypes = [] } = useQuery({ queryKey: ['leaveTypes'], queryFn: getLeaveTypes })
+    const { data: appSettings } = useQuery({ queryKey: ['appSettings'], queryFn: getAppSettings })
+
+    /* An employee with no entitlement of their own falls back to the annual-leave
+       allowance from Leave Types, not to a number typed in here. */
+    const annualAllowance = useMemo(
+        () => annualLeaveAllowance(leaveTypes, appSettings?.defaultAnnualEntitlement ?? 0),
+        [leaveTypes, appSettings?.defaultAnnualEntitlement])
 
     const managerUserIds = useMemo(
         () => new Set(adminUsers.filter((u) => u.roles.includes('Manager')).map((u) => u.id)),
@@ -169,7 +180,7 @@ function DepartmentsPanel() {
                 .reduce((s, l) => s + l.totalDays, 0)
 
             const leaveAllowance = deptProfiles.reduce(
-                (s, p) => s + (p.annualLeaveEntitlement > 0 ? p.annualLeaveEntitlement : 20),
+                (s, p) => s + employeeAnnualEntitlement(p, annualAllowance),
                 0
             )
 
@@ -207,7 +218,7 @@ function DepartmentsPanel() {
                 gradient: gradientForDept(dept.id),
             }
         })
-    }, [departments, profilesByDept, managerUserIds, userById, attendanceByName, leaves, timesheets, currentYear])
+    }, [departments, profilesByDept, managerUserIds, userById, attendanceByName, leaves, timesheets, currentYear, annualAllowance])
 
     const filtered = useMemo(() => {
         let out = derivedAll

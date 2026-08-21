@@ -63,7 +63,15 @@ public class CreateAdminUser
                 return IdentityFailure("Failed to create user.", createResult);
             }
 
-            var entitlement = request.User.AnnualLeaveEntitlement ?? DefaultEntitlement;
+            // The admin-configurable fallback (Leave Settings) is what "leave it blank"
+            // means; DefaultEntitlement only covers a database with no settings row yet.
+            var configuredDefault = await context.AppSettings
+                .AsNoTracking()
+                .Select(s => (int?)s.DefaultAnnualEntitlement)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            var entitlement = request.User.AnnualLeaveEntitlement
+                ?? (configuredDefault > 0 ? configuredDefault.Value : DefaultEntitlement);
             var employeeProfile = new EmployeeProfile
             {
                 UserId = user.Id,
@@ -109,7 +117,10 @@ public class CreateAdminUser
             return Result<AdminUserDto>.Success(created);
         }
 
-        /// <summary>Entitlement granted when the admin leaves the field blank.</summary>
+        /// <summary>
+        /// Last-resort entitlement, used only when the field is blank *and* no
+        /// AppSettings row exists to supply the configured fallback.
+        /// </summary>
         public const int DefaultEntitlement = 20;
 
         /// <summary>

@@ -5,10 +5,13 @@ import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import CircularProgress from '@mui/material/CircularProgress'
 import {
-    getAnnualLeaves, getDepartments, getEmployeeProfiles, getHolidays, getLeaveStatusHistories,
-    getLeaveTypes, updateLeaveStatus,
+    getAnnualLeaves, getAppSettings, getDepartments, getEmployeeProfiles, getHolidays,
+    getLeaveStatusHistories, getLeaveTypes, updateLeaveStatus,
 } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
+import {
+    allowanceForLeaveType, allowanceForRequest, annualLeaveAllowance, employeeAnnualEntitlement,
+} from '../../lib/leave-allowance'
 import { softBg, type SxColor } from '../../lib/theme-tokens'
 import type {
     AnnualLeave, EmployeeProfile, LeaveStatusHistory, LeaveType, UserInfo,
@@ -112,6 +115,7 @@ const AllLeaveAdminPage = observer(function AllLeaveAdminPage({ user: _user }: {
 
     const { data: leaves = [], isLoading } = useQuery({ queryKey: ['annualLeaves'], queryFn: getAnnualLeaves })
     const { data: leaveTypes = [] } = useQuery({ queryKey: ['leaveTypes'], queryFn: getLeaveTypes })
+    const { data: appSettings } = useQuery({ queryKey: ['appSettings'], queryFn: getAppSettings })
     const { data: profiles = [] } = useQuery({ queryKey: ['employeeProfiles'], queryFn: getEmployeeProfiles })
     const { data: departmentList = [] } = useQuery({ queryKey: ['departments'], queryFn: getDepartments })
     const { data: histories = [] } = useQuery({ queryKey: ['leaveStatusHistories'], queryFn: getLeaveStatusHistories })
@@ -122,6 +126,12 @@ const AllLeaveAdminPage = observer(function AllLeaveAdminPage({ user: _user }: {
     })
 
     const leaveTypeById = useMemo(() => new Map(leaveTypes.map((lt) => [lt.id, lt])), [leaveTypes])
+    /* An allowance belongs to a leave type; the app setting is only the fallback for a
+       type that sets none of its own. See lib/leave-allowance.ts for the ordering. */
+    const fallbackAllowance = appSettings?.defaultAnnualEntitlement ?? 0
+    const annualAllowance = useMemo(
+        () => annualLeaveAllowance(leaveTypes, fallbackAllowance),
+        [leaveTypes, fallbackAllowance])
     const profileByUserId = useMemo(() => new Map(profiles.map((p) => [p.userId, p])), [profiles])
 
     /* Detect conflicts (overlapping in same dept, both pending/approved) */
@@ -279,7 +289,7 @@ const AllLeaveAdminPage = observer(function AllLeaveAdminPage({ user: _user }: {
         for (const p of profiles) {
             const cur = bucket(deptNameById.get(p.departmentId) ?? NO_DEPARTMENT)
             cur.people.add(p.userId)
-            cur.entitled += p.annualLeaveEntitlement > 0 ? p.annualLeaveEntitlement : 20
+            cur.entitled += employeeAnnualEntitlement(p, annualAllowance)
         }
 
         /* Usage is the panel's own YTD window, so it reads every leave regardless of filters. */
@@ -305,7 +315,7 @@ const AllLeaveAdminPage = observer(function AllLeaveAdminPage({ user: _user }: {
             .sort((a, b) => (
                 a.name === NO_DEPARTMENT ? 1 : b.name === NO_DEPARTMENT ? -1 : a.name.localeCompare(b.name)
             ))
-    }, [profiles, leaves, inScope, departmentList, today])
+    }, [profiles, leaves, inScope, departmentList, today, annualAllowance])
 
     /* A selected department drops the other rows: a row still claiming pending requests
        you cannot see in the list below is the disagreement being fixed here. Widening
@@ -549,6 +559,7 @@ const AllLeaveAdminPage = observer(function AllLeaveAdminPage({ user: _user }: {
                     leave={l}
                     leaveTypeById={leaveTypeById}
                     profile={profileByUserId.get(l.employeeId)}
+                    fallbackAllowance={fallbackAllowance}
                     isExpanded={expanded.has(l.id)}
                     isSelected={selected.has(l.id)}
                     isUrgent={isUrgent(l)}
@@ -575,6 +586,7 @@ const AllLeaveAdminPage = observer(function AllLeaveAdminPage({ user: _user }: {
                     leave={l}
                     leaveTypeById={leaveTypeById}
                     profile={profileByUserId.get(l.employeeId)}
+                    fallbackAllowance={fallbackAllowance}
                     isExpanded={expanded.has(l.id)}
                     isSelected={false}
                     isUrgent={false}
@@ -751,13 +763,14 @@ function SectionHeader({ title, subtitle, meta }: { title: string; subtitle?: st
 }
 
 function LeaveRow({
-    leave, leaveTypeById, profile, isExpanded, isSelected, isUrgent,
+    leave, leaveTypeById, profile, fallbackAllowance, isExpanded, isSelected, isUrgent,
     conflicts, history, lastHistory, leaves,
     onToggleExpand, onToggleSelect, onApprove, onReject, disabled, hideCheckbox,
 }: {
     leave: AnnualLeave
     leaveTypeById: Map<number, LeaveType>
     profile?: EmployeeProfile
+    fallbackAllowance: number
     isExpanded: boolean
     isSelected: boolean
     isUrgent: boolean
@@ -772,7 +785,8 @@ function LeaveRow({
     disabled: boolean
     hideCheckbox?: boolean
 }) {
-    const typeName = leave.leaveTypeId != null ? leaveTypeById.get(leave.leaveTypeId)?.name : 'Annual'
+    const leaveType = leave.leaveTypeId != null ? leaveTypeById.get(leave.leaveTypeId) : undefined
+    const typeName = leaveType?.name ?? (leave.leaveTypeId != null ? undefined : 'Annual')
     const typeKey = leaveTypeKey(typeName)
     const isPending = leave.status === 'Pending'
     const hasConflict = !!conflicts && conflicts.length > 0
@@ -797,21 +811,42 @@ function LeaveRow({
         : leave.status === 'Approved' ? 'success.main'
         : leave.status === 'Rejected' ? 'error.main' : 'text.disabled'
 
-    // Balance computation
+    /* Balance computation. A request is measured against its *own* leave type's
+       allowance — a sick day comes out of the sick allowance, not the annual one — so
+       only same-type usage counts towards it. */
     const usedThisYear = useMemo(() => {
         const year = new Date().getFullYear()
         return leaves
-            .filter((l) => l.employeeId === leave.employeeId && l.status === 'Approved' && new Date(l.startDate).getFullYear() === year)
-            .reduce((sum, l) => {
-                const lt = l.leaveTypeId != null ? leaveTypeById.get(l.leaveTypeId) : undefined
-                return sum + (lt?.affectsBalance === false ? 0 : l.totalDays)
-            }, 0)
-    }, [leaves, leave.employeeId, leaveTypeById])
+            .filter((l) =>
+                l.employeeId === leave.employeeId
+                && l.leaveTypeId === leave.leaveTypeId
+                && l.status === 'Approved'
+                && new Date(l.startDate).getFullYear() === year)
+            .reduce((sum, l) => sum + l.totalDays, 0)
+    }, [leaves, leave.employeeId, leave.leaveTypeId])
 
-    const entitlement = profile?.annualLeaveEntitlement ?? 0
+    const entitlement = allowanceForRequest(leaveType, profile, fallbackAllowance)
     const balAfter = entitlement - usedThisYear - (leave.status === 'Pending' ? leave.totalDays : 0)
     const balPct = entitlement > 0 ? Math.min(100, (usedThisYear / entitlement) * 100) : 0
     const fillColor = balPct >= 95 ? 'error.main' : balPct >= 80 ? 'warning.main' : 'success.main'
+
+    /* The figure above is this type's own allowance. Two things about it are worth
+       spelling out on hover rather than leaving an admin to reconcile numbers across
+       pages: an entitlement that overrides what Leave Types says for annual leave, and
+       a type that is not deducted from the pooled balance the API enforces. */
+    const typeAllowance = allowanceForLeaveType(leaveType, fallbackAllowance)
+    const allowanceUnit = leaveType?.allowanceUnit?.trim() || 'days/year'
+    const balanceTitle = entitlement <= 0
+        ? `${typeName ?? 'This leave type'} has no allowance on record`
+        : [
+            `${typeName ?? 'Leave'}: ${usedThisYear} of ${entitlement} ${allowanceUnit} used this year`,
+            entitlement !== typeAllowance
+                ? `Leave Types says ${typeAllowance} ${allowanceUnit} — overridden for this employee`
+                : null,
+            leaveType && !leaveType.affectsBalance
+                ? 'Tracked separately — not deducted from the annual balance'
+                : null,
+        ].filter(Boolean).join(' · ')
 
     const daysUntil = daysFromToday(leave.startDate)
     const noticeText = daysUntil < 0 ? 'Past' : daysUntil === 0 ? 'Today' : daysUntil === 1 ? 'Tomorrow' : `${daysUntil} days notice`
@@ -905,8 +940,8 @@ function LeaveRow({
                     </Box>
                 </Box>
 
-                {/* Balance */}
-                <Box sx={{ display: { xs: 'none', md: 'block' } }}>
+                {/* Balance — for this request's leave type, not a pooled annual figure */}
+                <Box sx={{ display: { xs: 'none', md: 'block' } }} title={balanceTitle}>
                     {entitlement > 0 ? (
                         <>
                             <Box sx={{ fontSize: 11, color: 'text.secondary' }}>{usedThisYear}/{entitlement} used</Box>
@@ -918,6 +953,9 @@ function LeaveRow({
                                     fontWeight: 600,
                                     color: balAfter < 0 ? 'error.main' : balAfter <= 3 ? 'warning.main' : 'text.primary',
                                 }}>{balAfter}</Box> left after
+                            </Box>
+                            <Box sx={{ fontSize: 10, color: 'text.disabled', mt: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {typeName ?? 'leave'} allowance
                             </Box>
                         </>
                     ) : (

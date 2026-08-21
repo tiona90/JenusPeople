@@ -17,8 +17,9 @@ import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { getAppSettings, getDepartments, getEmployeeProfiles, getHolidayCountries, updateAppSettings } from '../../lib/api'
+import { getAppSettings, getDepartments, getEmployeeProfiles, getHolidayCountries, getLeaveTypes, updateAppSettings } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
+import { annualLeaveAllowance, employeeAnnualEntitlement } from '../../lib/leave-allowance'
 import type { AppSettings, HolidayCountry } from '../../lib/types'
 import { softBg, type SxColor } from '../../lib/theme-tokens'
 
@@ -130,6 +131,7 @@ export default function AppSettingsPanel() {
     const { data: saved, isLoading } = useQuery({ queryKey: ['appSettings'], queryFn: getAppSettings })
     const { data: profiles = [] } = useQuery({ queryKey: ['employeeProfiles'], queryFn: getEmployeeProfiles })
     const { data: departments = [] } = useQuery({ queryKey: ['departments'], queryFn: getDepartments })
+    const { data: leaveTypes = [] } = useQuery({ queryKey: ['leaveTypes'], queryFn: getLeaveTypes })
     const departmentNameById = useMemo(
         () => new Map(departments.map((d) => [d.id, d.name])),
         [departments],
@@ -187,6 +189,13 @@ export default function AppSettingsPanel() {
         ]
     }, [form.leaveYearStartMonth])
 
+    /* The annual allowance is the Annual Leave type's, configured on Leave Types — the
+       field below is only the fallback for a type that sets none of its own. See
+       lib/leave-allowance.ts for the ordering. */
+    const annualAllowance = useMemo(
+        () => annualLeaveAllowance(leaveTypes, form.defaultAnnualEntitlement),
+        [leaveTypes, form.defaultAnnualEntitlement])
+
     // Carryover preview from real employee profiles
     const carryoverRows = useMemo(() =>
         profiles
@@ -195,11 +204,12 @@ export default function AppSettingsPanel() {
                 const closing = Math.max(0, p.leaveBalance ?? 0)
                 const carryover = Math.min(closing, form.maxCarryoverDays)
                 const expires = Math.max(0, closing - form.maxCarryoverDays)
-                const newBalance = carryover + form.defaultAnnualEntitlement
+                // Each employee reopens on their own entitlement, not on one shared figure.
+                const newBalance = carryover + employeeAnnualEntitlement(p, annualAllowance)
                 return { name: p.displayName, dept: departmentNameById.get(p.departmentId) ?? '—', closing, carryover, expires, newBalance }
             })
             .sort((a, b) => a.name.localeCompare(b.name)),
-        [profiles, departmentNameById, form.maxCarryoverDays, form.defaultAnnualEntitlement])
+        [profiles, departmentNameById, form.maxCarryoverDays, annualAllowance])
 
     const isDirty = JSON.stringify(form) !== JSON.stringify(saved ?? DEFAULT)
 
@@ -261,7 +271,7 @@ export default function AppSettingsPanel() {
                                         <Typography sx={{ fontSize: 11, color: 'text.disabled', mt: 0.5 }}>Days above this cap expire at year end</Typography>
                                     </Grid>
                                     <Grid size={{ xs: 12, sm: 6 }}>
-                                        <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'text.primary', mb: 0.75 }}>Default Annual Entitlement</Typography>
+                                        <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'text.primary', mb: 0.75 }}>Fallback Entitlement (days)</Typography>
                                         <TextField
                                             size="small" fullWidth type="number"
                                             value={form.defaultAnnualEntitlement}
@@ -269,6 +279,10 @@ export default function AppSettingsPanel() {
                                             inputProps={{ min: 1, max: 365 }}
                                             sx={{ '& .MuiInputBase-input': { fontSize: 13 } }}
                                         />
+                                        <Typography sx={{ fontSize: 11, color: 'text.disabled', mt: 0.5 }}>
+                                            For a leave type that sets no allowance, and for a new employee.
+                                            Annual leave is <strong>{annualAllowance} days/year</strong>, set on Leave Types.
+                                        </Typography>
                                     </Grid>
                                 </Grid>
 
@@ -487,16 +501,18 @@ export default function AppSettingsPanel() {
                     <Typography sx={{ fontSize: 14, fontWeight: 600, color: 'text.primary' }}>
                         Carryover Preview — End of {yearLabel}
                     </Typography>
-                    <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>{form.maxCarryoverDays}-day max cap</Typography>
+                    <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+                        {form.maxCarryoverDays}-day max cap · entitlement {annualAllowance} days/year from Leave Types, unless set per employee
+                    </Typography>
                 </Box>
 
                 {/* Example cards */}
                 <Box sx={{ p: 2.25, pb: 0 }}>
                     <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '14px', mb: 2 }}>
                         {([
-                            { bg: softBg('success'), border: 'success.main', color: 'success.dark', title: `Under cap (< ${form.maxCarryoverDays} days unused)`, icon: '✅', body: 'All days carry over', sub: `New balance = unused + ${form.defaultAnnualEntitlement}` },
-                            { bg: softBg('warning'), border: 'warning.main', color: 'warning.dark', title: `At cap (= ${form.maxCarryoverDays} days unused)`, icon: '✅', body: `${form.maxCarryoverDays} days carry (cap hit)`, sub: `New balance = ${form.maxCarryoverDays} + ${form.defaultAnnualEntitlement} = ${form.maxCarryoverDays + form.defaultAnnualEntitlement}` },
-                            { bg: softBg('error'),   border: 'error.main',   color: 'error.dark',   title: `Over cap (> ${form.maxCarryoverDays} days unused)`, icon: '⚠️', body: `${form.maxCarryoverDays} carry · excess expires`, sub: `New balance = ${form.maxCarryoverDays} + ${form.defaultAnnualEntitlement} = ${form.maxCarryoverDays + form.defaultAnnualEntitlement}` },
+                            { bg: softBg('success'), border: 'success.main', color: 'success.dark', title: `Under cap (< ${form.maxCarryoverDays} days unused)`, icon: '✅', body: 'All days carry over', sub: 'New balance = unused + entitlement' },
+                            { bg: softBg('warning'), border: 'warning.main', color: 'warning.dark', title: `At cap (= ${form.maxCarryoverDays} days unused)`, icon: '✅', body: `${form.maxCarryoverDays} days carry (cap hit)`, sub: `New balance = ${form.maxCarryoverDays} + entitlement` },
+                            { bg: softBg('error'),   border: 'error.main',   color: 'error.dark',   title: `Over cap (> ${form.maxCarryoverDays} days unused)`, icon: '⚠️', body: `${form.maxCarryoverDays} carry · excess expires`, sub: `New balance = ${form.maxCarryoverDays} + entitlement` },
                         ] as const).map(({ bg, border, color, title, icon, body, sub }) => (
                             <Box key={title} sx={{ bgcolor: bg, border: '1px solid', borderColor: border, borderRadius: '10px', p: '14px', textAlign: 'center' }}>
                                 <Typography sx={{ fontSize: 11, color, fontWeight: 600, mb: 0.75 }}>{title}</Typography>

@@ -11,6 +11,7 @@ import AllLeaveAdminPage from './AllLeaveAdminPage'
 // EmployeeProfile. Every number has to describe the rows actually on screen.
 vi.mock('../../lib/api', () => ({
     getAnnualLeaves: vi.fn(),
+    getAppSettings: vi.fn(),
     getDepartments: vi.fn(),
     getEmployeeProfiles: vi.fn(),
     getHolidays: vi.fn(),
@@ -27,9 +28,26 @@ const FINANCE = { id: 2, name: 'Finance', code: 'FIN', isActive: true, createdAt
 const ANNUAL_LEAVE_TYPE = {
     id: 1, name: 'Annual Leave', requiresApproval: true, isActive: true, affectsBalance: true,
     icon: '', colorKey: 'primary', description: '', paid: true, attachmentPolicy: 'None',
-    defaultAllowance: 20, allowanceUnit: 'days', accrualNotes: '', minNoticeDays: 0,
+    defaultAllowance: 25, allowanceUnit: 'days/year', accrualNotes: '', minNoticeDays: 0,
     maxConsecutiveDays: 0, halfDayAllowed: false, eligibilityNotes: '', eligibilityScope: 'All',
 } as const
+
+/** A second budget, deliberately smaller than the annual one. */
+const SICK_LEAVE_TYPE = {
+    ...ANNUAL_LEAVE_TYPE, id: 2, name: 'Sick Leave', colorKey: 'sick', defaultAllowance: 10,
+    // As seeded: sick leave is not deducted from the pooled annual balance, but it does
+    // have an allowance of its own.
+    affectsBalance: false,
+} as const
+
+/** The app-wide fallback entitlement — only used by types that set no allowance. */
+const APP_SETTINGS = { defaultAnnualEntitlement: 20, maxCarryoverDays: 5, leaveYearStartMonth: 1 }
+
+/** An ISO date inside the current calendar year, so "used this year" is deterministic. */
+function sameYear(month: number, day: number) {
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${new Date().getFullYear()}-${pad(month)}-${pad(day)}T00:00:00`
+}
 
 /** An ISO date `months` from the start of the current month, on `day`. */
 function monthOffset(months: number, day: number) {
@@ -118,7 +136,8 @@ beforeEach(() => {
     api.getAnnualLeaves.mockResolvedValue([...PENDING, ...DECIDED])
     api.getEmployeeProfiles.mockResolvedValue(PROFILES)
     api.getDepartments.mockResolvedValue([ENGINEERING, FINANCE])
-    api.getLeaveTypes.mockResolvedValue([ANNUAL_LEAVE_TYPE] as never)
+    api.getLeaveTypes.mockResolvedValue([ANNUAL_LEAVE_TYPE, SICK_LEAVE_TYPE] as never)
+    api.getAppSettings.mockResolvedValue(APP_SETTINGS as never)
     api.getLeaveStatusHistories.mockResolvedValue([])
     api.getHolidays.mockResolvedValue([])
 })
@@ -254,5 +273,134 @@ describe('AllLeaveAdminPage — pending counts agree with the visible rows', () 
 
         expect(statCardValue('⚠️ Need Attention')).toBe('2')
         expect(screen.getByText('1 urgent · 2 conflicts')).toBeInTheDocument()
+    })
+})
+
+/* An allowance belongs to a leave type: sick leave is 10 days a year, annual leave 25
+   (or whatever the employee's own entitlement says). The row used to quote one pooled
+   annual figure — the employee's profile entitlement — against every request, so a
+   sick day was measured against the annual budget and counted towards it. */
+describe('AllLeaveAdminPage — a request is measured against its own leave type', () => {
+    /** "N left after" for the only rendered row. */
+    function balanceLine() {
+        return screen.getByText(/left after$/).textContent
+    }
+
+    /** "N left after" for every rendered row. */
+    function balanceLines() {
+        return screen.getAllByText(/left after$/).map((el) => el.textContent)
+    }
+
+    it('measures a sick request against the sick allowance', async () => {
+        api.getAnnualLeaves.mockResolvedValue([
+            leave({
+                id: 's1', employeeId: 'emp-2a', employeeName: 'Employee 2A',
+                leaveTypeId: SICK_LEAVE_TYPE.id,
+                startDate: sameYear(11, 3), endDate: sameYear(11, 5), totalDays: 3,
+            }),
+        ])
+        await renderPage()
+
+        // 10-day sick allowance, none used, 3 requested — not the 20-day annual pool.
+        expect(screen.getByText('0/10 used')).toBeInTheDocument()
+        expect(balanceLine()).toBe('7 left after')
+        expect(screen.getByText('Sick Leave allowance')).toBeInTheDocument()
+        expect(screen.queryByText('0/20 used')).not.toBeInTheDocument()
+    })
+
+    it('does not let one type\'s usage eat another type\'s allowance', async () => {
+        api.getAnnualLeaves.mockResolvedValue([
+            // Four sick days already approved this year.
+            leave({
+                id: 's2', employeeId: 'emp-2a', employeeName: 'Employee 2A', status: 'Approved',
+                leaveTypeId: SICK_LEAVE_TYPE.id,
+                startDate: sameYear(3, 2), endDate: sameYear(3, 5), totalDays: 4,
+            }),
+            // A pending annual request from the same person.
+            leave({
+                id: 'a1', employeeId: 'emp-2a', employeeName: 'Employee 2A',
+                leaveTypeId: ANNUAL_LEAVE_TYPE.id,
+                startDate: sameYear(11, 3), endDate: sameYear(11, 5), totalDays: 3,
+            }),
+        ])
+        await renderPage()
+
+        // The annual row opens on the employee's own entitlement (20), untouched by the
+        // sick days: 0 of 20 used, 17 left once these 3 are approved. The decided sick
+        // row alongside it counts those 4 days against the 10-day sick allowance.
+        expect(screen.getByText('0/20 used')).toBeInTheDocument()
+        expect(screen.getByText('4/10 used')).toBeInTheDocument()
+        expect(balanceLines()).toEqual(expect.arrayContaining(['17 left after', '6 left after']))
+        expect(screen.getByText('Annual Leave allowance')).toBeInTheDocument()
+        expect(screen.getByText('Sick Leave allowance')).toBeInTheDocument()
+    })
+
+    it('falls back to the leave type when the employee has no entitlement on record', async () => {
+        api.getAnnualLeaves.mockResolvedValue([
+            leave({
+                id: 'a2', employeeId: 'admin-1', employeeName: 'Admin User', departmentName: '',
+                leaveTypeId: ANNUAL_LEAVE_TYPE.id,
+                startDate: sameYear(11, 3), endDate: sameYear(11, 5), totalDays: 3,
+            }),
+        ])
+        await renderPage()
+
+        // admin@ has no EmployeeProfile, so the figure comes from Leave Types (25).
+        expect(screen.getByText('0/25 used')).toBeInTheDocument()
+        expect(balanceLine()).toBe('22 left after')
+    })
+
+    it('says so rather than inventing an allowance for a type that has none', async () => {
+        api.getLeaveTypes.mockResolvedValue([
+            ANNUAL_LEAVE_TYPE,
+            { ...ANNUAL_LEAVE_TYPE, id: 3, name: 'Study Leave', defaultAllowance: 0 },
+        ] as never)
+        api.getAnnualLeaves.mockResolvedValue([
+            leave({
+                id: 'u1', employeeId: 'emp-2a', employeeName: 'Employee 2A', leaveTypeId: 3,
+                startDate: sameYear(11, 3), endDate: sameYear(11, 5), totalDays: 3,
+            }),
+        ])
+        // No allowance on the type and no fallback configured either.
+        api.getAppSettings.mockResolvedValue({ ...APP_SETTINGS, defaultAnnualEntitlement: 0 } as never)
+        await renderPage()
+
+        expect(screen.getByText('—')).toBeInTheDocument()
+        expect(screen.queryByText(/left after/)).not.toBeInTheDocument()
+    })
+
+    /* The employee's own entitlement (20) is smaller than what Leave Types says for
+       annual leave (25). The row quotes the entitlement, so it has to say where the
+       difference comes from — otherwise the two pages read as contradicting each other. */
+    it('says on hover when an entitlement overrides the leave type', async () => {
+        api.getAnnualLeaves.mockResolvedValue([
+            leave({
+                id: 'a3', employeeId: 'emp-2a', employeeName: 'Employee 2A',
+                leaveTypeId: ANNUAL_LEAVE_TYPE.id,
+                startDate: sameYear(11, 3), endDate: sameYear(11, 5), totalDays: 3,
+            }),
+        ])
+        await renderPage()
+
+        const cell = screen.getByText('0/20 used').parentElement!
+        expect(cell.getAttribute('title')).toBe(
+            'Annual Leave: 0 of 20 days/year used this year · '
+            + 'Leave Types says 25 days/year — overridden for this employee')
+    })
+
+    it('marks a type that is tracked outside the annual balance', async () => {
+        api.getAnnualLeaves.mockResolvedValue([
+            leave({
+                id: 's3', employeeId: 'emp-2a', employeeName: 'Employee 2A',
+                leaveTypeId: SICK_LEAVE_TYPE.id,
+                startDate: sameYear(11, 3), endDate: sameYear(11, 5), totalDays: 3,
+            }),
+        ])
+        await renderPage()
+
+        const cell = screen.getByText('0/10 used').parentElement!
+        expect(cell.getAttribute('title')).toBe(
+            'Sick Leave: 0 of 10 days/year used this year · '
+            + 'Tracked separately — not deducted from the annual balance')
     })
 })
