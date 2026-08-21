@@ -39,9 +39,10 @@ public class GetCompanyAttendance
             var now = DateTime.UtcNow;
             var todayStart = AttendanceDay.UtcDayStart(now);
 
-            var profiles = await context.EmployeeProfiles
-                .Include(p => p.User)
-                .Include(p => p.Department)
+            var profiles = await AttendanceDay.ExcludeAdmins(
+                    context.EmployeeProfiles
+                        .Include(p => p.User)
+                        .Include(p => p.Department))
                 .ToListAsync(cancellationToken);
 
             var profileIds = profiles.Select(p => p.Id).ToList();

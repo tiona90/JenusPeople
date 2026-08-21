@@ -16,7 +16,7 @@ import { alpha, useTheme, type Theme } from '@mui/material/styles'
 import { BarChart } from '@mui/x-charts/BarChart'
 import { LineChart } from '@mui/x-charts/LineChart'
 import {
-    approveTimesheet, getAdminUsers, getAnnualLeaves, getAppSettings,
+    approveTimesheet, getAnnualLeaves, getAppSettings,
     getCompanyAttendance, getDepartments, getEmployeeProfiles, getLeaveTypes,
     getMyTimesheets, getTeamAttendance, getTeamAttendanceHistory, getTimesheets, rejectTimesheet, updateLeaveStatus,
 } from '../../lib/api'
@@ -667,7 +667,6 @@ function AdminDashboard({ user: _user }: { user: UserInfo }) {
     const { data: leaves = [], isLoading: lLoading } = useQuery({ queryKey: ['annualLeaves'], queryFn: getAnnualLeaves })
     const { data: timesheets = [], isLoading: tLoading } = useQuery({ queryKey: ['timesheets'], queryFn: getTimesheets })
     const { data: departments = [] } = useQuery({ queryKey: ['departments'], queryFn: getDepartments })
-    const { data: adminUsers = [] } = useQuery({ queryKey: ['adminUsers'], queryFn: getAdminUsers })
     const { data: company } = useQuery({ queryKey: ['attendance', 'company'], queryFn: getCompanyAttendance })
 
     const pendingLeaveCount = leaves.filter((l) => l.status === 'Pending').length
@@ -681,7 +680,11 @@ function AdminDashboard({ user: _user }: { user: UserInfo }) {
         return oldLeaves + oldTs
     }, [leaves, timesheets])
 
-    const totalUsers = adminUsers.filter((u) => u.roles.includes('Employee') || u.roles.includes('Manager')).length
+    // The hero counts employees from one source only: `company.total`, the
+    // tracked workforce — non-admin accounts holding an employee profile. Any
+    // second estimate here diverges from the sentence beside it, which is how
+    // this pane came to show three different sizes for one company, so there is
+    // no fallback count: the stat reads "—" until the query resolves.
     const activeDepts = departments.filter((d) => d.isActive).length
 
     // On-time submissions over last 4 weeks
@@ -700,6 +703,13 @@ function AdminDashboard({ user: _user }: { user: UserInfo }) {
 
     const attendancePct = company && company.total > 0 ? Math.round((company.in / company.total) * 100) : 0
 
+    // One set behind all three props of the Active issues tile. The feed carries
+    // a 'success' row — the "No unusual overtime" all-clear, which the card below
+    // shows in green so the panel never goes blank — and counting it as an issue
+    // drove the bar to 80% on a day with two real problems while the number said 2.
+    const activeIssues = company?.issues.filter((i) => i.severity !== 'success') ?? []
+    const urgentIssues = activeIssues.filter((i) => i.severity === 'danger').length
+
     return (
         <Box>
             <GreetingHero
@@ -712,10 +722,10 @@ function AdminDashboard({ user: _user }: { user: UserInfo }) {
                 summary={
                     company
                         ? <><strong>{company.in} of {company.total}</strong> employees are working right now. <strong>{totalApprovals} approval{totalApprovals === 1 ? '' : 's'}</strong> {totalApprovals === 1 ? 'is' : 'are'} pending across all departments{company.out > 0 ? <>, with <strong>{company.out} not checked in</strong></> : ''}.</>
-                        : <>Tracking <strong>{totalUsers}</strong> users across <strong>{activeDepts}</strong> departments.</>
+                        : <>Tracking activity across <strong>{activeDepts}</strong> departments.</>
                 }
                 meta={[
-                    { l: 'Total users', v: `${totalUsers} active` },
+                    { l: 'Employees', v: company ? `${company.total} tracked` : '—' },
                     { l: 'Working now', v: company ? `${company.in} (${attendancePct}%)` : '—' },
                     { l: 'On leave today', v: company ? `${company.leave}` : '—' },
                     { l: 'Departments', v: `${activeDepts} active` },
@@ -730,7 +740,7 @@ function AdminDashboard({ user: _user }: { user: UserInfo }) {
                 <Gauge label="Pending approvals" big={totalApprovals.toString()} bigColor="warning.main" sub={`${pendingLeaveCount} leave · ${pendingTsCount} timesheets · ${overThreeDaysOld} over 3 days old`} barColor="warning.main" barPct={Math.min(100, totalApprovals * 5)} />
                 <Gauge label="Today's attendance" big={`${attendancePct}%`} bigColor="success.main" sub={company ? `${company.in} in · ${company.leave} on leave · ${company.out} not checked in` : '—'} barColor="success.main" barPct={attendancePct} />
                 <Gauge label="On-time submissions" big={`${onTimePct}%`} bigColor="primary.main" sub="last 4 weeks · target 90%" barColor="primary.main" barPct={onTimePct} />
-                <Gauge label="Active issues" big={`${company?.issues.filter((i) => i.severity === 'danger').length ?? 0}`} bigColor="error.main" sub={company ? `${company.out} not checked in` : '—'} barColor="error.main" barPct={Math.min(100, (company?.issues.length ?? 0) * 20)} />
+                <Gauge label="Active issues" big={`${activeIssues.length}`} bigColor="error.main" sub={company ? `${urgentIssues} urgent · ${activeIssues.length - urgentIssues} to watch` : '—'} barColor="error.main" barPct={activeIssues.length * 20} />
             </Box>
 
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: '14px', mb: '14px' }}>
@@ -738,20 +748,13 @@ function AdminDashboard({ user: _user }: { user: UserInfo }) {
                 <TodaysIssuesCard issues={company?.issues ?? []} />
             </Box>
 
-            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: '14px', mb: '14px' }}>
+            {/* Full width: the admin sidebar is a permanent rail carrying every
+                section a quick-action tile used to duplicate, so there is no
+                second column here. The employee and manager dashboards keep
+                their quick actions — those surface acts (apply for leave, start
+                this week's timesheet) that nav does not offer. */}
+            <Box sx={{ mb: '14px' }}>
                 <RecentActivityCard activity={company?.recent ?? []} />
-                <ActionCard title="Administration" icon="⚡">
-                    <QuickActions tiles={[
-                        { icon: '📅', label: 'All leave', sub: `${pendingLeaveCount} pending`, onClick: () => uiStore.navigateToTeamLeave() },
-                        { icon: '📋', label: 'All timesheets', sub: `${pendingTsCount} pending`, onClick: () => uiStore.navigateToTeamTimesheets() },
-                        { icon: '🏢', label: 'Company attendance', sub: 'Live view', onClick: () => uiStore.navigateToCompanyAttendance() },
-                        { icon: '👤', label: 'Users', sub: `${totalUsers} active`, onClick: () => uiStore.navigateToAdminSection('users') },
-                        { icon: '🏬', label: 'Departments', sub: `${activeDepts} active`, onClick: () => uiStore.navigateToAdminSection('departments') },
-                        { icon: '🏷️', label: 'Leave types', sub: 'Configure', onClick: () => uiStore.navigateToAdminSection('leave-types') },
-                        { icon: '📁', label: 'Projects', sub: 'Configure', onClick: () => uiStore.navigateToAdminSection('projects') },
-                        { icon: '📆', label: 'Leave year', sub: 'Settings', onClick: () => uiStore.navigateToAdminSection('settings') },
-                    ]} />
-                </ActionCard>
             </Box>
         </Box>
     )

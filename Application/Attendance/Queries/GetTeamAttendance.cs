@@ -29,10 +29,10 @@ public class GetTeamAttendance
     {
         public async Task<Result<TeamAttendanceDto>> Handle(Query request, CancellationToken cancellationToken)
         {
-            var profilesQuery = context.EmployeeProfiles
-                .Include(p => p.User)
-                .Include(p => p.Department)
-                .AsQueryable();
+            var profilesQuery = AttendanceDay.ExcludeAdmins(
+                context.EmployeeProfiles
+                    .Include(p => p.User)
+                    .Include(p => p.Department));
 
             if (!request.IsAdmin)
             {

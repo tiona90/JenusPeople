@@ -67,6 +67,21 @@ public static class AttendanceDay
         context.EmployeeProfiles.FirstOrDefaultAsync(ep => ep.UserId == userId, cancellationToken);
 
     /// <summary>
+    /// Drops Admin-role accounts from an employee-profile query.
+    ///
+    /// An Admin may hold an <see cref="EmployeeProfile"/> — both admin accounts
+    /// in this deployment do — but an admin is not part of the tracked workforce.
+    /// Counting them inflated every company and department total, and put names in
+    /// the "not checked in" feed that nobody expects to check in. The
+    /// employee-facing queries already draw the line here: GetTeammateList excludes
+    /// admins unconditionally, and the manager-scoped leave and profile queries do
+    /// the same. Attendance was the one population that did not.
+    /// </summary>
+    public static IQueryable<EmployeeProfile> ExcludeAdmins(IQueryable<EmployeeProfile> profiles) =>
+        profiles.Where(p => p.User == null
+            || !p.User.UserRoles.Any(ur => ur.Role != null && ur.Role.Name == AppRoles.Admin));
+
+    /// <summary>
     /// The refusal for a caller with no employee profile, phrased identically
     /// across all ten endpoints.
     /// </summary>
