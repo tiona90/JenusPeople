@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { SweetAlert, AppDialog, AppDialogTitle, AppDialogContent, AppDialogActions, cancelBtnSx, saveBtnSx } from '../ui'
 import Alert from '@mui/material/Alert'
@@ -425,6 +425,7 @@ function DepartmentsPanel() {
             )}
 
             <DepartmentFormDialog
+                key={createOpen ? 'dept-create-open' : 'dept-create-closed'}
                 open={createOpen}
                 title="New Department"
                 isPending={createMutation.isPending}
@@ -433,6 +434,7 @@ function DepartmentsPanel() {
                 onSubmit={(payload) => createMutation.mutate(payload)}
             />
             <DepartmentFormDialog
+                key={editDept ? `dept-edit-${editDept.id}` : 'dept-edit-none'}
                 open={!!editDept}
                 title="Edit Department"
                 initial={editDept ?? undefined}
@@ -951,17 +953,10 @@ function DepartmentFormDialog(props: {
     onClose: () => void
     onSubmit: (payload: UpsertDepartmentRequest) => void
 }) {
-    const [name, setName] = useState('')
-    const [code, setCode] = useState('')
-    const [isActive, setIsActive] = useState(true)
-
-    useEffect(() => {
-        if (props.open) {
-            setName(props.initial?.name ?? '')
-            setCode(props.initial?.code ?? '')
-            setIsActive(props.initial?.isActive ?? true)
-        }
-    }, [props.open, props.initial])
+    const i = props.initial
+    const [name, setName] = useState(i?.name ?? '')
+    const [code, setCode] = useState(i?.code ?? '')
+    const [isActive, setIsActive] = useState(i?.isActive ?? true)
 
     return (
         <AppDialog open={props.open} onClose={props.onClose} maxWidth="xs">

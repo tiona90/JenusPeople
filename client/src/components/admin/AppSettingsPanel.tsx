@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import Alert from '@mui/material/Alert'
 import Autocomplete from '@mui/material/Autocomplete'
@@ -180,9 +180,14 @@ export default function AppSettingsPanel() {
     const [form, setForm] = useState<AppSettings>(DEFAULT)
     const [showSaved, setShowSaved] = useState(false)
 
-    useEffect(() => {
+    // Sync the loaded settings into editable form state. Adjusted during render
+    // (not an effect) per
+    // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+    const [prevSaved, setPrevSaved] = useState(saved)
+    if (saved !== prevSaved) {
+        setPrevSaved(saved)
         if (saved) setForm(saved)
-    }, [saved])
+    }
 
     const set = <K extends keyof AppSettings>(key: K, val: AppSettings[K]) =>
         setForm(f => ({ ...f, [key]: val }))

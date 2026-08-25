@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
@@ -738,28 +738,6 @@ function LeaveTypeFormDialog(props: {
     const [halfDayAllowed, setHalfDayAllowed] = useState(i?.halfDayAllowed ?? false)
     const [eligibilityNotes, setEligibilityNotes] = useState(i?.eligibilityNotes ?? 'All employees')
     const [eligibilityScope, setEligibilityScope] = useState<EligibilityScope>(i?.eligibilityScope ?? 'All')
-
-    useEffect(() => {
-        if (!props.open) return
-        const x = props.initial
-        setName(x?.name ?? '')
-        setIcon(x?.icon ?? '🏷️')
-        setColorKey(x?.colorKey ?? 'default')
-        setDescription(x?.description ?? '')
-        setRequiresApproval(x?.requiresApproval ?? true)
-        setIsActive(x?.isActive ?? true)
-        setAffectsBalance(x?.affectsBalance ?? false)
-        setPaid(x?.paid ?? true)
-        setAttachmentPolicy(x?.attachmentPolicy ?? 'None')
-        setDefaultAllowance(x?.defaultAllowance ?? 0)
-        setAllowanceUnit(x?.allowanceUnit ?? 'days/year')
-        setAccrualNotes(x?.accrualNotes ?? '')
-        setMinNoticeDays(x?.minNoticeDays ?? 0)
-        setMaxConsecutiveDays(x?.maxConsecutiveDays ?? 0)
-        setHalfDayAllowed(x?.halfDayAllowed ?? false)
-        setEligibilityNotes(x?.eligibilityNotes ?? 'All employees')
-        setEligibilityScope(x?.eligibilityScope ?? 'All')
-    }, [props.open, props.initial])
 
     const submit = () => {
         props.onSubmit({

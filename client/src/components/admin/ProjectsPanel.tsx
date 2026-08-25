@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
@@ -667,33 +667,27 @@ function ProjectFormDialog(props: {
     const [targetWeeklyHours, setTargetWeeklyHours] = useState<number>(i?.targetWeeklyHours ?? 0)
     const [targetMonthlyHours, setTargetMonthlyHours] = useState<number>(i?.targetMonthlyHours ?? 0)
 
-    useEffect(() => {
-        if (!props.open) return
-        const x = props.initial
-        setName(x?.name ?? '')
-        setCode(x?.code ?? '')
-        setDescription(x?.description ?? '')
-        setStatus(x?.status ?? 'Active')
-        setDepartmentId(x?.departmentId != null ? String(x.departmentId) : '')
-        setOwnerId(x?.ownerId ?? '')
-        setColorKey(x?.colorKey ?? 'p1')
-        setTargetWeeklyHours(x?.targetWeeklyHours ?? 0)
-        setTargetMonthlyHours(x?.targetMonthlyHours ?? 0)
-    }, [props.open, props.initial])
-
-    useEffect(() => {
-        // Auto-generate a code only for new projects with no manual code yet
-        if (props.initial) return
-        if (!name.trim()) { setCode(''); return }
-        const slug = name
-            .split(/\s+/)
-            .filter(Boolean)
-            .map((w) => w[0]?.toUpperCase() || '')
-            .join('')
-            .padEnd(3, 'X')
-            .slice(0, 5)
-        setCode(`${slug}-001`)
-    }, [name, props.initial])
+    // Auto-generate a code from the name as the user types, only for new
+    // projects with no manual code yet. Adjusted during render (not an effect)
+    // per https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+    // so it stays in sync without an extra render pass, and stops once the user
+    // edits the code field directly.
+    const [prevName, setPrevName] = useState(name)
+    if (!props.initial && name !== prevName) {
+        setPrevName(name)
+        if (!name.trim()) {
+            setCode('')
+        } else {
+            const slug = name
+                .split(/\s+/)
+                .filter(Boolean)
+                .map((w) => w[0]?.toUpperCase() || '')
+                .join('')
+                .padEnd(3, 'X')
+                .slice(0, 5)
+            setCode(`${slug}-001`)
+        }
+    }
 
     const submit = () => {
         props.onSubmit({

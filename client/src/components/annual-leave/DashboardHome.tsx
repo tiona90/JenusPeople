@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { observer } from 'mobx-react-lite'
@@ -90,6 +90,17 @@ function minutesToHm(mins: number) {
     return h > 0 ? `${h}h ${m}m` : `${m}m`
 }
 
+// Reactive "current time" for memos that need to re-derive as time passes
+// (day-level countdowns/cutoffs), not just when their data deps change.
+function useNow(intervalMs = 300_000) {
+    const [now, setNow] = useState(() => Date.now())
+    useEffect(() => {
+        const id = setInterval(() => setNow(Date.now()), intervalMs)
+        return () => clearInterval(id)
+    }, [intervalMs])
+    return now
+}
+
 const DashboardHome = observer(function DashboardHome() {
     const { authStore } = useStore()
     const location = useLocation()
@@ -165,11 +176,12 @@ function EmployeeDashboard({ user }: { user: UserInfo }) {
     const hoursRemaining = Math.max(0, WEEKLY_TARGET - currentHours)
 
     // Days left until Friday 6pm of the current week
+    const now = useNow()
     const fridayEod = useMemo(() => {
         if (!currentTimesheet) return null
         const fri = new Date(currentTimesheet.periodEnd); fri.setHours(18, 0, 0, 0)
-        return Math.max(0, Math.ceil((fri.getTime() - Date.now()) / 86_400_000))
-    }, [currentTimesheet])
+        return Math.max(0, Math.ceil((fri.getTime() - now) / 86_400_000))
+    }, [currentTimesheet, now])
 
     // Streak of approved + on-time submissions (most recent backwards)
     const streak = useMemo(() => {
@@ -452,12 +464,13 @@ function ManagerDashboard({ user }: { user: UserInfo }) {
     }
 
     // Build queue: merge leaves + timesheets, sort by age
+    const now = useNow()
     const queue = useMemo(() => {
         const items: QueueItem[] = []
         for (const l of pendingLeaves) {
             const lt = l.leaveTypeId != null ? leaveTypeById.get(l.leaveTypeId) : undefined
             const startD = new Date(l.startDate)
-            const daysNotice = Math.round((startD.getTime() - Date.now()) / 86_400_000)
+            const daysNotice = Math.round((startD.getTime() - now) / 86_400_000)
             const tags: QueueTag[] = []
             if (daysNotice >= 0 && daysNotice < 1) tags.push({ label: '⚠ < 1 day notice', tone: 'urgent' })
             if (l.evidenceUrl) tags.push({ label: '📎 Document attached', tone: 'info' })
@@ -502,7 +515,7 @@ function ManagerDashboard({ user }: { user: UserInfo }) {
             return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
         })
         return items
-    }, [pendingLeaves, pendingTs, leaveTypeById, conflictMap])
+    }, [pendingLeaves, pendingTs, leaveTypeById, conflictMap, now])
 
     // Team submissions this week
     const teamSubmissions = useMemo(() => {
@@ -665,6 +678,7 @@ function buildManagerSummary({ pendingLeaves, pendingTs, urgent, conflicts }: {
 function AdminDashboard({ user: _user }: { user: UserInfo }) {
     const { uiStore } = useStore()
     const today = useMemo(() => new Date(), [])
+    const now = useNow()
 
     const { data: leaves = [], isLoading: lLoading } = useQuery({ queryKey: ['annualLeaves'], queryFn: getAnnualLeaves })
     const { data: timesheets = [], isLoading: tLoading } = useQuery({ queryKey: ['timesheets'], queryFn: getTimesheets })
@@ -676,11 +690,11 @@ function AdminDashboard({ user: _user }: { user: UserInfo }) {
     const totalApprovals = pendingLeaveCount + pendingTsCount
 
     const overThreeDaysOld = useMemo(() => {
-        const cutoff = Date.now() - 3 * 86_400_000
+        const cutoff = now - 3 * 86_400_000
         const oldLeaves = leaves.filter((l) => l.status === 'Pending' && new Date(l.createdAt).getTime() < cutoff).length
         const oldTs = timesheets.filter((t) => (t.status === 'Submitted' || t.status === 'Resubmitted') && new Date(t.submittedAt ?? t.createdAt).getTime() < cutoff).length
         return oldLeaves + oldTs
-    }, [leaves, timesheets])
+    }, [leaves, timesheets, now])
 
     // The hero counts employees from one source only: `company.total`, the
     // tracked workforce — non-admin accounts holding an employee profile. Any
@@ -691,7 +705,7 @@ function AdminDashboard({ user: _user }: { user: UserInfo }) {
 
     // On-time submissions over last 4 weeks
     const onTimePct = useMemo(() => {
-        const cutoff = Date.now() - 28 * 86_400_000
+        const cutoff = now - 28 * 86_400_000
         const recent = timesheets.filter((t) => t.submittedAt && new Date(t.submittedAt).getTime() > cutoff && (t.status === 'Approved' || t.status === 'Submitted'))
         if (recent.length === 0) return 0
         const onTime = recent.filter((t) => {
@@ -699,7 +713,7 @@ function AdminDashboard({ user: _user }: { user: UserInfo }) {
             return new Date(t.submittedAt!) <= end
         }).length
         return Math.round((onTime / recent.length) * 100)
-    }, [timesheets])
+    }, [timesheets, now])
 
     if (lLoading || tLoading) return <CenterSpinner />
 

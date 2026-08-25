@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
@@ -481,16 +481,6 @@ function ActivityTypeFormDialog(props: {
     const [colorKey, setColorKey] = useState<string>(i?.colorKey ?? 'default')
     const [description, setDescription] = useState(i?.description ?? '')
     const [isActive, setIsActive] = useState(i?.isActive ?? true)
-
-    useEffect(() => {
-        if (!props.open) return
-        const x = props.initial
-        setName(x?.name ?? '')
-        setIcon(x?.icon ?? '🏷️')
-        setColorKey(x?.colorKey ?? 'default')
-        setDescription(x?.description ?? '')
-        setIsActive(x?.isActive ?? true)
-    }, [props.open, props.initial])
 
     const submit = () => {
         props.onSubmit({

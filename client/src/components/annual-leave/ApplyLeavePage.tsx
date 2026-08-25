@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -139,7 +139,7 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
     const today = new Date()
 
     const {
-        watch,
+        control,
         setValue,
         handleSubmit,
         formState: { errors },
@@ -156,12 +156,12 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
         },
     })
 
-    const leaveTypeId = watch('leaveTypeId')
-    const duration = watch('duration')
-    const startDate = watch('startDate')
-    const endDate = watch('endDate')
-    const reason = watch('reason') ?? ''
-    const delegateId = watch('delegateId') ?? ''
+    const leaveTypeId = useWatch({ control, name: 'leaveTypeId' })
+    const duration = useWatch({ control, name: 'duration' })
+    const startDate = useWatch({ control, name: 'startDate' })
+    const endDate = useWatch({ control, name: 'endDate' })
+    const reason = useWatch({ control, name: 'reason' }) ?? ''
+    const delegateId = useWatch({ control, name: 'delegateId' }) ?? ''
 
     const [calMonth, setCalMonth] = useState<number>(today.getMonth())
     const [calYear, setCalYear] = useState<number>(today.getFullYear())
@@ -275,7 +275,7 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
                 }
             })
         return map
-    }, [allLeaves, profiles, user.departmentId])
+    }, [allLeaves, profiles, user.departmentId, user.id])
 
     // Coverage candidates: department colleagues, minus yourself as a safety net
     // (the server already excludes the caller).

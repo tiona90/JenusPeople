@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
@@ -87,7 +87,14 @@ export default function OrgSettingsPanel() {
     const [form, setForm] = useState<AppSettings | null>(null)
     const [showSaved, setShowSaved] = useState(false)
 
-    useEffect(() => { if (saved) setForm(saved) }, [saved])
+    // Sync the loaded settings into editable form state. Adjusted during render
+    // (not an effect) per
+    // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+    const [prevSaved, setPrevSaved] = useState(saved)
+    if (saved !== prevSaved) {
+        setPrevSaved(saved)
+        if (saved) setForm(saved)
+    }
 
     const mutation = useMutation({
         mutationFn: (data: AppSettings) => updateAppSettings(data),
