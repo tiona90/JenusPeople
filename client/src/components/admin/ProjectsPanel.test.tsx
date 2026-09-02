@@ -436,3 +436,79 @@ describe('ProjectsPanel — project departments', () => {
         expect(api.updateProject.mock.calls[0][1].departmentIds).toEqual([1])
     })
 })
+
+// A project carries both a weekly and a monthly target, and the query ships
+// hours for both windows. One toolbar control decides which window every card
+// reports against, so the cards and the low-activity tile always agree on the
+// period being looked at.
+describe('ProjectsPanel — hours period', () => {
+    // Both windows sit at 60% of target, so each reports a "remaining" caption
+    // and neither counts as low activity until a test says otherwise.
+    const ORION: Project = {
+        ...APOLLO,
+        id: 8,
+        name: 'Orion',
+        code: 'ORI-001',
+        targetWeeklyHours: 120,
+        targetMonthlyHours: 480,
+        hoursThisWeek: 72,
+        hoursThisMonth: 288,
+    }
+
+    function periodSelect() {
+        return screen.getByLabelText('Hours period') as HTMLSelectElement
+    }
+
+    function choosePeriod(period: 'week' | 'month') {
+        fireEvent.change(periodSelect(), { target: { value: period } })
+    }
+
+    /** The stat tile flagging projects under half their target. */
+    function lowActivityTile() {
+        return screen.getByText('⚠️ Low Activity').parentElement as HTMLElement
+    }
+
+    it('reports the weekly window until another is chosen', async () => {
+        api.getProjects.mockResolvedValue([ORION])
+        await renderPanel()
+
+        expect(periodSelect().value).toBe('week')
+        expect(await screen.findByText('/ 120h')).toBeTruthy()
+        expect(screen.getByText('48h remaining this week')).toBeTruthy()
+    })
+
+    it('reports the monthly target and remaining hours when the month is chosen', async () => {
+        api.getProjects.mockResolvedValue([ORION])
+        await renderPanel()
+        await screen.findByText('/ 120h')
+
+        choosePeriod('month')
+
+        expect(screen.getByText('/ 480h')).toBeTruthy()
+        expect(screen.getByText('192h remaining this month')).toBeTruthy()
+        expect(screen.queryByText('/ 120h')).toBeNull()
+    })
+
+    it('says the monthly target is unset when the project has none', async () => {
+        api.getProjects.mockResolvedValue([{ ...ORION, targetMonthlyHours: 0 }])
+        await renderPanel()
+        await screen.findByText('/ 120h')
+
+        choosePeriod('month')
+
+        expect(screen.getByText('No monthly target set')).toBeTruthy()
+    })
+
+    it('counts low activity against the target for the chosen period', async () => {
+        // 48 of 120 weekly hours is under half; 288 of 480 monthly hours is not.
+        api.getProjects.mockResolvedValue([{ ...ORION, hoursThisWeek: 48 }])
+        await renderPanel()
+        await screen.findByText('/ 120h')
+
+        expect(within(lowActivityTile()).getByText('1')).toBeTruthy()
+
+        choosePeriod('month')
+
+        expect(within(lowActivityTile()).getByText('0')).toBeTruthy()
+    })
+})

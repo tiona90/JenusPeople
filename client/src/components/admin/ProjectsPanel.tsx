@@ -59,6 +59,15 @@ const AVATAR_PALETTE = ['primary.main', 'success.main', 'warning.main', 'seconda
 
 type StatusFilter = 'all' | ProjectStatus
 type DeptFilter = 'all' | number | 'cross'
+/** Which window of logged hours the cards and the low-activity tile report on. */
+type HoursPeriod = 'week' | 'month'
+
+/** The target, the hours logged against it, and how to name that window. */
+function hoursFor(p: Project, period: HoursPeriod) {
+    return period === 'week'
+        ? { target: p.targetWeeklyHours, logged: p.hoursThisWeek, noun: 'this week', targetLabel: 'weekly' }
+        : { target: p.targetMonthlyHours, logged: p.hoursThisMonth, noun: 'this month', targetLabel: 'monthly' }
+}
 
 /* ─── helpers ────────────────────────────────────────────────────────────── */
 
@@ -91,6 +100,7 @@ function ProjectsPanel() {
     const [searchText, setSearchText] = useState('')
     const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
     const [deptFilter, setDeptFilter] = useState<DeptFilter>('all')
+    const [period, setPeriod] = useState<HoursPeriod>('week')
 
     const { data: projects = [], isLoading, isError, error } = useQuery({
         queryKey: ['projects'],
@@ -144,11 +154,12 @@ function ProjectsPanel() {
         const totalHoursYTD = projects.reduce((s, p) => s + p.hoursYTD, 0)
         const allMemberIds = new Set<string>()
         for (const p of projects) for (const t of p.team) allMemberIds.add(t.userId)
-        const lowActivity = projects.filter((p) =>
-            p.status === 'Active' && p.targetWeeklyHours > 0 && p.hoursThisWeek < p.targetWeeklyHours * 0.5
-        ).length
+        const lowActivity = projects.filter((p) => {
+            const { target, logged } = hoursFor(p, period)
+            return p.status === 'Active' && target > 0 && logged < target * 0.5
+        }).length
         return { active, onHold, inactive, totalHoursYTD, members: allMemberIds.size, lowActivity }
-    }, [projects])
+    }, [projects, period])
 
     /* Mutations */
     const createMutation = useMutation({
@@ -260,6 +271,15 @@ function ProjectsPanel() {
                         { value: 'cross', label: 'No department' },
                     ]}
                 />
+                <SelectFilter
+                    ariaLabel="Hours period"
+                    value={period}
+                    onChange={(v) => setPeriod(v as HoursPeriod)}
+                    options={[
+                        { value: 'week', label: 'Hours: this week' },
+                        { value: 'month', label: 'Hours: this month' },
+                    ]}
+                />
                 <Box sx={{ flex: 1 }} />
                 <Box
                     component="button"
@@ -293,6 +313,7 @@ function ProjectsPanel() {
                         <ProjectCard
                             key={p.id}
                             project={p}
+                            period={period}
                             onEdit={() => setEditProject(p)}
                             onDelete={async () => {
                                 const result = await SweetAlert.fire({
@@ -350,16 +371,20 @@ function ProjectsPanel() {
 /* Card                                                                     */
 /* ════════════════════════════════════════════════════════════════════════ */
 
-function ProjectCard({ project, onEdit, onDelete }: {
+function ProjectCard({ project, period, onEdit, onDelete }: {
     project: Project
+    period: HoursPeriod
     onEdit: () => void
     onDelete: () => void
 }) {
     const p = project
     const codeColor = p.status === 'Inactive' ? 'text.disabled' : (CODE_COLORS[p.colorKey] ?? CODE_COLORS.p1)
     const status = STATUS_COLORS[p.status]
-    const weekPct = p.targetWeeklyHours > 0 ? (p.hoursThisWeek / p.targetWeeklyHours) * 100 : 0
-    const fillColor = weekPct < 50 ? 'warning.main' : weekPct >= 100 ? 'success.main' : 'primary.main'
+    // Everything in the hours block reads off the chosen window; the team
+    // figures below it stay weekly, since that is the only per-member total.
+    const { target, logged, noun, targetLabel } = hoursFor(p, period)
+    const pct = target > 0 ? (logged / target) * 100 : 0
+    const fillColor = pct < 50 ? 'warning.main' : pct >= 100 ? 'success.main' : 'primary.main'
     const avgPerPerson = p.teamSize > 0 ? +(p.hoursThisWeek / p.teamSize).toFixed(1) : 0
 
     const visibleTeam = p.team.slice(0, 6)
@@ -496,33 +521,35 @@ function ProjectCard({ project, onEdit, onDelete }: {
                     <Box sx={{ fontSize: 10, color: 'text.disabled', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
                         Hours logged
                     </Box>
-                    <Box sx={{ fontSize: 11, color: 'text.secondary' }}>This week</Box>
-                </Box>
-                <Box sx={{ fontSize: 26, fontWeight: 700, color: 'text.primary', lineHeight: 1, mb: '8px' }}>
-                    {p.hoursThisWeek}
-                    <Box component="span" sx={{ fontSize: 13, fontWeight: 500, color: 'text.secondary', ml: '4px' }}>
-                        / {p.targetWeeklyHours}h
+                    <Box sx={{ fontSize: 11, color: 'text.secondary' }}>
+                        {period === 'week' ? 'This week' : 'This month'}
                     </Box>
                 </Box>
-                {p.targetWeeklyHours > 0 ? (
+                <Box sx={{ fontSize: 26, fontWeight: 700, color: 'text.primary', lineHeight: 1, mb: '8px' }}>
+                    {logged}
+                    <Box component="span" sx={{ fontSize: 13, fontWeight: 500, color: 'text.secondary', ml: '4px' }}>
+                        / {target}h
+                    </Box>
+                </Box>
+                {target > 0 ? (
                     <>
                         <Box sx={{ height: 8, bgcolor: 'action.hover', borderRadius: '4px', overflow: 'hidden', mb: '10px' }}>
                             <Box sx={{
                                 height: '100%', bgcolor: fillColor, borderRadius: '4px',
-                                width: `${Math.min(100, weekPct)}%`, transition: 'width 0.3s',
+                                width: `${Math.min(100, pct)}%`, transition: 'width 0.3s',
                             }} />
                         </Box>
                         <Box sx={{ fontSize: 11, color: 'text.secondary' }}>
-                            {weekPct < 50
-                                ? `⚠ ${Math.max(0, p.targetWeeklyHours - p.hoursThisWeek).toFixed(0)}h below target · may need attention`
-                                : weekPct >= 100
-                                    ? `✓ ${(p.hoursThisWeek - p.targetWeeklyHours).toFixed(0)}h over target this week`
-                                    : `${(p.targetWeeklyHours - p.hoursThisWeek).toFixed(0)}h remaining this week`}
+                            {pct < 50
+                                ? `⚠ ${Math.max(0, target - logged).toFixed(0)}h below target · may need attention`
+                                : pct >= 100
+                                    ? `✓ ${(logged - target).toFixed(0)}h over target ${noun}`
+                                    : `${(target - logged).toFixed(0)}h remaining ${noun}`}
                         </Box>
                     </>
                 ) : (
                     <Box sx={{ fontSize: 11, color: 'text.disabled', fontStyle: 'italic' }}>
-                        {p.hoursThisWeek > 0 ? 'No weekly target set' : 'No activity this week'}
+                        {logged > 0 ? `No ${targetLabel} target set` : `No activity ${noun}`}
                     </Box>
                 )}
             </Box>
@@ -643,14 +670,16 @@ function StatCard({ label, value, sub, valueColor }: {
     )
 }
 
-function SelectFilter({ value, onChange, options }: {
+function SelectFilter({ value, onChange, options, ariaLabel }: {
     value: string
     onChange: (v: string) => void
     options: { value: string; label: string }[]
+    ariaLabel?: string
 }) {
     return (
         <Box
             component="select"
+            aria-label={ariaLabel}
             value={value}
             onChange={(e: React.ChangeEvent<HTMLSelectElement>) => onChange(e.target.value)}
             sx={{
