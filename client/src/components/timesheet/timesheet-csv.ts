@@ -7,6 +7,11 @@ export interface ProjectRef {
     name?: string | null
 }
 
+/** Minimal project-type shape needed to label a CSV row. */
+export interface ProjectTypeRef {
+    name?: string | null
+}
+
 /** One timesheet plus its (already fetched) entries and resolved department name. */
 export interface TimesheetCsvSource {
     timesheet: Timesheet
@@ -20,6 +25,7 @@ const HEADER = [
     'Week',
     'Date',
     'Day',
+    'Type',
     'Project Code',
     'Project Name',
     'Hours',
@@ -44,6 +50,7 @@ const escape = (v: string) => (/[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"`
 export function buildTimesheetsCsv(
     sources: TimesheetCsvSource[],
     projectById: Map<number, ProjectRef>,
+    typeById: Map<number, ProjectTypeRef> = new Map(),
 ): string {
     const csvRows: string[][] = []
 
@@ -63,6 +70,7 @@ export function buildTimesheetsCsv(
                 '',
                 '',
                 '',
+                '',
                 '(no entries)',
                 total,
                 t.status,
@@ -73,12 +81,16 @@ export function buildTimesheetsCsv(
 
         for (const e of sorted) {
             const proj = projectById.get(e.projectId)
+            // Blank for an entry logged with no type, which is every entry
+            // predating the field and any logged against an unclassified project.
+            const type = e.projectTypeId != null ? typeById.get(e.projectTypeId) : undefined
             csvRows.push([
                 t.employeeName,
                 dept,
                 week,
                 fmtDate(e.date),
                 fmtDay(e.date),
+                type?.name ?? '',
                 proj?.code ?? '',
                 proj?.name ?? `Project #${e.projectId}`,
                 Number(e.hoursWorked).toFixed(2),

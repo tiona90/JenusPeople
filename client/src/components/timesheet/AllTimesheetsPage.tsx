@@ -14,6 +14,7 @@ import {
     approveTimesheet,
     getDepartments,
     getProjects,
+    getProjectTypes,
     getTimesheet,
     getTimesheets,
     rejectTimesheet,
@@ -162,10 +163,18 @@ function DailyBreakdown({ ts }: { ts: Timesheet }) {
     })
     const entries = (data?.entries as TimesheetEntry[] | undefined) ?? []
 
+    // Entries carry a type id, not its name. Same query key the page uses, so
+    // this is a cache read rather than a second fetch.
+    const { data: projectTypes = [] } = useQuery({
+        queryKey: ['projectTypes'],
+        queryFn: getProjectTypes,
+    })
+    const typeById = useMemo(() => new Map(projectTypes.map((t) => [t.id, t])), [projectTypes])
+
     const days = useMemo(() => {
         const periodStart = new Date(ts.periodStart)
         periodStart.setHours(0, 0, 0, 0)
-        const out: { date: Date; name: string; total: number; tasks: { project: string; notes: string }[] }[] = []
+        const out: { date: Date; name: string; total: number; tasks: { project: string; type: string; notes: string }[] }[] = []
         for (let i = 0; i < 5; i++) {
             const d = new Date(periodStart)
             d.setDate(periodStart.getDate() + i)
@@ -175,12 +184,14 @@ function DailyBreakdown({ ts }: { ts: Timesheet }) {
             const total = dayEntries.reduce((s, e) => s + Number(e.hoursWorked), 0)
             const tasks = dayEntries.map((e) => ({
                 project: e.project?.code ?? e.project?.name ?? `Project #${e.projectId}`,
+                // Blank for an untyped entry, which the render then leaves out.
+                type: (e.projectTypeId != null ? typeById.get(e.projectTypeId)?.name : '') ?? '',
                 notes: e.notes ?? '—',
             }))
             out.push({ date: d, name: dayName, total, tasks })
         }
         return out
-    }, [entries, ts.periodStart])
+    }, [entries, ts.periodStart, typeById])
 
     if (isLoading && entries.length === 0) {
         return (
@@ -232,6 +243,14 @@ function DailyBreakdown({ ts }: { ts: Timesheet }) {
                                 ) : (
                                     d.tasks.map((t, idx) => (
                                         <Box key={idx} sx={{ py: '2px' }}>
+                                            {t.type && (
+                                                <>
+                                                    <Box component="span" sx={{ color: 'text.secondary', fontSize: 10 }}>
+                                                        {t.type}
+                                                    </Box>
+                                                    {' · '}
+                                                </>
+                                            )}
                                             <Box component="span" sx={{ color: BLUE, fontWeight: 500, fontSize: 10 }}>
                                                 {t.project}
                                             </Box>
@@ -490,6 +509,12 @@ export default function AllTimesheetsPage() {
         queryFn: getProjects,
     })
 
+    // Only used to name the entry types in the CSV export.
+    const { data: projectTypes = [] } = useQuery({
+        queryKey: ['projectTypes'],
+        queryFn: getProjectTypes,
+    })
+
     const deptById = useMemo(() => new Map(departments.map((d) => [d.id, d.name])), [departments])
     const deptNames = useMemo(() => Array.from(new Set(departments.map((d) => d.name))).sort(), [departments])
 
@@ -681,6 +706,7 @@ export default function AllTimesheetsPage() {
         setExporting(true)
         try {
             const projectById = new Map(projects.map((p) => [p.id, p]))
+            const typeById = new Map(projectTypes.map((t) => [t.id, t]))
 
             const details = await Promise.all(
                 filtered.map((t) =>
@@ -697,7 +723,7 @@ export default function AllTimesheetsPage() {
                 departmentName: deptById.get(t.departmentId) ?? '',
             }))
 
-            const csv = buildTimesheetsCsv(sources, projectById)
+            const csv = buildTimesheetsCsv(sources, projectById, typeById)
 
             const blob = new Blob(['﻿', csv], { type: 'text/csv;charset=utf-8;' })
             const url = URL.createObjectURL(blob)

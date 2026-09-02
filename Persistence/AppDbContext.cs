@@ -122,6 +122,15 @@ public class AppDbContext : IdentityDbContext<
                 .HasForeignKey(e => e.ActivityTypeId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            // Restrict, like the activity above: a type stamped on real entries
+            // must not vanish because someone tidied the catalogue. Deleting a
+            // type projects still carry is already refused in DeleteProjectType;
+            // this extends the same protection to logged time.
+            entity.HasOne(e => e.ProjectType)
+                .WithMany()
+                .HasForeignKey(e => e.ProjectTypeId)
+                .OnDelete(DeleteBehavior.Restrict);
+
             entity.HasIndex(e => e.TimesheetId);
         });
 

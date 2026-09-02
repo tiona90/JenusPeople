@@ -20,6 +20,7 @@ public class CreateEntryRequest
     public decimal HoursWorked { get; set; }
     public string? Notes { get; set; }
     public int? ActivityTypeId { get; set; }
+    public int? ProjectTypeId { get; set; }
 }
 
 [ApiController]
@@ -74,6 +75,16 @@ public class TimesheetEntriesController : ControllerBase
             .Select(a => a.ActivityTypeId)
             .ToListAsync(cancellationToken);
 
+    /// <summary>
+    /// The types the project is classified as — empty when it is unclassified,
+    /// which leaves any type acceptable.
+    /// </summary>
+    private Task<List<int>> AssignedProjectTypeIdsAsync(int projectId, CancellationToken cancellationToken) =>
+        _context.ProjectTypeAssignments
+            .Where(a => a.ProjectId == projectId)
+            .Select(a => a.ProjectTypeId)
+            .ToListAsync(cancellationToken);
+
     private async Task RecalculateTotalHoursAsync(string timesheetId)
     {
         var timesheet = await _context.Timesheets.FindAsync(timesheetId);
@@ -106,6 +117,7 @@ public class TimesheetEntriesController : ControllerBase
             HoursWorked = request.HoursWorked,
             Notes = request.Notes,
             ActivityTypeId = request.ActivityTypeId,
+            ProjectTypeId = request.ProjectTypeId,
         };
 
         var existing = await _context.TimesheetEntries
@@ -115,7 +127,8 @@ public class TimesheetEntriesController : ControllerBase
             entry,
             existing,
             today: null,
-            assignedActivityTypeIds: await AssignedActivityTypeIdsAsync(entry.ProjectId, cancellationToken));
+            assignedActivityTypeIds: await AssignedActivityTypeIdsAsync(entry.ProjectId, cancellationToken),
+            assignedProjectTypeIds: await AssignedProjectTypeIdsAsync(entry.ProjectId, cancellationToken));
         if (!validation.IsValid)
             throw new ArgumentException(validation.Error);
 
@@ -162,7 +175,8 @@ public class TimesheetEntriesController : ControllerBase
             entry,
             existing,
             today: null,
-            assignedActivityTypeIds: await AssignedActivityTypeIdsAsync(entry.ProjectId, cancellationToken));
+            assignedActivityTypeIds: await AssignedActivityTypeIdsAsync(entry.ProjectId, cancellationToken),
+            assignedProjectTypeIds: await AssignedProjectTypeIdsAsync(entry.ProjectId, cancellationToken));
         if (!validation.IsValid)
             throw new ArgumentException(validation.Error);
 

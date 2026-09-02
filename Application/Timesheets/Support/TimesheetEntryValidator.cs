@@ -23,7 +23,8 @@ public static class TimesheetEntryValidator
     ///   - hours exceeding 24 in a single entry,
     ///   - a date in the future,
     ///   - an activity the project has not assigned,
-    ///   - duplicating an existing project on the same date (overlap),
+    ///   - a type the project is not classified as,
+    ///   - duplicating an existing project *and type* on the same date (overlap),
     ///   - pushing the same-day total above 24 hours.
     ///
     /// <paramref name="existing"/> should contain all entries for the same
@@ -36,12 +37,17 @@ public static class TimesheetEntryValidator
     /// <paramref name="assignedActivityTypeIds"/> is the activity types the
     /// candidate's project has narrowed itself to. Null or empty means it has
     /// narrowed nothing, and any activity is allowed.
+    ///
+    /// <paramref name="assignedProjectTypeIds"/> is the types the candidate's
+    /// project is classified as. Null or empty means it is unclassified — a valid
+    /// state — and any type is allowed.
     /// </summary>
     public static ValidationResult Validate(
         TimesheetEntry candidate,
         IEnumerable<TimesheetEntry> existing,
         DateTime? today = null,
-        IReadOnlyCollection<int>? assignedActivityTypeIds = null)
+        IReadOnlyCollection<int>? assignedActivityTypeIds = null,
+        IReadOnlyCollection<int>? assignedProjectTypeIds = null)
     {
         if (candidate.HoursWorked <= 0)
             return ValidationResult.Fail("Hours worked must be greater than zero.");
@@ -61,12 +67,24 @@ public static class TimesheetEntryValidator
             && !assignedActivityTypeIds.Contains(candidate.ActivityTypeId.Value))
             return ValidationResult.Fail("That activity is not available on this project.");
 
+        // Same shape as the activity rule: a classified project accepts only the
+        // types it carries, an unclassified one accepts anything, and an entry
+        // with no type is always fine.
+        if (assignedProjectTypeIds is { Count: > 0 }
+            && candidate.ProjectTypeId.HasValue
+            && !assignedProjectTypeIds.Contains(candidate.ProjectTypeId.Value))
+            return ValidationResult.Fail("That type is not available on this project.");
+
         var sameDayEntries = existing
             .Where(e => e.Id != candidate.Id && e.Date.Date == candidate.Date.Date)
             .ToList();
 
-        if (sameDayEntries.Any(e => e.ProjectId == candidate.ProjectId))
-            return ValidationResult.Fail("An entry for this project on this date already exists.");
+        // Project *and* type together, because a project can legitimately be
+        // worked on as two kinds of engagement in one day — 2h of Support and 3h
+        // of Inquiry on the same project are two facts, not a duplicate. Two rows
+        // with no type still collide, which is the pre-type behaviour unchanged.
+        if (sameDayEntries.Any(e => e.ProjectId == candidate.ProjectId && e.ProjectTypeId == candidate.ProjectTypeId))
+            return ValidationResult.Fail("An entry for this project and type on this date already exists.");
 
         var dailyTotal = sameDayEntries.Sum(e => e.HoursWorked) + candidate.HoursWorked;
         if (dailyTotal > MaxHoursPerDay)
