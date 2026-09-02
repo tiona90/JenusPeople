@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { StoreProvider } from '../../lib/mobx'
-import type { AdminUser, Department, Project, ProjectActivityType, ProjectComponent } from '../../lib/types'
+import type { AdminUser, Department, Project, ProjectActivityType, ProjectComponent, ProjectType } from '../../lib/types'
 import ProjectsPanel from './ProjectsPanel'
 
 // Activity types are an org-wide catalogue. A project picks the subset it logs
@@ -14,6 +14,7 @@ vi.mock('../../lib/api', () => ({
     getAdminUsers: vi.fn(),
     getProjectActivityTypes: vi.fn(),
     getProjectComponents: vi.fn(),
+    getProjectTypes: vi.fn(),
     createProject: vi.fn(),
     updateProject: vi.fn(),
     deleteProject: vi.fn(),
@@ -41,6 +42,16 @@ const LASERNET = component(12, 'Lasernet')
 const JDOCS = component(13, 'jDocs')
 const RETIRED_COMPONENT = component(14, 'Retired Component', false)
 
+// Types work like components: a project carries any number of them, picked from
+// the catalogue, and may carry none at all.
+function projectType(id: number, name: string, isActive = true): ProjectType {
+    return { id, name, description: '', icon: '🗂️', colorKey: 'default', isActive, usedInProjects: 0 }
+}
+
+const IMPLEMENTATION = projectType(21, 'Implementation')
+const SUPPORT = projectType(22, 'Support')
+const RETIRED_TYPE = projectType(23, 'Retired Type', false)
+
 const ENGINEERING: Department = { id: 1, name: 'Engineering', code: 'ENG', isActive: true, createdAt: '2026-01-01T00:00:00' }
 const FINANCE: Department = { id: 2, name: 'Finance', code: 'FIN', isActive: true, createdAt: '2026-01-01T00:00:00' }
 
@@ -65,6 +76,10 @@ const APOLLO: Project = {
     team: [],
     activities: [{ id: 2, name: 'Testing', icon: '🏷️', colorKey: 'default' }],
     components: [{ id: 12, name: 'Lasernet', icon: '🧩', colorKey: 'default' }],
+    types: [
+        { id: 21, name: 'Implementation', icon: '🗂️', colorKey: 'default' },
+        { id: 22, name: 'Support', icon: '🗂️', colorKey: 'default' },
+    ],
 }
 
 beforeEach(() => {
@@ -74,6 +89,7 @@ beforeEach(() => {
     api.getAdminUsers.mockResolvedValue([] as AdminUser[])
     api.getProjectActivityTypes.mockResolvedValue([DEVELOPMENT, TESTING, DESIGN, RETIRED])
     api.getProjectComponents.mockResolvedValue([DM, LASERNET, JDOCS, RETIRED_COMPONENT])
+    api.getProjectTypes.mockResolvedValue([IMPLEMENTATION, SUPPORT, RETIRED_TYPE])
     api.createProject.mockResolvedValue(APOLLO)
     api.updateProject.mockResolvedValue(APOLLO)
 })
@@ -249,6 +265,117 @@ describe('ProjectsPanel — project components', () => {
 
         await waitFor(() => expect(api.updateProject).toHaveBeenCalled())
         expect(api.updateProject.mock.calls[0][1].componentIds).toEqual([])
+    })
+})
+// A project carries a set of types, or none — the same multi-select shape as the
+// components above. Clearing it back to empty has to reach the API as an empty
+// list, since staying unclassified is a valid state a project can be edited into.
+describe('ProjectsPanel — project types', () => {
+    /** The Project types multi-select inside the open dialog. */
+    function typeField() {
+        return within(screen.getByRole('dialog')).getByLabelText('Project types')
+    }
+
+    function openTypeOptions() {
+        fireEvent.mouseDown(typeField())
+        return screen.getAllByRole('option')
+    }
+
+    function chooseType(name: string) {
+        fireEvent.click(screen.getByRole('option', { name: new RegExp(name) }))
+    }
+
+    it('offers the active types when creating a project', async () => {
+        await renderPanel()
+        fireEvent.click(screen.getByText('+ New project'))
+
+        const labels = openTypeOptions().map((o) => o.textContent)
+
+        expect(labels).toEqual(['Implementation', 'Support'])
+        expect(labels).not.toContain('Retired Type')
+    })
+
+    it('sends the chosen types when saving a new project', async () => {
+        await renderPanel()
+        fireEvent.click(screen.getByText('+ New project'))
+
+        fireEvent.change(within(screen.getByRole('dialog')).getByLabelText(/Name/), {
+            target: { value: 'Borealis' },
+        })
+        chooseDepartment('Engineering')
+        openTypeOptions()
+        chooseType('Implementation')
+        chooseType('Support')
+        fireEvent.keyDown(screen.getByRole('listbox'), { key: 'Escape' })
+
+        save()
+
+        await waitFor(() => expect(api.createProject).toHaveBeenCalled())
+        expect(api.createProject.mock.calls[0][0].projectTypeIds).toEqual([21, 22])
+    })
+
+    /**
+     * Leaving the select alone is the common case — a project need not be
+     * classified — and it has to reach the API as an empty list rather than
+     * being dropped from the payload.
+     */
+    it('sends an empty list when no type is chosen', async () => {
+        await renderPanel()
+        fireEvent.click(screen.getByText('+ New project'))
+
+        fireEvent.change(within(screen.getByRole('dialog')).getByLabelText(/Name/), {
+            target: { value: 'Borealis' },
+        })
+        chooseDepartment('Engineering')
+
+        save()
+
+        await waitFor(() => expect(api.createProject).toHaveBeenCalled())
+        expect(api.createProject.mock.calls[0][0].projectTypeIds).toEqual([])
+    })
+
+    it('preselects the types a project already has when editing', async () => {
+        await renderPanel()
+        fireEvent.click(await screen.findByText('✏️ Edit'))
+
+        expect(typeField()).toHaveTextContent('Implementation')
+        expect(typeField()).toHaveTextContent('Support')
+    })
+
+    it('keeps the existing selection when saving an edit untouched', async () => {
+        await renderPanel()
+        fireEvent.click(await screen.findByText('✏️ Edit'))
+
+        save()
+
+        await waitFor(() => expect(api.updateProject).toHaveBeenCalled())
+        expect(api.updateProject.mock.calls[0][1].projectTypeIds).toEqual([21, 22])
+    })
+
+    /**
+     * Clearing the selection has to unclassify the project rather than being
+     * dropped from the payload, which would silently leave the old types on it.
+     */
+    it('sends an empty list when the selection is cleared', async () => {
+        await renderPanel()
+        fireEvent.click(await screen.findByText('✏️ Edit'))
+
+        openTypeOptions()
+        chooseType('Implementation')
+        chooseType('Support')
+        fireEvent.keyDown(screen.getByRole('listbox'), { key: 'Escape' })
+
+        save()
+
+        await waitFor(() => expect(api.updateProject).toHaveBeenCalled())
+        expect(api.updateProject.mock.calls[0][1].projectTypeIds).toEqual([])
+    })
+
+    it('badges the project card with every type it carries', async () => {
+        await renderPanel()
+
+        expect(await screen.findByTitle('Project type: Support')).toBeInTheDocument()
+        expect(screen.getByTitle('Project type: Implementation')).toBeInTheDocument()
     })
 })
 

@@ -22,6 +22,7 @@ public class Project : ISoftDeletable, IAuditable
     public string? OwnerId { get; set; }
     public User? Owner { get; set; }
     public string ColorKey { get; set; } = "p1";
+
     public int TargetWeeklyHours { get; set; }
     public int TargetMonthlyHours { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
@@ -34,6 +35,13 @@ public class Project : ISoftDeletable, IAuditable
     /// catalogue. Empty means the project has declared none.
     /// </summary>
     public ICollection<ProjectComponentAssignment> ComponentAssignments { get; set; } = new List<ProjectComponentAssignment>();
+
+    /// <summary>
+    /// What kinds of engagement this project is, narrowed from the org-wide
+    /// catalogue. A project can be several at once, and empty means it has not
+    /// been classified — never filled in with a guess.
+    /// </summary>
+    public ICollection<ProjectTypeAssignment> TypeAssignments { get; set; } = new List<ProjectTypeAssignment>();
 
     /// <summary>
     /// The departments this project belongs to, which is also who can see it.

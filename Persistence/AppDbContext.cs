@@ -38,6 +38,8 @@ public class AppDbContext : IdentityDbContext<
     public DbSet<ProjectDepartment> ProjectDepartments { get; set; }
     public DbSet<ProjectComponent> ProjectComponents { get; set; }
     public DbSet<ProjectComponentAssignment> ProjectComponentAssignments { get; set; }
+    public DbSet<ProjectType> ProjectTypes { get; set; }
+    public DbSet<ProjectTypeAssignment> ProjectTypeAssignments { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -254,6 +256,16 @@ public class AppDbContext : IdentityDbContext<
             entity.HasIndex(c => c.Name).IsUnique();
         });
 
+        builder.Entity<ProjectType>(entity =>
+        {
+            entity.Property(t => t.Name).IsRequired().HasMaxLength(100);
+            entity.Property(t => t.Description).HasMaxLength(300).HasDefaultValue(string.Empty);
+            entity.Property(t => t.Icon).HasMaxLength(16).HasDefaultValue("🗂️");
+            entity.Property(t => t.ColorKey).HasMaxLength(30).HasDefaultValue("default");
+            entity.Property(t => t.IsActive).HasDefaultValue(true);
+            entity.HasIndex(t => t.Name).IsUnique();
+        });
+
         builder.Entity<Project>(entity =>
         {
             entity.Property(p => p.Name)
@@ -348,6 +360,31 @@ public class AppDbContext : IdentityDbContext<
                 .WithMany(c => c.ProjectAssignments)
                 .HasForeignKey(a => a.ComponentId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            // Mirrors the filter on Project itself, so a soft-deleted project's
+            // assignments leave scope with it instead of lingering in the counts.
+            entity.HasQueryFilter(a => !a.Project!.IsDeleted);
+        });
+
+        builder.Entity<ProjectTypeAssignment>(entity =>
+        {
+            entity.HasKey(a => new { a.ProjectId, a.ProjectTypeId });
+
+            entity.HasOne(a => a.Project)
+                .WithMany(p => p.TypeAssignments)
+                .HasForeignKey(a => a.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Restricted on this side, unlike a component assignment: a project's
+            // types are the classification an admin chose for it, so removing one
+            // from the catalogue has to be refused while projects still carry it
+            // rather than silently reclassifying them. DeleteProjectType checks
+            // first and returns a Conflict with the count; this is the backstop if
+            // anything gets past it.
+            entity.HasOne(a => a.ProjectType)
+                .WithMany(t => t.ProjectAssignments)
+                .HasForeignKey(a => a.ProjectTypeId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             // Mirrors the filter on Project itself, so a soft-deleted project's
             // assignments leave scope with it instead of lingering in the counts.

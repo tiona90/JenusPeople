@@ -46,6 +46,11 @@ public class CreateProject
                 && await context.ProjectComponents.CountAsync(c => componentIds.Contains(c.Id), cancellationToken) != componentIds.Count)
                 return Result<ProjectDto>.Failure("One or more selected components do not exist.");
 
+            var projectTypeIds = req.ProjectTypeIds.Distinct().ToList();
+            if (projectTypeIds.Count > 0
+                && await context.ProjectTypes.CountAsync(t => projectTypeIds.Contains(t.Id), cancellationToken) != projectTypeIds.Count)
+                return Result<ProjectDto>.Failure("One or more selected project types do not exist.");
+
             var project = new Project
             {
                 Name = name,
@@ -69,6 +74,9 @@ public class CreateProject
             foreach (var componentId in componentIds)
                 project.ComponentAssignments.Add(new ProjectComponentAssignment { ComponentId = componentId });
 
+            foreach (var projectTypeId in projectTypeIds)
+                project.TypeAssignments.Add(new ProjectTypeAssignment { ProjectTypeId = projectTypeId });
+
             context.Projects.Add(project);
             await context.SaveChangesAsync(cancellationToken);
 
@@ -79,6 +87,7 @@ public class CreateProject
             dto.Departments = await ProjectDepartmentLookup.ForProjectAsync(context, project.Id, cancellationToken);
             dto.Activities = await ProjectActivityLookup.ForProjectAsync(context, project.Id, cancellationToken);
             dto.Components = await ProjectComponentLookup.ForProjectAsync(context, project.Id, cancellationToken);
+            dto.Types = await ProjectTypeLookup.ForProjectAsync(context, project.Id, cancellationToken);
             return Result<ProjectDto>.Success(dto);
         }
 

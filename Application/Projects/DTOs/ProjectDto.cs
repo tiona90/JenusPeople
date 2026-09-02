@@ -39,6 +39,12 @@ public class ProjectDto
     /// catalogue. Empty means the project has declared none.
     /// </summary>
     public List<ProjectComponentSummaryDto> Components { get; set; } = new();
+
+    /// <summary>
+    /// What kinds of engagement this project is. Empty means it has not been
+    /// classified, which is a valid state rather than a missing field.
+    /// </summary>
+    public List<ProjectTypeSummaryDto> Types { get; set; } = new();
 }
 
 public class ProjectDepartmentDto
@@ -65,6 +71,19 @@ public class ProjectComponentSummaryDto
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public string Icon { get; set; } = "🧩";
+    public string ColorKey { get; set; } = "default";
+}
+
+/// <summary>
+/// A type as seen from a project. Named apart from the catalogue's own
+/// <c>ProjectTypes.DTOs.ProjectTypeDto</c>, which carries the description and
+/// usage count the project card has no use for.
+/// </summary>
+public class ProjectTypeSummaryDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Icon { get; set; } = "🗂️";
     public string ColorKey { get; set; } = "default";
 }
 

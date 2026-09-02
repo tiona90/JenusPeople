@@ -18,6 +18,7 @@ import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
 import LabelRoundedIcon from '@mui/icons-material/LabelRounded'
 import ExtensionRoundedIcon from '@mui/icons-material/ExtensionRounded'
 import CategoryRoundedIcon from '@mui/icons-material/CategoryRounded'
+import StyleRoundedIcon from '@mui/icons-material/StyleRounded'
 import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
 import EventRoundedIcon from '@mui/icons-material/EventRounded'
 import FactCheckRoundedIcon from '@mui/icons-material/FactCheckRounded'
@@ -215,6 +216,7 @@ const Sidebar = observer(function Sidebar() {
             { kind: 'item', label: 'Projects', icon: <FolderRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('projects'), active: onAdminSection('projects') },
             { kind: 'item', label: 'Project Activities', icon: <CategoryRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('project-activities'), active: onAdminSection('project-activities') },
             { kind: 'item', label: 'Project Components', icon: <ExtensionRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('components'), active: onAdminSection('components') },
+            { kind: 'item', label: 'Project Types', icon: <StyleRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('project-types'), active: onAdminSection('project-types') },
             { kind: 'item', label: 'Data Maintenance', icon: <StorageRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('maintenance'), active: onAdminSection('maintenance') },
             { kind: 'section', label: 'Settings' },
             // Named for everything it holds: the leave year, the timesheet policy, the

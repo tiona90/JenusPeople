@@ -69,6 +69,7 @@ public class DbInitializer
         await BackfillLeaveTypeDesignFields(context);
         await SeedProjectActivityTypes(context);
         await SeedProjectComponents(context);
+        await SeedProjectTypes(context);
         await SeedDepartments(context);
         await SeedUserDepartments(context);
         await SeedEmployeeProfiles(context);
@@ -682,6 +683,22 @@ public class DbInitializer
         };
 
         await context.ProjectComponents.AddRangeAsync(components);
+        await context.SaveChangesAsync();
+    }
+
+    private static async Task SeedProjectTypes(AppDbContext context)
+    {
+        if (context.ProjectTypes.Any()) return;
+
+        var projectTypes = new List<ProjectType>
+        {
+            new() { Name = "Task", Icon = "📋", ColorKey = "blue", Description = "A discrete piece of planned work with a clear deliverable.", IsActive = true },
+            new() { Name = "Issue", Icon = "🐞", ColorKey = "red", Description = "Something broken in a delivered system — defects and incidents.", IsActive = true },
+            new() { Name = "Inquiry", Icon = "❓", ColorKey = "cyan", Description = "A question or request for information, with no change to deliver.", IsActive = true },
+            new() { Name = "Support", Icon = "🛠️", ColorKey = "amber", Description = "Ongoing maintenance, assistance, and small changes.", IsActive = true },
+        };
+
+        await context.ProjectTypes.AddRangeAsync(projectTypes);
         await context.SaveChangesAsync();
     }
 

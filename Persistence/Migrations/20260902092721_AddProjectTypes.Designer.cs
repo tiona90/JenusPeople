@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Persistence;
 
@@ -11,9 +12,11 @@ using Persistence;
 namespace Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260902092721_AddProjectTypes")]
+    partial class AddProjectTypes
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -740,21 +743,6 @@ namespace Persistence.Migrations
                     b.ToTable("ProjectTypes");
                 });
 
-            modelBuilder.Entity("Domain.ProjectTypeAssignment", b =>
-                {
-                    b.Property<int>("ProjectId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("ProjectTypeId")
-                        .HasColumnType("int");
-
-                    b.HasKey("ProjectId", "ProjectTypeId");
-
-                    b.HasIndex("ProjectTypeId");
-
-                    b.ToTable("ProjectTypeAssignments");
-                });
-
             modelBuilder.Entity("Domain.PublicHoliday", b =>
                 {
                     b.Property<int>("Id")
@@ -1357,25 +1345,6 @@ namespace Persistence.Migrations
                     b.Navigation("Project");
                 });
 
-            modelBuilder.Entity("Domain.ProjectTypeAssignment", b =>
-                {
-                    b.HasOne("Domain.Project", "Project")
-                        .WithMany("TypeAssignments")
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Domain.ProjectType", "ProjectType")
-                        .WithMany("ProjectAssignments")
-                        .HasForeignKey("ProjectTypeId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Project");
-
-                    b.Navigation("ProjectType");
-                });
-
             modelBuilder.Entity("Domain.Timesheet", b =>
                 {
                     b.HasOne("Domain.User", "Approver")
@@ -1573,8 +1542,6 @@ namespace Persistence.Migrations
                     b.Navigation("DepartmentAssignments");
 
                     b.Navigation("TimesheetEntries");
-
-                    b.Navigation("TypeAssignments");
                 });
 
             modelBuilder.Entity("Domain.ProjectActivityType", b =>
@@ -1583,11 +1550,6 @@ namespace Persistence.Migrations
                 });
 
             modelBuilder.Entity("Domain.ProjectComponent", b =>
-                {
-                    b.Navigation("ProjectAssignments");
-                });
-
-            modelBuilder.Entity("Domain.ProjectType", b =>
                 {
                     b.Navigation("ProjectAssignments");
                 });

@@ -25,6 +25,7 @@ import {
     getProjectActivityTypes,
     getProjectComponents,
     getProjects,
+    getProjectTypes,
     updateProject,
 } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
@@ -36,6 +37,7 @@ import type {
     ProjectActivityType,
     ProjectComponent,
     ProjectStatus,
+    ProjectType,
     UpsertProjectRequest,
 } from '../../lib/types'
 
@@ -109,6 +111,10 @@ function ProjectsPanel() {
     const { data: components = [] } = useQuery({
         queryKey: ['projectComponents'],
         queryFn: getProjectComponents,
+    })
+    const { data: projectTypes = [] } = useQuery({
+        queryKey: ['projectTypes'],
+        queryFn: getProjectTypes,
     })
 
     const filtered = useMemo(() => {
@@ -315,6 +321,7 @@ function ProjectsPanel() {
                 users={adminUsers}
                 activityTypes={activityTypes}
                 components={components}
+                projectTypes={projectTypes}
                 isPending={createMutation.isPending}
                 error={createMutation.error}
                 onClose={() => setCreateOpen(false)}
@@ -329,6 +336,7 @@ function ProjectsPanel() {
                 users={adminUsers}
                 activityTypes={activityTypes}
                 components={components}
+                projectTypes={projectTypes}
                 isPending={updateMutation.isPending}
                 error={updateMutation.error}
                 onClose={() => setEditProject(null)}
@@ -406,6 +414,29 @@ function ProjectCard({ project, onEdit, onDelete }: {
                         <Box component="span" sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: status.dot }} />
                         {statusLabel(p.status)}
                     </Box>
+                    {/* Absent rather than "Unclassified" when the project has no
+                        type: plenty are unclassified, and a badge on every one of
+                        them would say nothing. A project can be several kinds of
+                        engagement at once, so this is a wrapping row, not one badge. */}
+                    {p.types.length > 0 && (
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: '4px' }}>
+                            {p.types.map((t) => (
+                                <Box
+                                    key={t.id}
+                                    title={`Project type: ${t.name}`}
+                                    sx={{
+                                        display: 'inline-flex', alignItems: 'center', gap: '4px',
+                                        px: '8px', py: '2px', borderRadius: '10px',
+                                        fontSize: 11, fontWeight: 500, whiteSpace: 'nowrap',
+                                        bgcolor: 'action.hover', color: 'text.secondary',
+                                    }}
+                                >
+                                    <Box component="span" sx={{ fontSize: 12, lineHeight: 1 }}>{t.icon}</Box>
+                                    {t.name}
+                                </Box>
+                            ))}
+                        </Box>
+                    )}
                 </Box>
             </Box>
 
@@ -672,6 +703,7 @@ function ProjectFormDialog(props: {
     users: AdminUser[]
     activityTypes: ProjectActivityType[]
     components: ProjectComponent[]
+    projectTypes: ProjectType[]
     isPending: boolean
     error: Error | null
     onClose: () => void
@@ -690,6 +722,7 @@ function ProjectFormDialog(props: {
     const [targetMonthlyHours, setTargetMonthlyHours] = useState<number>(i?.targetMonthlyHours ?? 0)
     const [activityTypeIds, setActivityTypeIds] = useState<number[]>(i?.activities.map((a) => a.id) ?? [])
     const [componentIds, setComponentIds] = useState<number[]>(i?.components.map((c) => c.id) ?? [])
+    const [projectTypeIds, setProjectTypeIds] = useState<number[]>(i?.types.map((t) => t.id) ?? [])
 
     // Offers what is enabled now, plus anything this project is already assigned:
     // a type disabled after the fact stays visible so an unrelated edit cannot
@@ -699,6 +732,9 @@ function ProjectFormDialog(props: {
     )
     const componentOptions = props.components.filter(
         (c) => c.isActive || componentIds.includes(c.id),
+    )
+    const projectTypeOptions = props.projectTypes.filter(
+        (t) => t.isActive || projectTypeIds.includes(t.id),
     )
 
     // Auto-generate a code from the name as the user types, only for new
@@ -745,6 +781,7 @@ function ProjectFormDialog(props: {
             targetMonthlyHours: Number(targetMonthlyHours) || 0,
             activityTypeIds,
             componentIds,
+            projectTypeIds,
         })
     }
 
@@ -889,6 +926,36 @@ function ProjectFormDialog(props: {
                     >
                         {activityOptions.map((a) => (
                             <MenuItem key={a.id} value={a.id}>{a.name}</MenuItem>
+                        ))}
+                    </TextField>
+
+                    <TextField
+                        select
+                        id="project-type"
+                        label="Project types"
+                        value={projectTypeIds}
+                        onChange={(e) => setProjectTypeIds(
+                            (e.target.value as unknown as number[]).map(Number),
+                        )}
+                        fullWidth
+                        helperText="What kinds of engagement this project is. Leave empty to classify it later."
+                        SelectProps={{
+                            multiple: true,
+                            renderValue: (selected) => (
+                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                    {(selected as number[]).map((id) => (
+                                        <Chip
+                                            key={id}
+                                            size="small"
+                                            label={projectTypeOptions.find((t) => t.id === id)?.name ?? id}
+                                        />
+                                    ))}
+                                </Box>
+                            ),
+                        }}
+                    >
+                        {projectTypeOptions.map((t) => (
+                            <MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>
                         ))}
                     </TextField>
 

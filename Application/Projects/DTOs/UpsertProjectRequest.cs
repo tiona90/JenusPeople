@@ -49,4 +49,10 @@ public class UpsertProjectRequest
     /// declared none — unlike activities, nothing falls back to the catalogue.
     /// </summary>
     public List<int> ComponentIds { get; set; } = new();
+
+    /// <summary>
+    /// What kinds of engagement this project is. Empty leaves it unclassified,
+    /// which is a valid state rather than a missing field.
+    /// </summary>
+    public List<int> ProjectTypeIds { get; set; } = new();
 }

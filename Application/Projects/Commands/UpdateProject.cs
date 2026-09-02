@@ -54,6 +54,11 @@ public class UpdateProject
                 && await context.ProjectComponents.CountAsync(c => componentIds.Contains(c.Id), cancellationToken) != componentIds.Count)
                 return Result<ProjectDto>.Failure("One or more selected components do not exist.");
 
+            var projectTypeIds = req.ProjectTypeIds.Distinct().ToList();
+            if (projectTypeIds.Count > 0
+                && await context.ProjectTypes.CountAsync(t => projectTypeIds.Contains(t.Id), cancellationToken) != projectTypeIds.Count)
+                return Result<ProjectDto>.Failure("One or more selected project types do not exist.");
+
             project.Name = name;
             project.Code = code;
             project.Description = (req.Description ?? string.Empty).Trim();
@@ -99,6 +104,19 @@ public class UpdateProject
                 .Where(id => existingComponents.All(a => a.ComponentId != id))
                 .Select(id => new ProjectComponentAssignment { ProjectId = project.Id, ComponentId = id }));
 
+            // Diffed like every other set, so clearing the select really does
+            // unclassify the project rather than leaving the old types in place.
+            var existingTypes = await context.ProjectTypeAssignments
+                .Where(a => a.ProjectId == project.Id)
+                .ToListAsync(cancellationToken);
+
+            context.ProjectTypeAssignments.RemoveRange(
+                existingTypes.Where(a => !projectTypeIds.Contains(a.ProjectTypeId)));
+
+            context.ProjectTypeAssignments.AddRange(projectTypeIds
+                .Where(id => existingTypes.All(a => a.ProjectTypeId != id))
+                .Select(id => new ProjectTypeAssignment { ProjectId = project.Id, ProjectTypeId = id }));
+
             await context.SaveChangesAsync(cancellationToken);
 
             await context.Entry(project).Reference(p => p.Owner).LoadAsync(cancellationToken);
@@ -119,7 +137,8 @@ public class UpdateProject
                 TargetMonthlyHours = project.TargetMonthlyHours,
                 CreatedAt = project.CreatedAt,
                 Activities = await ProjectActivityLookup.ForProjectAsync(context, project.Id, cancellationToken),
-                Components = await ProjectComponentLookup.ForProjectAsync(context, project.Id, cancellationToken)
+                Components = await ProjectComponentLookup.ForProjectAsync(context, project.Id, cancellationToken),
+                Types = await ProjectTypeLookup.ForProjectAsync(context, project.Id, cancellationToken)
             });
         }
     }

@@ -19,6 +19,16 @@ export interface ProjectComponentSummary {
     colorKey: string
 }
 
+// A type as seen from a project. Named apart from the catalogue's own
+// `ProjectType`, which carries the description and usage count the project
+// dialog has no use for.
+export interface ProjectTypeSummary {
+    id: number
+    name: string
+    icon: string
+    colorKey: string
+}
+
 export interface ProjectDepartment {
     id: number
     name: string
@@ -61,6 +71,10 @@ export interface Project {
     // The components this project is made up of, narrowed from the org-wide
     // catalogue. Empty means the project has declared none.
     components: ProjectComponentSummary[]
+
+    // What kinds of engagement this project is. Empty means it has not been
+    // classified, which is a valid state rather than a missing field.
+    types: ProjectTypeSummary[]
 }
 
 export interface UpsertProjectRequest {
@@ -77,4 +91,7 @@ export interface UpsertProjectRequest {
     targetMonthlyHours: number
     activityTypeIds: number[]
     componentIds: number[]
+    // Empty leaves the project unclassified, which is a valid state rather than
+    // a missing field.
+    projectTypeIds: number[]
 }
