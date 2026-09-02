@@ -7,6 +7,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { observer } from 'mobx-react-lite'
 import AccessTimeRoundedIcon from '@mui/icons-material/AccessTimeRounded'
 import AccessAlarmRoundedIcon from '@mui/icons-material/AccessAlarmRounded'
+import AccountTreeRoundedIcon from '@mui/icons-material/AccountTreeRounded'
 import AddCircleOutlineRoundedIcon from '@mui/icons-material/AddCircleOutlineRounded'
 import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded'
 import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded'
@@ -209,14 +210,20 @@ const Sidebar = observer(function Sidebar() {
             { kind: 'item', label: 'Company Attendance', icon: <ApartmentRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToCompanyAttendance(), active: onPage('/company-attendance') },
             { kind: 'section', label: 'Timesheets' },
             { kind: 'item', label: 'All Timesheets', icon: <AccessTimeRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamTimesheets(), active: onPage('/team-timesheets') },
-            { kind: 'section', label: 'Administration' },
+            // One flat "Administration" list put eight unrelated pages in a row, four of
+            // them opening with the same word. Split it by what each page administers,
+            // which also lets the project pages drop the prefix their own header carries.
+            { kind: 'section', label: 'People' },
             { kind: 'item', label: 'Users', icon: <PeopleRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('users'), active: onAdminSection('users') },
-            { kind: 'item', label: 'Departments', icon: <ApartmentRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('departments'), active: onAdminSection('departments') },
-            { kind: 'item', label: 'Leave Types', icon: <LabelRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('leave-types'), active: onAdminSection('leave-types', 'leave') },
+            // Not the Apartment icon: "Company Attendance" above already reads as that.
+            { kind: 'item', label: 'Departments', icon: <AccountTreeRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('departments'), active: onAdminSection('departments') },
+            { kind: 'section', label: 'Project Setup' },
             { kind: 'item', label: 'Projects', icon: <FolderRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('projects'), active: onAdminSection('projects') },
-            { kind: 'item', label: 'Project Activities', icon: <CategoryRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('project-activities'), active: onAdminSection('project-activities') },
-            { kind: 'item', label: 'Project Components', icon: <ExtensionRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('components'), active: onAdminSection('components') },
-            { kind: 'item', label: 'Project Types', icon: <StyleRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('project-types'), active: onAdminSection('project-types') },
+            { kind: 'item', label: 'Activities', icon: <CategoryRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('project-activities'), active: onAdminSection('project-activities') },
+            { kind: 'item', label: 'Components', icon: <ExtensionRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('components'), active: onAdminSection('components') },
+            { kind: 'item', label: 'Types', icon: <StyleRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('project-types'), active: onAdminSection('project-types') },
+            { kind: 'section', label: 'System' },
+            { kind: 'item', label: 'Leave Types', icon: <LabelRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('leave-types'), active: onAdminSection('leave-types', 'leave') },
             { kind: 'item', label: 'Data Maintenance', icon: <StorageRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('maintenance'), active: onAdminSection('maintenance') },
             { kind: 'section', label: 'Settings' },
             // Named for everything it holds: the leave year, the timesheet policy, the
