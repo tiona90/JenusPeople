@@ -56,16 +56,20 @@ const STATUS_BADGE: Record<TimesheetStatus, { bg: SxColor; color: string; label:
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const FULL_DOW = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
-const TASK_GRID = '1.1fr 1.4fr 1.2fr 1.2fr 84px 1.6fr 40px'
+// Row one of a task card: the four pickers, hours, and the remove button. Description
+// gets its own full-width row underneath, so it is not part of this grid.
+const TASK_GRID = '1.1fr 1.4fr 1.2fr 1.2fr 84px 40px'
 const TASK_HEADERS: { label: string; align?: 'center' }[] = [
     { label: 'Type' },
     { label: 'Project' },
     { label: 'Component' },
     { label: 'Activity' },
     { label: 'Hours', align: 'center' },
-    { label: 'Description' },
     { label: '' },
 ]
+// Inner padding of a task card. The header strip above the cards repeats it (plus the
+// card's 1px border) so the captions stay lined up with the fields they name.
+const TASK_CARD_PAD = '12px'
 
 // Applied to the outlined-input root — a Select *is* that root, a TextField nests it,
 // hence the two shapes below.
@@ -1024,7 +1028,7 @@ function DayCard({
                         display: 'grid',
                         gridTemplateColumns: TASK_GRID,
                         gap: 1.5,
-                        p: '14px 2px 8px',
+                        p: `14px calc(${TASK_CARD_PAD} + 1px) 8px`,
                     }}>
                         {TASK_HEADERS.map((h, i) => (
                             <Typography key={i} sx={{
@@ -1042,7 +1046,15 @@ function DayCard({
                         {tasks.map((t) => {
                             const err = taskErrors[t._id]
                             return (
-                            <Box key={t._id}>
+                            <Box key={t._id} sx={{
+                                p: TASK_CARD_PAD,
+                                borderRadius: '10px',
+                                border: '1px solid',
+                                borderColor: 'divider',
+                                bgcolor: 'background.default',
+                                transition: 'border-color 0.15s',
+                                '&:hover': { borderColor: disabled ? 'divider' : 'text.disabled' },
+                            }}>
                                 <Box sx={{
                                     display: 'grid',
                                     gridTemplateColumns: TASK_GRID,
@@ -1146,14 +1158,6 @@ function DayCard({
                                         },
                                     }}
                                 />
-                                <TextField
-                                    size="small"
-                                    value={t.notes}
-                                    onChange={(e) => onUpdateTask(t._id, 'notes', e.target.value)}
-                                    placeholder="Description…"
-                                    disabled={disabled}
-                                    sx={TASK_TEXTFIELD_SX}
-                                />
                                 <Box
                                     component="button"
                                     onClick={() => onRemoveTask(t._id)}
@@ -1162,7 +1166,9 @@ function DayCard({
                                     sx={{
                                         width: 36, height: 36,
                                         borderRadius: '8px',
-                                        bgcolor: 'transparent',
+                                        // Matches the fields beside it — a transparent
+                                        // button reads as a hole in the tinted card.
+                                        bgcolor: 'background.paper',
                                         border: '1px solid', borderColor: 'divider',
                                         color: 'text.disabled',
                                         cursor: disabled ? 'not-allowed' : 'pointer',
@@ -1179,8 +1185,17 @@ function DayCard({
                                     <CloseRoundedIcon sx={{ fontSize: 17 }} />
                                 </Box>
                                 </Box>
+                                <TextField
+                                    fullWidth
+                                    size="small"
+                                    value={t.notes}
+                                    onChange={(e) => onUpdateTask(t._id, 'notes', e.target.value)}
+                                    placeholder="What did you work on?"
+                                    disabled={disabled}
+                                    sx={{ ...TASK_TEXTFIELD_SX, mt: 1.25 }}
+                                />
                                 {err && (err.projectId || err.hours) && (
-                                    <Typography sx={{ fontSize: 11.5, color: 'error.main', mt: '5px', pl: '2px' }}>
+                                    <Typography sx={{ fontSize: 11.5, color: 'error.main', mt: '8px' }}>
                                         {[err.projectId, err.hours].filter(Boolean).join(' · ')}
                                     </Typography>
                                 )}
