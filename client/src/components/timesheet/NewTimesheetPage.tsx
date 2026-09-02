@@ -52,6 +52,37 @@ const STATUS_BADGE: Record<TimesheetStatus, { bg: SxColor; color: string; label:
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const FULL_DOW = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
+const TASK_GRID = '1.6fr 1.4fr 96px 1.9fr 40px'
+const TASK_HEADERS: { label: string; align?: 'center' }[] = [
+    { label: 'Project' },
+    { label: 'Activity' },
+    { label: 'Hours', align: 'center' },
+    { label: 'Description' },
+    { label: '' },
+]
+
+// Applied to the outlined-input root — a Select *is* that root, a TextField nests it,
+// hence the two shapes below.
+const TASK_FIELD_SX = {
+    height: 42,
+    fontSize: 13,
+    borderRadius: '8px',
+    bgcolor: 'background.paper',
+    '& .MuiOutlinedInput-notchedOutline': {
+        borderColor: 'divider',
+        borderRadius: '8px',
+        transition: 'border-color 0.15s',
+    },
+    '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'text.secondary' },
+    '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: 'primary.main', borderWidth: '2px' },
+    '&.Mui-error .MuiOutlinedInput-notchedOutline': { borderColor: 'error.main' },
+    '&.Mui-disabled': { bgcolor: 'action.hover' },
+    '& .MuiSelect-select': { py: 0, px: '12px', display: 'flex', alignItems: 'center' },
+    '& .MuiInputBase-input': { py: 0, px: '12px', height: '100%', boxSizing: 'border-box' },
+    '& input::placeholder': { opacity: 1, color: 'text.disabled' },
+}
+const TASK_TEXTFIELD_SX = { '& .MuiOutlinedInput-root': TASK_FIELD_SX }
+
 type Task = {
     _id: string
     serverId?: string
@@ -945,34 +976,35 @@ function DayCard({
             </Box>
 
             {isOpen && (
-                <Box sx={{ px: 2, pb: 1.75, borderTop: '1px solid', borderTopColor: 'divider' }}>
+                <Box sx={{ px: 2, pb: 2, borderTop: '1px solid', borderTopColor: 'divider' }}>
                     {banner && <Box sx={{ pt: 1.25 }}>{banner}</Box>}
                     <Box sx={{
                         display: 'grid',
-                        gridTemplateColumns: '1.6fr 1.4fr 70px 1.7fr 30px',
-                        gap: 1.25,
-                        p: '12px 4px 6px',
+                        gridTemplateColumns: TASK_GRID,
+                        gap: 1.5,
+                        p: '14px 2px 8px',
                     }}>
-                        {['Project', 'Activity', 'Hours', 'What you worked on', ''].map((h, i) => (
+                        {TASK_HEADERS.map((h, i) => (
                             <Typography key={i} sx={{
-                                fontSize: 10, fontWeight: 600,
+                                fontSize: 10.5, fontWeight: 700,
                                 color: 'text.disabled',
-                                textTransform: 'uppercase', letterSpacing: '0.05em',
+                                textTransform: 'uppercase', letterSpacing: '0.06em',
+                                textAlign: h.align ?? 'left',
                             }}>
-                                {h}
+                                {h.label}
                             </Typography>
                         ))}
                     </Box>
 
-                    <Stack spacing={1}>
+                    <Stack spacing={1.25}>
                         {tasks.map((t) => {
                             const err = taskErrors[t._id]
                             return (
                             <Box key={t._id}>
                                 <Box sx={{
                                     display: 'grid',
-                                    gridTemplateColumns: '1.6fr 1.4fr 70px 1.7fr 30px',
-                                    gap: 1.25,
+                                    gridTemplateColumns: TASK_GRID,
+                                    gap: 1.5,
                                     alignItems: 'center',
                                 }}>
                                 <Select
@@ -982,18 +1014,14 @@ function DayCard({
                                     value={t.projectId}
                                     onChange={(e) => onUpdateTask(t._id, 'projectId', e.target.value)}
                                     disabled={disabled}
-                                    sx={{
-                                        fontSize: 12,
-                                        '& .MuiSelect-select': { py: '7px', px: '10px' },
-                                        '& fieldset': { borderColor: 'divider', borderRadius: '6px' },
-                                    }}
+                                    sx={TASK_FIELD_SX}
                                 >
                                     <MenuItem value="" disabled>
                                         <Box component="em" sx={{ color: 'text.disabled' }}>Select project…</Box>
                                     </MenuItem>
                                     {activeProjects.map((p) => (
                                         <MenuItem key={p.id} value={String(p.id)}>
-                                            {p.code ? `${p.code} — ${p.name}` : p.name}
+                                            {p.name}
                                         </MenuItem>
                                     ))}
                                 </Select>
@@ -1003,11 +1031,7 @@ function DayCard({
                                     value={t.activityTypeId}
                                     onChange={(e) => onUpdateTask(t._id, 'activityTypeId', e.target.value)}
                                     disabled={disabled}
-                                    sx={{
-                                        fontSize: 12,
-                                        '& .MuiSelect-select': { py: '7px', px: '10px' },
-                                        '& fieldset': { borderColor: 'divider', borderRadius: '6px' },
-                                    }}
+                                    sx={TASK_FIELD_SX}
                                 >
                                     <MenuItem value="">
                                         <Box component="em" sx={{ color: 'text.disabled' }}>Activity…</Box>
@@ -1030,24 +1054,26 @@ function DayCard({
                                     placeholder="0"
                                     inputProps={{
                                         step: 0.5, min: 0, max: 24,
-                                        style: { textAlign: 'center', fontWeight: 600 },
+                                        style: { textAlign: 'center', fontWeight: 700, fontSize: 14 },
                                     }}
                                     disabled={disabled}
                                     sx={{
-                                        '& .MuiInputBase-input': { fontSize: 12, py: '7px' },
-                                        '& fieldset': { borderColor: 'divider', borderRadius: '6px' },
+                                        ...TASK_TEXTFIELD_SX,
+                                        // Centred figures read better without the spinner crowding them;
+                                        // arrow keys still step by 0.5.
+                                        '& input[type=number]': { MozAppearance: 'textfield' },
+                                        '& input::-webkit-outer-spin-button, & input::-webkit-inner-spin-button': {
+                                            WebkitAppearance: 'none', margin: 0,
+                                        },
                                     }}
                                 />
                                 <TextField
                                     size="small"
                                     value={t.notes}
                                     onChange={(e) => onUpdateTask(t._id, 'notes', e.target.value)}
-                                    placeholder="What did you work on?"
+                                    placeholder="Description…"
                                     disabled={disabled}
-                                    sx={{
-                                        '& .MuiInputBase-input': { fontSize: 12, py: '7px' },
-                                        '& fieldset': { borderColor: 'divider', borderRadius: '6px' },
-                                    }}
+                                    sx={TASK_TEXTFIELD_SX}
                                 />
                                 <Box
                                     component="button"
@@ -1055,15 +1081,15 @@ function DayCard({
                                     disabled={disabled}
                                     title="Remove"
                                     sx={{
-                                        width: 28, height: 28,
-                                        borderRadius: '5px',
+                                        width: 36, height: 36,
+                                        borderRadius: '8px',
                                         bgcolor: 'transparent',
                                         border: '1px solid', borderColor: 'divider',
                                         color: 'text.disabled',
                                         cursor: disabled ? 'not-allowed' : 'pointer',
-                                        fontSize: 11,
                                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                                         p: 0,
+                                        transition: 'background-color 0.15s, color 0.15s, border-color 0.15s',
                                         '&:hover': disabled ? {} : {
                                             bgcolor: softBg('error'),
                                             color: 'error.dark',
@@ -1071,11 +1097,11 @@ function DayCard({
                                         },
                                     }}
                                 >
-                                    <CloseRoundedIcon sx={{ fontSize: 14 }} />
+                                    <CloseRoundedIcon sx={{ fontSize: 17 }} />
                                 </Box>
                                 </Box>
                                 {err && (err.projectId || err.hours) && (
-                                    <Typography sx={{ fontSize: 11, color: 'error.main', mt: '4px', pl: '2px' }}>
+                                    <Typography sx={{ fontSize: 11.5, color: 'error.main', mt: '5px', pl: '2px' }}>
                                         {[err.projectId, err.hours].filter(Boolean).join(' · ')}
                                     </Typography>
                                 )}
@@ -1085,20 +1111,20 @@ function DayCard({
                     </Stack>
 
                     {!readOnly && (
-                        <Stack direction="row" spacing={1} sx={{ mt: 1.25 }}>
+                        <Stack direction="row" spacing={1.5} sx={{ mt: 1.5 }}>
                             <Button
                                 onClick={onAddTask}
                                 disabled={disabled}
                                 sx={{
                                     flex: 1,
-                                    px: 1.5, py: '7px',
-                                    fontSize: 12,
+                                    px: 1.5, height: 42,
+                                    fontSize: 13, fontWeight: 600,
                                     textTransform: 'none',
                                     color: BLUE,
                                     bgcolor: 'transparent',
                                     border: '1px dashed',
                                     borderColor: 'primary.main',
-                                    borderRadius: '6px',
+                                    borderRadius: '8px',
                                     '&:hover': {
                                         bgcolor: softBg('primary'),
                                         borderStyle: 'solid',
@@ -1120,17 +1146,17 @@ function DayCard({
                                         <Button
                                             onClick={onCopyToWeek}
                                             disabled={disabled || !canCopy || copyTargetCount === 0}
-                                            startIcon={<ContentCopyRoundedIcon sx={{ fontSize: 14 }} />}
+                                            startIcon={<ContentCopyRoundedIcon sx={{ fontSize: 15 }} />}
                                             sx={{
-                                                px: 1.5, py: '7px',
-                                                fontSize: 12,
+                                                px: 2, height: 42,
+                                                fontSize: 13, fontWeight: 500,
                                                 whiteSpace: 'nowrap',
                                                 textTransform: 'none',
                                                 color: 'text.secondary',
                                                 bgcolor: 'transparent',
                                                 border: '1px solid',
                                                 borderColor: 'divider',
-                                                borderRadius: '6px',
+                                                borderRadius: '8px',
                                                 '&:hover': { bgcolor: 'action.hover', borderColor: 'divider' },
                                             }}
                                         >
