@@ -24,6 +24,7 @@ import {
     getMyTimesheets,
     getProjects,
     getProjectActivityTypes,
+    getProjectComponents,
     getProjectTypes,
     getTimesheet,
     submitTimesheet,
@@ -32,8 +33,9 @@ import {
 import { useStore } from '../../lib/mobx'
 import { formatElapsed, formatTime12, useAttendanceToday, useLiveElapsedMinutes } from '../../lib/hooks/useAttendance'
 import { activityOptionsFor, retainedActivityId } from '../../lib/project-activities'
+import { componentOptionsFor, retainedComponentId } from '../../lib/project-components'
 import { projectOptionsFor, retainedProjectId, typeOptionsFrom } from '../../lib/project-types'
-import type { Project, ProjectActivityType, ProjectType, UserInfo } from '../../lib/types'
+import type { Project, ProjectActivityType, ProjectComponent, ProjectType, UserInfo } from '../../lib/types'
 import type { Timesheet, TimesheetStatus } from '../../lib/types/timesheet'
 import type { TimesheetEntry } from '../../lib/types/timesheet-entry'
 import { softBg, type SxColor } from '../../lib/theme-tokens'
@@ -54,10 +56,11 @@ const STATUS_BADGE: Record<TimesheetStatus, { bg: SxColor; color: string; label:
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const FULL_DOW = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
-const TASK_GRID = '1.25fr 1.6fr 1.35fr 92px 1.8fr 40px'
+const TASK_GRID = '1.1fr 1.4fr 1.2fr 1.2fr 84px 1.6fr 40px'
 const TASK_HEADERS: { label: string; align?: 'center' }[] = [
     { label: 'Type' },
     { label: 'Project' },
+    { label: 'Component' },
     { label: 'Activity' },
     { label: 'Hours', align: 'center' },
     { label: 'Description' },
@@ -91,6 +94,7 @@ type Task = {
     serverId?: string
     projectTypeId: string
     projectId: string
+    projectComponentId: string
     activityTypeId: string
     hours: string
     notes: string
@@ -120,7 +124,7 @@ function addDays(d: Date, n: number) {
 }
 
 function newTask(): Task {
-    return { _id: Math.random().toString(36).slice(2, 11), projectTypeId: '', projectId: '', activityTypeId: '', hours: '', notes: '' }
+    return { _id: Math.random().toString(36).slice(2, 11), projectTypeId: '', projectId: '', projectComponentId: '', activityTypeId: '', hours: '', notes: '' }
 }
 
 function newDayBucket(open: boolean): DayBucket {
@@ -170,6 +174,7 @@ function buildBucketsFromEntries(
             serverId: entry.id,
             projectTypeId: entry.projectTypeId != null ? String(entry.projectTypeId) : '',
             projectId: String(entry.projectId),
+            projectComponentId: entry.projectComponentId != null ? String(entry.projectComponentId) : '',
             activityTypeId: entry.activityTypeId != null ? String(entry.activityTypeId) : '',
             hours: String(entry.hoursWorked),
             notes: entry.notes ?? '',
@@ -258,6 +263,8 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
     const activeProjects = projects.filter((p) => p.isActive)
     const { data: activityTypes = [] } = useQuery({ queryKey: ['projectActivityTypes'], queryFn: getProjectActivityTypes })
     const activeActivityTypes = activityTypes.filter((a) => a.isActive)
+    const { data: components = [] } = useQuery({ queryKey: ['projectComponents'], queryFn: getProjectComponents })
+    const activeComponents = components.filter((c) => c.isActive)
     const { data: projectTypes = [] } = useQuery({ queryKey: ['projectTypes'], queryFn: getProjectTypes })
     // Only types some visible project is classified as — see typeOptionsFrom.
     const activeProjectTypes = useMemo(
@@ -353,7 +360,7 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
         const seen = new Set<string>()
         const template = (buckets[key]?.tasks ?? []).filter((t) => {
             if (!t.projectId) return false
-            const pair = `${t.projectTypeId}|${t.projectId}|${t.activityTypeId}`
+            const pair = `${t.projectTypeId}|${t.projectId}|${t.projectComponentId}|${t.activityTypeId}`
             if (seen.has(pair)) return false
             seen.add(pair)
             return true
@@ -372,6 +379,7 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
                         ...newTask(),
                         projectTypeId: t.projectTypeId,
                         projectId: t.projectId,
+                        projectComponentId: t.projectComponentId,
                         activityTypeId: t.activityTypeId,
                     })),
                 }
@@ -398,14 +406,13 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
                         next.projectId = retainedProjectId(next.projectId, value, activeProjects)
                     }
 
-                    // Switching project can strand an activity the new one has not
-                    // assigned, which the server would reject on save.
+                    // Switching project can strand an activity or a component the
+                    // new one has not declared, which the server would reject on
+                    // save.
                     if (field === 'projectId' || field === 'projectTypeId') {
-                        next.activityTypeId = retainedActivityId(
-                            next.activityTypeId,
-                            activeProjects.find((p) => String(p.id) === next.projectId),
-                            activeActivityTypes,
-                        )
+                        const project = activeProjects.find((p) => String(p.id) === next.projectId)
+                        next.activityTypeId = retainedActivityId(next.activityTypeId, project, activeActivityTypes)
+                        next.projectComponentId = retainedComponentId(next.projectComponentId, project, activeComponents)
                     }
                     return next
                 }),
@@ -491,6 +498,7 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
                     projectId: Number(x.task.projectId),
                     activityTypeId: x.task.activityTypeId ? Number(x.task.activityTypeId) : null,
                     projectTypeId: x.task.projectTypeId ? Number(x.task.projectTypeId) : null,
+                    projectComponentId: x.task.projectComponentId ? Number(x.task.projectComponentId) : null,
                     date: x.date,
                     hoursWorked: parseFloat(x.task.hours),
                     notes: x.task.notes.trim() || null,
@@ -504,6 +512,7 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
                     String(existing.projectId) === x.task.projectId
                     && String(existing.activityTypeId ?? '') === x.task.activityTypeId
                     && String(existing.projectTypeId ?? '') === x.task.projectTypeId
+                    && String(existing.projectComponentId ?? '') === x.task.projectComponentId
                     && Math.abs(Number(existing.hoursWorked) - parseFloat(x.task.hours)) < 0.001
                     && (existing.notes ?? '') === x.task.notes.trim()
                     && isoDateOnly(existing.date) === x.date
@@ -514,6 +523,7 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
                     projectId: Number(x.task.projectId),
                     activityTypeId: x.task.activityTypeId ? Number(x.task.activityTypeId) : null,
                     projectTypeId: x.task.projectTypeId ? Number(x.task.projectTypeId) : null,
+                    projectComponentId: x.task.projectComponentId ? Number(x.task.projectComponentId) : null,
                     date: x.date,
                     hoursWorked: parseFloat(x.task.hours),
                     notes: x.task.notes.trim() || null,
@@ -653,6 +663,7 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
                                 activeProjects={activeProjects}
                                 activeActivityTypes={activeActivityTypes}
                                 activeProjectTypes={activeProjectTypes}
+                                activeComponents={activeComponents}
                                 onToggle={() => { if (!isFuture) toggleDay(key) }}
                                 onAddTask={() => addTask(key)}
                                 onCopyToWeek={() => copyToRestOfWeek(key)}
@@ -835,6 +846,7 @@ type DayCardProps = {
     activeProjects: Project[]
     activeActivityTypes: ProjectActivityType[]
     activeProjectTypes: ProjectType[]
+    activeComponents: ProjectComponent[]
     onToggle: () => void
     onAddTask: () => void
     onCopyToWeek: () => void
@@ -898,6 +910,7 @@ function DayCard({
     activeProjects,
     activeActivityTypes,
     activeProjectTypes,
+    activeComponents,
     onToggle, onAddTask, onCopyToWeek, copyTargetCount, canCopy, onRemoveTask, onUpdateTask,
     disabled, readOnly, banner,
 }: DayCardProps) {
@@ -1068,6 +1081,26 @@ function DayCard({
                                     {projectOptionsFor(t.projectTypeId, activeProjects).map((p) => (
                                         <MenuItem key={p.id} value={String(p.id)}>
                                             {p.name}
+                                        </MenuItem>
+                                    ))}
+                                </Select>
+                                <Select
+                                    size="small"
+                                    displayEmpty
+                                    value={t.projectComponentId}
+                                    onChange={(e) => onUpdateTask(t._id, 'projectComponentId', e.target.value)}
+                                    disabled={disabled}
+                                    sx={TASK_FIELD_SX}
+                                >
+                                    <MenuItem value="">
+                                        <Box component="em" sx={{ color: 'text.disabled' }}>Component…</Box>
+                                    </MenuItem>
+                                    {componentOptionsFor(
+                                        activeProjects.find((p) => String(p.id) === t.projectId),
+                                        activeComponents,
+                                    ).map((c) => (
+                                        <MenuItem key={c.id} value={String(c.id)}>
+                                            {c.icon ? `${c.icon} ${c.name}` : c.name}
                                         </MenuItem>
                                     ))}
                                 </Select>

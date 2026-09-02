@@ -25,4 +25,10 @@ public class TimesheetEntry
     // itself unclassified has none to offer.
     public int? ProjectTypeId { get; set; }
     public ProjectType? ProjectType { get; set; }
+
+    // Which part of the product the work was done on — one of the components its
+    // project is made up of (DM, Lasernet, jDocs). Narrowed by the project the
+    // same way the activity is, and nullable for the same reasons.
+    public int? ProjectComponentId { get; set; }
+    public ProjectComponent? ProjectComponent { get; set; }
 }

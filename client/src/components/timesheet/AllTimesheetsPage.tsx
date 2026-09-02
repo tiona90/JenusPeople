@@ -14,6 +14,7 @@ import {
     approveTimesheet,
     getDepartments,
     getProjects,
+    getProjectComponents,
     getProjectTypes,
     getTimesheet,
     getTimesheets,
@@ -163,18 +164,23 @@ function DailyBreakdown({ ts }: { ts: Timesheet }) {
     })
     const entries = (data?.entries as TimesheetEntry[] | undefined) ?? []
 
-    // Entries carry a type id, not its name. Same query key the page uses, so
-    // this is a cache read rather than a second fetch.
+    // Entries carry type and component ids, not their names. Same query keys the
+    // page uses, so these are cache reads rather than second fetches.
     const { data: projectTypes = [] } = useQuery({
         queryKey: ['projectTypes'],
         queryFn: getProjectTypes,
     })
+    const { data: components = [] } = useQuery({
+        queryKey: ['projectComponents'],
+        queryFn: getProjectComponents,
+    })
     const typeById = useMemo(() => new Map(projectTypes.map((t) => [t.id, t])), [projectTypes])
+    const componentById = useMemo(() => new Map(components.map((c) => [c.id, c])), [components])
 
     const days = useMemo(() => {
         const periodStart = new Date(ts.periodStart)
         periodStart.setHours(0, 0, 0, 0)
-        const out: { date: Date; name: string; total: number; tasks: { project: string; type: string; notes: string }[] }[] = []
+        const out: { date: Date; name: string; total: number; tasks: { project: string; type: string; component: string; notes: string }[] }[] = []
         for (let i = 0; i < 5; i++) {
             const d = new Date(periodStart)
             d.setDate(periodStart.getDate() + i)
@@ -184,14 +190,15 @@ function DailyBreakdown({ ts }: { ts: Timesheet }) {
             const total = dayEntries.reduce((s, e) => s + Number(e.hoursWorked), 0)
             const tasks = dayEntries.map((e) => ({
                 project: e.project?.code ?? e.project?.name ?? `Project #${e.projectId}`,
-                // Blank for an untyped entry, which the render then leaves out.
+                // Blank when the entry has none, which the render then leaves out.
                 type: (e.projectTypeId != null ? typeById.get(e.projectTypeId)?.name : '') ?? '',
+                component: (e.projectComponentId != null ? componentById.get(e.projectComponentId)?.name : '') ?? '',
                 notes: e.notes ?? '—',
             }))
             out.push({ date: d, name: dayName, total, tasks })
         }
         return out
-    }, [entries, ts.periodStart, typeById])
+    }, [entries, ts.periodStart, typeById, componentById])
 
     if (isLoading && entries.length === 0) {
         return (
@@ -254,6 +261,14 @@ function DailyBreakdown({ ts }: { ts: Timesheet }) {
                                             <Box component="span" sx={{ color: BLUE, fontWeight: 500, fontSize: 10 }}>
                                                 {t.project}
                                             </Box>
+                                            {t.component && (
+                                                <>
+                                                    {' · '}
+                                                    <Box component="span" sx={{ color: 'text.secondary', fontSize: 10 }}>
+                                                        {t.component}
+                                                    </Box>
+                                                </>
+                                            )}
                                             {' · '}
                                             {t.notes}
                                         </Box>
@@ -509,10 +524,15 @@ export default function AllTimesheetsPage() {
         queryFn: getProjects,
     })
 
-    // Only used to name the entry types in the CSV export.
+    // Only used to name the entry types and components in the CSV export.
     const { data: projectTypes = [] } = useQuery({
         queryKey: ['projectTypes'],
         queryFn: getProjectTypes,
+    })
+
+    const { data: components = [] } = useQuery({
+        queryKey: ['projectComponents'],
+        queryFn: getProjectComponents,
     })
 
     const deptById = useMemo(() => new Map(departments.map((d) => [d.id, d.name])), [departments])
@@ -707,6 +727,7 @@ export default function AllTimesheetsPage() {
         try {
             const projectById = new Map(projects.map((p) => [p.id, p]))
             const typeById = new Map(projectTypes.map((t) => [t.id, t]))
+            const componentById = new Map(components.map((c) => [c.id, c]))
 
             const details = await Promise.all(
                 filtered.map((t) =>
@@ -723,7 +744,7 @@ export default function AllTimesheetsPage() {
                 departmentName: deptById.get(t.departmentId) ?? '',
             }))
 
-            const csv = buildTimesheetsCsv(sources, projectById, typeById)
+            const csv = buildTimesheetsCsv(sources, projectById, typeById, componentById)
 
             const blob = new Blob(['﻿', csv], { type: 'text/csv;charset=utf-8;' })
             const url = URL.createObjectURL(blob)

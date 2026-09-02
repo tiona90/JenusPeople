@@ -24,7 +24,8 @@ public static class TimesheetEntryValidator
     ///   - a date in the future,
     ///   - an activity the project has not assigned,
     ///   - a type the project is not classified as,
-    ///   - duplicating an existing project *and type* on the same date (overlap),
+    ///   - a component the project is not made up of,
+    ///   - duplicating an existing project, type *and component* on the same date (overlap),
     ///   - pushing the same-day total above 24 hours.
     ///
     /// <paramref name="existing"/> should contain all entries for the same
@@ -41,13 +42,18 @@ public static class TimesheetEntryValidator
     /// <paramref name="assignedProjectTypeIds"/> is the types the candidate's
     /// project is classified as. Null or empty means it is unclassified — a valid
     /// state — and any type is allowed.
+    ///
+    /// <paramref name="assignedComponentIds"/> is the components the candidate's
+    /// project is made up of. Null or empty means it has declared none, and any
+    /// component is allowed.
     /// </summary>
     public static ValidationResult Validate(
         TimesheetEntry candidate,
         IEnumerable<TimesheetEntry> existing,
         DateTime? today = null,
         IReadOnlyCollection<int>? assignedActivityTypeIds = null,
-        IReadOnlyCollection<int>? assignedProjectTypeIds = null)
+        IReadOnlyCollection<int>? assignedProjectTypeIds = null,
+        IReadOnlyCollection<int>? assignedComponentIds = null)
     {
         if (candidate.HoursWorked <= 0)
             return ValidationResult.Fail("Hours worked must be greater than zero.");
@@ -75,16 +81,27 @@ public static class TimesheetEntryValidator
             && !assignedProjectTypeIds.Contains(candidate.ProjectTypeId.Value))
             return ValidationResult.Fail("That type is not available on this project.");
 
+        // And again for components, narrowed by the project exactly as the
+        // activity is.
+        if (assignedComponentIds is { Count: > 0 }
+            && candidate.ProjectComponentId.HasValue
+            && !assignedComponentIds.Contains(candidate.ProjectComponentId.Value))
+            return ValidationResult.Fail("That component is not available on this project.");
+
         var sameDayEntries = existing
             .Where(e => e.Id != candidate.Id && e.Date.Date == candidate.Date.Date)
             .ToList();
 
-        // Project *and* type together, because a project can legitimately be
-        // worked on as two kinds of engagement in one day — 2h of Support and 3h
-        // of Inquiry on the same project are two facts, not a duplicate. Two rows
-        // with no type still collide, which is the pre-type behaviour unchanged.
-        if (sameDayEntries.Any(e => e.ProjectId == candidate.ProjectId && e.ProjectTypeId == candidate.ProjectTypeId))
-            return ValidationResult.Fail("An entry for this project and type on this date already exists.");
+        // Project, type and component together, because one project can
+        // legitimately be worked on as two kinds of engagement, or on two of its
+        // components, in a single day — 2h of Support on DM and 3h of Support on
+        // Lasernet are two facts, not a duplicate. Rows that leave both blank
+        // still collide, which is the pre-type behaviour unchanged.
+        if (sameDayEntries.Any(e =>
+                e.ProjectId == candidate.ProjectId
+                && e.ProjectTypeId == candidate.ProjectTypeId
+                && e.ProjectComponentId == candidate.ProjectComponentId))
+            return ValidationResult.Fail("An entry for this project, type and component on this date already exists.");
 
         var dailyTotal = sameDayEntries.Sum(e => e.HoursWorked) + candidate.HoursWorked;
         if (dailyTotal > MaxHoursPerDay)

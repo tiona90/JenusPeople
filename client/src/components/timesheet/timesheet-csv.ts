@@ -12,6 +12,11 @@ export interface ProjectTypeRef {
     name?: string | null
 }
 
+/** Minimal component shape needed to label a CSV row. */
+export interface ProjectComponentRef {
+    name?: string | null
+}
+
 /** One timesheet plus its (already fetched) entries and resolved department name. */
 export interface TimesheetCsvSource {
     timesheet: Timesheet
@@ -28,6 +33,7 @@ const HEADER = [
     'Type',
     'Project Code',
     'Project Name',
+    'Component',
     'Hours',
     'Notes (what was worked on)',
     'Timesheet Total Hours',
@@ -51,6 +57,7 @@ export function buildTimesheetsCsv(
     sources: TimesheetCsvSource[],
     projectById: Map<number, ProjectRef>,
     typeById: Map<number, ProjectTypeRef> = new Map(),
+    componentById: Map<number, ProjectComponentRef> = new Map(),
 ): string {
     const csvRows: string[][] = []
 
@@ -71,6 +78,7 @@ export function buildTimesheetsCsv(
                 '',
                 '',
                 '',
+                '',
                 '(no entries)',
                 total,
                 t.status,
@@ -84,6 +92,7 @@ export function buildTimesheetsCsv(
             // Blank for an entry logged with no type, which is every entry
             // predating the field and any logged against an unclassified project.
             const type = e.projectTypeId != null ? typeById.get(e.projectTypeId) : undefined
+            const component = e.projectComponentId != null ? componentById.get(e.projectComponentId) : undefined
             csvRows.push([
                 t.employeeName,
                 dept,
@@ -93,6 +102,7 @@ export function buildTimesheetsCsv(
                 type?.name ?? '',
                 proj?.code ?? '',
                 proj?.name ?? `Project #${e.projectId}`,
+                component?.name ?? '',
                 Number(e.hoursWorked).toFixed(2),
                 e.notes ?? '',
                 total,

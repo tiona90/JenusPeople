@@ -22,7 +22,7 @@ import TableRow from '@mui/material/TableRow'
 import Tabs from '@mui/material/Tabs'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { approveTimesheet, getDepartments, getProjects, getProjectTypes, getTimesheet, getTimesheets, rejectTimesheet } from '../../lib/api'
+import { approveTimesheet, getDepartments, getProjects, getProjectComponents, getProjectTypes, getTimesheet, getTimesheets, rejectTimesheet } from '../../lib/api'
 import type { TimesheetEntry, TimesheetStatus, UserInfo } from '../../lib/types'
 import type { Timesheet } from '../../lib/types/timesheet'
 import { softBg, type SxColor } from '../../lib/theme-tokens'
@@ -140,10 +140,16 @@ const TeamTimesheetPage = observer(function TeamTimesheetPage({ user }: { user: 
         queryFn: getProjects,
     })
 
-    // Entries carry a type id, not its name — this resolves it for the dialog.
+    // Entries carry type and component ids, not their names — these resolve them
+    // for the dialog.
     const { data: projectTypes = [] } = useQuery({
         queryKey: ['projectTypes'],
         queryFn: getProjectTypes,
+    })
+
+    const { data: components = [] } = useQuery({
+        queryKey: ['projectComponents'],
+        queryFn: getProjectComponents,
     })
 
     const { data: tsDetail, isLoading: isDetailLoading } = useQuery({
@@ -154,6 +160,7 @@ const TeamTimesheetPage = observer(function TeamTimesheetPage({ user }: { user: 
 
     const activeProjects = projects.filter((p) => p.isActive)
     const typeById = useMemo(() => new Map(projectTypes.map((t) => [t.id, t])), [projectTypes])
+    const componentById = useMemo(() => new Map(components.map((c) => [c.id, c])), [components])
     // Ascending by date: the dialog is read as a week under review, so Mon→Fri
     // rather than the API's newest-first order.
     const entries = [...((tsDetail?.entries as TimesheetEntry[] | undefined) ?? [])]
@@ -492,6 +499,7 @@ const TeamTimesheetPage = observer(function TeamTimesheetPage({ user }: { user: 
                                                 <TableRow>
                                                     <TableCell sx={TH}>Type</TableCell>
                                                     <TableCell sx={TH}>Project</TableCell>
+                                                    <TableCell sx={TH}>Component</TableCell>
                                                     <TableCell sx={TH}>Date</TableCell>
                                                     <TableCell sx={TH}>Hours</TableCell>
                                                     <TableCell sx={TH}>Notes</TableCell>
@@ -500,7 +508,7 @@ const TeamTimesheetPage = observer(function TeamTimesheetPage({ user }: { user: 
                                             <TableBody>
                                                 {entries.length === 0 ? (
                                                     <TableRow>
-                                                        <TableCell colSpan={5} sx={{ ...TD, textAlign: 'center', color: 'text.disabled', py: 3 }}>
+                                                        <TableCell colSpan={6} sx={{ ...TD, textAlign: 'center', color: 'text.disabled', py: 3 }}>
                                                             No entries.
                                                         </TableCell>
                                                     </TableRow>
@@ -513,6 +521,9 @@ const TeamTimesheetPage = observer(function TeamTimesheetPage({ user }: { user: 
                                                         const typeName = entry.projectTypeId != null
                                                             ? typeById.get(entry.projectTypeId)?.name
                                                             : undefined
+                                                        const componentName = entry.projectComponentId != null
+                                                            ? componentById.get(entry.projectComponentId)?.name
+                                                            : undefined
                                                         return (
                                                             <TableRow
                                                                 key={entry.id}
@@ -522,6 +533,9 @@ const TeamTimesheetPage = observer(function TeamTimesheetPage({ user }: { user: 
                                                                     {typeName ?? '—'}
                                                                 </TableCell>
                                                                 <TableCell sx={TD}>{projectName}</TableCell>
+                                                                <TableCell sx={{ ...TD, color: componentName ? 'text.primary' : 'text.disabled' }}>
+                                                                    {componentName ?? '—'}
+                                                                </TableCell>
                                                                 <TableCell sx={TD}>{formatDate(entry.date)}</TableCell>
                                                                 <TableCell sx={TD}>{Number(entry.hoursWorked).toFixed(1)}</TableCell>
                                                                 <TableCell sx={{ ...TD, color: 'text.secondary' }}>{entry.notes ?? '—'}</TableCell>

@@ -21,6 +21,7 @@ public class CreateEntryRequest
     public string? Notes { get; set; }
     public int? ActivityTypeId { get; set; }
     public int? ProjectTypeId { get; set; }
+    public int? ProjectComponentId { get; set; }
 }
 
 [ApiController]
@@ -85,6 +86,16 @@ public class TimesheetEntriesController : ControllerBase
             .Select(a => a.ProjectTypeId)
             .ToListAsync(cancellationToken);
 
+    /// <summary>
+    /// The components the project is made up of — empty when it has declared
+    /// none, which leaves the whole catalogue available.
+    /// </summary>
+    private Task<List<int>> AssignedComponentIdsAsync(int projectId, CancellationToken cancellationToken) =>
+        _context.ProjectComponentAssignments
+            .Where(a => a.ProjectId == projectId)
+            .Select(a => a.ComponentId)
+            .ToListAsync(cancellationToken);
+
     private async Task RecalculateTotalHoursAsync(string timesheetId)
     {
         var timesheet = await _context.Timesheets.FindAsync(timesheetId);
@@ -118,6 +129,7 @@ public class TimesheetEntriesController : ControllerBase
             Notes = request.Notes,
             ActivityTypeId = request.ActivityTypeId,
             ProjectTypeId = request.ProjectTypeId,
+            ProjectComponentId = request.ProjectComponentId,
         };
 
         var existing = await _context.TimesheetEntries
@@ -128,7 +140,8 @@ public class TimesheetEntriesController : ControllerBase
             existing,
             today: null,
             assignedActivityTypeIds: await AssignedActivityTypeIdsAsync(entry.ProjectId, cancellationToken),
-            assignedProjectTypeIds: await AssignedProjectTypeIdsAsync(entry.ProjectId, cancellationToken));
+            assignedProjectTypeIds: await AssignedProjectTypeIdsAsync(entry.ProjectId, cancellationToken),
+            assignedComponentIds: await AssignedComponentIdsAsync(entry.ProjectId, cancellationToken));
         if (!validation.IsValid)
             throw new ArgumentException(validation.Error);
 
@@ -176,7 +189,8 @@ public class TimesheetEntriesController : ControllerBase
             existing,
             today: null,
             assignedActivityTypeIds: await AssignedActivityTypeIdsAsync(entry.ProjectId, cancellationToken),
-            assignedProjectTypeIds: await AssignedProjectTypeIdsAsync(entry.ProjectId, cancellationToken));
+            assignedProjectTypeIds: await AssignedProjectTypeIdsAsync(entry.ProjectId, cancellationToken),
+            assignedComponentIds: await AssignedComponentIdsAsync(entry.ProjectId, cancellationToken));
         if (!validation.IsValid)
             throw new ArgumentException(validation.Error);
 

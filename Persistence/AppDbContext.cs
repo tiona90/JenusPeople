@@ -131,6 +131,13 @@ public class AppDbContext : IdentityDbContext<
                 .HasForeignKey(e => e.ProjectTypeId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            // Restrict for the same reason as the two above: logged time keeps
+            // the component it was recorded against.
+            entity.HasOne(e => e.ProjectComponent)
+                .WithMany()
+                .HasForeignKey(e => e.ProjectComponentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
             entity.HasIndex(e => e.TimesheetId);
         });
 

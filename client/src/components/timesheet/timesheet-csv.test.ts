@@ -13,12 +13,13 @@ const TIMESHEET = {
     submittedAt: null,
 } as Timesheet
 
-function entry(projectTypeId: number | null, hours: number): TimesheetEntry {
+function entry(projectTypeId: number | null, projectComponentId: number | null, hours: number): TimesheetEntry {
     return {
-        id: `e-${projectTypeId}-${hours}`,
+        id: `e-${projectTypeId}-${projectComponentId}-${hours}`,
         timesheetId: 'ts-1',
         projectId: 1,
         projectTypeId,
+        projectComponentId,
         date: '2026-09-02T00:00:00',
         hoursWorked: hours,
         notes: 'Triage',
@@ -31,31 +32,40 @@ function csv(entries: TimesheetEntry[]): string[][] {
         [source],
         new Map([[1, { code: 'APL', name: 'Apollo' }]]),
         new Map([[10, { name: 'Support' }]]),
+        new Map([[20, { name: 'Lasernet' }]]),
     )
         .split('\r\n')
         .map((line) => line.split(','))
 }
 
-describe('buildTimesheetsCsv', () => {
-    it('names the entry type in its own column', () => {
-        const [header, row] = csv([entry(10, 3)])
+/** Column index of a header, so these tests survive the next inserted column. */
+function col(header: string[], name: string): number {
+    const i = header.indexOf(name)
+    expect(i).toBeGreaterThanOrEqual(0)
+    return i
+}
 
-        expect(header[5]).toBe('Type')
-        expect(row[5]).toBe('Support')
+describe('buildTimesheetsCsv', () => {
+    it('names the entry type and component in their own columns', () => {
+        const [header, row] = csv([entry(10, 20, 3)])
+
+        expect(row[col(header, 'Type')]).toBe('Support')
+        expect(row[col(header, 'Component')]).toBe('Lasernet')
     })
 
-    // Every entry predating the field has no type, as does anything logged
+    // Every entry predating these fields has neither, as does anything logged
     // against an unclassified project — blank, not "undefined".
-    it('leaves the type blank for an entry that has none', () => {
-        const [, row] = csv([entry(null, 3)])
+    it('leaves them blank for an entry that has neither', () => {
+        const [header, row] = csv([entry(null, null, 3)])
 
-        expect(row[5]).toBe('')
+        expect(row[col(header, 'Type')]).toBe('')
+        expect(row[col(header, 'Component')]).toBe('')
     })
 
     // The empty-timesheet row is padded by hand, so it drifts out of step with
     // the header the moment a column is added.
     it('keeps every row the same width as the header', () => {
-        const rows = csv([entry(10, 3), entry(null, 2)])
+        const rows = csv([entry(10, 20, 3), entry(null, null, 2)])
         const empty = csv([])
 
         for (const row of [...rows, ...empty]) {
