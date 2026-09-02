@@ -108,8 +108,10 @@ function ProjectsPanel() {
     const filtered = useMemo(() => {
         let out = projects
         if (statusFilter !== 'all') out = out.filter((p) => p.status === statusFilter)
-        if (deptFilter === 'cross') out = out.filter((p) => !p.departmentId)
-        else if (deptFilter !== 'all') out = out.filter((p) => p.departmentId === deptFilter)
+        // 'cross' now finds the projects nobody but an admin can see, which is
+        // the only way to reach one saved before departments became required.
+        if (deptFilter === 'cross') out = out.filter((p) => p.departments.length === 0)
+        else if (deptFilter !== 'all') out = out.filter((p) => p.departments.some((d) => d.id === deptFilter))
 
         if (searchText.trim()) {
             const q = searchText.trim().toLowerCase()
@@ -243,7 +245,7 @@ function ProjectsPanel() {
                     options={[
                         { value: 'all', label: 'All departments' },
                         ...departments.map((d) => ({ value: String(d.id), label: d.name })),
-                        { value: 'cross', label: 'Cross-dept' },
+                        { value: 'cross', label: 'No department' },
                     ]}
                 />
                 <Box sx={{ flex: 1 }} />
@@ -347,7 +349,7 @@ function ProjectCard({ project, onEdit, onDelete }: {
     const visibleTeam = p.team.slice(0, 6)
     const remaining = p.teamSize - visibleTeam.length
     const topContributors = p.team.slice(0, 3).filter((t) => t.hoursThisWeek > 0)
-    const deptName = p.departmentName ?? 'Cross-dept'
+    const deptName = p.departments.map((d) => d.name).join(', ') || 'No department'
 
     const isInactive = p.status === 'Inactive'
 
@@ -671,7 +673,8 @@ function ProjectFormDialog(props: {
     const [code, setCode] = useState(i?.code ?? '')
     const [description, setDescription] = useState(i?.description ?? '')
     const [status, setStatus] = useState<ProjectStatus>(i?.status ?? 'Active')
-    const [departmentId, setDepartmentId] = useState<string>(i?.departmentId != null ? String(i.departmentId) : '')
+    const [departmentIds, setDepartmentIds] = useState<number[]>(i?.departments.map((d) => d.id) ?? [])
+    const [missingDepartment, setMissingDepartment] = useState(false)
     const [ownerId, setOwnerId] = useState<string>(i?.ownerId ?? '')
     const [colorKey, setColorKey] = useState<string>(i?.colorKey ?? 'p1')
     const [targetWeeklyHours, setTargetWeeklyHours] = useState<number>(i?.targetWeeklyHours ?? 0)
@@ -708,13 +711,21 @@ function ProjectFormDialog(props: {
     }
 
     const submit = () => {
+        // A project with no department is visible to nobody but an admin, so the
+        // dialog refuses to make one rather than saving it and letting the API
+        // reject it a round trip later.
+        if (departmentIds.length === 0) {
+            setMissingDepartment(true)
+            return
+        }
+
         props.onSubmit({
             name: name.trim(),
             code: code.trim(),
             description: description.trim(),
             isActive: status !== 'Inactive',
             status,
-            departmentId: departmentId === '' ? null : Number(departmentId),
+            departmentIds,
             ownerId: ownerId === '' ? null : ownerId,
             colorKey,
             targetWeeklyHours: Number(targetWeeklyHours) || 0,
@@ -791,14 +802,36 @@ function ProjectFormDialog(props: {
                     <Stack direction="row" spacing={2}>
                         <TextField
                             select
-                            label="Department"
-                            value={departmentId}
-                            onChange={(e) => setDepartmentId(e.target.value)}
+                            required
+                            id="project-departments"
+                            label="Departments"
+                            value={departmentIds}
+                            onChange={(e) => {
+                                setDepartmentIds((e.target.value as unknown as number[]).map(Number))
+                                setMissingDepartment(false)
+                            }}
                             fullWidth
+                            error={missingDepartment}
+                            helperText={missingDepartment
+                                ? 'Select at least one department.'
+                                : 'Who can see this project, and log time to it.'}
+                            SelectProps={{
+                                multiple: true,
+                                renderValue: (selected) => (
+                                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                        {(selected as number[]).map((id) => (
+                                            <Chip
+                                                key={id}
+                                                size="small"
+                                                label={props.departments.find((d) => d.id === id)?.name ?? id}
+                                            />
+                                        ))}
+                                    </Box>
+                                ),
+                            }}
                         >
-                            <MenuItem value="">No department</MenuItem>
                             {props.departments.map((d) => (
-                                <MenuItem key={d.id} value={String(d.id)}>{d.name}</MenuItem>
+                                <MenuItem key={d.id} value={d.id}>{d.name}</MenuItem>
                             ))}
                         </TextField>
                         <TextField

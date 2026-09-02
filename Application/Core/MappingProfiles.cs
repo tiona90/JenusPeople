@@ -4,6 +4,7 @@ using Application.Departments.DTOs;
 using Application.EmployeeProfiles.DTOs;
 using Application.LeaveTypes.DTOs;
 using Application.ProjectActivityTypes.DTOs;
+using Application.ProjectComponents.DTOs;
 using Application.Projects.DTOs;
 using Application.Timesheets.DTOs;
 using AutoMapper;
@@ -48,12 +49,20 @@ public class MappingProfiles : Profile
             .ForMember(d => d.ColorKey, opt => opt.MapFrom(s => string.IsNullOrWhiteSpace(s.ColorKey) ? "default" : s.ColorKey.Trim()))
             .ForMember(d => d.Id, opt => opt.Ignore());
 
+        CreateMap<ProjectComponent, ProjectComponentDto>();
+        CreateMap<UpsertProjectComponentRequest, ProjectComponent>()
+            .ForMember(d => d.Name, opt => opt.MapFrom(s => s.Name.Trim()))
+            .ForMember(d => d.Description, opt => opt.MapFrom(s => (s.Description ?? string.Empty).Trim()))
+            .ForMember(d => d.Icon, opt => opt.MapFrom(s => string.IsNullOrWhiteSpace(s.Icon) ? "\U0001F9E9" : s.Icon.Trim()))
+            .ForMember(d => d.ColorKey, opt => opt.MapFrom(s => string.IsNullOrWhiteSpace(s.ColorKey) ? "default" : s.ColorKey.Trim()))
+            .ForMember(d => d.Id, opt => opt.Ignore());
+
         CreateMap<Department, DepartmentDto>();
         CreateMap<DepartmentDto, Department>()
             .ForMember(d => d.UserDepartments, opt => opt.Ignore())
             .ForMember(d => d.EmployeeProfiles, opt => opt.Ignore())
             .ForMember(d => d.AnnualLeaves, opt => opt.Ignore())
-            .ForMember(d => d.Projects, opt => opt.Ignore())
+            .ForMember(d => d.ProjectAssignments, opt => opt.Ignore())
             .ForMember(d => d.Timesheets, opt => opt.Ignore());
 
         CreateMap<EmployeeProfile, EmployeeProfileDto>()
@@ -63,7 +72,7 @@ public class MappingProfiles : Profile
                     : s.UserId));
 
         CreateMap<Project, ProjectDto>()
-            .ForMember(d => d.DepartmentName, opt => opt.MapFrom(s => s.Department != null ? s.Department.Name : null))
+            .ForMember(d => d.Departments, opt => opt.Ignore())
             .ForMember(d => d.OwnerName, opt => opt.MapFrom(s =>
                 s.Owner != null
                     ? (s.Owner.DisplayName ?? s.Owner.UserName)

@@ -16,7 +16,11 @@ public class UpsertProjectRequest
     [StringLength(500)]
     public string Description { get; set; } = string.Empty;
 
-    public int? DepartmentId { get; set; }
+    /// <summary>
+    /// The departments this project belongs to. At least one is required — a
+    /// project with none is visible to nobody but an admin.
+    /// </summary>
+    public List<int> DepartmentIds { get; set; } = new();
 
     [StringLength(450)]
     public string? OwnerId { get; set; }

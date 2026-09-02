@@ -30,6 +30,7 @@ const DESIGN = activityType(3, 'Design')
 const RETIRED = activityType(4, 'Retired Activity', false)
 
 const ENGINEERING: Department = { id: 1, name: 'Engineering', code: 'ENG', isActive: true, createdAt: '2026-01-01T00:00:00' }
+const FINANCE: Department = { id: 2, name: 'Finance', code: 'FIN', isActive: true, createdAt: '2026-01-01T00:00:00' }
 
 const APOLLO: Project = {
     id: 7,
@@ -38,8 +39,7 @@ const APOLLO: Project = {
     description: '',
     isActive: true,
     status: 'Active',
-    departmentId: 1,
-    departmentName: 'Engineering',
+    departments: [{ id: 1, name: 'Engineering' }],
     ownerId: null,
     ownerName: null,
     colorKey: 'p1',
@@ -57,7 +57,7 @@ const APOLLO: Project = {
 beforeEach(() => {
     vi.clearAllMocks()
     api.getProjects.mockResolvedValue([APOLLO])
-    api.getDepartments.mockResolvedValue([ENGINEERING])
+    api.getDepartments.mockResolvedValue([ENGINEERING, FINANCE])
     api.getAdminUsers.mockResolvedValue([] as AdminUser[])
     api.getProjectActivityTypes.mockResolvedValue([DEVELOPMENT, TESTING, DESIGN, RETIRED])
     api.createProject.mockResolvedValue(APOLLO)
@@ -92,6 +92,21 @@ function chooseActivity(name: string) {
     fireEvent.click(screen.getByRole('option', { name: new RegExp(name) }))
 }
 
+/** The Departments multi-select inside the open dialog. */
+function departmentsField() {
+    return within(screen.getByRole('dialog')).getByLabelText(/Departments/)
+}
+
+function chooseDepartment(name: string) {
+    fireEvent.mouseDown(departmentsField())
+    fireEvent.click(screen.getByRole('option', { name: new RegExp(name) }))
+    fireEvent.keyDown(screen.getByRole('listbox'), { key: 'Escape' })
+}
+
+function save() {
+    fireEvent.click(within(screen.getByRole('dialog')).getByText('Save'))
+}
+
 describe('ProjectsPanel — project activities', () => {
     it('offers the active activity types when creating a project', async () => {
         await renderPanel()
@@ -110,6 +125,9 @@ describe('ProjectsPanel — project activities', () => {
         fireEvent.change(within(screen.getByRole('dialog')).getByLabelText(/Name/), {
             target: { value: 'Borealis' },
         })
+        // Required for the dialog to save at all; the assertion below is still
+        // about the activities.
+        chooseDepartment('Engineering')
         openActivityOptions()
         chooseActivity('Development')
         chooseActivity('Design')
@@ -136,5 +154,63 @@ describe('ProjectsPanel — project activities', () => {
 
         await waitFor(() => expect(api.updateProject).toHaveBeenCalled())
         expect(api.updateProject.mock.calls[0][1].activityTypeIds).toEqual([2])
+    })
+})
+
+// A project's departments decide who can see it, so an empty selection would
+// produce a project nobody but an admin can reach. The dialog refuses to make
+// one, which is the front half of the rule the API validator enforces.
+describe('ProjectsPanel — project departments', () => {
+    it('sends the chosen departments when saving a new project', async () => {
+        await renderPanel()
+        fireEvent.click(screen.getByText('+ New project'))
+
+        fireEvent.change(within(screen.getByRole('dialog')).getByLabelText(/Name/), {
+            target: { value: 'Borealis' },
+        })
+        fireEvent.change(within(screen.getByRole('dialog')).getByLabelText(/Code/), {
+            target: { value: 'BOR-002' },
+        })
+        chooseDepartment('Engineering')
+        chooseDepartment('Finance')
+
+        save()
+
+        await waitFor(() => expect(api.createProject).toHaveBeenCalled())
+        expect(api.createProject.mock.calls[0][0].departmentIds).toEqual([1, 2])
+    })
+
+    it('refuses to save a project with no department', async () => {
+        await renderPanel()
+        fireEvent.click(screen.getByText('+ New project'))
+
+        fireEvent.change(within(screen.getByRole('dialog')).getByLabelText(/Name/), {
+            target: { value: 'Borealis' },
+        })
+        fireEvent.change(within(screen.getByRole('dialog')).getByLabelText(/Code/), {
+            target: { value: 'BOR-002' },
+        })
+
+        save()
+
+        expect(api.createProject).not.toHaveBeenCalled()
+        expect(within(screen.getByRole('dialog')).getByText(/at least one department/i)).toBeTruthy()
+    })
+
+    it('preselects the departments a project already has when editing', async () => {
+        await renderPanel()
+        fireEvent.click(await screen.findByText('✏️ Edit'))
+
+        expect(departmentsField()).toHaveTextContent('Engineering')
+    })
+
+    it('keeps the existing selection when saving an edit untouched', async () => {
+        await renderPanel()
+        fireEvent.click(await screen.findByText('✏️ Edit'))
+
+        save()
+
+        await waitFor(() => expect(api.updateProject).toHaveBeenCalled())
+        expect(api.updateProject.mock.calls[0][1].departmentIds).toEqual([1])
     })
 })

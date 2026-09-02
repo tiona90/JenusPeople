@@ -35,6 +35,8 @@ public class AppDbContext : IdentityDbContext<
     public DbSet<PublicHoliday> PublicHolidays { get; set; }
     public DbSet<ProjectActivityType> ProjectActivityTypes { get; set; }
     public DbSet<ProjectActivityAssignment> ProjectActivityAssignments { get; set; }
+    public DbSet<ProjectDepartment> ProjectDepartments { get; set; }
+    public DbSet<ProjectComponent> ProjectComponents { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -241,6 +243,16 @@ public class AppDbContext : IdentityDbContext<
             entity.HasIndex(a => a.Name).IsUnique();
         });
 
+        builder.Entity<ProjectComponent>(entity =>
+        {
+            entity.Property(c => c.Name).IsRequired().HasMaxLength(100);
+            entity.Property(c => c.Description).HasMaxLength(300).HasDefaultValue(string.Empty);
+            entity.Property(c => c.Icon).HasMaxLength(16).HasDefaultValue("🧩");
+            entity.Property(c => c.ColorKey).HasMaxLength(30).HasDefaultValue("default");
+            entity.Property(c => c.IsActive).HasDefaultValue(true);
+            entity.HasIndex(c => c.Name).IsUnique();
+        });
+
         builder.Entity<Project>(entity =>
         {
             entity.Property(p => p.Name)
@@ -265,11 +277,6 @@ public class AppDbContext : IdentityDbContext<
             entity.HasIndex(p => p.Code)
                 .IsUnique();
 
-            entity.HasOne(p => p.Department)
-                .WithMany(d => d.Projects)
-                .HasForeignKey(p => p.DepartmentId)
-                .OnDelete(DeleteBehavior.Restrict);
-
             entity.Property(p => p.Description).HasMaxLength(500).HasDefaultValue(string.Empty);
             entity.Property(p => p.Status).HasDefaultValue(ProjectStatus.Active);
             entity.Property(p => p.ColorKey).HasMaxLength(8).HasDefaultValue("p1");
@@ -284,6 +291,28 @@ public class AppDbContext : IdentityDbContext<
 
             entity.Property(p => p.IsDeleted).HasDefaultValue(false).IsRequired();
             entity.HasQueryFilter(p => !p.IsDeleted);
+        });
+
+        builder.Entity<ProjectDepartment>(entity =>
+        {
+            entity.HasKey(a => new { a.ProjectId, a.DepartmentId });
+
+            entity.HasOne(a => a.Project)
+                .WithMany(p => p.DepartmentAssignments)
+                .HasForeignKey(a => a.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Restricted, not cascaded: dropping a department must not silently
+            // strip it from a project and leave one with none, which is a project
+            // nobody can see. DeleteDepartment reports it as a conflict instead.
+            entity.HasOne(a => a.Department)
+                .WithMany(d => d.ProjectAssignments)
+                .HasForeignKey(a => a.DepartmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // Mirrors the filter on Project itself, so a soft-deleted project's
+            // assignments leave scope with it.
+            entity.HasQueryFilter(a => !a.Project!.IsDeleted);
         });
 
         builder.Entity<ProjectActivityAssignment>(entity =>

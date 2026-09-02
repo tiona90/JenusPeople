@@ -11,6 +11,6 @@ public class Department
     public ICollection<UserDepartment> UserDepartments { get; set; } = new List<UserDepartment>();
     public ICollection<EmployeeProfile> EmployeeProfiles { get; set; } = new List<EmployeeProfile>();
     public ICollection<AnnualLeave> AnnualLeaves { get; set; } = new List<AnnualLeave>();
-    public ICollection<Project> Projects { get; set; } = new List<Project>();
+    public ICollection<ProjectDepartment> ProjectAssignments { get; set; } = new List<ProjectDepartment>();
     public ICollection<Timesheet> Timesheets { get; set; } = new List<Timesheet>();
 }

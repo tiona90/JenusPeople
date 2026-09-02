@@ -1,6 +1,7 @@
 export { default as ActivityTypesPanel } from './ActivityTypesPanel'
 export { default as AdminUsersPanel } from './AdminUsersPanel'
 export { default as AppSettingsPanel } from './AppSettingsPanel'
+export { default as ComponentsPanel } from './ComponentsPanel'
 export { default as DataMaintenancePanel } from './DataMaintenancePanel'
 export { default as DepartmentsPanel } from './DepartmentsPanel'
 export { default as LeaveTypesPanel } from './LeaveTypesPanel'

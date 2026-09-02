@@ -180,7 +180,12 @@ public class ProjectActivityAssignmentTests
         await create.Handle(new CreateProject.Command { Project = NewProjectRequest("Apollo", "APL-001", 1, 2) }, CancellationToken.None);
         await create.Handle(new CreateProject.Command { Project = NewProjectRequest("Borealis", "BOR-001") }, CancellationToken.None);
 
-        var projects = await new GetProjectList.Handler(context).Handle(new GetProjectList.Query(), CancellationToken.None);
+        // Listed as an admin so department scoping stays out of the way: these
+        // projects are built without departments, and what is under test here is
+        // the activities they report. See ProjectDepartmentScopeTests for the
+        // scoping itself.
+        var projects = await new GetProjectList.Handler(context).Handle(
+            new GetProjectList.Query { IsAdmin = true }, CancellationToken.None);
 
         var apollo = projects.Single(p => p.Code == "APL-001");
         Assert.Equal(new[] { "Development", "Testing" }, apollo.Activities.Select(a => a.Name).OrderBy(n => n));

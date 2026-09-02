@@ -38,8 +38,8 @@ public class TimesheetEntryOwnershipTests
 
         db.Departments.Add(new Department { Id = 1, Name = "Engineering", Code = "ENG" });
         db.Departments.Add(new Department { Id = 2, Name = "Sales", Code = "SLS" });
-        db.Projects.Add(new Project { Id = 1, Name = "Apollo", Code = "APL", DepartmentId = 1 });
-        db.Projects.Add(new Project { Id = 2, Name = "Borealis", Code = "BOR", DepartmentId = 1 });
+        db.Projects.Add(new Project { Id = 1, Name = "Apollo", Code = "APL", DepartmentAssignments = { new ProjectDepartment { DepartmentId = 1 } } });
+        db.Projects.Add(new Project { Id = 2, Name = "Borealis", Code = "BOR", DepartmentAssignments = { new ProjectDepartment { DepartmentId = 1 } } });
 
         db.Users.Add(new User { Id = OwnerUserId, UserName = "owner", Email = "owner@test.local" });
         db.EmployeeProfiles.Add(new EmployeeProfile { Id = OwnerProfileId, UserId = OwnerUserId, DepartmentId = 1 });

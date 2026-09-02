@@ -371,7 +371,7 @@ public class SeedPolicyTests : IDisposable
         {
             Name = "A Real Project",
             Code = "REAL-001",
-            DepartmentId = Db.Departments.First().Id,
+            DepartmentAssignments = { new ProjectDepartment { DepartmentId = Db.Departments.First().Id } },
             Status = ProjectStatus.Active,
             IsActive = true,
             ColorKey = string.Empty,

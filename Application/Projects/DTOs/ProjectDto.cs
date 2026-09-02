@@ -10,8 +10,11 @@ public class ProjectDto
     public string Description { get; set; } = string.Empty;
     public bool IsActive { get; set; }
     public ProjectStatus Status { get; set; }
-    public int? DepartmentId { get; set; }
-    public string? DepartmentName { get; set; }
+    /// <summary>
+    /// The departments this project belongs to, and therefore who can see it.
+    /// Only an admin is ever handed a project with none.
+    /// </summary>
+    public List<ProjectDepartmentDto> Departments { get; set; } = new();
     public string? OwnerId { get; set; }
     public string? OwnerName { get; set; }
     public string ColorKey { get; set; } = "p1";
@@ -30,6 +33,12 @@ public class ProjectDto
     /// has not narrowed the catalogue, and every active activity type applies.
     /// </summary>
     public List<ProjectActivityDto> Activities { get; set; } = new();
+}
+
+public class ProjectDepartmentDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
 }
 
 public class ProjectActivityDto

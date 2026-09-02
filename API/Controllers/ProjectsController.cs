@@ -5,6 +5,7 @@ using Domain;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Asp.Versioning;
+using System.Security.Claims;
 
 namespace API.Controllers;
 
@@ -16,7 +17,12 @@ public class ProjectsController : BaseApiController
     [Authorize]
     public async Task<ActionResult<List<ProjectDto>>> GetProjects()
     {
-        return await Mediator.Send(new GetProjectList.Query());
+        return await Mediator.Send(new GetProjectList.Query
+        {
+            RequestingUserId = ResolveUserId(),
+            IsAdmin = User.IsInRole(AppRoles.Admin),
+            IsManager = User.IsInRole(AppRoles.Manager),
+        });
     }
 
     [HttpPost]
@@ -42,4 +48,10 @@ public class ProjectsController : BaseApiController
         var result = await Mediator.Send(new DeleteProject.Command { Id = id });
         return HandleResult(result);
     }
+
+    private string ResolveUserId() =>
+        User.FindFirstValue(ClaimTypes.NameIdentifier)
+        ?? User.FindFirstValue("sub")
+        ?? User.Identity?.Name
+        ?? string.Empty;
 }

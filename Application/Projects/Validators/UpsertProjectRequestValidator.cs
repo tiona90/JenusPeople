@@ -15,6 +15,11 @@ public class UpsertProjectRequestValidator : AbstractValidator<UpsertProjectRequ
             .NotEmpty().WithMessage("Project code is required.")
             .MaximumLength(20).WithMessage("Project code must not exceed 20 characters.");
 
+        // A project with no department reaches nobody, so it is refused at the
+        // door rather than saved and later reported missing.
+        RuleFor(x => x.DepartmentIds)
+            .NotEmpty().WithMessage("Select at least one department.");
+
         RuleFor(x => x.Description).MaximumLength(500);
         RuleFor(x => x.ColorKey).MaximumLength(8);
         RuleFor(x => x.TargetWeeklyHours).InclusiveBetween(0, 1000);

@@ -68,6 +68,7 @@ public class DbInitializer
         await SeedLeaveTypes(context);
         await BackfillLeaveTypeDesignFields(context);
         await SeedProjectActivityTypes(context);
+        await SeedProjectComponents(context);
         await SeedDepartments(context);
         await SeedUserDepartments(context);
         await SeedEmployeeProfiles(context);
@@ -186,7 +187,8 @@ public class DbInitializer
             {
                 Name = "Intranet Redesign", Code = "INTRA-001",
                 Description = "Modernise the corporate intranet experience.",
-                DepartmentId = engineering.Id, OwnerId = manager1?.Id ?? admin?.Id,
+                DepartmentAssignments = { new ProjectDepartment { DepartmentId = engineering.Id } },
+                OwnerId = manager1?.Id ?? admin?.Id,
                 Status = ProjectStatus.Active, IsActive = true,
                 ColorKey = "p1", TargetWeeklyHours = 120, TargetMonthlyHours = 480
             },
@@ -194,7 +196,8 @@ public class DbInitializer
             {
                 Name = "Payroll Automation", Code = "PAY-002",
                 Description = "Automate payroll generation and approval flow.",
-                DepartmentId = finance.Id, OwnerId = manager2?.Id ?? admin?.Id,
+                DepartmentAssignments = { new ProjectDepartment { DepartmentId = finance.Id } },
+                OwnerId = manager2?.Id ?? admin?.Id,
                 Status = ProjectStatus.Active, IsActive = true,
                 ColorKey = "p2", TargetWeeklyHours = 100, TargetMonthlyHours = 400
             },
@@ -202,7 +205,8 @@ public class DbInitializer
             {
                 Name = "Recruitment Portal", Code = "REC-003",
                 Description = "Candidate-facing portal for job applications.",
-                DepartmentId = hr.Id, OwnerId = admin?.Id,
+                DepartmentAssignments = { new ProjectDepartment { DepartmentId = hr.Id } },
+                OwnerId = admin?.Id,
                 Status = ProjectStatus.OnHold, IsActive = true,
                 ColorKey = "p3", TargetWeeklyHours = 60, TargetMonthlyHours = 240
             }
@@ -663,6 +667,21 @@ public class DbInitializer
         };
 
         await context.ProjectActivityTypes.AddRangeAsync(activityTypes);
+        await context.SaveChangesAsync();
+    }
+
+    private static async Task SeedProjectComponents(AppDbContext context)
+    {
+        if (context.ProjectComponents.Any()) return;
+
+        var components = new List<ProjectComponent>
+        {
+            new() { Name = "DM", Icon = "🗄️", ColorKey = "blue", Description = "Data management — imports, exports, and data quality.", IsActive = true },
+            new() { Name = "Lasernet", Icon = "🖨️", ColorKey = "green", Description = "Document output, forms, and distribution.", IsActive = true },
+            new() { Name = "jDocs", Icon = "📄", ColorKey = "purple", Description = "Document generation and archiving.", IsActive = true },
+        };
+
+        await context.ProjectComponents.AddRangeAsync(components);
         await context.SaveChangesAsync();
     }
 

@@ -1,4 +1,5 @@
 using Application.Projects.DTOs;
+using Application.Projects.Support;
 using Domain;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -10,6 +11,9 @@ public class GetProjectList
 {
     public class Query : IRequest<List<ProjectDto>>
     {
+        public string RequestingUserId { get; set; } = string.Empty;
+        public bool IsAdmin { get; set; }
+        public bool IsManager { get; set; }
     }
 
     public class Handler(AppDbContext context) : IRequestHandler<Query, List<ProjectDto>>
@@ -25,16 +29,36 @@ public class GetProjectList
             var monthStart = new DateTime(now.Year, now.Month, 1);
             var yearStart = new DateTime(now.Year, 1, 1);
 
-            var projects = await context.Projects
-                .AsNoTracking()
-                .Include(p => p.Department)
-                .Include(p => p.Owner)
+            var visible = await ProjectScope.ApplyAsync(
+                context,
+                context.Projects.AsNoTracking().Include(p => p.Owner),
+                request.RequestingUserId,
+                request.IsAdmin,
+                request.IsManager,
+                cancellationToken);
+
+            var projects = await visible
                 .OrderBy(p => p.Name)
                 .ToListAsync(cancellationToken);
 
             if (projects.Count == 0) return new List<ProjectDto>();
 
             var projectIds = projects.Select(p => p.Id).ToList();
+
+            var departmentAssignments = await context.ProjectDepartments
+                .AsNoTracking()
+                .Where(a => projectIds.Contains(a.ProjectId))
+                .OrderBy(a => a.Department!.Name)
+                .Select(a => new
+                {
+                    a.ProjectId,
+                    Department = new ProjectDepartmentDto
+                    {
+                        Id = a.DepartmentId,
+                        Name = a.Department!.Name,
+                    }
+                })
+                .ToListAsync(cancellationToken);
 
             var activityAssignments = await context.ProjectActivityAssignments
                 .AsNoTracking()
@@ -96,8 +120,7 @@ public class GetProjectList
                     Description = p.Description ?? string.Empty,
                     IsActive = p.IsActive,
                     Status = p.Status,
-                    DepartmentId = p.DepartmentId,
-                    DepartmentName = p.Department?.Name,
+                    Departments = departmentAssignments.Where(a => a.ProjectId == p.Id).Select(a => a.Department).ToList(),
                     OwnerId = p.OwnerId,
                     OwnerName = p.Owner?.DisplayName,
                     ColorKey = string.IsNullOrEmpty(p.ColorKey) ? "p1" : p.ColorKey,

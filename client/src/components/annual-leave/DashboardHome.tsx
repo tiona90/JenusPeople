@@ -23,7 +23,7 @@ import {
 import { activityIcon } from '../../lib/hooks/useAttendance'
 import { useStore } from '../../lib/mobx'
 import { iconForLeaveType } from './leave-icons'
-import { ActivityTypesPanel, AdminUsersPanel, AppSettingsPanel, DataMaintenancePanel, DepartmentsPanel, LeaveTypesPanel, OrgSettingsPanel, ProjectsPanel } from '..'
+import { ActivityTypesPanel, AdminUsersPanel, AppSettingsPanel, ComponentsPanel, DataMaintenancePanel, DepartmentsPanel, LeaveTypesPanel, OrgSettingsPanel, ProjectsPanel } from '..'
 import type {
     AnnualLeave, AnnualLeaveStatus, AttendanceIssue, DepartmentAttendance,
     LeaveType, RecentActivity, TeamAttendance, TeamHistory, TeamMemberAttendance, Timesheet, TimesheetStatus, UserInfo,
@@ -118,7 +118,8 @@ const DashboardHome = observer(function DashboardHome() {
     if (isAdmin && adminSection === 'departments') return <DepartmentsPanel />
     if (isAdmin && (adminSection === 'leave-types' || adminSection === 'leave')) return <LeaveTypesPanel />
     if (isAdmin && adminSection === 'projects') return <ProjectsPanel />
-    if (isAdmin && adminSection === 'activity-types') return <ActivityTypesPanel />
+    if (isAdmin && adminSection === 'project-activities') return <ActivityTypesPanel />
+    if (isAdmin && adminSection === 'components') return <ComponentsPanel />
     if (isAdmin && adminSection === 'settings') return <AppSettingsPanel />
     if (isAdmin && adminSection === 'reminders-notifications') return <OrgSettingsPanel />
     if (isAdmin && adminSection === 'maintenance') return <DataMaintenancePanel />

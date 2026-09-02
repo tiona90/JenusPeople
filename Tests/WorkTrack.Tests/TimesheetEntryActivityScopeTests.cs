@@ -40,8 +40,8 @@ public class TimesheetEntryActivityScopeTests
         var db = TestDb.Create();
 
         db.Departments.Add(new Department { Id = 1, Name = "Engineering", Code = "ENG" });
-        db.Projects.Add(new Project { Id = NarrowedProjectId, Name = "Apollo", Code = "APL", DepartmentId = 1 });
-        db.Projects.Add(new Project { Id = OpenProjectId, Name = "Borealis", Code = "BOR", DepartmentId = 1 });
+        db.Projects.Add(new Project { Id = NarrowedProjectId, Name = "Apollo", Code = "APL", DepartmentAssignments = { new ProjectDepartment { DepartmentId = 1 } } });
+        db.Projects.Add(new Project { Id = OpenProjectId, Name = "Borealis", Code = "BOR", DepartmentAssignments = { new ProjectDepartment { DepartmentId = 1 } } });
 
         db.ProjectActivityTypes.Add(new ProjectActivityType { Id = DevelopmentId, Name = "Development" });
         db.ProjectActivityTypes.Add(new ProjectActivityType { Id = DesignId, Name = "Design" });

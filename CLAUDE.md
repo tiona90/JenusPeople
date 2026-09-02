@@ -97,8 +97,9 @@ that means when adding code:
 | `AnnualLeave` | `EmployeeId`, `StartDate/EndDate`, `Status` (enum), `TotalDays` (computed, no weekends) |
 | `Timesheet` | `EmployeeId`, `PeriodStart/End`, `TotalHours`, `Status` (Draft→Submitted→Approved/Rejected) |
 | `TimesheetEntry` | `TimesheetId`, `ProjectId`, `Date`, `HoursWorked` (decimal 4,2) |
-| `Project` | `Name` (unique), `Code` (unique), `IsActive`, `DepartmentId` |
+| `Project` | `Name` (unique), `Code` (unique), `IsActive`; belongs to many `Department` via `ProjectDepartment` (which departments can see it), narrows activities via `ProjectActivityAssignment` |
 | `EmployeeProfile` | Links `User` to `Department`, tracks leave entitlement |
+| `ProjectComponent` | Org-wide catalogue of deliverables (DM, Lasernet, jDocs): `Name` (unique), `Icon`, `ColorKey`, `IsActive`. Nothing references it yet — admin CRUD only |
 
 Status enums: `AnnualLeaveStatus` (Pending, Approved, Rejected, Cancelled); `TimesheetStatus` (Draft=0, Submitted=1, Approved=2, Rejected=3, Resubmitted=4).
 

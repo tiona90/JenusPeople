@@ -28,9 +28,9 @@ public class CreateProject
             if (await context.Projects.AnyAsync(p => p.Code == code, cancellationToken))
                 return Result<ProjectDto>.Conflict("A project with that code already exists.");
 
-            if (req.DepartmentId.HasValue
-                && !await context.Departments.AnyAsync(d => d.Id == req.DepartmentId, cancellationToken))
-                return Result<ProjectDto>.Failure("Selected department does not exist.");
+            var departmentIds = req.DepartmentIds.Distinct().ToList();
+            if (await context.Departments.CountAsync(d => departmentIds.Contains(d.Id), cancellationToken) != departmentIds.Count)
+                return Result<ProjectDto>.Failure("One or more selected departments do not exist.");
 
             if (!string.IsNullOrEmpty(req.OwnerId)
                 && !await context.Users.AnyAsync(u => u.Id == req.OwnerId, cancellationToken))
@@ -46,7 +46,6 @@ public class CreateProject
                 Name = name,
                 Code = code,
                 Description = (req.Description ?? string.Empty).Trim(),
-                DepartmentId = req.DepartmentId,
                 OwnerId = string.IsNullOrEmpty(req.OwnerId) ? null : req.OwnerId,
                 Status = req.Status,
                 IsActive = req.Status != ProjectStatus.Inactive,
@@ -56,6 +55,9 @@ public class CreateProject
                 CreatedAt = DateTime.UtcNow
             };
 
+            foreach (var departmentId in departmentIds)
+                project.DepartmentAssignments.Add(new ProjectDepartment { DepartmentId = departmentId });
+
             foreach (var activityTypeId in activityTypeIds)
                 project.ActivityAssignments.Add(new ProjectActivityAssignment { ActivityTypeId = activityTypeId });
 
@@ -63,10 +65,10 @@ public class CreateProject
             await context.SaveChangesAsync(cancellationToken);
 
             // Reload with includes for the response
-            await context.Entry(project).Reference(p => p.Department).LoadAsync(cancellationToken);
             await context.Entry(project).Reference(p => p.Owner).LoadAsync(cancellationToken);
 
             var dto = ToDto(project);
+            dto.Departments = await ProjectDepartmentLookup.ForProjectAsync(context, project.Id, cancellationToken);
             dto.Activities = await ProjectActivityLookup.ForProjectAsync(context, project.Id, cancellationToken);
             return Result<ProjectDto>.Success(dto);
         }
@@ -79,8 +81,6 @@ public class CreateProject
             Description = p.Description,
             IsActive = p.IsActive,
             Status = p.Status,
-            DepartmentId = p.DepartmentId,
-            DepartmentName = p.Department?.Name,
             OwnerId = p.OwnerId,
             OwnerName = p.Owner?.DisplayName,
             ColorKey = p.ColorKey,

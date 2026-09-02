@@ -27,12 +27,18 @@ public class DeleteDepartment
                 .CountAsync(ep => ep.DepartmentId == request.Id, cancellationToken);
             var managerCount = await context.UserDepartments
                 .CountAsync(ud => ud.DepartmentId == request.Id, cancellationToken);
+            // Cascading here would strip the department from its projects and could
+            // leave one with none, which is a project nobody can see. Counted as a
+            // blocker so the admin reassigns it deliberately instead.
+            var projectCount = await context.ProjectDepartments
+                .CountAsync(pd => pd.DepartmentId == request.Id, cancellationToken);
 
-            if (profileCount > 0 || managerCount > 0)
+            if (profileCount > 0 || managerCount > 0 || projectCount > 0)
             {
                 var blockers = new List<string>();
                 if (profileCount > 0) blockers.Add($"{profileCount} employee{(profileCount == 1 ? "" : "s")}");
                 if (managerCount > 0) blockers.Add($"{managerCount} assigned manager{(managerCount == 1 ? "" : "s")}");
+                if (projectCount > 0) blockers.Add($"{projectCount} project{(projectCount == 1 ? "" : "s")}");
 
                 return Result<Unit>.Conflict(
                     $"Cannot delete \"{department.Name}\" — it still has {string.Join(" and ", blockers)}. "

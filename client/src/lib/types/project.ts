@@ -9,6 +9,11 @@ export interface ProjectActivity {
     colorKey: string
 }
 
+export interface ProjectDepartment {
+    id: number
+    name: string
+}
+
 export interface ProjectTeamMember {
     userId: string
     displayName: string
@@ -22,8 +27,9 @@ export interface Project {
     description: string
     isActive: boolean
     status: ProjectStatus
-    departmentId: number | null
-    departmentName: string | null
+    // The departments this project belongs to, and therefore who can see it.
+    // Only an admin is ever handed a project with none.
+    departments: ProjectDepartment[]
     department?: Department | null
     ownerId: string | null
     ownerName: string | null
@@ -50,7 +56,7 @@ export interface UpsertProjectRequest {
     description: string
     isActive: boolean
     status: ProjectStatus
-    departmentId: number | null
+    departmentIds: number[]
     ownerId: string | null
     colorKey: string
     targetWeeklyHours: number

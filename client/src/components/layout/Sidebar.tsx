@@ -16,6 +16,7 @@ import GroupRoundedIcon from '@mui/icons-material/GroupRounded'
 import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded'
 import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
 import LabelRoundedIcon from '@mui/icons-material/LabelRounded'
+import ExtensionRoundedIcon from '@mui/icons-material/ExtensionRounded'
 import CategoryRoundedIcon from '@mui/icons-material/CategoryRounded'
 import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
 import EventRoundedIcon from '@mui/icons-material/EventRounded'
@@ -212,7 +213,8 @@ const Sidebar = observer(function Sidebar() {
             { kind: 'item', label: 'Departments', icon: <ApartmentRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('departments'), active: onAdminSection('departments') },
             { kind: 'item', label: 'Leave Types', icon: <LabelRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('leave-types'), active: onAdminSection('leave-types', 'leave') },
             { kind: 'item', label: 'Projects', icon: <FolderRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('projects'), active: onAdminSection('projects') },
-            { kind: 'item', label: 'Project Activities', icon: <CategoryRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('activity-types'), active: onAdminSection('activity-types') },
+            { kind: 'item', label: 'Project Activities', icon: <CategoryRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('project-activities'), active: onAdminSection('project-activities') },
+            { kind: 'item', label: 'Project Components', icon: <ExtensionRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('components'), active: onAdminSection('components') },
             { kind: 'item', label: 'Data Maintenance', icon: <StorageRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('maintenance'), active: onAdminSection('maintenance') },
             { kind: 'section', label: 'Settings' },
             // Named for everything it holds: the leave year, the timesheet policy, the

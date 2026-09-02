@@ -17,8 +17,6 @@ public class Project : ISoftDeletable, IAuditable
     public string Name { get; set; } = string.Empty;
     public string Code { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
-    public int? DepartmentId { get; set; }
-    public Department? Department { get; set; }
     public bool IsActive { get; set; } = true;
     public ProjectStatus Status { get; set; } = ProjectStatus.Active;
     public string? OwnerId { get; set; }
@@ -30,4 +28,10 @@ public class Project : ISoftDeletable, IAuditable
     public bool IsDeleted { get; set; }
     public ICollection<TimesheetEntry> TimesheetEntries { get; set; } = new List<TimesheetEntry>();
     public ICollection<ProjectActivityAssignment> ActivityAssignments { get; set; } = new List<ProjectActivityAssignment>();
+
+    /// <summary>
+    /// The departments this project belongs to, which is also who can see it.
+    /// Never legitimately empty — see <see cref="ProjectDepartment"/>.
+    /// </summary>
+    public ICollection<ProjectDepartment> DepartmentAssignments { get; set; } = new List<ProjectDepartment>();
 }
