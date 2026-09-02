@@ -43,4 +43,10 @@ public class UpsertProjectRequest
     /// has not narrowed the catalogue, and every active activity type applies.
     /// </summary>
     public List<int> ActivityTypeIds { get; set; } = new();
+
+    /// <summary>
+    /// The components this project is made up of. Empty means the project has
+    /// declared none — unlike activities, nothing falls back to the catalogue.
+    /// </summary>
+    public List<int> ComponentIds { get; set; } = new();
 }

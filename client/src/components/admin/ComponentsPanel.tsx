@@ -88,6 +88,9 @@ function ComponentsPanel() {
     }, [components, statusFilter, searchText])
 
     const totalActive = components.filter((c) => c.isActive).length
+    // The widest reach any single component has, not a sum: a project declaring
+    // three components would otherwise count three times over.
+    const totalProjects = components.reduce((s, c) => Math.max(s, c.usedInProjects), 0)
 
     /* Mutations */
     const createMutation = useMutation({
@@ -136,14 +139,22 @@ function ComponentsPanel() {
                 <Alert severity="error" sx={{ mb: 2 }}>{getErrorMessage(deleteMutation.error)}</Alert>
             )}
 
-            {/* Stats row — one card only: nothing logs against a component yet, so
-                there are no hours or project counts to report. */}
-            <Box sx={{ display: 'flex', mb: '14px' }}>
+            {/* Stats row — no hours card: projects declare components, but no
+                timesheet entry logs against one, so there is nothing to total. */}
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '14px', mb: '14px' }}>
                 <Box sx={{ width: { xs: '100%', sm: 280 } }}>
                     <StatCard
                         label="🧩 Components"
                         value={String(totalActive)}
                         sub={`of ${components.length} configured · ${components.length - totalActive} disabled`}
+                    />
+                </Box>
+                <Box sx={{ width: { xs: '100%', sm: 280 } }}>
+                    <StatCard
+                        label="📊 Projects"
+                        value={String(totalProjects)}
+                        valueColor={'success.main'}
+                        sub="declaring components"
                     />
                 </Box>
             </Box>
@@ -217,7 +228,12 @@ function ComponentsPanel() {
                             onDelete={async () => {
                                 const result = await SweetAlert.fire({
                                     title: `Delete "${c.name}"?`,
-                                    text: 'This component will be removed.',
+                                    // Deleting is never refused — the assignments
+                                    // cascade — so the count is the only warning a
+                                    // declared component gets.
+                                    text: c.usedInProjects === 0
+                                        ? 'This component will be removed.'
+                                        : `This component will be removed from ${c.usedInProjects} project${c.usedInProjects === 1 ? '' : 's'}.`,
                                     icon: 'warning',
                                     showCancelButton: true,
                                     confirmButtonText: 'Yes, delete',
@@ -308,7 +324,7 @@ function ComponentCard({ component: c, onEdit, onToggle, onDelete }: {
             {/* Toggle row */}
             <Box sx={{
                 display: 'flex', alignItems: 'center', gap: '8px',
-                p: '10px 20px', bgcolor: 'action.hover', mt: 'auto',
+                p: '10px 20px', bgcolor: 'action.hover', borderBottom: '1px solid #F3F4F6',
             }}>
                 <Switch
                     size="small"
@@ -324,6 +340,17 @@ function ComponentCard({ component: c, onEdit, onToggle, onDelete }: {
                 </Box>
                 <Box sx={{ fontSize: 11, color: 'text.secondary' }}>
                     · {c.isActive ? 'in the component catalogue' : 'hidden from pickers'}
+                </Box>
+            </Box>
+
+            {/* Usage */}
+            <Box sx={{ p: '16px 20px', mt: 'auto' }}>
+                <Box sx={{ fontSize: 12, color: 'text.secondary', lineHeight: 1.6 }}>
+                    Declared by{' '}
+                    <Box component="strong" sx={{ color: 'text.primary', fontWeight: 700, fontSize: 13 }}>
+                        {c.usedInProjects}
+                    </Box>{' '}
+                    project{c.usedInProjects === 1 ? '' : 's'}
                 </Box>
             </Box>
         </Box>

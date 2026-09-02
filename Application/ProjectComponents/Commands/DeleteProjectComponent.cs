@@ -19,8 +19,9 @@ public class DeleteProjectComponent
             if (component is null)
                 return Result<Unit>.Failure("Component not found.");
 
-            // No in-use check, unlike DeleteProjectActivityType: nothing references
-            // a component yet. Add one here the moment something does.
+            // No in-use check, unlike DeleteProjectActivityType: a project's
+            // component assignments cascade away with the component, and no
+            // timesheet entry records one. Add a check here the moment one does.
             context.ProjectComponents.Remove(component);
             await context.SaveChangesAsync(cancellationToken);
 

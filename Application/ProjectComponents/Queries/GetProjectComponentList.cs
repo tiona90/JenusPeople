@@ -32,6 +32,7 @@ public class GetProjectComponentList
                     Icon = c.Icon,
                     ColorKey = c.ColorKey,
                     IsActive = c.IsActive,
+                    UsedInProjects = c.ProjectAssignments.Count,
                 })
                 .ToListAsync(cancellationToken);
         }

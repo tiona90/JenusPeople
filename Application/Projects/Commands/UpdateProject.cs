@@ -49,6 +49,11 @@ public class UpdateProject
                 && await context.ProjectActivityTypes.CountAsync(a => activityTypeIds.Contains(a.Id), cancellationToken) != activityTypeIds.Count)
                 return Result<ProjectDto>.Failure("One or more selected activity types do not exist.");
 
+            var componentIds = req.ComponentIds.Distinct().ToList();
+            if (componentIds.Count > 0
+                && await context.ProjectComponents.CountAsync(c => componentIds.Contains(c.Id), cancellationToken) != componentIds.Count)
+                return Result<ProjectDto>.Failure("One or more selected components do not exist.");
+
             project.Name = name;
             project.Code = code;
             project.Description = (req.Description ?? string.Empty).Trim();
@@ -59,7 +64,7 @@ public class UpdateProject
             project.TargetWeeklyHours = req.TargetWeeklyHours;
             project.TargetMonthlyHours = req.TargetMonthlyHours;
 
-            // Both sets are diffed rather than cleared and re-added, so an
+            // Every set is diffed rather than cleared and re-added, so an
             // unchanged selection produces no writes at all.
             var existingDepartments = await context.ProjectDepartments
                 .Where(a => a.ProjectId == project.Id)
@@ -83,6 +88,17 @@ public class UpdateProject
                 .Where(id => existingAssignments.All(a => a.ActivityTypeId != id))
                 .Select(id => new ProjectActivityAssignment { ProjectId = project.Id, ActivityTypeId = id }));
 
+            var existingComponents = await context.ProjectComponentAssignments
+                .Where(a => a.ProjectId == project.Id)
+                .ToListAsync(cancellationToken);
+
+            context.ProjectComponentAssignments.RemoveRange(
+                existingComponents.Where(a => !componentIds.Contains(a.ComponentId)));
+
+            context.ProjectComponentAssignments.AddRange(componentIds
+                .Where(id => existingComponents.All(a => a.ComponentId != id))
+                .Select(id => new ProjectComponentAssignment { ProjectId = project.Id, ComponentId = id }));
+
             await context.SaveChangesAsync(cancellationToken);
 
             await context.Entry(project).Reference(p => p.Owner).LoadAsync(cancellationToken);
@@ -102,7 +118,8 @@ public class UpdateProject
                 TargetWeeklyHours = project.TargetWeeklyHours,
                 TargetMonthlyHours = project.TargetMonthlyHours,
                 CreatedAt = project.CreatedAt,
-                Activities = await ProjectActivityLookup.ForProjectAsync(context, project.Id, cancellationToken)
+                Activities = await ProjectActivityLookup.ForProjectAsync(context, project.Id, cancellationToken),
+                Components = await ProjectComponentLookup.ForProjectAsync(context, project.Id, cancellationToken)
             });
         }
     }

@@ -8,4 +8,7 @@ public class ProjectComponentDto
     public string Icon { get; set; } = "🧩";
     public string ColorKey { get; set; } = "default";
     public bool IsActive { get; set; }
+
+    // How many projects have declared this component.
+    public int UsedInProjects { get; set; }
 }

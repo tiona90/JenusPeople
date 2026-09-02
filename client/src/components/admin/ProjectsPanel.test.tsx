@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { StoreProvider } from '../../lib/mobx'
-import type { AdminUser, Department, Project, ProjectActivityType } from '../../lib/types'
+import type { AdminUser, Department, Project, ProjectActivityType, ProjectComponent } from '../../lib/types'
 import ProjectsPanel from './ProjectsPanel'
 
 // Activity types are an org-wide catalogue. A project picks the subset it logs
@@ -13,6 +13,7 @@ vi.mock('../../lib/api', () => ({
     getDepartments: vi.fn(),
     getAdminUsers: vi.fn(),
     getProjectActivityTypes: vi.fn(),
+    getProjectComponents: vi.fn(),
     createProject: vi.fn(),
     updateProject: vi.fn(),
     deleteProject: vi.fn(),
@@ -28,6 +29,17 @@ const DEVELOPMENT = activityType(1, 'Development')
 const TESTING = activityType(2, 'Testing')
 const DESIGN = activityType(3, 'Design')
 const RETIRED = activityType(4, 'Retired Activity', false)
+
+// Components work the same way: an org-wide catalogue a project narrows to the
+// deliverables it is made up of.
+function component(id: number, name: string, isActive = true): ProjectComponent {
+    return { id, name, description: '', icon: '🧩', colorKey: 'default', isActive, usedInProjects: 0 }
+}
+
+const DM = component(11, 'DM')
+const LASERNET = component(12, 'Lasernet')
+const JDOCS = component(13, 'jDocs')
+const RETIRED_COMPONENT = component(14, 'Retired Component', false)
 
 const ENGINEERING: Department = { id: 1, name: 'Engineering', code: 'ENG', isActive: true, createdAt: '2026-01-01T00:00:00' }
 const FINANCE: Department = { id: 2, name: 'Finance', code: 'FIN', isActive: true, createdAt: '2026-01-01T00:00:00' }
@@ -52,6 +64,7 @@ const APOLLO: Project = {
     teamSize: 0,
     team: [],
     activities: [{ id: 2, name: 'Testing', icon: '🏷️', colorKey: 'default' }],
+    components: [{ id: 12, name: 'Lasernet', icon: '🧩', colorKey: 'default' }],
 }
 
 beforeEach(() => {
@@ -60,6 +73,7 @@ beforeEach(() => {
     api.getDepartments.mockResolvedValue([ENGINEERING, FINANCE])
     api.getAdminUsers.mockResolvedValue([] as AdminUser[])
     api.getProjectActivityTypes.mockResolvedValue([DEVELOPMENT, TESTING, DESIGN, RETIRED])
+    api.getProjectComponents.mockResolvedValue([DM, LASERNET, JDOCS, RETIRED_COMPONENT])
     api.createProject.mockResolvedValue(APOLLO)
     api.updateProject.mockResolvedValue(APOLLO)
 })
@@ -89,6 +103,20 @@ function openActivityOptions() {
 }
 
 function chooseActivity(name: string) {
+    fireEvent.click(screen.getByRole('option', { name: new RegExp(name) }))
+}
+
+/** The Components multi-select inside the open dialog. */
+function componentsField() {
+    return within(screen.getByRole('dialog')).getByLabelText('Components')
+}
+
+function openComponentOptions() {
+    fireEvent.mouseDown(componentsField())
+    return screen.getAllByRole('option')
+}
+
+function chooseComponent(name: string) {
     fireEvent.click(screen.getByRole('option', { name: new RegExp(name) }))
 }
 
@@ -154,6 +182,73 @@ describe('ProjectsPanel — project activities', () => {
 
         await waitFor(() => expect(api.updateProject).toHaveBeenCalled())
         expect(api.updateProject.mock.calls[0][1].activityTypeIds).toEqual([2])
+    })
+})
+
+// Components are the deliverables a project is made up of, picked from the
+// org-wide catalogue the same way activities are. Unlike activities there is no
+// fallback: an empty selection means the project declares none.
+describe('ProjectsPanel — project components', () => {
+    it('offers the active components when creating a project', async () => {
+        await renderPanel()
+        fireEvent.click(screen.getByText('+ New project'))
+
+        const labels = openComponentOptions().map((o) => o.textContent)
+
+        expect(labels).toEqual(['DM', 'Lasernet', 'jDocs'])
+        expect(labels).not.toContain('Retired Component')
+    })
+
+    it('sends the chosen components when saving a new project', async () => {
+        await renderPanel()
+        fireEvent.click(screen.getByText('+ New project'))
+
+        fireEvent.change(within(screen.getByRole('dialog')).getByLabelText(/Name/), {
+            target: { value: 'Borealis' },
+        })
+        chooseDepartment('Engineering')
+        openComponentOptions()
+        chooseComponent('DM')
+        chooseComponent('jDocs')
+        fireEvent.keyDown(screen.getByRole('listbox'), { key: 'Escape' })
+
+        save()
+
+        await waitFor(() => expect(api.createProject).toHaveBeenCalled())
+        expect(api.createProject.mock.calls[0][0].componentIds).toEqual([11, 13])
+    })
+
+    it('preselects the components a project already has when editing', async () => {
+        await renderPanel()
+        fireEvent.click(await screen.findByText('✏️ Edit'))
+
+        expect(componentsField()).toHaveTextContent('Lasernet')
+    })
+
+    it('keeps the existing selection when saving an edit untouched', async () => {
+        await renderPanel()
+        fireEvent.click(await screen.findByText('✏️ Edit'))
+
+        save()
+
+        await waitFor(() => expect(api.updateProject).toHaveBeenCalled())
+        expect(api.updateProject.mock.calls[0][1].componentIds).toEqual([12])
+    })
+
+    // Every other field keeps its value, so clearing components has to reach the
+    // API as an empty list rather than being dropped from the payload.
+    it('sends an empty list when the selection is cleared', async () => {
+        await renderPanel()
+        fireEvent.click(await screen.findByText('✏️ Edit'))
+
+        openComponentOptions()
+        chooseComponent('Lasernet')
+        fireEvent.keyDown(screen.getByRole('listbox'), { key: 'Escape' })
+
+        save()
+
+        await waitFor(() => expect(api.updateProject).toHaveBeenCalled())
+        expect(api.updateProject.mock.calls[0][1].componentIds).toEqual([])
     })
 })
 

@@ -33,6 +33,12 @@ public class ProjectDto
     /// has not narrowed the catalogue, and every active activity type applies.
     /// </summary>
     public List<ProjectActivityDto> Activities { get; set; } = new();
+
+    /// <summary>
+    /// The components this project is made up of, narrowed from the org-wide
+    /// catalogue. Empty means the project has declared none.
+    /// </summary>
+    public List<ProjectComponentSummaryDto> Components { get; set; } = new();
 }
 
 public class ProjectDepartmentDto
@@ -46,6 +52,19 @@ public class ProjectActivityDto
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public string Icon { get; set; } = "🏷️";
+    public string ColorKey { get; set; } = "default";
+}
+
+/// <summary>
+/// A component as seen from a project. Named apart from the catalogue's own
+/// <c>ProjectComponents.DTOs.ProjectComponentDto</c>, which carries the
+/// description and usage counts the project card has no use for.
+/// </summary>
+public class ProjectComponentSummaryDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Icon { get; set; } = "🧩";
     public string ColorKey { get; set; } = "default";
 }
 

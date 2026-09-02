@@ -23,6 +23,7 @@ import {
     getAdminUsers,
     getDepartments,
     getProjectActivityTypes,
+    getProjectComponents,
     getProjects,
     updateProject,
 } from '../../lib/api'
@@ -33,6 +34,7 @@ import type {
     Department,
     Project,
     ProjectActivityType,
+    ProjectComponent,
     ProjectStatus,
     UpsertProjectRequest,
 } from '../../lib/types'
@@ -103,6 +105,10 @@ function ProjectsPanel() {
     const { data: activityTypes = [] } = useQuery({
         queryKey: ['projectActivityTypes'],
         queryFn: getProjectActivityTypes,
+    })
+    const { data: components = [] } = useQuery({
+        queryKey: ['projectComponents'],
+        queryFn: getProjectComponents,
     })
 
     const filtered = useMemo(() => {
@@ -308,6 +314,7 @@ function ProjectsPanel() {
                 departments={departments}
                 users={adminUsers}
                 activityTypes={activityTypes}
+                components={components}
                 isPending={createMutation.isPending}
                 error={createMutation.error}
                 onClose={() => setCreateOpen(false)}
@@ -321,6 +328,7 @@ function ProjectsPanel() {
                 departments={departments}
                 users={adminUsers}
                 activityTypes={activityTypes}
+                components={components}
                 isPending={updateMutation.isPending}
                 error={updateMutation.error}
                 onClose={() => setEditProject(null)}
@@ -663,6 +671,7 @@ function ProjectFormDialog(props: {
     departments: Department[]
     users: AdminUser[]
     activityTypes: ProjectActivityType[]
+    components: ProjectComponent[]
     isPending: boolean
     error: Error | null
     onClose: () => void
@@ -680,12 +689,16 @@ function ProjectFormDialog(props: {
     const [targetWeeklyHours, setTargetWeeklyHours] = useState<number>(i?.targetWeeklyHours ?? 0)
     const [targetMonthlyHours, setTargetMonthlyHours] = useState<number>(i?.targetMonthlyHours ?? 0)
     const [activityTypeIds, setActivityTypeIds] = useState<number[]>(i?.activities.map((a) => a.id) ?? [])
+    const [componentIds, setComponentIds] = useState<number[]>(i?.components.map((c) => c.id) ?? [])
 
     // Offers what is enabled now, plus anything this project is already assigned:
     // a type disabled after the fact stays visible so an unrelated edit cannot
     // silently drop it from the project.
     const activityOptions = props.activityTypes.filter(
         (a) => a.isActive || activityTypeIds.includes(a.id),
+    )
+    const componentOptions = props.components.filter(
+        (c) => c.isActive || componentIds.includes(c.id),
     )
 
     // Auto-generate a code from the name as the user types, only for new
@@ -731,6 +744,7 @@ function ProjectFormDialog(props: {
             targetWeeklyHours: Number(targetWeeklyHours) || 0,
             targetMonthlyHours: Number(targetMonthlyHours) || 0,
             activityTypeIds,
+            componentIds,
         })
     }
 
@@ -875,6 +889,36 @@ function ProjectFormDialog(props: {
                     >
                         {activityOptions.map((a) => (
                             <MenuItem key={a.id} value={a.id}>{a.name}</MenuItem>
+                        ))}
+                    </TextField>
+
+                    <TextField
+                        select
+                        id="project-components"
+                        label="Components"
+                        value={componentIds}
+                        onChange={(e) => setComponentIds(
+                            (e.target.value as unknown as number[]).map(Number),
+                        )}
+                        fullWidth
+                        helperText="Which deliverables this project is made up of."
+                        SelectProps={{
+                            multiple: true,
+                            renderValue: (selected) => (
+                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                    {(selected as number[]).map((id) => (
+                                        <Chip
+                                            key={id}
+                                            size="small"
+                                            label={componentOptions.find((c) => c.id === id)?.name ?? id}
+                                        />
+                                    ))}
+                                </Box>
+                            ),
+                        }}
+                    >
+                        {componentOptions.map((c) => (
+                            <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
                         ))}
                     </TextField>
 

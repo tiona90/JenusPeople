@@ -9,6 +9,16 @@ export interface ProjectActivity {
     colorKey: string
 }
 
+// A component as seen from a project. Named apart from the catalogue's own
+// `ProjectComponent`, which carries the description and usage count the project
+// dialog has no use for.
+export interface ProjectComponentSummary {
+    id: number
+    name: string
+    icon: string
+    colorKey: string
+}
+
 export interface ProjectDepartment {
     id: number
     name: string
@@ -47,6 +57,10 @@ export interface Project {
     // The activity types this project logs time against. Empty means the project
     // has not narrowed the catalogue, and every active activity type applies.
     activities: ProjectActivity[]
+
+    // The components this project is made up of, narrowed from the org-wide
+    // catalogue. Empty means the project has declared none.
+    components: ProjectComponentSummary[]
 }
 
 export interface UpsertProjectRequest {
@@ -62,4 +76,5 @@ export interface UpsertProjectRequest {
     targetWeeklyHours: number
     targetMonthlyHours: number
     activityTypeIds: number[]
+    componentIds: number[]
 }

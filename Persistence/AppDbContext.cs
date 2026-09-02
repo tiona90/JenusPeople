@@ -37,6 +37,7 @@ public class AppDbContext : IdentityDbContext<
     public DbSet<ProjectActivityAssignment> ProjectActivityAssignments { get; set; }
     public DbSet<ProjectDepartment> ProjectDepartments { get; set; }
     public DbSet<ProjectComponent> ProjectComponents { get; set; }
+    public DbSet<ProjectComponentAssignment> ProjectComponentAssignments { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -327,6 +328,25 @@ public class AppDbContext : IdentityDbContext<
             entity.HasOne(a => a.ActivityType)
                 .WithMany(t => t.ProjectAssignments)
                 .HasForeignKey(a => a.ActivityTypeId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Mirrors the filter on Project itself, so a soft-deleted project's
+            // assignments leave scope with it instead of lingering in the counts.
+            entity.HasQueryFilter(a => !a.Project!.IsDeleted);
+        });
+
+        builder.Entity<ProjectComponentAssignment>(entity =>
+        {
+            entity.HasKey(a => new { a.ProjectId, a.ComponentId });
+
+            entity.HasOne(a => a.Project)
+                .WithMany(p => p.ComponentAssignments)
+                .HasForeignKey(a => a.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(a => a.Component)
+                .WithMany(c => c.ProjectAssignments)
+                .HasForeignKey(a => a.ComponentId)
                 .OnDelete(DeleteBehavior.Cascade);
 
             // Mirrors the filter on Project itself, so a soft-deleted project's

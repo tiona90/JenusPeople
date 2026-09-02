@@ -19,12 +19,12 @@ vi.mock('../../lib/api', () => ({
 
 const api = vi.mocked(await import('../../lib/api'))
 
-function component(id: number, name: string, isActive = true, description = ''): ProjectComponent {
-    return { id, name, description, icon: '🧩', colorKey: 'default', isActive }
+function component(id: number, name: string, isActive = true, description = '', usedInProjects = 0): ProjectComponent {
+    return { id, name, description, icon: '🧩', colorKey: 'default', isActive, usedInProjects }
 }
 
-const DM = component(1, 'DM', true, 'Data management.')
-const LASERNET = component(2, 'Lasernet', true, 'Document output.')
+const DM = component(1, 'DM', true, 'Data management.', 3)
+const LASERNET = component(2, 'Lasernet', true, 'Document output.', 1)
 const JDOCS = component(3, 'jDocs', false, 'Document generation.')
 
 beforeEach(() => {
@@ -94,6 +94,26 @@ it('creates a component from the form', async () => {
         colorKey: 'default',
         isActive: true,
     }, expect.anything()))
+})
+
+/**
+ * Deleting a component is never refused — its project assignments cascade away
+ * with it — so the count on the card is the only warning an admin gets that
+ * removing one changes projects.
+ */
+it('reports how many projects declare each component', async () => {
+    await renderPanel()
+
+    // Cards are sorted by name: DM, jDocs, Lasernet. Lasernet's single project
+    // is there for the singular.
+    const usage = screen.getAllByText(/Declared by/)
+        .map((el) => el.textContent?.replace(/\s+/g, ' ').trim())
+
+    expect(usage).toEqual([
+        'Declared by 3 projects',
+        'Declared by 0 projects',
+        'Declared by 1 project',
+    ])
 })
 
 /**

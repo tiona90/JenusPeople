@@ -77,6 +77,23 @@ public class GetProjectList
                 })
                 .ToListAsync(cancellationToken);
 
+            var componentAssignments = await context.ProjectComponentAssignments
+                .AsNoTracking()
+                .Where(a => projectIds.Contains(a.ProjectId))
+                .OrderBy(a => a.Component!.Name)
+                .Select(a => new
+                {
+                    a.ProjectId,
+                    Component = new ProjectComponentSummaryDto
+                    {
+                        Id = a.ComponentId,
+                        Name = a.Component!.Name,
+                        Icon = a.Component.Icon,
+                        ColorKey = a.Component.ColorKey,
+                    }
+                })
+                .ToListAsync(cancellationToken);
+
             var ytdEntries = await context.TimesheetEntries
                 .AsNoTracking()
                 .Where(e => projectIds.Contains(e.ProjectId) && e.Date >= yearStart)
@@ -132,7 +149,8 @@ public class GetProjectList
                     HoursYTD = ytd,
                     TeamSize = team.Count,
                     Team = team,
-                    Activities = activityAssignments.Where(a => a.ProjectId == p.Id).Select(a => a.Activity).ToList()
+                    Activities = activityAssignments.Where(a => a.ProjectId == p.Id).Select(a => a.Activity).ToList(),
+                    Components = componentAssignments.Where(a => a.ProjectId == p.Id).Select(a => a.Component).ToList()
                 });
             }
 

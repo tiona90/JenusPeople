@@ -5,4 +5,6 @@ export interface ProjectComponent {
     icon: string
     colorKey: string
     isActive: boolean
+    // How many projects have declared this component.
+    usedInProjects: number
 }
