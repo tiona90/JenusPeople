@@ -33,4 +33,10 @@ public class UpsertProjectRequest
 
     [Range(0, 5000)]
     public int TargetMonthlyHours { get; set; }
+
+    /// <summary>
+    /// The activity types this project logs time against. Empty means the project
+    /// has not narrowed the catalogue, and every active activity type applies.
+    /// </summary>
+    public List<int> ActivityTypeIds { get; set; } = new();
 }

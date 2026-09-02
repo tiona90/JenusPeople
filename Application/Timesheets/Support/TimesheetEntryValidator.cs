@@ -22,6 +22,7 @@ public static class TimesheetEntryValidator
     ///   - non-positive hours,
     ///   - hours exceeding 24 in a single entry,
     ///   - a date in the future,
+    ///   - an activity the project has not assigned,
     ///   - duplicating an existing project on the same date (overlap),
     ///   - pushing the same-day total above 24 hours.
     ///
@@ -31,11 +32,16 @@ public static class TimesheetEntryValidator
     ///
     /// <paramref name="today"/> is optional; defaults to <see cref="DateTime.UtcNow"/>.
     /// Tests should pass an explicit value to avoid wall-clock coupling.
+    ///
+    /// <paramref name="assignedActivityTypeIds"/> is the activity types the
+    /// candidate's project has narrowed itself to. Null or empty means it has
+    /// narrowed nothing, and any activity is allowed.
     /// </summary>
     public static ValidationResult Validate(
         TimesheetEntry candidate,
         IEnumerable<TimesheetEntry> existing,
-        DateTime? today = null)
+        DateTime? today = null,
+        IReadOnlyCollection<int>? assignedActivityTypeIds = null)
     {
         if (candidate.HoursWorked <= 0)
             return ValidationResult.Fail("Hours worked must be greater than zero.");
@@ -46,6 +52,14 @@ public static class TimesheetEntryValidator
         var todayDate = (today ?? DateTime.UtcNow).Date;
         if (candidate.Date.Date > todayDate)
             return ValidationResult.Fail("Entries for future dates are not allowed.");
+
+        // A project that has narrowed the activity catalogue accepts only what it
+        // assigned. One that has assigned nothing accepts any activity, which is
+        // every project that predates project-level assignment.
+        if (assignedActivityTypeIds is { Count: > 0 }
+            && candidate.ActivityTypeId.HasValue
+            && !assignedActivityTypeIds.Contains(candidate.ActivityTypeId.Value))
+            return ValidationResult.Fail("That activity is not available on this project.");
 
         var sameDayEntries = existing
             .Where(e => e.Id != candidate.Id && e.Date.Date == candidate.Date.Date)

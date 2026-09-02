@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
 import MenuItem from '@mui/material/MenuItem'
 import Stack from '@mui/material/Stack'
@@ -21,6 +22,7 @@ import {
     deleteProject,
     getAdminUsers,
     getDepartments,
+    getProjectActivityTypes,
     getProjects,
     updateProject,
 } from '../../lib/api'
@@ -30,6 +32,7 @@ import type {
     AdminUser,
     Department,
     Project,
+    ProjectActivityType,
     ProjectStatus,
     UpsertProjectRequest,
 } from '../../lib/types'
@@ -96,6 +99,10 @@ function ProjectsPanel() {
     const { data: adminUsers = [] } = useQuery({
         queryKey: ['adminUsers'],
         queryFn: getAdminUsers,
+    })
+    const { data: activityTypes = [] } = useQuery({
+        queryKey: ['projectActivityTypes'],
+        queryFn: getProjectActivityTypes,
     })
 
     const filtered = useMemo(() => {
@@ -298,6 +305,7 @@ function ProjectsPanel() {
                 title="New Project"
                 departments={departments}
                 users={adminUsers}
+                activityTypes={activityTypes}
                 isPending={createMutation.isPending}
                 error={createMutation.error}
                 onClose={() => setCreateOpen(false)}
@@ -310,6 +318,7 @@ function ProjectsPanel() {
                 initial={editProject ?? undefined}
                 departments={departments}
                 users={adminUsers}
+                activityTypes={activityTypes}
                 isPending={updateMutation.isPending}
                 error={updateMutation.error}
                 onClose={() => setEditProject(null)}
@@ -651,6 +660,7 @@ function ProjectFormDialog(props: {
     initial?: Project
     departments: Department[]
     users: AdminUser[]
+    activityTypes: ProjectActivityType[]
     isPending: boolean
     error: Error | null
     onClose: () => void
@@ -666,6 +676,14 @@ function ProjectFormDialog(props: {
     const [colorKey, setColorKey] = useState<string>(i?.colorKey ?? 'p1')
     const [targetWeeklyHours, setTargetWeeklyHours] = useState<number>(i?.targetWeeklyHours ?? 0)
     const [targetMonthlyHours, setTargetMonthlyHours] = useState<number>(i?.targetMonthlyHours ?? 0)
+    const [activityTypeIds, setActivityTypeIds] = useState<number[]>(i?.activities.map((a) => a.id) ?? [])
+
+    // Offers what is enabled now, plus anything this project is already assigned:
+    // a type disabled after the fact stays visible so an unrelated edit cannot
+    // silently drop it from the project.
+    const activityOptions = props.activityTypes.filter(
+        (a) => a.isActive || activityTypeIds.includes(a.id),
+    )
 
     // Auto-generate a code from the name as the user types, only for new
     // projects with no manual code yet. Adjusted during render (not an effect)
@@ -701,6 +719,7 @@ function ProjectFormDialog(props: {
             colorKey,
             targetWeeklyHours: Number(targetWeeklyHours) || 0,
             targetMonthlyHours: Number(targetMonthlyHours) || 0,
+            activityTypeIds,
         })
     }
 
@@ -795,6 +814,36 @@ function ProjectFormDialog(props: {
                             ))}
                         </TextField>
                     </Stack>
+
+                    <TextField
+                        select
+                        id="project-activities"
+                        label="Activities"
+                        value={activityTypeIds}
+                        onChange={(e) => setActivityTypeIds(
+                            (e.target.value as unknown as number[]).map(Number),
+                        )}
+                        fullWidth
+                        helperText="Which activities time can be logged against. Leave empty to allow them all."
+                        SelectProps={{
+                            multiple: true,
+                            renderValue: (selected) => (
+                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                    {(selected as number[]).map((id) => (
+                                        <Chip
+                                            key={id}
+                                            size="small"
+                                            label={activityOptions.find((a) => a.id === id)?.name ?? id}
+                                        />
+                                    ))}
+                                </Box>
+                            ),
+                        }}
+                    >
+                        {activityOptions.map((a) => (
+                            <MenuItem key={a.id} value={a.id}>{a.name}</MenuItem>
+                        ))}
+                    </TextField>
 
                     <Stack direction="row" spacing={2}>
                         <TextField

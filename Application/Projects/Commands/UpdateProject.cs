@@ -1,5 +1,6 @@
 using Application.Core;
 using Application.Projects.DTOs;
+using Application.Projects.Support;
 using Domain;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -44,6 +45,11 @@ public class UpdateProject
                 && !await context.Users.AnyAsync(u => u.Id == req.OwnerId, cancellationToken))
                 return Result<ProjectDto>.Failure("Selected owner does not exist.");
 
+            var activityTypeIds = req.ActivityTypeIds.Distinct().ToList();
+            if (activityTypeIds.Count > 0
+                && await context.ProjectActivityTypes.CountAsync(a => activityTypeIds.Contains(a.Id), cancellationToken) != activityTypeIds.Count)
+                return Result<ProjectDto>.Failure("One or more selected activity types do not exist.");
+
             project.Name = name;
             project.Code = code;
             project.Description = (req.Description ?? string.Empty).Trim();
@@ -54,6 +60,19 @@ public class UpdateProject
             project.ColorKey = string.IsNullOrWhiteSpace(req.ColorKey) ? "p1" : req.ColorKey.Trim();
             project.TargetWeeklyHours = req.TargetWeeklyHours;
             project.TargetMonthlyHours = req.TargetMonthlyHours;
+
+            // Diffed rather than cleared and re-added so an unchanged selection
+            // produces no writes at all.
+            var existingAssignments = await context.ProjectActivityAssignments
+                .Where(a => a.ProjectId == project.Id)
+                .ToListAsync(cancellationToken);
+
+            context.ProjectActivityAssignments.RemoveRange(
+                existingAssignments.Where(a => !activityTypeIds.Contains(a.ActivityTypeId)));
+
+            context.ProjectActivityAssignments.AddRange(activityTypeIds
+                .Where(id => existingAssignments.All(a => a.ActivityTypeId != id))
+                .Select(id => new ProjectActivityAssignment { ProjectId = project.Id, ActivityTypeId = id }));
 
             await context.SaveChangesAsync(cancellationToken);
 
@@ -75,7 +94,8 @@ public class UpdateProject
                 ColorKey = project.ColorKey,
                 TargetWeeklyHours = project.TargetWeeklyHours,
                 TargetMonthlyHours = project.TargetMonthlyHours,
-                CreatedAt = project.CreatedAt
+                CreatedAt = project.CreatedAt,
+                Activities = await ProjectActivityLookup.ForProjectAsync(context, project.Id, cancellationToken)
             });
         }
     }

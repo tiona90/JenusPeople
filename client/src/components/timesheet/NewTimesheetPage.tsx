@@ -30,6 +30,7 @@ import {
 } from '../../lib/api'
 import { useStore } from '../../lib/mobx'
 import { formatElapsed, formatTime12, useAttendanceToday, useLiveElapsedMinutes } from '../../lib/hooks/useAttendance'
+import { activityOptionsFor, retainedActivityId } from '../../lib/project-activities'
 import type { Project, ProjectActivityType, UserInfo } from '../../lib/types'
 import type { Timesheet, TimesheetStatus } from '../../lib/types/timesheet'
 import type { TimesheetEntry } from '../../lib/types/timesheet-entry'
@@ -339,7 +340,21 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
             ...b,
             [key]: {
                 ...b[key],
-                tasks: b[key].tasks.map((t) => (t._id === taskId ? { ...t, [field]: value } : t)),
+                tasks: b[key].tasks.map((t) => {
+                    if (t._id !== taskId) return t
+                    const next = { ...t, [field]: value }
+
+                    // Switching project can strand an activity the new one has not
+                    // assigned, which the server would reject on save.
+                    if (field === 'projectId') {
+                        next.activityTypeId = retainedActivityId(
+                            next.activityTypeId,
+                            activeProjects.find((p) => String(p.id) === value),
+                            activeActivityTypes,
+                        )
+                    }
+                    return next
+                }),
             },
         }))
     }
@@ -997,7 +1012,10 @@ function DayCard({
                                     <MenuItem value="">
                                         <Box component="em" sx={{ color: 'text.disabled' }}>Activity…</Box>
                                     </MenuItem>
-                                    {activeActivityTypes.map((a) => (
+                                    {activityOptionsFor(
+                                        activeProjects.find((p) => String(p.id) === t.projectId),
+                                        activeActivityTypes,
+                                    ).map((a) => (
                                         <MenuItem key={a.id} value={String(a.id)}>
                                             {a.icon ? `${a.icon} ${a.name}` : a.name}
                                         </MenuItem>

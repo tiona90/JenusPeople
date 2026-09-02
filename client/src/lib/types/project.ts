@@ -2,6 +2,13 @@ import type { Department } from './department'
 
 export type ProjectStatus = 'Active' | 'OnHold' | 'Inactive'
 
+export interface ProjectActivity {
+    id: number
+    name: string
+    icon: string
+    colorKey: string
+}
+
 export interface ProjectTeamMember {
     userId: string
     displayName: string
@@ -30,6 +37,10 @@ export interface Project {
     hoursYTD: number
     teamSize: number
     team: ProjectTeamMember[]
+
+    // The activity types this project logs time against. Empty means the project
+    // has not narrowed the catalogue, and every active activity type applies.
+    activities: ProjectActivity[]
 }
 
 export interface UpsertProjectRequest {
@@ -44,4 +55,5 @@ export interface UpsertProjectRequest {
     colorKey: string
     targetWeeklyHours: number
     targetMonthlyHours: number
+    activityTypeIds: number[]
 }

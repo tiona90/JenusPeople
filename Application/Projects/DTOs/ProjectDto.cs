@@ -24,6 +24,20 @@ public class ProjectDto
     public decimal HoursYTD { get; set; }
     public int TeamSize { get; set; }
     public List<ProjectTeamMemberDto> Team { get; set; } = new();
+
+    /// <summary>
+    /// The activity types this project logs time against. Empty means the project
+    /// has not narrowed the catalogue, and every active activity type applies.
+    /// </summary>
+    public List<ProjectActivityDto> Activities { get; set; } = new();
+}
+
+public class ProjectActivityDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Icon { get; set; } = "🏷️";
+    public string ColorKey { get; set; } = "default";
 }
 
 public class ProjectTeamMemberDto

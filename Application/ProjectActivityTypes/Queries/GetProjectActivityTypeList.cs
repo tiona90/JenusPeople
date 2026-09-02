@@ -27,7 +27,7 @@ public class GetProjectActivityTypeList
                     ColorKey = a.ColorKey,
                     IsActive = a.IsActive,
                     HoursYtd = 0,
-                    UsedInProjects = 0,
+                    UsedInProjects = a.ProjectAssignments.Count,
                 })
                 .ToListAsync(cancellationToken);
         }

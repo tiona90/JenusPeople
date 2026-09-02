@@ -34,6 +34,7 @@ public class AppDbContext : IdentityDbContext<
     public DbSet<AttendanceEvent> AttendanceEvents { get; set; }
     public DbSet<PublicHoliday> PublicHolidays { get; set; }
     public DbSet<ProjectActivityType> ProjectActivityTypes { get; set; }
+    public DbSet<ProjectActivityAssignment> ProjectActivityAssignments { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -283,6 +284,25 @@ public class AppDbContext : IdentityDbContext<
 
             entity.Property(p => p.IsDeleted).HasDefaultValue(false).IsRequired();
             entity.HasQueryFilter(p => !p.IsDeleted);
+        });
+
+        builder.Entity<ProjectActivityAssignment>(entity =>
+        {
+            entity.HasKey(a => new { a.ProjectId, a.ActivityTypeId });
+
+            entity.HasOne(a => a.Project)
+                .WithMany(p => p.ActivityAssignments)
+                .HasForeignKey(a => a.ProjectId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(a => a.ActivityType)
+                .WithMany(t => t.ProjectAssignments)
+                .HasForeignKey(a => a.ActivityTypeId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Mirrors the filter on Project itself, so a soft-deleted project's
+            // assignments leave scope with it instead of lingering in the counts.
+            entity.HasQueryFilter(a => !a.Project!.IsDeleted);
         });
 
         builder.Entity<EmployeeProfile>(entity =>

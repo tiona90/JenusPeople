@@ -64,6 +64,16 @@ public class TimesheetEntriesController : ControllerBase
         return StatusCode(statusCode, ApiErrorResponseExtensions.Create(HttpContext, statusCode, access.Error));
     }
 
+    /// <summary>
+    /// The activity types the project has narrowed itself to — empty when it has
+    /// narrowed nothing, which leaves the whole catalogue available.
+    /// </summary>
+    private Task<List<int>> AssignedActivityTypeIdsAsync(int projectId, CancellationToken cancellationToken) =>
+        _context.ProjectActivityAssignments
+            .Where(a => a.ProjectId == projectId)
+            .Select(a => a.ActivityTypeId)
+            .ToListAsync(cancellationToken);
+
     private async Task RecalculateTotalHoursAsync(string timesheetId)
     {
         var timesheet = await _context.Timesheets.FindAsync(timesheetId);
@@ -101,7 +111,11 @@ public class TimesheetEntriesController : ControllerBase
         var existing = await _context.TimesheetEntries
             .Where(e => e.TimesheetId == timesheetId)
             .ToListAsync(cancellationToken);
-        var validation = TimesheetEntryValidator.Validate(entry, existing);
+        var validation = TimesheetEntryValidator.Validate(
+            entry,
+            existing,
+            today: null,
+            assignedActivityTypeIds: await AssignedActivityTypeIdsAsync(entry.ProjectId, cancellationToken));
         if (!validation.IsValid)
             throw new ArgumentException(validation.Error);
 
@@ -144,7 +158,11 @@ public class TimesheetEntriesController : ControllerBase
         if (!existing.Any(e => e.Id == entryId))
             return NotFound();
 
-        var validation = TimesheetEntryValidator.Validate(entry, existing);
+        var validation = TimesheetEntryValidator.Validate(
+            entry,
+            existing,
+            today: null,
+            assignedActivityTypeIds: await AssignedActivityTypeIdsAsync(entry.ProjectId, cancellationToken));
         if (!validation.IsValid)
             throw new ArgumentException(validation.Error);
 

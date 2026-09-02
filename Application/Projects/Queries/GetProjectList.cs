@@ -36,6 +36,23 @@ public class GetProjectList
 
             var projectIds = projects.Select(p => p.Id).ToList();
 
+            var activityAssignments = await context.ProjectActivityAssignments
+                .AsNoTracking()
+                .Where(a => projectIds.Contains(a.ProjectId))
+                .OrderBy(a => a.ActivityType!.Name)
+                .Select(a => new
+                {
+                    a.ProjectId,
+                    Activity = new ProjectActivityDto
+                    {
+                        Id = a.ActivityTypeId,
+                        Name = a.ActivityType!.Name,
+                        Icon = a.ActivityType.Icon,
+                        ColorKey = a.ActivityType.ColorKey,
+                    }
+                })
+                .ToListAsync(cancellationToken);
+
             var ytdEntries = await context.TimesheetEntries
                 .AsNoTracking()
                 .Where(e => projectIds.Contains(e.ProjectId) && e.Date >= yearStart)
@@ -91,7 +108,8 @@ public class GetProjectList
                     HoursThisMonth = monthly,
                     HoursYTD = ytd,
                     TeamSize = team.Count,
-                    Team = team
+                    Team = team,
+                    Activities = activityAssignments.Where(a => a.ProjectId == p.Id).Select(a => a.Activity).ToList()
                 });
             }
 

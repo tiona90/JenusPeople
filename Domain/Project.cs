@@ -29,4 +29,5 @@ public class Project : ISoftDeletable, IAuditable
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public bool IsDeleted { get; set; }
     public ICollection<TimesheetEntry> TimesheetEntries { get; set; } = new List<TimesheetEntry>();
+    public ICollection<ProjectActivityAssignment> ActivityAssignments { get; set; } = new List<ProjectActivityAssignment>();
 }

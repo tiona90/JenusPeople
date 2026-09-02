@@ -1,5 +1,6 @@
 using Application.Core;
 using Application.Projects.DTOs;
+using Application.Projects.Support;
 using Domain;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -35,6 +36,11 @@ public class CreateProject
                 && !await context.Users.AnyAsync(u => u.Id == req.OwnerId, cancellationToken))
                 return Result<ProjectDto>.Failure("Selected owner does not exist.");
 
+            var activityTypeIds = req.ActivityTypeIds.Distinct().ToList();
+            if (activityTypeIds.Count > 0
+                && await context.ProjectActivityTypes.CountAsync(a => activityTypeIds.Contains(a.Id), cancellationToken) != activityTypeIds.Count)
+                return Result<ProjectDto>.Failure("One or more selected activity types do not exist.");
+
             var project = new Project
             {
                 Name = name,
@@ -50,6 +56,9 @@ public class CreateProject
                 CreatedAt = DateTime.UtcNow
             };
 
+            foreach (var activityTypeId in activityTypeIds)
+                project.ActivityAssignments.Add(new ProjectActivityAssignment { ActivityTypeId = activityTypeId });
+
             context.Projects.Add(project);
             await context.SaveChangesAsync(cancellationToken);
 
@@ -57,7 +66,9 @@ public class CreateProject
             await context.Entry(project).Reference(p => p.Department).LoadAsync(cancellationToken);
             await context.Entry(project).Reference(p => p.Owner).LoadAsync(cancellationToken);
 
-            return Result<ProjectDto>.Success(ToDto(project));
+            var dto = ToDto(project);
+            dto.Activities = await ProjectActivityLookup.ForProjectAsync(context, project.Id, cancellationToken);
+            return Result<ProjectDto>.Success(dto);
         }
 
         private static ProjectDto ToDto(Project p) => new()
