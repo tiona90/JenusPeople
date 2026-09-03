@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Controller, useForm } from 'react-hook-form'
+import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useLocation } from 'react-router-dom'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { observer } from 'mobx-react-lite'
 import AccessTimeRoundedIcon from '@mui/icons-material/AccessTimeRounded'
 import AccessAlarmRoundedIcon from '@mui/icons-material/AccessAlarmRounded'
@@ -46,24 +46,18 @@ import Typography from '@mui/material/Typography'
 import { ThemeProvider } from '@mui/material/styles'
 import { buildTheme } from '../../lib/theme'
 import { AppDialog, AppDialogTitle, AppDialogContent, AppDialogActions, cancelBtnSx, saveBtnSx } from '../ui'
-import { getDepartments, updateProfile, uploadProfileImage } from '../../lib/api'
+import { updateProfile, uploadProfileImage } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
-import type { Department } from '../../lib/types'
 import { useStore } from '../../lib/mobx'
 
-function buildProfileSchema(requireDepartment: boolean) {
-    return z.object({
-        displayName: z.string().trim().min(1, 'Display name is required.'),
-        email: z.string().trim().min(1, 'Email is required.').email('Enter a valid email address.'),
-        phoneNumber: z.string().trim().max(30, 'Phone number is too long.').optional(),
-        dateOfBirth: z.string().optional() // "yyyy-MM-dd" from the date input, or ''
-            .refine((v) => !v || v <= new Date().toISOString().slice(0, 10), 'Date of birth must be in the past.'),
-        departmentId: requireDepartment
-            ? z.number().int().positive('Department is required.')
-            : z.number().int().nonnegative(),
-    })
-}
-type ProfileFormValues = z.infer<ReturnType<typeof buildProfileSchema>>
+const profileSchema = z.object({
+    displayName: z.string().trim().min(1, 'Display name is required.'),
+    email: z.string().trim().min(1, 'Email is required.').email('Enter a valid email address.'),
+    phoneNumber: z.string().trim().max(30, 'Phone number is too long.').optional(),
+    dateOfBirth: z.string().optional() // "yyyy-MM-dd" from the date input, or ''
+        .refine((v) => !v || v <= new Date().toISOString().slice(0, 10), 'Date of birth must be in the past.'),
+})
+type ProfileFormValues = z.infer<typeof profileSchema>
 
 type NavSection = { kind: 'section'; label: string }
 type NavItem = {
@@ -86,7 +80,7 @@ const Sidebar = observer(function Sidebar() {
 
     const isAdminUser = authStore.user?.roles?.includes('Admin') ?? false
     const isManagerUser = authStore.user?.roles?.includes('Manager') ?? false
-    const shouldShowDepartmentField = !isAdminUser
+    const shouldShowDepartment = !isAdminUser
 
     const displayName = authStore.user?.displayName ?? authStore.user?.userName ?? 'User'
     const initials = displayName
@@ -106,21 +100,10 @@ const Sidebar = observer(function Sidebar() {
 
     // Edit profile dialog
     const [isEditOpen, setIsEditOpen] = useState(false)
-    const profileSchema = useMemo(
-        () => buildProfileSchema(shouldShowDepartmentField),
-        [shouldShowDepartmentField],
-    )
-    const { control, register, handleSubmit, reset, formState: { errors } } = useForm<ProfileFormValues>({
+    const { register, handleSubmit, reset, formState: { errors } } = useForm<ProfileFormValues>({
         resolver: zodResolver(profileSchema),
-        defaultValues: { displayName: '', email: '', phoneNumber: '', dateOfBirth: '', departmentId: 0 },
+        defaultValues: { displayName: '', email: '', phoneNumber: '', dateOfBirth: '' },
     })
-
-    const { data: departments = [], isLoading: isLoadingDepartments, isError: isDepartmentsError } = useQuery({
-        queryKey: ['departments'],
-        queryFn: getDepartments,
-        enabled: authStore.isAuthenticated,
-    })
-    const activeDepartments = departments.filter((d: Department) => d.isActive)
 
     const uploadImageMutation = useMutation({
         mutationFn: (file: File) => uploadProfileImage(file),
@@ -149,7 +132,6 @@ const Sidebar = observer(function Sidebar() {
             email: authStore.user?.email ?? '',
             phoneNumber: authStore.user?.phoneNumber ?? '',
             dateOfBirth: authStore.user?.dateOfBirth ?? '',
-            departmentId: authStore.user?.departmentId ?? 0,
         })
         updateProfileMutation.reset()
         setIsEditOpen(true)
@@ -164,7 +146,6 @@ const Sidebar = observer(function Sidebar() {
             email: authStore.user?.email ?? '',
             phoneNumber: authStore.user?.phoneNumber ?? '',
             dateOfBirth: authStore.user?.dateOfBirth ?? '',
-            departmentId: authStore.user?.departmentId ?? 0,
         })
         // We intentionally re-init only when the dialog opens — reset is stable.
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -176,7 +157,6 @@ const Sidebar = observer(function Sidebar() {
             email: values.email.trim(),
             phoneNumber: values.phoneNumber?.trim() || null,
             dateOfBirth: values.dateOfBirth || null,
-            departmentId: values.departmentId,
         })
     })
 
@@ -486,34 +466,14 @@ const Sidebar = observer(function Sidebar() {
                             fullWidth
                         />
 
-                        {shouldShowDepartmentField && (
-                            <>
-                                <Controller
-                                    name="departmentId"
-                                    control={control}
-                                    render={({ field }) => (
-                                        <TextField
-                                            select
-                                            label="Department"
-                                            {...field}
-                                            value={field.value ? String(field.value) : ''}
-                                            onChange={(e) => field.onChange(Number(e.target.value))}
-                                            error={!!errors.departmentId}
-                                            helperText={errors.departmentId?.message ?? (isLoadingDepartments ? 'Loading departments...' : 'Select your department.')}
-                                            disabled={isLoadingDepartments || activeDepartments.length === 0}
-                                            required
-                                            fullWidth
-                                        >
-                                            {activeDepartments.map((d: Department) => (
-                                                <MenuItem key={d.id} value={d.id}>{d.name}</MenuItem>
-                                            ))}
-                                        </TextField>
-                                    )}
-                                />
-                                {isDepartmentsError && (
-                                    <Alert severity="error">Unable to load departments. Please refresh and try again.</Alert>
-                                )}
-                            </>
+                        {shouldShowDepartment && (
+                            <TextField
+                                label="Department"
+                                value={authStore.user?.departmentName ?? ''}
+                                helperText="Contact an administrator to change your department."
+                                disabled
+                                fullWidth
+                            />
                         )}
 
                         {updateProfileMutation.isError && (
@@ -531,7 +491,7 @@ const Sidebar = observer(function Sidebar() {
                         variant="contained"
                         onClick={() => void onEditSubmit()}
                         sx={saveBtnSx}
-                        disabled={updateProfileMutation.isPending || (shouldShowDepartmentField && (isLoadingDepartments || activeDepartments.length === 0))}
+                        disabled={updateProfileMutation.isPending}
                         startIcon={updateProfileMutation.isPending ? <CircularProgress size={16} color="inherit" /> : null}
                     >
                         Save

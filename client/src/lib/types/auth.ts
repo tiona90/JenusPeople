@@ -18,7 +18,6 @@ export interface ResetPasswordRequest {
 export interface UpdateProfileRequest {
     displayName: string
     email: string
-    departmentId: number
     phoneNumber?: string | null
     dateOfBirth?: string | null // ISO date "yyyy-MM-dd" or null to clear
 }

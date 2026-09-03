@@ -222,6 +222,7 @@ public class AccountController(
         }
 
         var employeeProfile = await context.EmployeeProfiles
+            .Include(profile => profile.Department)
             .FirstOrDefaultAsync(profile => profile.UserId == user.Id);
 
         if (employeeProfile is null)
@@ -229,19 +230,12 @@ public class AccountController(
             return BadRequest(new { message = "Employee profile could not be found." });
         }
 
-        var department = await context.Departments
-            .AsNoTracking()
-            .FirstOrDefaultAsync(d => d.Id == request.DepartmentId && d.IsActive);
-
-        if (department is null)
-        {
-            return BadRequest(new { message = "The selected department is invalid or inactive." });
-        }
-
+        // Department is assigned by an administrator (see AdminUsersController), not
+        // self-service: reassigning it here would let a user change which
+        // department's data they and their manager can see.
         user.DisplayName = displayName;
         user.PhoneNumber = string.IsNullOrWhiteSpace(request.PhoneNumber) ? null : request.PhoneNumber.Trim();
         user.DateOfBirth = request.DateOfBirth;
-        employeeProfile.DepartmentId = department.Id;
 
         var result = await userManager.UpdateAsync(user);
 
@@ -276,8 +270,8 @@ public class AccountController(
             email = user.Email,
             phoneNumber = user.PhoneNumber,
             dateOfBirth = user.DateOfBirth,
-            departmentId = department.Id,
-            departmentName = department.Name,
+            departmentId = employeeProfile.DepartmentId,
+            departmentName = employeeProfile.Department?.Name,
             emailChangePending,
             pendingEmail = emailChangePending ? requestedEmail : null
         });
