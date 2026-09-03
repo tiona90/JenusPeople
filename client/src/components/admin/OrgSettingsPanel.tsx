@@ -84,7 +84,7 @@ export default function OrgSettingsPanel() {
     const queryClient = useQueryClient()
     const { data: saved, isLoading, isError, error } = useQuery({ queryKey: ['appSettings'], queryFn: getAppSettings })
 
-    const [form, setForm] = useState<AppSettings | null>(null)
+    const [form, setForm] = useState<AppSettings | null>(saved ?? null)
     const [showSaved, setShowSaved] = useState(false)
 
     // Sync the loaded settings into editable form state. Adjusted during render

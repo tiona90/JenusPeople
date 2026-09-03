@@ -122,6 +122,21 @@ describe('the leave year is editable in exactly one place', () => {
     })
 })
 
+describe('the reminders page reads settings that were already cached', () => {
+    it('shows the cached data instead of "Failed to load settings" when another page warmed the query cache first', async () => {
+        // Dashboard, AppSettingsPanel and others all query ['appSettings'], so by the
+        // time an admin reaches this page the data is typically already cached — the
+        // query resolves synchronously on mount with isLoading/isError both false.
+        const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        queryClient.setQueryData(['appSettings'], SETTINGS)
+        render(<QueryClientProvider client={queryClient}><OrgSettingsPanel /></QueryClientProvider>)
+
+        await screen.findByText('🔔 Notification Settings')
+        expect(screen.queryByText('Failed to load settings.')).not.toBeInTheDocument()
+        expect(screen.getByText('Pending Approvals')).toBeInTheDocument()
+    })
+})
+
 describe('each settings block has one home', () => {
     it('keeps the organization block with the rest of the org-wide settings', async () => {
         renderPanel(<AppSettingsPanel />)

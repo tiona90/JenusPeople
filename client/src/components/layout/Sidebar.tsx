@@ -194,9 +194,9 @@ const Sidebar = observer(function Sidebar() {
             // Not the Apartment icon: "Attendance" below already reads as that.
             { kind: 'item', label: 'Departments', icon: <AccountTreeRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('departments'), active: onAdminSection('departments') },
             { kind: 'section', label: 'Leave & Time' },
-            { kind: 'item', label: 'Leave Management', icon: <CalendarMonthRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamLeave(), active: onPage('/team-leave') },
-            { kind: 'item', label: 'Attendance', icon: <ApartmentRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToCompanyAttendance(), active: onPage('/company-attendance') },
-            { kind: 'item', label: 'Timesheets', icon: <AccessTimeRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamTimesheets(), active: onPage('/team-timesheets') },
+            { kind: 'item', label: 'Leave Management', icon: <CalendarMonthRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamLeave(), active: onPage('/leave-management') },
+            { kind: 'item', label: 'Attendance', icon: <ApartmentRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToCompanyAttendance(), active: onPage('/attendance-management') },
+            { kind: 'item', label: 'Timesheets', icon: <AccessTimeRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamTimesheets(), active: onPage('/timesheets-management') },
             { kind: 'section', label: 'Configuration' },
             { kind: 'section', label: 'Project Setting', sub: true },
             { kind: 'item', label: 'Projects', icon: <FolderRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('projects'), active: onAdminSection('projects'), indent: true },
@@ -208,7 +208,7 @@ const Sidebar = observer(function Sidebar() {
             { kind: 'section', label: 'System' },
             // Named for everything it holds: the leave year, the timesheet policy, the
             // public-holiday country and the working week all live on this one page.
-            { kind: 'item', label: 'Organization', icon: <EventRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('settings'), active: onAdminSection('settings') },
+            { kind: 'item', label: 'Organization', icon: <EventRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('organization'), active: onAdminSection('organization') },
             { kind: 'item', label: 'Notification Settings', icon: <NotificationsActiveRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('reminders-notifications'), active: onAdminSection('reminders-notifications') },
             { kind: 'item', label: 'Data Maintenance', icon: <StorageRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('maintenance'), active: onAdminSection('maintenance') },
         ]
@@ -227,11 +227,11 @@ const Sidebar = observer(function Sidebar() {
             { kind: 'item', label: 'Submit Timesheet', icon: <NoteAddRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToNewTimesheet(), active: onPage('/new-timesheet') },
             { kind: 'item', label: 'My Timesheets', icon: <AccessTimeRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTimesheets(), active: onPage('/timesheets') },
             { kind: 'section', label: 'My Team' },
-            { kind: 'item', label: 'Team Leave', icon: <GroupRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamLeave(), active: onPage('/team-leave') },
+            { kind: 'item', label: 'Leave Management', icon: <GroupRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamLeave(), active: onPage('/leave-management') },
             { kind: 'item', label: 'Team Attendance', icon: <VisibilityRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamAttendance(), active: onPage('/team-attendance') },
-            // Not GroupRounded like Team Leave above: two entries in the same
+            // Not GroupRounded like Leave Management above: two entries in the same
             // section reading as the same icon is what made them hard to tell apart.
-            { kind: 'item', label: 'Approvals', icon: <FactCheckRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamTimesheets(), active: onPage('/team-timesheets') },
+            { kind: 'item', label: 'Approvals', icon: <FactCheckRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamTimesheets(), active: onPage('/timesheets-management') },
         ]
     } else {
         navEntries = [

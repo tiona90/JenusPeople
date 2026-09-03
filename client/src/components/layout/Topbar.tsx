@@ -251,12 +251,12 @@ const Topbar = observer(function Topbar() {
     const path = location.pathname
     if (path.startsWith('/my-leave')) pageTitle = 'My Leave'
     else if (path.startsWith('/apply-leave')) pageTitle = 'Apply for Leave'
-    else if (path.startsWith('/team-leave')) pageTitle = isAdminUser ? 'Leave Management' : 'Team Leave'
-    else if (path.startsWith('/team-timesheets')) pageTitle = isAdminUser ? 'Timesheets' : 'Approvals'
+    else if (path.startsWith('/leave-management')) pageTitle = isAdminUser ? 'Leave Management' : 'Team Leave'
+    else if (path.startsWith('/timesheets-management')) pageTitle = isAdminUser ? 'Timesheets' : 'Approvals'
     else if (path.startsWith('/timesheets')) pageTitle = isAdminUser ? 'All Timesheets' : 'My Timesheets'
     else if (path.startsWith('/new-timesheet')) pageTitle = 'Submit Timesheet'
     else if (path.startsWith('/team-attendance')) pageTitle = 'Team Attendance'
-    else if (path.startsWith('/company-attendance')) pageTitle = 'Attendance'
+    else if (path.startsWith('/attendance-management')) pageTitle = 'Attendance'
     else if (path.startsWith('/attendance')) pageTitle = 'My Attendance'
     else if (path.startsWith('/admin/')) {
         const s = path.split('/')[2]
@@ -267,7 +267,7 @@ const Topbar = observer(function Topbar() {
         else if (s === 'project-activities') pageTitle = 'Activities'
         else if (s === 'components') pageTitle = 'Components'
         else if (s === 'project-types') pageTitle = 'Project Types'
-        else if (s === 'settings') pageTitle = 'Organization'
+        else if (s === 'organization') pageTitle = 'Organization'
         else if (s === 'reminders-notifications') pageTitle = 'Notification Settings'
         else if (s === 'maintenance') pageTitle = 'Data Maintenance'
         else pageTitle = 'Administration'

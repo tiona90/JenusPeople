@@ -121,7 +121,7 @@ const DashboardHome = observer(function DashboardHome() {
     if (isAdmin && adminSection === 'project-activities') return <ActivityTypesPanel />
     if (isAdmin && adminSection === 'components') return <ComponentsPanel />
     if (isAdmin && adminSection === 'project-types') return <ProjectTypesPanel />
-    if (isAdmin && adminSection === 'settings') return <AppSettingsPanel />
+    if (isAdmin && adminSection === 'organization') return <AppSettingsPanel />
     if (isAdmin && adminSection === 'reminders-notifications') return <OrgSettingsPanel />
     if (isAdmin && adminSection === 'maintenance') return <DataMaintenancePanel />
 

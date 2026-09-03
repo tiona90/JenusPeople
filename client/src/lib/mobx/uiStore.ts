@@ -1,7 +1,7 @@
 import { makeAutoObservable } from 'mobx'
 
 export type MyLeaveSection = 'apply' | 'requests' | 'balance' | 'other' | 'history'
-export type AdminSection = 'dashboard' | 'settings' | 'reminders-notifications' | 'maintenance' | 'leave' | 'leave-types' | 'users' | 'departments' | 'projects' | 'project-activities' | 'components' | 'project-types'
+export type AdminSection = 'dashboard' | 'organization' | 'reminders-notifications' | 'maintenance' | 'leave' | 'leave-types' | 'users' | 'departments' | 'projects' | 'project-activities' | 'components' | 'project-types'
 export type ThemeMode = 'light' | 'dark'
 // 'system' is the popular admin-dashboard hybrid: light body content with a
 // dark sidebar + topbar (the "chrome"). 'light' / 'dark' make both surfaces
@@ -87,16 +87,16 @@ class UiStore {
     navigateToAdminSection(section: AdminSection) { this.go(`/admin/${section}`) }
     navigateToMyLeave(section: MyLeaveSection = 'requests') { this.go(`/my-leave/${section}`) }
     navigateToApplyLeave() { this.go('/apply-leave') }
-    navigateToTeamLeave() { this.go('/team-leave') }
+    navigateToTeamLeave() { this.go('/leave-management') }
     navigateToTimesheets() { this.go('/timesheets') }
-    navigateToTeamTimesheets() { this.go('/team-timesheets') }
+    navigateToTeamTimesheets() { this.go('/timesheets-management') }
     navigateToNewTimesheet(targetWeekStart?: string) {
         this.pendingWeekStart = targetWeekStart ?? null
         this.go('/new-timesheet')
     }
     navigateToAttendance() { this.go('/attendance') }
     navigateToTeamAttendance() { this.go('/team-attendance') }
-    navigateToCompanyAttendance() { this.go('/company-attendance') }
+    navigateToCompanyAttendance() { this.go('/attendance-management') }
 
     consumePendingWeekStart(): string | null {
         const v = this.pendingWeekStart

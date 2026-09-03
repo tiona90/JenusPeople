@@ -266,13 +266,13 @@ const AppInner = observer(function AppInner() {
                         <Route path="/my-leave" element={<Navigate to="/my-leave/requests" replace />} />
                         <Route path="/my-leave/:section" element={<MyLeaveRoute />} />
                         <Route path="/apply-leave" element={<ApplyLeaveRoute />} />
-                        <Route path="/team-leave" element={<TeamLeaveRoute />} />
+                        <Route path="/leave-management" element={<TeamLeaveRoute />} />
                         <Route path="/timesheets" element={<TimesheetsRoute />} />
-                        <Route path="/team-timesheets" element={<TeamTimesheetsRoute />} />
+                        <Route path="/timesheets-management" element={<TeamTimesheetsRoute />} />
                         <Route path="/new-timesheet" element={<NewTimesheetRoute />} />
                         <Route path="/attendance" element={<AttendancePage />} />
                         <Route path="/team-attendance" element={<TeamAttendancePage />} />
-                        <Route path="/company-attendance" element={<CompanyAttendancePage />} />
+                        <Route path="/attendance-management" element={<CompanyAttendancePage />} />
 
                         {/* Admin-only nested routes — gated by role inside ProtectedRoute */}
                         <Route element={<ProtectedRoute roles={['Admin']} />}>
