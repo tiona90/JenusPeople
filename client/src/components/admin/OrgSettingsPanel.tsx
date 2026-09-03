@@ -82,7 +82,7 @@ function SettingRow({ label, desc, control }: { label: string; desc: string; con
 
 export default function OrgSettingsPanel() {
     const queryClient = useQueryClient()
-    const { data: saved, isLoading } = useQuery({ queryKey: ['appSettings'], queryFn: getAppSettings })
+    const { data: saved, isLoading, isError, error } = useQuery({ queryKey: ['appSettings'], queryFn: getAppSettings })
 
     const [form, setForm] = useState<AppSettings | null>(null)
     const [showSaved, setShowSaved] = useState(false)
@@ -119,8 +119,11 @@ export default function OrgSettingsPanel() {
     const isDirty = useMemo(() => JSON.stringify(form) !== JSON.stringify(saved), [form, saved])
     const enabledCount = form?.reminders.filter((r) => r.enabled).length ?? 0
 
-    if (isLoading || !form) {
+    if (isLoading) {
         return <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress size={28} /></Box>
+    }
+    if (isError || !form) {
+        return <Box sx={{ p: 2 }}><Alert severity="error">{getApiErrorMessage(error, 'Failed to load settings.')}</Alert></Box>
     }
 
     const set = <K extends keyof AppSettings>(key: K, val: AppSettings[K]) => setForm((f) => (f ? { ...f, [key]: val } : f))
