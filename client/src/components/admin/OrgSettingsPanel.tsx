@@ -150,7 +150,7 @@ export default function OrgSettingsPanel() {
         <Stack spacing={2}>
             {/* Header */}
             <Box>
-                <Typography sx={{ fontSize: 22, fontWeight: 700, color: 'text.primary' }}>🔔 Reminders & Notifications</Typography>
+                <Typography sx={{ fontSize: 22, fontWeight: 700, color: 'text.primary' }}>🔔 Notification Settings</Typography>
                 <Typography sx={{ fontSize: 14, color: 'text.secondary' }}>Configure reminders and notifications for your organization</Typography>
             </Box>
 

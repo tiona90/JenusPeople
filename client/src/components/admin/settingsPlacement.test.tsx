@@ -7,7 +7,7 @@ import DataMaintenancePanel from './DataMaintenancePanel'
 import OrgSettingsPanel from './OrgSettingsPanel'
 
 /*
- * Three unrelated things shared the "Reminders & Notifications" page: the reminder
+ * Three unrelated things shared the "Notification Settings" page: the reminder
  * schedule, an Organization Settings block, and a Danger Zone whose button deletes
  * thirty days of approval records for good. The organization block also duplicated
  * the leave year — its "Financial year · When leave allocations reset" wrote
@@ -85,7 +85,7 @@ function selectOptionSets() {
 }
 
 describe('the leave year is editable in exactly one place', () => {
-    it('offers the year on Leave & Organization settings', async () => {
+    it('offers the year on Organization settings', async () => {
         renderPanel(<AppSettingsPanel />)
         await screen.findByText('Leave Year Configuration')
 
@@ -93,9 +93,9 @@ describe('the leave year is editable in exactly one place', () => {
         expect(screen.getByText('Also the financial year — when leave allocations reset')).toBeInTheDocument()
     })
 
-    it('offers no year — financial or leave — on Reminders & Notifications', async () => {
+    it('offers no year — financial or leave — on Notification Settings', async () => {
         renderPanel(<OrgSettingsPanel />)
-        await screen.findByText('🔔 Reminders & Notifications')
+        await screen.findByText('🔔 Notification Settings')
 
         expect(screen.queryByText('Financial year')).not.toBeInTheDocument()
         expect(screen.queryByText('When leave allocations reset')).not.toBeInTheDocument()
@@ -137,7 +137,7 @@ describe('each settings block has one home', () => {
 
     it('leaves the reminders page to reminders and notifications', async () => {
         renderPanel(<OrgSettingsPanel />)
-        await screen.findByText('🔔 Reminders & Notifications')
+        await screen.findByText('🔔 Notification Settings')
 
         expect(screen.getByText('Reminders')).toBeInTheDocument()
         expect(screen.getByText('Email Notifications')).toBeInTheDocument()
@@ -152,7 +152,7 @@ describe('each settings block has one home', () => {
 describe('the irreversible action is off the preferences page', () => {
     it('no longer sits under the notification toggles', async () => {
         renderPanel(<OrgSettingsPanel />)
-        await screen.findByText('🔔 Reminders & Notifications')
+        await screen.findByText('🔔 Notification Settings')
 
         expect(screen.queryByText('Danger Zone')).not.toBeInTheDocument()
         expect(screen.queryByText('Clear all approval history')).not.toBeInTheDocument()

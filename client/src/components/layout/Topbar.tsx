@@ -251,23 +251,24 @@ const Topbar = observer(function Topbar() {
     const path = location.pathname
     if (path.startsWith('/my-leave')) pageTitle = 'My Leave'
     else if (path.startsWith('/apply-leave')) pageTitle = 'Apply for Leave'
-    else if (path.startsWith('/team-leave')) pageTitle = isAdminUser ? 'All Leave Requests' : 'Team Leave'
-    else if (path.startsWith('/team-timesheets')) pageTitle = isAdminUser ? 'All Timesheets' : 'Team Timesheets'
+    else if (path.startsWith('/team-leave')) pageTitle = isAdminUser ? 'Leave Management' : 'Team Leave'
+    else if (path.startsWith('/team-timesheets')) pageTitle = isAdminUser ? 'Timesheets' : 'Approvals'
     else if (path.startsWith('/timesheets')) pageTitle = isAdminUser ? 'All Timesheets' : 'My Timesheets'
-    else if (path.startsWith('/new-timesheet')) pageTitle = 'Apply Timesheet'
+    else if (path.startsWith('/new-timesheet')) pageTitle = 'Submit Timesheet'
     else if (path.startsWith('/team-attendance')) pageTitle = 'Team Attendance'
-    else if (path.startsWith('/company-attendance')) pageTitle = 'Company Attendance'
+    else if (path.startsWith('/company-attendance')) pageTitle = 'Attendance'
     else if (path.startsWith('/attendance')) pageTitle = 'My Attendance'
     else if (path.startsWith('/admin/')) {
         const s = path.split('/')[2]
-        if (s === 'users') pageTitle = 'User Management'
+        if (s === 'users') pageTitle = 'Users'
         else if (s === 'departments') pageTitle = 'Departments'
         else if (s === 'leave-types' || s === 'leave') pageTitle = 'Leave Types'
         else if (s === 'projects') pageTitle = 'Projects'
-        else if (s === 'project-activities') pageTitle = 'Project Activities'
-        else if (s === 'components') pageTitle = 'Project Components'
-        else if (s === 'settings') pageTitle = 'Leave & Organization Settings'
-        else if (s === 'reminders-notifications') pageTitle = 'Reminders & Notifications'
+        else if (s === 'project-activities') pageTitle = 'Activities'
+        else if (s === 'components') pageTitle = 'Components'
+        else if (s === 'project-types') pageTitle = 'Project Types'
+        else if (s === 'settings') pageTitle = 'Organization'
+        else if (s === 'reminders-notifications') pageTitle = 'Notification Settings'
         else if (s === 'maintenance') pageTitle = 'Data Maintenance'
         else pageTitle = 'Administration'
     }
@@ -294,39 +295,54 @@ const Topbar = observer(function Topbar() {
                 {pageTitle}
             </Typography>
 
+            {/* Personal controls — grouped as one cluster and set off from the page
+                title (which reflects navigation) with a divider and a pill container. */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                <AttendanceWidget enabled={!!authStore.user && !isAdminUser} />
-                <ToggleButtonGroup
-                    size="small"
-                    exclusive
-                    value={uiStore.themePreference}
-                    onChange={(_, next: ThemePreference | null) => { if (next) uiStore.setThemePreference(next) }}
-                    aria-label="Color mode"
-                    sx={{ '& .MuiToggleButton-root': { px: 1, py: 0.5, border: 0 } }}
+                <Divider orientation="vertical" flexItem sx={{ my: 1 }} />
+                <Box
+                    sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1,
+                        px: 1,
+                        py: 0.5,
+                        borderRadius: 999,
+                        bgcolor: 'action.hover',
+                    }}
                 >
-                    <Tooltip title="Light">
-                        <ToggleButton value="light" aria-label="Light mode">
-                            <LightModeRoundedIcon fontSize="small" />
-                        </ToggleButton>
+                    <AttendanceWidget enabled={!!authStore.user && !isAdminUser} />
+                    <ToggleButtonGroup
+                        size="small"
+                        exclusive
+                        value={uiStore.themePreference}
+                        onChange={(_, next: ThemePreference | null) => { if (next) uiStore.setThemePreference(next) }}
+                        aria-label="Color mode"
+                        sx={{ '& .MuiToggleButton-root': { px: 1, py: 0.5, border: 0 } }}
+                    >
+                        <Tooltip title="Light">
+                            <ToggleButton value="light" aria-label="Light mode">
+                                <LightModeRoundedIcon fontSize="small" />
+                            </ToggleButton>
+                        </Tooltip>
+                        <Tooltip title="Dark">
+                            <ToggleButton value="dark" aria-label="Dark mode">
+                                <DarkModeRoundedIcon fontSize="small" />
+                            </ToggleButton>
+                        </Tooltip>
+                        <Tooltip title="System · dark chrome, light body">
+                            <ToggleButton value="system" aria-label="System mode">
+                                <SettingsBrightnessRoundedIcon fontSize="small" />
+                            </ToggleButton>
+                        </Tooltip>
+                    </ToggleButtonGroup>
+                    <Tooltip title="Notifications">
+                        <IconButton size="small" onClick={(e) => setAnchorEl(e.currentTarget)}>
+                            <Badge badgeContent={unreadCount} color="error">
+                                <NotificationsNoneRoundedIcon />
+                            </Badge>
+                        </IconButton>
                     </Tooltip>
-                    <Tooltip title="Dark">
-                        <ToggleButton value="dark" aria-label="Dark mode">
-                            <DarkModeRoundedIcon fontSize="small" />
-                        </ToggleButton>
-                    </Tooltip>
-                    <Tooltip title="System · dark chrome, light body">
-                        <ToggleButton value="system" aria-label="System mode">
-                            <SettingsBrightnessRoundedIcon fontSize="small" />
-                        </ToggleButton>
-                    </Tooltip>
-                </ToggleButtonGroup>
-                <Tooltip title="Notifications">
-                    <IconButton size="small" onClick={(e) => setAnchorEl(e.currentTarget)}>
-                        <Badge badgeContent={unreadCount} color="error">
-                            <NotificationsNoneRoundedIcon />
-                        </Badge>
-                    </IconButton>
-                </Tooltip>
+                </Box>
             </Box>
 
             <Menu

@@ -53,19 +53,21 @@ import { useStore } from '../../lib/mobx'
 const profileSchema = z.object({
     displayName: z.string().trim().min(1, 'Display name is required.'),
     email: z.string().trim().min(1, 'Email is required.').email('Enter a valid email address.'),
-    phoneNumber: z.string().trim().max(30, 'Phone number is too long.').optional(),
+    phoneNumber: z.string().trim().max(30, 'Phone number is too long.')
+        .regex(/^[0-9+\s()-]*$/, 'Phone number can only contain numbers.').optional(),
     dateOfBirth: z.string().optional() // "yyyy-MM-dd" from the date input, or ''
         .refine((v) => !v || v <= new Date().toISOString().slice(0, 10), 'Date of birth must be in the past.'),
 })
 type ProfileFormValues = z.infer<typeof profileSchema>
 
-type NavSection = { kind: 'section'; label: string }
+type NavSection = { kind: 'section'; label: string; sub?: boolean }
 type NavItem = {
     kind: 'item'
     label: string
     icon: React.ReactNode
     onClick: () => void
     active: boolean
+    indent?: boolean
 }
 type NavEntry = NavSection | NavItem
 
@@ -184,32 +186,31 @@ const Sidebar = observer(function Sidebar() {
         navEntries = [
             { kind: 'section', label: 'Overview' },
             { kind: 'item', label: 'Dashboard', icon: <DashboardRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToDashboard(), active: onPage('/dashboard') },
-            { kind: 'section', label: 'Annual Leave' },
-            { kind: 'item', label: 'All Leave', icon: <CalendarMonthRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamLeave(), active: onPage('/team-leave') },
-            { kind: 'section', label: 'Time' },
-            { kind: 'item', label: 'Company Attendance', icon: <ApartmentRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToCompanyAttendance(), active: onPage('/company-attendance') },
-            { kind: 'section', label: 'Timesheets' },
-            { kind: 'item', label: 'All Timesheets', icon: <AccessTimeRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamTimesheets(), active: onPage('/team-timesheets') },
             // One flat "Administration" list put eight unrelated pages in a row, four of
             // them opening with the same word. Split it by what each page administers,
             // which also lets the project pages drop the prefix their own header carries.
             { kind: 'section', label: 'People' },
             { kind: 'item', label: 'Users', icon: <PeopleRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('users'), active: onAdminSection('users') },
-            // Not the Apartment icon: "Company Attendance" above already reads as that.
+            // Not the Apartment icon: "Attendance" below already reads as that.
             { kind: 'item', label: 'Departments', icon: <AccountTreeRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('departments'), active: onAdminSection('departments') },
-            { kind: 'section', label: 'Project Setup' },
-            { kind: 'item', label: 'Projects', icon: <FolderRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('projects'), active: onAdminSection('projects') },
-            { kind: 'item', label: 'Activities', icon: <CategoryRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('project-activities'), active: onAdminSection('project-activities') },
-            { kind: 'item', label: 'Components', icon: <ExtensionRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('components'), active: onAdminSection('components') },
-            { kind: 'item', label: 'Types', icon: <StyleRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('project-types'), active: onAdminSection('project-types') },
+            { kind: 'section', label: 'Leave & Time' },
+            { kind: 'item', label: 'Leave Management', icon: <CalendarMonthRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamLeave(), active: onPage('/team-leave') },
+            { kind: 'item', label: 'Attendance', icon: <ApartmentRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToCompanyAttendance(), active: onPage('/company-attendance') },
+            { kind: 'item', label: 'Timesheets', icon: <AccessTimeRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamTimesheets(), active: onPage('/team-timesheets') },
+            { kind: 'section', label: 'Configuration' },
+            { kind: 'section', label: 'Project Setting', sub: true },
+            { kind: 'item', label: 'Projects', icon: <FolderRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('projects'), active: onAdminSection('projects'), indent: true },
+            { kind: 'item', label: 'Activities', icon: <CategoryRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('project-activities'), active: onAdminSection('project-activities'), indent: true },
+            { kind: 'item', label: 'Components', icon: <ExtensionRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('components'), active: onAdminSection('components'), indent: true },
+            { kind: 'item', label: 'Project Types', icon: <StyleRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('project-types'), active: onAdminSection('project-types'), indent: true },
+            { kind: 'section', label: 'Leave Setting', sub: true },
+            { kind: 'item', label: 'Leave Types', icon: <LabelRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('leave-types'), active: onAdminSection('leave-types', 'leave'), indent: true },
             { kind: 'section', label: 'System' },
-            { kind: 'item', label: 'Leave Types', icon: <LabelRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('leave-types'), active: onAdminSection('leave-types', 'leave') },
-            { kind: 'item', label: 'Data Maintenance', icon: <StorageRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('maintenance'), active: onAdminSection('maintenance') },
-            { kind: 'section', label: 'Settings' },
             // Named for everything it holds: the leave year, the timesheet policy, the
             // public-holiday country and the working week all live on this one page.
-            { kind: 'item', label: 'Leave & Organization', icon: <EventRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('settings'), active: onAdminSection('settings') },
-            { kind: 'item', label: 'Reminders & Notifications', icon: <NotificationsActiveRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('reminders-notifications'), active: onAdminSection('reminders-notifications') },
+            { kind: 'item', label: 'Organization', icon: <EventRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('settings'), active: onAdminSection('settings') },
+            { kind: 'item', label: 'Notification Settings', icon: <NotificationsActiveRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('reminders-notifications'), active: onAdminSection('reminders-notifications') },
+            { kind: 'item', label: 'Data Maintenance', icon: <StorageRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('maintenance'), active: onAdminSection('maintenance') },
         ]
     } else if (isManagerUser) {
         // A manager reads two kinds of page: their own records and their team's.
@@ -221,27 +222,27 @@ const Sidebar = observer(function Sidebar() {
             { kind: 'item', label: 'Dashboard', icon: <DashboardRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToDashboard(), active: onPage('/dashboard') },
             { kind: 'section', label: 'My Leave & Time' },
             { kind: 'item', label: 'My Leave', icon: <CalendarMonthRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToMyLeave('requests'), active: onPage('/my-leave') },
-            { kind: 'item', label: 'Apply Leave', icon: <AddCircleOutlineRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToApplyLeave(), active: onPage('/apply-leave') },
+            { kind: 'item', label: 'Request Leave', icon: <AddCircleOutlineRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToApplyLeave(), active: onPage('/apply-leave') },
             { kind: 'item', label: 'My Attendance', icon: <AccessAlarmRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAttendance(), active: onPage('/attendance') },
-            { kind: 'item', label: 'Apply Timesheet', icon: <NoteAddRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToNewTimesheet(), active: onPage('/new-timesheet') },
+            { kind: 'item', label: 'Submit Timesheet', icon: <NoteAddRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToNewTimesheet(), active: onPage('/new-timesheet') },
             { kind: 'item', label: 'My Timesheets', icon: <AccessTimeRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTimesheets(), active: onPage('/timesheets') },
             { kind: 'section', label: 'My Team' },
             { kind: 'item', label: 'Team Leave', icon: <GroupRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamLeave(), active: onPage('/team-leave') },
             { kind: 'item', label: 'Team Attendance', icon: <VisibilityRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamAttendance(), active: onPage('/team-attendance') },
             // Not GroupRounded like Team Leave above: two entries in the same
             // section reading as the same icon is what made them hard to tell apart.
-            { kind: 'item', label: 'Team Timesheets', icon: <FactCheckRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamTimesheets(), active: onPage('/team-timesheets') },
+            { kind: 'item', label: 'Approvals', icon: <FactCheckRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamTimesheets(), active: onPage('/team-timesheets') },
         ]
     } else {
         navEntries = [
             { kind: 'section', label: 'Overview' },
             { kind: 'item', label: 'Dashboard', icon: <DashboardRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToDashboard(), active: onPage('/dashboard') },
-            { kind: 'section', label: 'Annual Leave' },
+            { kind: 'section', label: 'Leave' },
             { kind: 'item', label: 'My Leave', icon: <CalendarMonthRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToMyLeave('requests'), active: onPage('/my-leave') },
-            { kind: 'item', label: 'Apply Leave', icon: <AddCircleOutlineRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToApplyLeave(), active: onPage('/apply-leave') },
+            { kind: 'item', label: 'Request Leave', icon: <AddCircleOutlineRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToApplyLeave(), active: onPage('/apply-leave') },
             { kind: 'section', label: 'Time' },
             { kind: 'item', label: 'My Attendance', icon: <AccessAlarmRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAttendance(), active: onPage('/attendance') },
-            { kind: 'item', label: 'Apply Timesheet', icon: <NoteAddRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToNewTimesheet(), active: onPage('/new-timesheet') },
+            { kind: 'item', label: 'Submit Timesheet', icon: <NoteAddRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToNewTimesheet(), active: onPage('/new-timesheet') },
             { kind: 'item', label: 'My Timesheets', icon: <AccessTimeRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTimesheets(), active: onPage('/timesheets') },
         ]
     }
@@ -298,14 +299,15 @@ const Sidebar = observer(function Sidebar() {
                                 <Typography
                                     key={`section-${i}`}
                                     sx={{
-                                        px: 1.75,
-                                        pt: i === 0 ? 0.5 : 1.5,
+                                        px: entry.sub ? 3 : 1.75,
+                                        pt: i === 0 ? 0.5 : entry.sub ? 1 : 1.5,
                                         pb: 0.5,
-                                        fontSize: 10,
+                                        fontSize: entry.sub ? 9.5 : 10,
                                         fontWeight: 600,
                                         color: 'text.disabled',
                                         textTransform: 'uppercase',
                                         letterSpacing: '0.06em',
+                                        opacity: entry.sub ? 0.8 : 1,
                                     }}
                                 >
                                     {entry.label}
@@ -315,13 +317,14 @@ const Sidebar = observer(function Sidebar() {
 
                         return (
                             <Box
-                                key={entry.label}
+                                key={`item-${i}`}
                                 onClick={entry.onClick}
                                 sx={{
                                     display: 'flex',
                                     alignItems: 'center',
                                     gap: 1.25,
                                     px: 1.75,
+                                    pl: entry.indent ? 3 : 1.75,
                                     py: 0.85,
                                     cursor: 'pointer',
                                     color: entry.active ? 'text.primary' : 'text.secondary',
@@ -450,6 +453,7 @@ const Sidebar = observer(function Sidebar() {
                         <TextField
                             label="Phone number"
                             type="tel"
+                            inputProps={{ inputMode: 'numeric', pattern: '[0-9+\\s()-]*' }}
                             {...register('phoneNumber')}
                             error={!!errors.phoneNumber}
                             helperText={errors.phoneNumber?.message}
