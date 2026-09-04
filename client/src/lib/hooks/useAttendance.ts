@@ -189,9 +189,9 @@ export function formatTime12(iso: string) {
 // One reading of the recent-activity feed, shared by every surface that renders
 // it — the admin dashboard's "Recent activity" card and the company attendance
 // log — so the same person never reads two ways depending on which page you are
-// on. The backend emits exactly six actions (GetCompanyAttendance.ActionName
+// on. The backend emits exactly eight actions (GetCompanyAttendance.ActionName
 // plus the synthetic row): Checked in, Late check-in, Checked out, Started
-// break, Back from break, Not checked in.
+// break, Back from break, Went idle, Back from idle, Not checked in.
 //
 // Order matters. "Not checked in" and "Late check-in" both contain the
 // check-in substring, so they must be tested first — matching the plain
@@ -205,6 +205,8 @@ export function activityIcon(action: string) {
     const a = action.toLowerCase()
     if (a.includes('not check')) return '⚪'
     if (a.includes('late')) return '⚠️'
+    if (a.includes('went idle')) return '💤'
+    if (a.includes('back from idle')) return '🟢'
     if (a.includes('break')) return '☕'
     if (a.includes('checked in') || a.includes('check-in')) return '🟢'
     if (a.includes('checked out') || a.includes('check-out')) return '⚪'

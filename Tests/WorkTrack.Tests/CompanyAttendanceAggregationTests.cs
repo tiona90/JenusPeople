@@ -215,6 +215,28 @@ public class CompanyAttendanceAggregationTests
         Assert.Equal(company.Total, company.Departments.Sum(d => d.Total));
     }
 
+    /// <summary>
+    /// The recent-activity feed names every event type it can see. Idle-detected
+    /// breaks read as "Went idle" / "Back from idle" rather than the manual
+    /// "Started break" / "Back from break" wording, so an admin scanning the feed
+    /// does not mistake automatic idle time for a declared break.
+    /// </summary>
+    [Fact]
+    public async Task Recent_activity_names_idle_detected_breaks_distinctly_from_manual_ones()
+    {
+        using var db = SeedWorld();
+        db.AttendanceEvents.Add(Event("working", 3, AttendanceEventType.AutoBreakStart));
+        db.AttendanceEvents.Add(Event("working", 4, AttendanceEventType.AutoBreakEnd));
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var company = await Company(db);
+
+        Assert.Contains(company.Recent, a => a.Action == "Went idle");
+        Assert.Contains(company.Recent, a => a.Action == "Back from idle");
+        Assert.DoesNotContain(company.Recent, a => a.Action == "Started break" && a.EmployeeName == "working");
+    }
+
     [Fact]
     public async Task An_empty_company_reports_zeroes_rather_than_failing()
     {

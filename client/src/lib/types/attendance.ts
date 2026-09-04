@@ -1,6 +1,12 @@
 export type AttendanceStatus = 'out' | 'in' | 'break' | 'done'
 
-export type AttendanceEventType = 'check-in' | 'check-out' | 'break-start' | 'break-end'
+export type AttendanceEventType =
+    | 'check-in'
+    | 'check-out'
+    | 'break-start'
+    | 'break-end'
+    | 'auto-break-start'
+    | 'auto-break-end'
 
 export interface AttendanceEvent {
     id: string

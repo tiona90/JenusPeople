@@ -204,6 +204,8 @@ public class GetCompanyAttendance
             AttendanceEventType.CheckIn => atUtc.Hour >= LateCheckInHour ? "Late check-in" : "Checked in",
             AttendanceEventType.CheckOut => "Checked out",
             AttendanceEventType.BreakStart => "Started break",
+            AttendanceEventType.AutoBreakStart => "Went idle",
+            AttendanceEventType.AutoBreakEnd => "Back from idle",
             _ => "Back from break",
         };
 

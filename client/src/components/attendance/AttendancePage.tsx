@@ -54,6 +54,8 @@ const EVENT_LABEL: Record<AttendanceEventType, string> = {
     'check-out': 'Checked out',
     'break-start': 'Started break',
     'break-end': 'Back from break',
+    'auto-break-start': 'Went idle',
+    'auto-break-end': 'Back from idle',
 }
 
 const EVENT_ICON: Record<AttendanceEventType, string> = {
@@ -61,6 +63,8 @@ const EVENT_ICON: Record<AttendanceEventType, string> = {
     'check-out': '🔴',
     'break-start': '☕',
     'break-end': '🟢',
+    'auto-break-start': '💤',
+    'auto-break-end': '🟢',
 }
 
 function StatusPill({ kind, children }: { kind: 'in' | 'out' | 'break' | 'late' | 'leave'; children: React.ReactNode }) {
