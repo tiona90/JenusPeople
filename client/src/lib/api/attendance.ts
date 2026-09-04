@@ -26,6 +26,17 @@ export async function endBreak(): Promise<AttendanceToday> {
     return res.data
 }
 
+// Client-side idle detection reporting 5+ minutes of inactivity / activity resumed.
+export async function reportIdle(): Promise<AttendanceToday> {
+    const res = await apiClient.post<AttendanceToday>('/attendance/break/auto-start')
+    return res.data
+}
+
+export async function reportActive(): Promise<AttendanceToday> {
+    const res = await apiClient.post<AttendanceToday>('/attendance/break/auto-end')
+    return res.data
+}
+
 export async function getAttendanceHistory(days = 30): Promise<AttendanceHistoryDay[]> {
     const res = await apiClient.get<AttendanceHistoryDay[]>('/attendance/me/history', { params: { days } })
     return res.data

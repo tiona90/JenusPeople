@@ -17,6 +17,14 @@ public class StartBreak
     public class Command : IRequest<Result<TodayStateDto>>
     {
         public required string RequestingUserId { get; set; }
+
+        /// <summary>
+        /// True when this break is opened by client-side idle detection rather
+        /// than the user clicking Start Break. Recorded as a distinct event type
+        /// so <see cref="EndBreak"/> can tell an idle-triggered break apart from
+        /// one the user opened by hand.
+        /// </summary>
+        public bool IsAutomatic { get; set; }
     }
 
     public class Handler(AppDbContext context) : IRequestHandler<Command, Result<TodayStateDto>>
@@ -35,8 +43,9 @@ public class StartBreak
                 return Result<TodayStateDto>.Conflict("Can only start a break while working.");
             }
 
+            var eventType = request.IsAutomatic ? AttendanceEventType.AutoBreakStart : AttendanceEventType.BreakStart;
             context.AttendanceEvents.Add(
-                AttendanceDay.NewEvent(profile.Id, now, AttendanceEventType.BreakStart));
+                AttendanceDay.NewEvent(profile.Id, now, eventType));
             await context.SaveChangesAsync(cancellationToken);
 
             return Result<TodayStateDto>.Success(

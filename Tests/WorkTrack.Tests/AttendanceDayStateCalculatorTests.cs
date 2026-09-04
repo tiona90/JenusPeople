@@ -31,6 +31,8 @@ public class AttendanceDayStateCalculatorTests
     private static AttendanceEvent CheckOut(DateTime at) => Event(AttendanceEventType.CheckOut, at);
     private static AttendanceEvent BreakStart(DateTime at) => Event(AttendanceEventType.BreakStart, at);
     private static AttendanceEvent BreakEnd(DateTime at) => Event(AttendanceEventType.BreakEnd, at);
+    private static AttendanceEvent AutoBreakStart(DateTime at) => Event(AttendanceEventType.AutoBreakStart, at);
+    private static AttendanceEvent AutoBreakEnd(DateTime at) => Event(AttendanceEventType.AutoBreakEnd, at);
 
     private static AttendanceDayState Calculate(params AttendanceEvent[] events) =>
         AttendanceDayStateCalculator.Calculate(events, Now);
@@ -303,5 +305,58 @@ public class AttendanceDayStateCalculatorTests
     {
         Assert.Throws<ArgumentNullException>(
             () => AttendanceDayStateCalculator.Calculate(null!, Now));
+    }
+
+    /* ── auto (idle-detected) breaks ──────────────────────────────────────── */
+
+    [Fact]
+    public void An_open_auto_break_reports_the_same_status_and_worked_minutes_as_a_manual_one()
+    {
+        var manual = Calculate(CheckIn(At(9)), BreakStart(At(10)));
+        var auto = Calculate(CheckIn(At(9)), AutoBreakStart(At(10)));
+
+        Assert.Equal(manual.Status, auto.Status);
+        Assert.Equal(manual.OnBreakSince, auto.OnBreakSince);
+        Assert.Equal(manual.WorkedMinutes, auto.WorkedMinutes);
+    }
+
+    [Fact]
+    public void IsAutoBreak_is_true_only_while_the_open_break_was_opened_automatically()
+    {
+        var manual = Calculate(CheckIn(At(9)), BreakStart(At(10)));
+        var auto = Calculate(CheckIn(At(9)), AutoBreakStart(At(10)));
+
+        Assert.False(manual.IsAutoBreak);
+        Assert.True(auto.IsAutoBreak);
+    }
+
+    [Fact]
+    public void IsAutoBreak_is_false_once_no_break_is_open()
+    {
+        var state = Calculate(CheckIn(At(9)), AutoBreakStart(At(10)), AutoBreakEnd(At(10, 15)));
+
+        Assert.Equal(AttendanceDayStatus.In, state.Status);
+        Assert.False(state.IsAutoBreak);
+    }
+
+    [Fact]
+    public void Manual_break_end_closes_an_auto_opened_break()
+    {
+        var state = Calculate(CheckIn(At(9)), AutoBreakStart(At(10)), BreakEnd(At(10, 15)));
+
+        Assert.Equal(AttendanceDayStatus.In, state.Status);
+        Assert.Equal(15, state.TotalBreakMinutes);
+        Assert.False(state.IsAutoBreak);
+    }
+
+    [Fact]
+    public void Auto_and_manual_breaks_share_the_one_open_slot()
+    {
+        // A stray auto-break-start while a manual break is already running must
+        // not silently switch the open break's flavor to automatic.
+        var state = Calculate(CheckIn(At(9)), BreakStart(At(10)), AutoBreakStart(At(10, 5)));
+
+        Assert.Equal(At(10), state.OnBreakSince);
+        Assert.False(state.IsAutoBreak);
     }
 }

@@ -87,7 +87,7 @@ function StatCard({ accent, label, value, sub }: { accent: string; label: string
 function TeamMemberCard({ m }: { m: TeamMemberAttendance }) {
     const leftColor = m.status === 'in' ? GREEN : m.status === 'break' ? AMBER : 'divider'
     const pillLabel = m.status === 'in' ? 'Working'
-        : m.status === 'break' ? 'On break'
+        : m.status === 'break' ? (m.isAutoBreak ? 'Idle' : 'On break')
         : m.status === 'leave' ? 'On leave'
         : 'Not in'
 

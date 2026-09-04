@@ -171,27 +171,27 @@ describe('AdminUsersPanel — presence', () => {
         { id: 'u-in', userName: 'in@example.test', email: 'in@example.test', displayName: 'Checked In', imageUrl: '', emailConfirmed: true, roles: ['Employee'] },
         { id: 'u-out', userName: 'out@example.test', email: 'out@example.test', displayName: 'Never In', imageUrl: '', emailConfirmed: true, roles: ['Employee'] },
         { id: 'u-done', userName: 'done@example.test', email: 'done@example.test', displayName: 'Checked Out', imageUrl: '', emailConfirmed: true, roles: ['Employee'] },
-        { id: 'u-break', userName: 'break@example.test', email: 'break@example.test', displayName: 'On Break', imageUrl: '', emailConfirmed: true, roles: ['Employee'] },
+        { id: 'u-break', userName: 'break@example.test', email: 'break@example.test', displayName: 'Break User', imageUrl: '', emailConfirmed: true, roles: ['Employee'] },
     ]
 
     beforeEach(() => {
         api.getAdminUsers.mockResolvedValue(USERS as never)
         api.getUserPresence.mockResolvedValue([
-            { userId: 'u-in', status: 'online', checkInAt: '2026-08-04T08:00:00Z', lastActivityAt: '2026-08-04T08:00:00Z' },
-            { userId: 'u-out', status: 'offline', checkInAt: null, lastActivityAt: null },
-            { userId: 'u-done', status: 'offline', checkInAt: '2026-08-04T08:00:00Z', lastActivityAt: '2026-08-04T17:00:00Z' },
-            { userId: 'u-break', status: 'away', checkInAt: '2026-08-04T08:00:00Z', lastActivityAt: '2026-08-04T12:00:00Z' },
+            { userId: 'u-in', status: 'online', checkInAt: '2026-08-04T08:00:00Z', lastActivityAt: '2026-08-04T08:00:00Z', isAutoBreak: false },
+            { userId: 'u-out', status: 'offline', checkInAt: null, lastActivityAt: null, isAutoBreak: false },
+            { userId: 'u-done', status: 'offline', checkInAt: '2026-08-04T08:00:00Z', lastActivityAt: '2026-08-04T17:00:00Z', isAutoBreak: false },
+            { userId: 'u-break', status: 'away', checkInAt: '2026-08-04T08:00:00Z', lastActivityAt: '2026-08-04T12:00:00Z', isAutoBreak: false },
         ])
     })
 
-    it('badges one user Online, one Away, and the rest Offline', async () => {
+    it('badges one user Online, one On Break, and the rest Offline', async () => {
         renderPanel()
 
-        // Four users: only the open check-in is Online, the break is Away, and
+        // Four users: only the open check-in is Online, the break is On Break, and
         // both "never checked in" and "checked out" are Offline.
         expect(await screen.findByText('Online')).toBeInTheDocument()
         expect(screen.getAllByText('Online')).toHaveLength(1)
-        expect(screen.getAllByText('Away')).toHaveLength(1)
+        expect(screen.getAllByText('On Break')).toHaveLength(1)
         expect(screen.getAllByText('Offline')).toHaveLength(2)
     })
 
@@ -212,7 +212,7 @@ describe('AdminUsersPanel — presence', () => {
         fireEvent.click(tab)
 
         expect(screen.getByText('Checked In')).toBeInTheDocument()
-        for (const absent of ['Never In', 'Checked Out', 'On Break']) {
+        for (const absent of ['Never In', 'Checked Out', 'Break User']) {
             expect(screen.queryByText(absent)).not.toBeInTheDocument()
         }
     })

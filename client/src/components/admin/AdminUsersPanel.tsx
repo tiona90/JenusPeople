@@ -50,6 +50,7 @@ interface DerivedUser {
     departmentName: string | null
     primaryRole: 'Admin' | 'Manager' | 'Employee'
     presence: Presence
+    isAutoBreak: boolean
     lastSeenLabel: string
     leaveBalance: number
     leaveTotal: number
@@ -122,7 +123,11 @@ function AdminUsersPanel() {
     })
     const { data: profiles = [] } = useQuery({ queryKey: ['employeeProfiles'], queryFn: getEmployeeProfiles })
     const { data: departments = [] } = useQuery({ queryKey: ['departments'], queryFn: getDepartments })
-    const { data: presences = [] } = useQuery({ queryKey: ['attendance', 'presence'], queryFn: getUserPresence })
+    const { data: presences = [] } = useQuery({
+        queryKey: ['attendance', 'presence'],
+        queryFn: getUserPresence,
+        refetchInterval: 30_000,
+    })
     const { data: leaveHistories = [] } = useQuery({ queryKey: ['leaveStatusHistories'], queryFn: getLeaveStatusHistories })
     const { data: timesheetHistories = [] } = useQuery({ queryKey: ['timesheetStatusHistories'], queryFn: getTimesheetStatusHistories })
     const { data: leaves = [] } = useQuery({ queryKey: ['annualLeaves'], queryFn: getAnnualLeaves })
@@ -148,7 +153,7 @@ function AdminUsersPanel() {
     // events, keyed by display name, and includes synthetic "Not checked in"
     // rows, so string-matching it reported exactly the wrong users as online.
     const presenceByUserId = useMemo(
-        () => new Map(presences.map((p) => [p.userId, p.status])),
+        () => new Map(presences.map((p) => [p.userId, p])),
         [presences],
     )
 
@@ -168,9 +173,10 @@ function AdminUsersPanel() {
         return users.map((u) => {
             const profile = profilesByUserId.get(u.id)
             const departmentName = profile?.departmentId ? deptById.get(profile.departmentId)?.name ?? null : null
-            const presence = presenceByUserId.get(u.id) ?? 'offline'
+            const presence = presenceByUserId.get(u.id)?.status ?? 'offline'
+            const isAutoBreak = presenceByUserId.get(u.id)?.isAutoBreak ?? false
             const lastSeenLabel = presence === 'online' ? 'Online now'
-                : presence === 'away' ? 'On break'
+                : presence === 'away' ? (isAutoBreak ? 'Idle' : 'On break')
                 : (lastSeenByUserId.get(u.id) ?? 'No activity')
             const used = leaves
                 .filter((l) => l.employeeId === u.id && l.status === 'Approved' && new Date(l.startDate).getFullYear() === currentYear)
@@ -184,6 +190,7 @@ function AdminUsersPanel() {
                 departmentName,
                 primaryRole: primaryRoleOf(u.roles),
                 presence,
+                isAutoBreak,
                 lastSeenLabel,
                 leaveBalance,
                 leaveTotal: entitled,
@@ -769,7 +776,7 @@ function UserRow({
                             : presence === 'away' ? softBg('warning') : 'action.hover',
                         px: '8px', py: '3px', borderRadius: '12px',
                     }}>
-                        {presence === 'online' ? 'Online' : presence === 'away' ? 'Away' : 'Offline'}
+                        {presence === 'online' ? 'Online' : presence === 'away' ? (derived.isAutoBreak ? 'Idle' : 'On Break') : 'Offline'}
                     </Box>
                 </Box>
 
@@ -1147,7 +1154,7 @@ function EditUserDialog(props: {
                 setDateOfBirth(props.data!.user.dateOfBirth ?? '')
             })
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+         
     }, [props.data])
 
     // If the person being edited *is* their department's manager, they have no

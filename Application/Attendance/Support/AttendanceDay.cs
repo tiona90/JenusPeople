@@ -52,6 +52,8 @@ public static class AttendanceDay
         AttendanceEventType.CheckOut => "check-out",
         AttendanceEventType.BreakStart => "break-start",
         AttendanceEventType.BreakEnd => "break-end",
+        AttendanceEventType.AutoBreakStart => "auto-break-start",
+        AttendanceEventType.AutoBreakEnd => "auto-break-end",
         _ => type.ToString().ToLowerInvariant(),
     };
 
@@ -134,7 +136,8 @@ public static class AttendanceDay
             AsUtcNullable(state.OnBreakSince),
             state.TotalBreakMinutes,
             state.WorkedMinutes,
-            [.. events.Select(e => new AttendanceEventDto(e.Id, AsUtc(e.At), EventTypeName(e.Type)))]);
+            [.. events.Select(e => new AttendanceEventDto(e.Id, AsUtc(e.At), EventTypeName(e.Type)))],
+            state.IsAutoBreak);
     }
 
     /// <summary>

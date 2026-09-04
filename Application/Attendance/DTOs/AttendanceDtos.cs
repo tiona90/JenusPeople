@@ -10,7 +10,8 @@ public record TodayStateDto(
     DateTime? OnBreakSince,
     int TotalBreakMinutes,
     int WorkedMinutes,
-    List<AttendanceEventDto> Events);
+    List<AttendanceEventDto> Events,
+    bool IsAutoBreak);
 
 public record DayHistoryDto(
     string Date,
@@ -29,7 +30,8 @@ public record TeamMemberAttendanceDto(
     DateTime? CheckInAt,
     int WorkedMinutes,
     DateTime? OnBreakSince,
-    string TodayNote);
+    string TodayNote,
+    bool IsAutoBreak);
 
 public record WeekDayHoursDto(string Date, int? WorkedMinutes, string? Note);
 
@@ -87,7 +89,8 @@ public record UserPresenceDto(
     string UserId,
     string Status,
     DateTime? CheckInAt,
-    DateTime? LastActivityAt);
+    DateTime? LastActivityAt,
+    bool IsAutoBreak);
 
 public record CompanyAttendanceDto(
     int Total,

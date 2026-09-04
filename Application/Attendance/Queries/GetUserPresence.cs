@@ -65,7 +65,8 @@ public class GetUserPresence
                         p.UserId,
                         status,
                         AttendanceDay.AsUtcNullable(state.CheckInAt),
-                        lastActivityAt);
+                        lastActivityAt,
+                        state.IsAutoBreak);
                 })
                 .ToList();
 

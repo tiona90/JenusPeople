@@ -6,6 +6,12 @@ public enum AttendanceEventType
     CheckOut = 1,
     BreakStart = 2,
     BreakEnd = 3,
+
+    /// <summary>System-triggered break, opened by client-side idle detection rather than a user action.</summary>
+    AutoBreakStart = 4,
+
+    /// <summary>Closes an <see cref="AutoBreakStart"/> break once activity resumes.</summary>
+    AutoBreakEnd = 5,
 }
 
 public class AttendanceEvent

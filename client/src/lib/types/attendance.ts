@@ -17,6 +17,7 @@ export interface AttendanceToday {
     totalBreakMinutes: number
     workedMinutes: number
     events: AttendanceEvent[]
+    isAutoBreak: boolean
 }
 
 export type AttendanceHistoryStatus = 'complete' | 'in-progress' | 'late' | 'absent'
@@ -42,6 +43,7 @@ export interface TeamMemberAttendance {
     workedMinutes: number
     onBreakSince: string | null
     todayNote: string
+    isAutoBreak: boolean
 }
 
 export interface WeekDayHours {
@@ -105,6 +107,7 @@ export interface UserPresence {
     status: PresenceStatus
     checkInAt: string | null
     lastActivityAt: string | null
+    isAutoBreak: boolean
 }
 
 export type IssueSeverity = 'danger' | 'warning' | 'info' | 'success'

@@ -70,7 +70,7 @@ function applyOptimisticAction(
 
     if (action === 'check-in') {
         return prev
-            ? { ...prev, status: 'in', checkInAt: prev.checkInAt ?? nowIso, onBreakSince: null }
+            ? { ...prev, status: 'in', checkInAt: prev.checkInAt ?? nowIso, onBreakSince: null, isAutoBreak: false }
             : {
                 date: todayIso,
                 status: 'in',
@@ -80,6 +80,7 @@ function applyOptimisticAction(
                 totalBreakMinutes: 0,
                 workedMinutes: 0,
                 events: [],
+                isAutoBreak: false,
             }
     }
     if (!prev) return prev
@@ -98,7 +99,7 @@ function applyOptimisticAction(
         }
     }
     if (action === 'break-start') {
-        return { ...prev, status: 'break', onBreakSince: nowIso }
+        return { ...prev, status: 'break', onBreakSince: nowIso, isAutoBreak: false }
     }
     // break-end
     const breakMinutes = prev.onBreakSince
@@ -109,6 +110,7 @@ function applyOptimisticAction(
         status: 'in',
         onBreakSince: null,
         totalBreakMinutes: prev.totalBreakMinutes + breakMinutes,
+        isAutoBreak: false,
     }
 }
 

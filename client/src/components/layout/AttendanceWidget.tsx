@@ -1,8 +1,17 @@
+import { useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import Typography from '@mui/material/Typography'
 import { softBg } from '../../lib/theme-tokens'
+import {
+    AppDialog,
+    AppDialogActions,
+    AppDialogContent,
+    AppDialogTitle,
+    cancelBtnSx,
+    dangerBtnSx,
+} from '../ui/AppDialog'
 import {
     formatElapsed,
     formatTime12,
@@ -10,6 +19,9 @@ import {
     useAttendanceToday,
     useLiveElapsedMinutes,
 } from '../../lib/hooks/useAttendance'
+import { useIdleAutoBreak } from '../../lib/hooks/useIdleAutoBreak'
+
+const FULL_DAY_MINUTES = 8 * 60
 
 const GREEN = 'success.main'
 const GREEN_HOVER = 'success.dark'
@@ -56,8 +68,23 @@ export default function AttendanceWidget({ enabled }: { enabled: boolean }) {
     const { data: today, isLoading } = useAttendanceToday(enabled)
     const { checkIn, checkOut, startBreak, endBreak, anyPending } = useAttendanceActions()
     const elapsed = useLiveElapsedMinutes(today)
+    useIdleAutoBreak(enabled ? today : undefined)
+    const [showEarlyCheckOutWarning, setShowEarlyCheckOutWarning] = useState(false)
 
     if (!enabled) return null
+
+    function handleCheckOutClick() {
+        if (elapsed < FULL_DAY_MINUTES) {
+            setShowEarlyCheckOutWarning(true)
+            return
+        }
+        checkOut.mutate()
+    }
+
+    function confirmEarlyCheckOut() {
+        setShowEarlyCheckOutWarning(false)
+        checkOut.mutate()
+    }
 
     const status = today?.status ?? 'out'
 
@@ -106,7 +133,9 @@ export default function AttendanceWidget({ enabled }: { enabled: boolean }) {
                         </Box>
                     </Typography>
                 ) : status === 'break' ? (
-                    <Typography sx={{ fontSize: 12, color: 'text.secondary', whiteSpace: 'nowrap' }}>On break</Typography>
+                    <Typography sx={{ fontSize: 12, color: 'text.secondary', whiteSpace: 'nowrap' }}>
+                        {today?.isAutoBreak ? 'Idle' : 'On break'}
+                    </Typography>
                 ) : (
                     <Typography sx={{ fontSize: 12, color: 'text.secondary', whiteSpace: 'nowrap' }}>Done for today</Typography>
                 )}
@@ -156,7 +185,7 @@ export default function AttendanceWidget({ enabled }: { enabled: boolean }) {
                     <Button
                         disableElevation
                         disabled={anyPending}
-                        onClick={() => checkOut.mutate()}
+                        onClick={handleCheckOutClick}
                         startIcon={checkOut.isPending ? <CircularProgress size={11} color="inherit" /> : null}
                         sx={solidBtnSx(RED, RED_HOVER)}
                     >
@@ -176,6 +205,24 @@ export default function AttendanceWidget({ enabled }: { enabled: boolean }) {
                     {endBreak.isPending ? 'Resuming…' : 'Resume'}
                 </Button>
             )}
+
+            <AppDialog open={showEarlyCheckOutWarning} onClose={() => setShowEarlyCheckOutWarning(false)} maxWidth="xs">
+                <AppDialogTitle>Check out early?</AppDialogTitle>
+                <AppDialogContent>
+                    <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
+                        You've only worked <strong>{formatElapsed(elapsed)}</strong> today, less than a full 8-hour day.
+                        Are you sure you want to check out?
+                    </Typography>
+                </AppDialogContent>
+                <AppDialogActions>
+                    <Button size="small" variant="outlined" sx={cancelBtnSx} onClick={() => setShowEarlyCheckOutWarning(false)}>
+                        Cancel
+                    </Button>
+                    <Button size="small" variant="contained" sx={dangerBtnSx} onClick={confirmEarlyCheckOut}>
+                        Check Out Anyway
+                    </Button>
+                </AppDialogActions>
+            </AppDialog>
         </Box>
     )
 }

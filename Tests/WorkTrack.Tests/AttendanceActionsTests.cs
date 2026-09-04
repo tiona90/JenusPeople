@@ -48,11 +48,13 @@ public class AttendanceActionsTests
     private static Task<Result<TodayStateDto>> CheckOutFor(AppDbContext db, string userId = UserId) =>
         new CheckOut.Handler(db).Handle(new CheckOut.Command { RequestingUserId = userId }, CancellationToken.None);
 
-    private static Task<Result<TodayStateDto>> StartBreakFor(AppDbContext db, string userId = UserId) =>
-        new StartBreak.Handler(db).Handle(new StartBreak.Command { RequestingUserId = userId }, CancellationToken.None);
+    private static Task<Result<TodayStateDto>> StartBreakFor(AppDbContext db, string userId = UserId, bool isAutomatic = false) =>
+        new StartBreak.Handler(db).Handle(
+            new StartBreak.Command { RequestingUserId = userId, IsAutomatic = isAutomatic }, CancellationToken.None);
 
-    private static Task<Result<TodayStateDto>> EndBreakFor(AppDbContext db, string userId = UserId) =>
-        new EndBreak.Handler(db).Handle(new EndBreak.Command { RequestingUserId = userId }, CancellationToken.None);
+    private static Task<Result<TodayStateDto>> EndBreakFor(AppDbContext db, string userId = UserId, bool isAutomatic = false) =>
+        new EndBreak.Handler(db).Handle(
+            new EndBreak.Command { RequestingUserId = userId, IsAutomatic = isAutomatic }, CancellationToken.None);
 
     private static Task<Result<TodayStateDto>> TodayFor(AppDbContext db, string userId = UserId) =>
         new GetTodayState.Handler(db).Handle(new GetTodayState.Query { RequestingUserId = userId }, CancellationToken.None);
@@ -95,6 +97,8 @@ public class AttendanceActionsTests
     [InlineData(AttendanceEventType.CheckOut, "check-out")]
     [InlineData(AttendanceEventType.BreakStart, "break-start")]
     [InlineData(AttendanceEventType.BreakEnd, "break-end")]
+    [InlineData(AttendanceEventType.AutoBreakStart, "auto-break-start")]
+    [InlineData(AttendanceEventType.AutoBreakEnd, "auto-break-end")]
     public void Event_types_keep_their_wire_spelling(AttendanceEventType type, string expected)
     {
         Assert.Equal(expected, AttendanceDay.EventTypeName(type));
@@ -247,6 +251,69 @@ public class AttendanceActionsTests
         Assert.Equal(
             ["check-in", "break-start", "break-end", "check-out"],
             state.Events.Select(e => e.Type));
+    }
+
+    /* ── auto (idle-detected) breaks ──────────────────────────────────────── */
+
+    [Fact]
+    public async Task An_automatic_break_start_succeeds_only_while_working()
+    {
+        using var db = SeedWorld();
+
+        var beforeCheckIn = await StartBreakFor(db, isAutomatic: true);
+        Assert.Equal(ResultErrorKind.Conflict, beforeCheckIn.ErrorKind);
+
+        Ok(await CheckInFor(db));
+        var state = Ok(await StartBreakFor(db, isAutomatic: true));
+
+        Assert.Equal("break", state.Status);
+        Assert.True(state.IsAutoBreak);
+        Assert.Equal("auto-break-start", state.Events[^1].Type);
+    }
+
+    /// <summary>
+    /// Idle detection reporting activity resumed must never silently end a break
+    /// the user started by hand — only the human's own Resume click may do that.
+    /// </summary>
+    [Fact]
+    public async Task An_automatic_resume_leaves_a_manually_started_break_running()
+    {
+        using var db = SeedWorld();
+        Ok(await CheckInFor(db));
+        Ok(await StartBreakFor(db));
+
+        var state = Ok(await EndBreakFor(db, isAutomatic: true));
+
+        Assert.Equal("break", state.Status);
+        Assert.DoesNotContain(state.Events, e => e.Type is "break-end" or "auto-break-end");
+    }
+
+    [Fact]
+    public async Task An_automatic_resume_ends_a_break_it_opened_itself()
+    {
+        using var db = SeedWorld();
+        Ok(await CheckInFor(db));
+        Ok(await StartBreakFor(db, isAutomatic: true));
+
+        var state = Ok(await EndBreakFor(db, isAutomatic: true));
+
+        Assert.Equal("in", state.Status);
+        Assert.False(state.IsAutoBreak);
+        Assert.Equal("auto-break-end", state.Events[^1].Type);
+    }
+
+    /// <summary>A human clicking Resume always ends whichever break is open, auto or manual.</summary>
+    [Fact]
+    public async Task A_manual_resume_ends_an_automatically_opened_break()
+    {
+        using var db = SeedWorld();
+        Ok(await CheckInFor(db));
+        Ok(await StartBreakFor(db, isAutomatic: true));
+
+        var state = Ok(await EndBreakFor(db));
+
+        Assert.Equal("in", state.Status);
+        Assert.Equal("break-end", state.Events[^1].Type);
     }
 
     /* ── the precondition ───────────────────────────────────────────────── */

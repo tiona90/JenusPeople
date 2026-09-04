@@ -45,7 +45,8 @@ public sealed record AttendanceDayState(
     DateTime? CheckOutAt,
     DateTime? OnBreakSince,
     int TotalBreakMinutes,
-    int WorkedMinutes);
+    int WorkedMinutes,
+    bool IsAutoBreak);
 
 /// <summary>
 /// Single source of truth for turning a day's raw <see cref="AttendanceEvent"/>
@@ -77,7 +78,9 @@ public static class AttendanceDayStateCalculator
     ///     so a double-tap on the button cannot shorten the day.</item>
     ///   <item>The <b>last</b> check-out wins.</item>
     ///   <item>A break only opens while checked in and not yet checked out, and
-    ///     only one can be open at a time — a stray break-start is ignored.</item>
+    ///     only one can be open at a time — a stray break-start is ignored.
+    ///     Auto and manual breaks share this one slot: they open and close the
+    ///     same way, differing only in which flavor is currently open.</item>
     ///   <item>A break-end with no open break is ignored.</item>
     ///   <item>Checking out closes an open break, so forgetting to end a break
     ///     does not silently bill it as work.</item>
@@ -97,6 +100,7 @@ public static class AttendanceDayStateCalculator
         DateTime? checkIn = null;
         DateTime? checkOut = null;
         DateTime? breakStart = null;
+        var isAutoBreak = false;
         var totalBreakSeconds = 0;
 
         foreach (var e in ordered)
@@ -113,21 +117,26 @@ public static class AttendanceDayStateCalculator
                     {
                         totalBreakSeconds += (int)(e.At - breakStart.Value).TotalSeconds;
                         breakStart = null;
+                        isAutoBreak = false;
                     }
                     break;
 
                 case AttendanceEventType.BreakStart:
+                case AttendanceEventType.AutoBreakStart:
                     if (checkIn is not null && checkOut is null && breakStart is null)
                     {
                         breakStart = e.At;
+                        isAutoBreak = e.Type == AttendanceEventType.AutoBreakStart;
                     }
                     break;
 
                 case AttendanceEventType.BreakEnd:
+                case AttendanceEventType.AutoBreakEnd:
                     if (breakStart is not null)
                     {
                         totalBreakSeconds += (int)(e.At - breakStart.Value).TotalSeconds;
                         breakStart = null;
+                        isAutoBreak = false;
                     }
                     break;
             }
@@ -161,6 +170,7 @@ public static class AttendanceDayStateCalculator
             checkOut,
             breakStart,
             totalBreakSeconds / 60,
-            workedMinutes);
+            workedMinutes,
+            status == AttendanceDayStatus.Break && isAutoBreak);
     }
 }

@@ -74,6 +74,24 @@ public class AttendanceController : BaseApiController
             new EndBreak.Command { RequestingUserId = ResolveUserId() },
             cancellationToken));
 
+    // POST: api/attendance/break/auto-start — client-side idle detection reporting 5+ minutes of inactivity.
+    [HttpPost("break/auto-start")]
+    [ProducesResponseType(typeof(TodayStateDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult> AutoStartBreak(CancellationToken cancellationToken) =>
+        HandleResult(await Mediator.Send(
+            new StartBreak.Command { RequestingUserId = ResolveUserId(), IsAutomatic = true },
+            cancellationToken));
+
+    // POST: api/attendance/break/auto-end — client-side idle detection reporting activity resumed.
+    [HttpPost("break/auto-end")]
+    [ProducesResponseType(typeof(TodayStateDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult> AutoEndBreak(CancellationToken cancellationToken) =>
+        HandleResult(await Mediator.Send(
+            new EndBreak.Command { RequestingUserId = ResolveUserId(), IsAutomatic = true },
+            cancellationToken));
+
     // GET: api/attendance/me/history
     [HttpGet("me/history")]
     [ProducesResponseType(typeof(List<DayHistoryDto>), StatusCodes.Status200OK)]

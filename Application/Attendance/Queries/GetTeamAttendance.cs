@@ -83,7 +83,7 @@ public class GetTeamAttendance
                     // CheckInAt is guaranteed non-null for In and Break — the
                     // calculator cannot reach either status without one.
                     AttendanceDayStatus.In => ("in", state.CheckInAt!.Value.Hour >= 10 ? "Late check-in" : "On track"),
-                    AttendanceDayStatus.Break => ("break", "On break"),
+                    AttendanceDayStatus.Break => ("break", state.IsAutoBreak ? "Idle" : "On break"),
                     AttendanceDayStatus.Done => ("out", $"Done at {state.CheckOutAt:HH:mm}"),
                     _ => ("out", "Not checked in"),
                 };
@@ -97,7 +97,8 @@ public class GetTeamAttendance
                 AttendanceDay.AsUtcNullable(state.CheckInAt),
                 state.WorkedMinutes,
                 AttendanceDay.AsUtcNullable(state.OnBreakSince),
-                note);
+                note,
+                state.IsAutoBreak);
         }
 
         /// <summary>
