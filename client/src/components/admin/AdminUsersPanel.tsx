@@ -26,6 +26,7 @@ import {
     getLeaveTypes,
     getTimesheetStatusHistories,
     getUserPresence,
+    setAdminUserActive,
     setAdminUserRoles,
     updateAdminUser,
     updateEmployeeProfile,
@@ -40,7 +41,7 @@ import type {
 const PROTECTED_ADMIN_EMAIL = 'admin@annualleave.com'
 const ALL_ROLES: UserRole[] = ['Admin', 'Manager', 'Employee']
 
-type StatusTab = 'all' | 'active' | 'admins' | 'managers' | 'employees' | 'online'
+type StatusTab = 'all' | 'admins' | 'managers' | 'employees' | 'deactivated' | 'online'
 
 type Presence = PresenceStatus
 
@@ -56,6 +57,7 @@ interface DerivedUser {
     leaveTotal: number
     leavePct: number
     isProtected: boolean
+    isActive: boolean
 }
 
 interface ActivityItem {
@@ -196,6 +198,9 @@ function AdminUsersPanel() {
                 leaveTotal: entitled,
                 leavePct,
                 isProtected: u.email.trim().toLowerCase() === PROTECTED_ADMIN_EMAIL,
+                // Rows written before the column existed come back without the
+                // field; those accounts are active, as the migration's default says.
+                isActive: u.isActive !== false,
             }
         })
     }, [users, profilesByUserId, deptById, presenceByUserId, lastSeenByUserId, leaves])
@@ -208,6 +213,7 @@ function AdminUsersPanel() {
             managers: derivedAll.filter((d) => d.primaryRole === 'Manager').length,
             employees: derivedAll.filter((d) => d.primaryRole === 'Employee').length,
             online: derivedAll.filter((d) => d.presence === 'online').length,
+            deactivated: derivedAll.filter((d) => !d.isActive).length,
             withProfile: derivedAll.filter((d) => d.profile).length,
         }
         return c
@@ -219,6 +225,7 @@ function AdminUsersPanel() {
         if (statusTab === 'admins') out = out.filter((d) => d.primaryRole === 'Admin')
         else if (statusTab === 'managers') out = out.filter((d) => d.primaryRole === 'Manager')
         else if (statusTab === 'employees') out = out.filter((d) => d.primaryRole === 'Employee')
+        else if (statusTab === 'deactivated') out = out.filter((d) => !d.isActive)
         else if (statusTab === 'online') out = out.filter((d) => d.presence === 'online')
 
         if (roleFilter !== 'all') out = out.filter((d) => d.primaryRole === roleFilter)
@@ -301,6 +308,17 @@ function AdminUsersPanel() {
         onError: (err) => setApiError(getApiErrorMessage(err, 'Could not delete user.')),
     })
 
+    const setActiveMutation = useMutation({
+        mutationFn: (vars: { id: string; isActive: boolean }) =>
+            setAdminUserActive(vars.id, { isActive: vars.isActive }),
+        onSuccess: () => {
+            void queryClient.invalidateQueries({ queryKey: ['adminUsers'] })
+        },
+        onError: (err, vars) => setApiError(getApiErrorMessage(
+            err,
+            vars.isActive ? 'Could not activate the account.' : 'Could not deactivate the account.')),
+    })
+
     const confirmEmailMutation = useMutation({
         mutationFn: confirmAdminUserEmail,
         onSuccess: () => {
@@ -324,10 +342,7 @@ function AdminUsersPanel() {
         })
     }
     async function bulkDelete() {
-        const ids = Array.from(selected).filter((id) => {
-            const u = users.find((u) => u.id === id)
-            return u && u.email.trim().toLowerCase() !== PROTECTED_ADMIN_EMAIL
-        })
+        const ids = selectableIds()
         if (ids.length === 0) return
         const result = await SweetAlert.fire({
             title: `Delete ${ids.length} user${ids.length === 1 ? '' : 's'}?`,
@@ -341,6 +356,30 @@ function AdminUsersPanel() {
         })
         if (!result.isConfirmed) return
         for (const id of ids) await deleteMutation.mutateAsync(id).catch(() => {})
+        setSelected(new Set())
+    }
+    /** Ids in the selection that may be acted on — never the protected admin. */
+    function selectableIds() {
+        return Array.from(selected).filter((id) => {
+            const u = users.find((u) => u.id === id)
+            return u && u.email.trim().toLowerCase() !== PROTECTED_ADMIN_EMAIL
+        })
+    }
+    async function bulkDeactivate() {
+        const ids = selectableIds().filter((id) => users.find((u) => u.id === id)?.isActive !== false)
+        if (ids.length === 0) return
+        const result = await SweetAlert.fire({
+            title: `Deactivate ${ids.length} user${ids.length === 1 ? '' : 's'}?`,
+            text: 'They will not be able to sign in, and any session they have open ends within a minute. Their data is kept, and you can switch them back on at any time.',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Yes, deactivate',
+            cancelButtonText: 'Cancel',
+            confirmButtonColor: '#F59E0B',
+            reverseButtons: true,
+        })
+        if (!result.isConfirmed) return
+        for (const id of ids) await setActiveMutation.mutateAsync({ id, isActive: false }).catch(() => {})
         setSelected(new Set())
     }
 
@@ -475,6 +514,18 @@ function AdminUsersPanel() {
                         >Clear</Box>
                         <Box
                             component="button"
+                            onClick={() => void bulkDeactivate()}
+                            disabled={setActiveMutation.isPending}
+                            sx={{
+                                bgcolor: 'warning.main', color: '#fff', border: 'none',
+                                px: '14px', py: '6px', borderRadius: '6px', fontSize: 12, fontWeight: 600,
+                                cursor: 'pointer', fontFamily: 'inherit',
+                                '&:hover:not(:disabled)': { bgcolor: 'warning.dark' },
+                                '&:disabled': { opacity: 0.5 },
+                            }}
+                        >⏸ Deactivate</Box>
+                        <Box
+                            component="button"
                             onClick={() => void bulkDelete()}
                             disabled={deleteMutation.isPending}
                             sx={{
@@ -496,6 +547,7 @@ function AdminUsersPanel() {
                     { value: 'admins',    label: 'Admins',    count: counts.admins },
                     { value: 'managers',  label: 'Managers',  count: counts.managers },
                     { value: 'employees', label: 'Employees', count: counts.employees },
+                    { value: 'deactivated', label: '⏸ Deactivated', count: counts.deactivated },
                     { value: 'online',    label: '🟢 Online',  count: counts.online },
                 ] as { value: StatusTab; label: string; count: number }[]).map((tab) => {
                     const active = statusTab === tab.value
@@ -550,6 +602,27 @@ function AdminUsersPanel() {
                         onEdit={() => setEditData({ user: d.user, profile: d.profile })}
                         onConfirmEmail={() => confirmEmailMutation.mutate(d.user.id)}
                         confirmingEmail={confirmEmailMutation.isPending}
+                        togglingActive={setActiveMutation.isPending}
+                        onToggleActive={async () => {
+                            // Reactivating restores access rather than removing
+                            // it, so it does not ask; switching an account off
+                            // ends the person's working session, so it does.
+                            if (!d.isActive) {
+                                setActiveMutation.mutate({ id: d.user.id, isActive: true })
+                                return
+                            }
+                            const result = await SweetAlert.fire({
+                                title: `Deactivate ${d.user.displayName || d.user.email}?`,
+                                text: 'They will not be able to sign in, and any session they have open ends within a minute. Their data is kept, and you can switch them back on at any time.',
+                                icon: 'warning',
+                                showCancelButton: true,
+                                confirmButtonText: 'Yes, deactivate',
+                                cancelButtonText: 'Cancel',
+                                confirmButtonColor: '#F59E0B',
+                                reverseButtons: true,
+                            })
+                            if (result.isConfirmed) setActiveMutation.mutate({ id: d.user.id, isActive: false })
+                        }}
                         onDelete={async () => {
                             const result = await SweetAlert.fire({
                                 title: `Delete ${d.user.displayName || d.user.email}?`,
@@ -602,6 +675,7 @@ function AdminUsersPanel() {
 function UserRow({
     derived, isSelected, isExpanded, leaveHistories, timesheetHistories, usersByName,
     onToggleSelect, onToggleExpand, onEdit, onConfirmEmail, confirmingEmail, onDelete, disabled,
+    onToggleActive, togglingActive,
 }: {
     derived: DerivedUser
     isSelected: boolean
@@ -616,6 +690,8 @@ function UserRow({
     confirmingEmail: boolean
     onDelete: () => void
     disabled: boolean
+    onToggleActive: () => void
+    togglingActive: boolean
 }) {
     const u = derived.user
     const role = derived.primaryRole
@@ -754,9 +830,9 @@ function UserRow({
                     </Box>
                 </Box>
 
-                {/* Department */}
+                {/* Department — not applicable to admins, who sit outside the department structure */}
                 <Box sx={{ display: { xs: 'none', md: 'block' } }}>
-                    {derived.departmentName ? (
+                    {role !== 'Admin' && derived.departmentName ? (
                         <Box component="span" sx={{
                             display: 'inline-block', bgcolor: softBg('info'), color: 'info.dark',
                             borderRadius: '4px', px: '8px', py: '2px',
@@ -765,24 +841,37 @@ function UserRow({
                     ) : <Box sx={{ fontSize: 11, color: 'text.disabled' }}>—</Box>}
                 </Box>
 
-                {/* Status */}
+                {/* Status. Being switched off replaces presence rather than sitting
+                    beside it: a deactivated account cannot be signed in, so
+                    "Offline" would be both redundant and the less useful fact. */}
                 <Box sx={{ display: { xs: 'none', md: 'block' } }}>
-                    <Box component="span" sx={{
-                        display: 'inline-flex', alignItems: 'center', gap: '5px',
-                        fontSize: 11, fontWeight: 500,
-                        color: presence === 'online' ? 'success.dark'
-                            : presence === 'away' ? 'warning.dark' : 'text.secondary',
-                        bgcolor: presence === 'online' ? softBg('success')
-                            : presence === 'away' ? softBg('warning') : 'action.hover',
-                        px: '8px', py: '3px', borderRadius: '12px',
-                    }}>
-                        {presence === 'online' ? 'Online' : presence === 'away' ? (derived.isAutoBreak ? 'Idle' : 'On Break') : 'Offline'}
-                    </Box>
+                    {derived.isActive ? (
+                        <Box component="span" sx={{
+                            display: 'inline-flex', alignItems: 'center', gap: '5px',
+                            fontSize: 11, fontWeight: 500,
+                            color: presence === 'online' ? 'success.dark'
+                                : presence === 'away' ? 'warning.dark' : 'text.secondary',
+                            bgcolor: presence === 'online' ? softBg('success')
+                                : presence === 'away' ? softBg('warning') : 'action.hover',
+                            px: '8px', py: '3px', borderRadius: '12px',
+                        }}>
+                            {presence === 'online' ? 'Online' : presence === 'away' ? (derived.isAutoBreak ? 'Idle' : 'On Break') : 'Offline'}
+                        </Box>
+                    ) : (
+                        <Box component="span" sx={{
+                            display: 'inline-flex', alignItems: 'center', gap: '5px',
+                            fontSize: 11, fontWeight: 600,
+                            color: 'error.dark', bgcolor: softBg('error'),
+                            px: '8px', py: '3px', borderRadius: '12px',
+                        }}>
+                            Deactivated
+                        </Box>
+                    )}
                 </Box>
 
-                {/* Leave */}
+                {/* Leave — admins don't carry an entitlement */}
                 <Box sx={{ display: { xs: 'none', md: 'block' } }}>
-                    {derived.leaveTotal > 0 ? (
+                    {role !== 'Admin' && derived.leaveTotal > 0 ? (
                         <>
                             <Box sx={{ fontSize: 11, color: 'text.secondary' }}>
                                 <Box component="strong" sx={{
@@ -823,6 +912,11 @@ function UserRow({
                     {!derived.isProtected && (
                         <>
                             <IconBtn title="Edit" onClick={onEdit}>✏️</IconBtn>
+                            <IconBtn
+                                title={derived.isActive ? 'Deactivate' : 'Activate'}
+                                onClick={onToggleActive}
+                                disabled={togglingActive}
+                            >{derived.isActive ? '⏸' : '▶'}</IconBtn>
                             <IconBtn title="Delete" onClick={onDelete} disabled={disabled} danger>🗑</IconBtn>
                         </>
                     )}
@@ -841,15 +935,21 @@ function UserRow({
                         <ExpandRow label="Joined" value={fmtJoined(derived.profile?.createdAt)} />
                         <ExpandRow label="Phone" value={u.phoneNumber || '—'} />
                         <ExpandRow label="Date of birth" value={u.dateOfBirth ? new Date(u.dateOfBirth).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'} />
-                        <ExpandRow label="Department" value={derived.departmentName ?? '—'} />
-                        <ExpandRow label="Job title" value={derived.profile?.jobTitle || '—'} />
-                        {role === 'Employee' && (
-                            <ExpandRow label="Manager" value={managerName ?? '—'} />
+                        {/* Admins sit outside the department structure and carry no
+                            entitlement, so none of these rows apply to them. */}
+                        {role !== 'Admin' && (
+                            <>
+                                <ExpandRow label="Department" value={derived.departmentName ?? '—'} />
+                                <ExpandRow label="Job title" value={derived.profile?.jobTitle || '—'} />
+                                {role === 'Employee' && (
+                                    <ExpandRow label="Manager" value={managerName ?? '—'} />
+                                )}
+                                <ExpandRow label="Annual entitlement"
+                                           value={derived.leaveTotal > 0 ? `${derived.leaveTotal} days` : '—'} />
+                                <ExpandRow label="Balance"
+                                           value={derived.leaveTotal > 0 ? `${derived.leaveBalance} days` : '—'} />
+                            </>
                         )}
-                        <ExpandRow label="Annual entitlement"
-                                   value={derived.leaveTotal > 0 ? `${derived.leaveTotal} days` : '—'} />
-                        <ExpandRow label="Balance"
-                                   value={derived.leaveTotal > 0 ? `${derived.leaveBalance} days` : '—'} />
                     </ExpandBlock>
 
                     <ExpandBlock title="Recent activity">
@@ -1164,6 +1264,16 @@ function EditUserDialog(props: {
         [departmentId, props.profiles, props.users, props.data],
     )
 
+    // Admins sit outside the department structure — same as CreateUserDialog, the
+    // Profile section is hidden for them. The profile row keeps whatever department
+    // it already had; it just isn't shown or edited here.
+    const isAdmin = role === 'Admin'
+
+    // Only an employee reports to the department's manager. A manager *is* one, so
+    // the field is meaningless for them and hidden — and, being hidden, it neither
+    // sets nor clears anything: the stored managerId is submitted back untouched.
+    const showManagerField = role === 'Employee'
+
     return (
         <AppDialog open={open} onClose={props.onClose} maxWidth="sm">
             <AppDialogTitle>Edit User</AppDialogTitle>
@@ -1182,7 +1292,7 @@ function EditUserDialog(props: {
                         ))}
                     </RadioGroup>
 
-                    {profile && (
+                    {profile && !isAdmin && (
                         <>
                             <Divider />
                             <Typography variant="subtitle2" color="text.secondary">Profile</Typography>
@@ -1201,13 +1311,19 @@ function EditUserDialog(props: {
                                     <MenuItem key={dept.id} value={dept.id}>{dept.name} ({dept.code})</MenuItem>
                                 ))}
                             </TextField>
-                            <TextField
-                                label="Manager"
-                                value={departmentManager?.name ?? 'No manager assigned to this department'}
-                                fullWidth
-                                disabled
-                                helperText="Set by the department's manager — change it by reassigning who manages this department."
-                            />
+                            {showManagerField && (
+                                <TextField
+                                    label="Manager"
+                                    value={departmentManager?.name ?? 'No manager assigned to this department'}
+                                    fullWidth
+                                    /* read-only rather than disabled: the derived name has to read
+                                       as a filled-in value, and greyed-out text looks like an empty
+                                       placeholder — especially when the manager's own display name
+                                       is something like "Manager". */
+                                    slotProps={{ htmlInput: { readOnly: true } }}
+                                    helperText="Set by the department's manager — change it by reassigning who manages this department."
+                                />
+                            )}
                             <TextField
                                 label="Job title"
                                 value={jobTitle}
@@ -1235,7 +1351,7 @@ function EditUserDialog(props: {
                     variant="contained"
                     disabled={props.isPending || !user}
                     onClick={() =>
-                        user && props.onSubmit({ userId: user.id, email, displayName, roles: [role], profile, departmentId, jobTitle, annualLeaveEntitlement, managerId: departmentManager?.profileId ?? null, phoneNumber: phoneNumber.trim() || null, dateOfBirth: dateOfBirth || null })
+                        user && props.onSubmit({ userId: user.id, email, displayName, roles: [role], profile, departmentId, jobTitle, annualLeaveEntitlement, managerId: showManagerField ? departmentManager?.profileId ?? null : profile?.managerId ?? null, phoneNumber: phoneNumber.trim() || null, dateOfBirth: dateOfBirth || null })
                     }
                     sx={saveBtnSx}
                 >
@@ -1292,6 +1408,21 @@ function CreateUserDialog(props: {
         [departmentId, props.profiles, props.users],
     )
 
+    /* Admins sit outside the department structure, so the whole Profile section is
+       hidden for them. A profile row is still written server-side and its
+       DepartmentId is a required FK, so fall back to a real department rather than
+       asking for one that is never shown — the panel hides it for admins anyway. */
+    const isAdmin = role === 'Admin'
+    const fallbackDepartmentId = useMemo(
+        () => props.departments.find((d) => d.isActive)?.id ?? props.departments[0]?.id ?? 0,
+        [props.departments],
+    )
+    const effectiveDepartmentId = isAdmin ? fallbackDepartmentId : departmentId
+
+    // Only an employee reports to the department's manager — a manager *is* one, so
+    // the field is hidden for them and no manager is set.
+    const showManagerField = role === 'Employee'
+
     const close = () => {
         setEmail('')
         setDisplayName('')
@@ -1335,45 +1466,52 @@ function CreateUserDialog(props: {
                         ))}
                     </RadioGroup>
 
-                    <Divider />
-                    <Typography variant="subtitle2" color="text.secondary">Profile</Typography>
-                    <TextField
-                        select
-                        label="Department"
-                        value={departmentId}
-                        onChange={(e) => setDepartmentId(Number(e.target.value))}
-                        fullWidth
-                        required
-                        error={departmentId === 0}
-                        helperText={departmentId === 0 ? 'Department is required' : ''}
-                    >
-                        <MenuItem value={0} disabled>Select department</MenuItem>
-                        {props.departments.map((dept) => (
-                            <MenuItem key={dept.id} value={dept.id}>{dept.name} ({dept.code})</MenuItem>
-                        ))}
-                    </TextField>
-                    <TextField
-                        label="Manager"
-                        value={departmentManager?.name ?? 'No manager assigned to this department'}
-                        fullWidth
-                        disabled
-                        helperText="Set by the department's manager — change it by reassigning who manages this department."
-                    />
-                    <TextField
-                        label="Job title"
-                        value={jobTitle}
-                        onChange={(e) => setJobTitle(e.target.value)}
-                        fullWidth
-                    />
-                    <TextField
-                        label="Annual leave entitlement"
-                        type="number"
-                        value={annualLeaveEntitlement}
-                        onChange={(e) => setAnnualLeaveEntitlement(Number(e.target.value))}
-                        inputProps={{ min: 0, step: 0.5 }}
-                        fullWidth
-                        helperText={`Starts from the ${props.annualAllowance}-day annual leave allowance on Leave Types; change it to give this employee a different one.`}
-                    />
+                    {!isAdmin && (
+                        <>
+                            <Divider />
+                            <Typography variant="subtitle2" color="text.secondary">Profile</Typography>
+                            <TextField
+                                select
+                                label="Department"
+                                value={departmentId}
+                                onChange={(e) => setDepartmentId(Number(e.target.value))}
+                                fullWidth
+                                required
+                                error={departmentId === 0}
+                                helperText={departmentId === 0 ? 'Department is required' : ''}
+                            >
+                                <MenuItem value={0} disabled>Select department</MenuItem>
+                                {props.departments.map((dept) => (
+                                    <MenuItem key={dept.id} value={dept.id}>{dept.name} ({dept.code})</MenuItem>
+                                ))}
+                            </TextField>
+                            {showManagerField && (
+                                <TextField
+                                    label="Manager"
+                                    value={departmentManager?.name ?? 'No manager assigned to this department'}
+                                    fullWidth
+                                    // Read-only, not disabled — see EditUserDialog.
+                                    slotProps={{ htmlInput: { readOnly: true } }}
+                                    helperText="Set by the department's manager — change it by reassigning who manages this department."
+                                />
+                            )}
+                            <TextField
+                                label="Job title"
+                                value={jobTitle}
+                                onChange={(e) => setJobTitle(e.target.value)}
+                                fullWidth
+                            />
+                            <TextField
+                                label="Annual leave entitlement"
+                                type="number"
+                                value={annualLeaveEntitlement}
+                                onChange={(e) => setAnnualLeaveEntitlement(Number(e.target.value))}
+                                inputProps={{ min: 0, step: 0.5 }}
+                                fullWidth
+                                helperText={`Starts from the ${props.annualAllowance}-day annual leave allowance on Leave Types; change it to give this employee a different one.`}
+                            />
+                        </>
+                    )}
 
                     {props.error ? <Alert severity="error">{getApiErrorMessage(props.error, 'Failed.')}</Alert> : null}
                 </Stack>
@@ -1382,14 +1520,14 @@ function CreateUserDialog(props: {
                 <Button variant="outlined" onClick={close} disabled={props.isPending} sx={cancelBtnSx}>Cancel</Button>
                 <Button
                     variant="contained"
-                    disabled={props.isPending || !email.trim() || !displayName.trim() || departmentId === 0}
+                    disabled={props.isPending || !email.trim() || !displayName.trim() || effectiveDepartmentId === 0}
                     onClick={() => props.onSubmit({
                         email: email.trim(),
                         displayName: displayName.trim(),
                         roles: [role],
-                        departmentId,
-                        managerId: departmentManager?.profileId ?? null,
-                        jobTitle: jobTitle.trim() || null,
+                        departmentId: effectiveDepartmentId,
+                        managerId: showManagerField ? departmentManager?.profileId ?? null : null,
+                        jobTitle: isAdmin ? null : jobTitle.trim() || null,
                         annualLeaveEntitlement,
                         phoneNumber: phoneNumber.trim() || null,
                         dateOfBirth: dateOfBirth || null,

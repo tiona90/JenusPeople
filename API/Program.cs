@@ -329,7 +329,19 @@ builder.Services.AddIdentityApiEndpoints<User>(opt =>
     opt.Lockout.AllowedForNewUsers = true;
 })
 .AddRoles<Role>()
-    .AddEntityFrameworkStores<AppDbContext>();
+    .AddEntityFrameworkStores<AppDbContext>()
+    // Refuses a deactivated account (User.IsActive) inside Identity, so no
+    // sign-in path can miss the check. See ActiveUserSignInManager.
+    .AddSignInManager<ActiveUserSignInManager>();
+
+// How long a cookie issued before deactivation keeps working. Deactivating
+// rotates the user's security stamp, but the cookie is only re-checked against
+// it this often — Identity's default of 30 minutes would leave someone an
+// administrator has just switched off working for another half hour. One minute
+// costs one cached user lookup per session per minute; TimeSpan.Zero would
+// re-check on every request.
+builder.Services.Configure<SecurityStampValidatorOptions>(opt =>
+    opt.ValidationInterval = TimeSpan.FromMinutes(1));
 
 // No external (Google/GitHub) providers are registered. Social sign-in was
 // removed along with public self-registration: its callback provisioned an

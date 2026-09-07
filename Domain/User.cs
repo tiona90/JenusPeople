@@ -13,6 +13,18 @@ public class User : IdentityUser
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
+    /// <summary>
+    /// Whether this account may sign in. An administrator switches a leaver off
+    /// here rather than deleting them: DeleteAdminUser has to null out every
+    /// approval they ever gave, so deletion rewrites history, while an enabled
+    /// account leaves working credentials behind.
+    ///
+    /// Enforced by <c>API.Security.ActiveUserSignInManager</c> — inside Identity,
+    /// so no sign-in path can miss it. Deliberately distinct from
+    /// <c>LockoutEnd</c>, which is the 15-minute brake on password guessing.
+    /// </summary>
+    public bool IsActive { get; set; } = true;
+
     public ICollection<AnnualLeave> AnnualLeaves { get; set; } = new List<AnnualLeave>();
     public ICollection<AnnualLeave> ApprovedAnnualLeaves { get; set; } = new List<AnnualLeave>();
     public ICollection<LeaveStatusHistory> LeaveStatusChanges { get; set; } = new List<LeaveStatusHistory>();

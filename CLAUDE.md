@@ -93,7 +93,7 @@ that means when adding code:
 
 | Entity | Key Fields |
 |--------|-----------|
-| `User` | Extends `IdentityUser`; has `DisplayName`, `ImageUrl` |
+| `User` | Extends `IdentityUser`; has `DisplayName`, `ImageUrl`, `IsActive` (may this account sign in — a leaver is switched off rather than deleted, since `DeleteAdminUser` nulls out every approval they gave) |
 | `AnnualLeave` | `EmployeeId`, `StartDate/EndDate`, `Status` (enum), `TotalDays` (computed, no weekends) |
 | `Timesheet` | `EmployeeId`, `PeriodStart/End`, `TotalHours`, `Status` (Draft→Submitted→Approved/Rejected) |
 | `TimesheetEntry` | `TimesheetId`, `ProjectId`, `Date`, `HoursWorked` (decimal 4,2), optional `ActivityTypeId`, `ProjectTypeId` and `ProjectComponentId`. One entry per project **+ type + component** per date |
@@ -134,7 +134,22 @@ Status enums: `AnnualLeaveStatus` (Pending, Approved, Rejected, Cancelled); `Tim
   the database (Unhealthy → 503) and the configured mail provider (Degraded → still
   200, result cached 5 minutes). Both anonymous and exempt from rate limiting. See
   `API/Extensions/HealthCheckExtensions.cs`.
-- **OAuth:** Google and GitHub OAuth configured in `appsettings.json`; both are optional (skipped if `ClientId` is empty)
+- **OAuth:** None. No external providers are registered — social sign-in was
+  removed along with public self-registration (its callback provisioned an
+  account for any unrecognised email). `AccountController.Login` is the only
+  sign-in path, and `MapIdentityApi` is deliberately not mapped;
+  `Tests/WorkTrack.Tests/PublicRegistrationRemovedTests.cs` keeps it that way.
+- **Account deactivation:** `User.IsActive` gates sign-in, enforced inside
+  Identity by `API/Security/ActiveUserSignInManager.cs` (overrides
+  `CanSignInAsync`), so no sign-in path can miss it. A refusal surfaces as
+  `SignInResult.NotAllowed` — the same result an unconfirmed email gives — which
+  is why `Login` re-checks `IsActive` to choose between 403 "deactivated" and
+  401 "not verified". Toggled by `Application/AdminUsers/Commands/SetAdminUserActive.cs`
+  (`PUT /api/adminusers/{id}/active`), which refuses self-deactivation and
+  rotates the security stamp so live sessions die at the next revalidation —
+  `SecurityStampValidatorOptions.ValidationInterval` is lowered to 1 minute in
+  `Program.cs` for that reason. Deliberately distinct from `LockoutEnd`, which
+  is the 15-minute brake on password guessing (see `API/Security/LockoutPolicy.cs`).
 ## Improvements & Roadmap
 
 The following areas have been identified for future enhancement to improve scalability, security, and developer experience:

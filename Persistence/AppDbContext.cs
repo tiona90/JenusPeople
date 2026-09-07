@@ -46,6 +46,15 @@ public class AppDbContext : IdentityDbContext<
     {
         base.OnModelCreating(builder);
 
+        builder.Entity<User>(entity =>
+        {
+            // A database default, not just a CLR one: it is what backfills every
+            // account that predates the column, so an existing user is active
+            // rather than locked out by the migration that adds it.
+            entity.Property(e => e.IsActive)
+                .HasDefaultValue(true);
+        });
+
         builder.Entity<StoredFile>(entity =>
         {
             entity.Property(e => e.Id)

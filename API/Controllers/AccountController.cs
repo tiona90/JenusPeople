@@ -142,6 +142,23 @@ public class AccountController(
 
         if (result.IsNotAllowed)
         {
+            // Two different states arrive here: an unverified email, and an
+            // account an administrator switched off (see
+            // API.Security.ActiveUserSignInManager). Telling a deactivated
+            // employee to check their inbox sends them looking for an email that
+            // will never come, and telling an unverified one to contact an
+            // administrator sends them to a colleague who can do nothing, so the
+            // two are separated. Looked up by name, because that is what
+            // PasswordSignInAsync above resolved the submitted email against.
+            var user = await userManager.FindByNameAsync(request.Email);
+            if (user is not null && !user.IsActive)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new
+                {
+                    message = "This account has been deactivated. Please contact your administrator."
+                });
+            }
+
             return Unauthorized(new
             {
                 message = "Your account has not been verified yet. Please check your email and click the confirmation link before signing in."

@@ -39,7 +39,7 @@ function profile(userId: string, departmentId: number): EmployeeProfile {
 function user(id: string, roles: AdminUser['roles']): AdminUser {
     return {
         id, userName: id, email: `${id}@annualleave.com`, displayName: id,
-        imageUrl: '', emailConfirmed: true, roles,
+        imageUrl: '', emailConfirmed: true, isActive: true, roles,
     }
 }
 

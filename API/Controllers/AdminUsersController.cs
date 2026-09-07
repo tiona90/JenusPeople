@@ -76,6 +76,23 @@ public class AdminUsersController : BaseApiController
             HttpContext.RequestAborted));
     }
 
+    [HttpPut("{id}/active")]
+    [ProducesResponseType(typeof(AdminUserDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<AdminUserDto>> SetUserActive(string id, AdminSetUserActiveDto request)
+    {
+        return HandleResult(await Mediator.Send(
+            new SetAdminUserActive.Command
+            {
+                Id = id,
+                IsActive = request.IsActive,
+                RequestingUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty,
+            },
+            HttpContext.RequestAborted));
+    }
+
     [HttpPost("{id}/confirm-email")]
     [ProducesResponseType(typeof(AdminUserDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]

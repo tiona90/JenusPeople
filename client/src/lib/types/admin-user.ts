@@ -9,6 +9,13 @@ export interface AdminUser {
     phoneNumber?: string | null
     dateOfBirth?: string | null // ISO date "yyyy-MM-dd"
     emailConfirmed: boolean
+    /**
+     * Whether the account may sign in. A leaver is switched off rather than
+     * deleted — deleting them nulls out every approval they ever gave. Distinct
+     * from presence (which is about being checked in right now) and from the
+     * temporary lockout that failed password attempts cause.
+     */
+    isActive: boolean
     roles: UserRole[]
     /**
      * Present only on the create response: whether the welcome email carrying
@@ -42,4 +49,12 @@ export interface AdminUpdateUserRequest {
 
 export interface AdminSetUserRolesRequest {
     roles: UserRole[]
+}
+
+/**
+ * The state to put the account into, rather than a verb, so a repeated or
+ * racing call cannot flip it back the other way.
+ */
+export interface AdminSetUserActiveRequest {
+    isActive: boolean
 }

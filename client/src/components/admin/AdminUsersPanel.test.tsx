@@ -20,8 +20,21 @@ vi.mock('../../lib/api', () => ({
     updateAdminUser: vi.fn(),
     setAdminUserRoles: vi.fn(),
     confirmAdminUserEmail: vi.fn(),
+    setAdminUserActive: vi.fn(),
     deleteAdminUser: vi.fn(),
     updateEmployeeProfile: vi.fn(),
+}))
+
+// Only SweetAlert is stubbed: sweetalert2 renders a real modal and resolves on a
+// click nobody makes in jsdom, so an unmocked confirm hangs the test. Everything
+// else in ../ui (AppDialog and friends) stays real, because the dialogs under
+// test are built from it. vi.hoisted, because vi.mock's factory is lifted above
+// ordinary declarations and would not see a plain const.
+const { sweetAlertFire } = vi.hoisted(() => ({ sweetAlertFire: vi.fn() }))
+
+vi.mock('../ui', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../ui')>()),
+    SweetAlert: { fire: sweetAlertFire },
 }))
 
 const api = vi.mocked(await import('../../lib/api'))
@@ -107,6 +120,7 @@ describe('AdminUsersPanel — Create User', () => {
             displayName: 'New Joiner',
             imageUrl: '',
             emailConfirmed: true,
+            isActive: true,
             roles: ['Employee'],
             inviteEmailSent: true,
         })
@@ -148,6 +162,7 @@ describe('AdminUsersPanel — Create User', () => {
             displayName: 'New Joiner',
             imageUrl: '',
             emailConfirmed: true,
+            isActive: true,
             roles: ['Employee'],
             inviteEmailSent: false,
         })
@@ -249,9 +264,13 @@ describe('AdminUsersPanel — manager is derived from department', () => {
 
         expect(await within(dialog).findByDisplayValue('Andreas Georgiou')).toBeInTheDocument()
         expect(within(dialog).queryByRole('combobox', { name: /manager/i })).not.toBeInTheDocument()
-        // The Manager field itself is disabled. getByLabelText would also match
-        // the "Manager" role radio, so target the textbox role specifically.
-        expect(within(dialog).getByRole('textbox', { name: 'Manager' })).toBeDisabled()
+        // The Manager field is read-only rather than disabled, so the derived name
+        // renders as a filled-in value instead of greyed-out placeholder-looking
+        // text. getByLabelText would also match the "Manager" role radio, so target
+        // the textbox role specifically.
+        const managerField = within(dialog).getByRole('textbox', { name: 'Manager' })
+        expect(managerField).toHaveAttribute('readonly')
+        expect(managerField).not.toBeDisabled()
     })
 
     it('sends the department manager\'s profile id on save without letting it be edited', async () => {
@@ -269,10 +288,18 @@ describe('AdminUsersPanel — manager is derived from department', () => {
         })
     })
 
-    it('shows no manager for the department manager\'s own record, rather than themself', async () => {
+    // A manager *is* the person the field would name, so they get no Manager field
+    // at all — and never themself, which is what this used to guard against.
+    it('offers no manager for a manager\'s own record, and saves none', async () => {
         const dialog = await openEditFor('Andreas Georgiou')
 
-        await within(dialog).findByDisplayValue('No manager assigned to this department')
+        // Wait for the role-driven effect to settle before reading the form.
+        await waitFor(() => expect(within(dialog).getByRole('radio', { name: 'Manager' })).toBeChecked())
+
+        expect(within(dialog).queryByRole('textbox', { name: 'Manager' })).not.toBeInTheDocument()
+        expect(within(dialog).queryByText(/set by the department's manager/i)).not.toBeInTheDocument()
+        // The rest of the Profile section stays.
+        expect(within(dialog).getByText('Profile')).toBeInTheDocument()
 
         fireEvent.click(within(dialog).getByRole('button', { name: /^save$/i }))
 
@@ -280,6 +307,26 @@ describe('AdminUsersPanel — manager is derived from department', () => {
         expect(api.updateEmployeeProfile.mock.calls[0][0]).toMatchObject({
             id: MANAGER_PROFILE.id,
             managerId: null,
+        })
+    })
+
+    // The hidden field must not rewrite what is stored: a manager who already has
+    // a managerId keeps it on save rather than having it cleared or re-derived.
+    it('leaves a manager\'s stored managerId untouched when the field is hidden', async () => {
+        api.getEmployeeProfiles.mockResolvedValue([
+            { ...MANAGER_PROFILE, managerId: 'p-someone-else' },
+            EMPLOYEE_PROFILE,
+        ] as never)
+
+        const dialog = await openEditFor('Andreas Georgiou')
+        await waitFor(() => expect(within(dialog).getByRole('radio', { name: 'Manager' })).toBeChecked())
+
+        fireEvent.click(within(dialog).getByRole('button', { name: /^save$/i }))
+
+        await waitFor(() => expect(api.updateEmployeeProfile).toHaveBeenCalledTimes(1))
+        expect(api.updateEmployeeProfile.mock.calls[0][0]).toMatchObject({
+            id: MANAGER_PROFILE.id,
+            managerId: 'p-someone-else',
         })
     })
 
@@ -295,6 +342,7 @@ describe('AdminUsersPanel — manager is derived from department', () => {
             displayName: 'New Hire',
             imageUrl: '',
             emailConfirmed: true,
+            isActive: true,
             roles: ['Employee'],
             inviteEmailSent: true,
         })
@@ -310,6 +358,41 @@ describe('AdminUsersPanel — manager is derived from department', () => {
         await waitFor(() => expect(api.createAdminUser).toHaveBeenCalledTimes(1))
         expect(api.createAdminUser.mock.calls[0][0]).toMatchObject({
             managerId: MANAGER_PROFILE.id,
+        })
+    })
+
+    it('hides the Manager field when creating a manager, and sends no manager', async () => {
+        const dialog = await openCreateDialog()
+
+        api.createAdminUser.mockResolvedValue({
+            id: 'u-new',
+            userName: 'newmanager@example.test',
+            email: 'newmanager@example.test',
+            displayName: 'New Manager',
+            imageUrl: '',
+            emailConfirmed: true,
+            isActive: true,
+            roles: ['Manager'],
+            inviteEmailSent: true,
+        })
+
+        fireEvent.change(within(dialog).getByLabelText(/email/i), { target: { value: 'newmanager@example.test' } })
+        fireEvent.change(within(dialog).getByLabelText(/display name/i), { target: { value: 'New Manager' } })
+        fireEvent.click(within(dialog).getByRole('radio', { name: 'Manager' }))
+        await selectDepartment(dialog)
+
+        expect(within(dialog).queryByRole('textbox', { name: 'Manager' })).not.toBeInTheDocument()
+        expect(within(dialog).queryByDisplayValue('Andreas Georgiou')).not.toBeInTheDocument()
+        // Department, Job title and entitlement are still theirs to set.
+        expect(within(dialog).getByDisplayValue(`${DEPARTMENT.id}`)).toBeInTheDocument()
+
+        fireEvent.click(within(dialog).getByRole('button', { name: /^create$/i }))
+
+        await waitFor(() => expect(api.createAdminUser).toHaveBeenCalledTimes(1))
+        expect(api.createAdminUser.mock.calls[0][0]).toMatchObject({
+            roles: ['Manager'],
+            departmentId: DEPARTMENT.id,
+            managerId: null,
         })
     })
 })
@@ -355,6 +438,7 @@ describe('AdminUsersPanel — role selection', () => {
             displayName: 'New Joiner',
             imageUrl: '',
             emailConfirmed: true,
+            isActive: true,
             roles: ['Manager'],
             inviteEmailSent: true,
         })
@@ -368,6 +452,170 @@ describe('AdminUsersPanel — role selection', () => {
         await waitFor(() => expect(createAdminUser).toHaveBeenCalledTimes(1))
 
         expect(api.createAdminUser.mock.calls[0][0].roles).toEqual(['Manager'])
+    })
+})
+
+// Admins sit outside the department structure, so Create User hides the whole
+// Profile section for them. A profile row is still written server-side and its
+// DepartmentId is a required FK, so the panel has to supply one without asking.
+describe('AdminUsersPanel — Admin hides the Profile section', () => {
+    it('drops the profile fields when Admin is picked, and brings them back otherwise', async () => {
+        const dialog = await openCreateDialog()
+
+        expect(within(dialog).getByText('Profile')).toBeInTheDocument()
+
+        fireEvent.click(within(dialog).getByRole('radio', { name: 'Admin' }))
+
+        expect(within(dialog).queryByText('Profile')).not.toBeInTheDocument()
+        expect(within(dialog).queryByLabelText(/department/i)).not.toBeInTheDocument()
+        expect(within(dialog).queryByLabelText(/job title/i)).not.toBeInTheDocument()
+        expect(within(dialog).queryByLabelText(/annual leave entitlement/i)).not.toBeInTheDocument()
+        // The read-only Manager field goes with them — not asserted by label, since
+        // "Manager" also names one of the role radios above.
+        expect(within(dialog).queryByText(/set by the department's manager/i)).not.toBeInTheDocument()
+
+        // Not a one-way door: switching back off Admin restores the section.
+        fireEvent.click(within(dialog).getByRole('radio', { name: 'Manager' }))
+        expect(within(dialog).getByText('Profile')).toBeInTheDocument()
+    })
+
+    it('creates an admin without a department being picked, falling back to an active one', async () => {
+        const dialog = await openCreateDialog()
+
+        api.createAdminUser.mockResolvedValue({
+            id: 'u1',
+            userName: 'newadmin@example.test',
+            email: 'newadmin@example.test',
+            displayName: 'New Admin',
+            imageUrl: '',
+            emailConfirmed: true,
+            isActive: true,
+            roles: ['Admin'],
+            inviteEmailSent: true,
+        })
+
+        fireEvent.change(within(dialog).getByLabelText(/email/i), { target: { value: 'newadmin@example.test' } })
+        fireEvent.change(within(dialog).getByLabelText(/display name/i), { target: { value: 'New Admin' } })
+        fireEvent.click(within(dialog).getByRole('radio', { name: 'Admin' }))
+
+        // No department to select — Create is enabled all the same.
+        const create = within(dialog).getByRole('button', { name: /^create$/i })
+        expect(create).toBeEnabled()
+        fireEvent.click(create)
+
+        await waitFor(() => expect(createAdminUser).toHaveBeenCalledTimes(1))
+
+        expect(api.createAdminUser.mock.calls[0][0]).toMatchObject({
+            roles: ['Admin'],
+            departmentId: DEPARTMENT.id,
+            managerId: null,
+            jobTitle: null,
+        })
+    })
+})
+
+// Switching an account off is the answer for someone who has left: deleting them
+// rewrites history (every approval they gave is nulled out), and leaving the
+// account enabled leaves working credentials behind.
+describe('AdminUsersPanel — activating and deactivating', () => {
+    const ADMIN = { id: 'u-admin', userName: 'admin@annualleave.com', email: 'admin@annualleave.com', displayName: 'Admin User', imageUrl: '', emailConfirmed: true, isActive: true, roles: ['Admin'] }
+    const ACTIVE = { id: 'u-active', userName: 'active@example.test', email: 'active@example.test', displayName: 'Still Here', imageUrl: '', emailConfirmed: true, isActive: true, roles: ['Employee'] }
+    const INACTIVE = { id: 'u-inactive', userName: 'gone@example.test', email: 'gone@example.test', displayName: 'Long Gone', imageUrl: '', emailConfirmed: true, isActive: false, roles: ['Employee'] }
+
+    beforeEach(() => {
+        api.getAdminUsers.mockResolvedValue([ADMIN, ACTIVE, INACTIVE] as never)
+        api.setAdminUserActive.mockResolvedValue(INACTIVE as never)
+        sweetAlertFire.mockResolvedValue({ isConfirmed: true })
+    })
+
+    /** The row container, which holds both the name and the action buttons. */
+    async function rowFor(displayName: string) {
+        const nameEl = await screen.findByText(displayName)
+        return nameEl.parentElement!.parentElement!.parentElement!.parentElement!
+    }
+
+    it('badges a deactivated account instead of showing it as merely offline', async () => {
+        renderPanel()
+
+        const row = await rowFor('Long Gone')
+        expect(within(row).getByText('Deactivated')).toBeInTheDocument()
+        expect(within(row).queryByText('Offline')).not.toBeInTheDocument()
+
+        // An active account is unaffected: presence is a separate axis.
+        const active = await rowFor('Still Here')
+        expect(within(active).getByText('Offline')).toBeInTheDocument()
+        expect(within(active).queryByText('Deactivated')).not.toBeInTheDocument()
+    })
+
+    it('deactivates an account once the admin confirms', async () => {
+        renderPanel()
+
+        const row = await rowFor('Still Here')
+        fireEvent.click(within(row).getByTitle('Deactivate'))
+
+        await waitFor(() => expect(api.setAdminUserActive).toHaveBeenCalledTimes(1))
+        expect(sweetAlertFire).toHaveBeenCalled()
+        expect(api.setAdminUserActive.mock.calls[0].slice(0, 2)).toEqual([ACTIVE.id, { isActive: false }])
+    })
+
+    it('leaves the account alone when the admin cancels', async () => {
+        sweetAlertFire.mockResolvedValueOnce({ isConfirmed: false } as never)
+        renderPanel()
+
+        const row = await rowFor('Still Here')
+        fireEvent.click(within(row).getByTitle('Deactivate'))
+
+        await waitFor(() => expect(sweetAlertFire).toHaveBeenCalled())
+        expect(api.setAdminUserActive).not.toHaveBeenCalled()
+    })
+
+    // Reactivating restores access rather than removing it, so it does not ask.
+    it('reactivates a deactivated account without a confirmation', async () => {
+        renderPanel()
+
+        const row = await rowFor('Long Gone')
+        expect(within(row).queryByTitle('Deactivate')).not.toBeInTheDocument()
+        fireEvent.click(within(row).getByTitle('Activate'))
+
+        await waitFor(() => expect(api.setAdminUserActive).toHaveBeenCalledTimes(1))
+        expect(api.setAdminUserActive.mock.calls[0].slice(0, 2)).toEqual([INACTIVE.id, { isActive: true }])
+        expect(sweetAlertFire).not.toHaveBeenCalled()
+    })
+
+    it('counts and filters deactivated accounts on their own tab', async () => {
+        renderPanel()
+
+        const tab = await screen.findByRole('button', { name: /Deactivated/ })
+        expect(within(tab).getByText('1')).toBeInTheDocument()
+
+        fireEvent.click(tab)
+
+        expect(screen.getByText('Long Gone')).toBeInTheDocument()
+        expect(screen.queryByText('Still Here')).not.toBeInTheDocument()
+    })
+
+    // The seeded admin is the account the panel already refuses to edit or
+    // delete; switching it off would be just as effective a way to lose access.
+    it('offers no toggle for the protected admin', async () => {
+        renderPanel()
+
+        const row = await rowFor('Admin User')
+        expect(within(row).queryByTitle('Deactivate')).not.toBeInTheDocument()
+        expect(within(row).queryByTitle('Activate')).not.toBeInTheDocument()
+    })
+
+    it('deactivates every selected account from the bulk bar', async () => {
+        renderPanel()
+
+        const row = await rowFor('Still Here')
+        fireEvent.click(within(row).getByRole('checkbox'))
+
+        fireEvent.click(await screen.findByText('⏸ Deactivate'))
+
+        await waitFor(() => expect(api.setAdminUserActive).toHaveBeenCalledTimes(1))
+        expect(api.setAdminUserActive.mock.calls[0].slice(0, 2)).toEqual([ACTIVE.id, { isActive: false }])
+        // Deleting is a separate, still-available action — not what this button does.
+        expect(api.deleteAdminUser).not.toHaveBeenCalled()
     })
 })
 

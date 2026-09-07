@@ -23,6 +23,7 @@ public static class AdminUserMapper
         PhoneNumber = user.PhoneNumber,
         DateOfBirth = user.DateOfBirth,
         EmailConfirmed = user.EmailConfirmed,
+        IsActive = user.IsActive,
         Roles = roles.OrderBy(r => r).ToList(),
     };
 }
