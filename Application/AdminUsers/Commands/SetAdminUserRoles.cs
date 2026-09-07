@@ -4,6 +4,8 @@ using Application.Core;
 using Domain;
 using MediatR;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+using Persistence;
 
 namespace Application.AdminUsers.Commands;
 
@@ -15,7 +17,8 @@ public class SetAdminUserRoles
         public required AdminSetUserRolesDto Roles { get; set; }
     }
 
-    public class Handler(UserManager<User> userManager) : IRequestHandler<Command, Result<AdminUserDto>>
+    public class Handler(UserManager<User> userManager, AppDbContext context)
+        : IRequestHandler<Command, Result<AdminUserDto>>
     {
         public async Task<Result<AdminUserDto>> Handle(Command request, CancellationToken cancellationToken)
         {
@@ -56,6 +59,26 @@ public class SetAdminUserRoles
             }
 
             var roles = await userManager.GetRolesAsync(user);
+
+            // A UserDepartment row is an extra department a *manager* covers, and
+            // nothing reads it for anyone else. Left behind by a demotion it is
+            // invisible everywhere except DeleteDepartment, which counts it as an
+            // "assigned manager" blocker — and there is no endpoint to clear it, so
+            // the department it names becomes undeletable. Drop the rows with the
+            // role that gave them meaning.
+            if (!roles.Contains(AppRoles.Manager, StringComparer.OrdinalIgnoreCase))
+            {
+                var assignments = await context.UserDepartments
+                    .Where(ud => ud.UserId == user.Id)
+                    .ToListAsync(cancellationToken);
+
+                if (assignments.Count > 0)
+                {
+                    context.UserDepartments.RemoveRange(assignments);
+                    await context.SaveChangesAsync(cancellationToken);
+                }
+            }
+
             return Result<AdminUserDto>.Success(AdminUserMapper.ToDto(user, roles));
         }
 

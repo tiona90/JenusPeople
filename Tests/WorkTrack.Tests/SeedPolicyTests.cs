@@ -333,25 +333,30 @@ public class SeedPolicyTests : IDisposable
     }
 
     /// <summary>
-    /// The admin's own profile and department assignment are structural — leave and
-    /// timesheets need a profile to hang off — so they are not demo content and
-    /// survive on a Production host. They self-limit to the admin because the demo
-    /// users they would otherwise cover no longer exist.
+    /// The admin's own profile is structural — leave and timesheets need one to hang
+    /// off — so it is not demo content and survives on a Production host. It
+    /// self-limits to the admin because the demo users it would otherwise cover no
+    /// longer exist.
+    ///
+    /// A <c>UserDepartment</c> row is not structural in the same way, and this test
+    /// used to assert the opposite. The seeder gave the admin ENG on every host,
+    /// which bought nothing — an Admin sees every department regardless — and made
+    /// Engineering undeletable on the deployed site, because DeleteDepartment counts
+    /// the row as an assigned manager and nothing can remove it. See
+    /// <see cref="NonManagerUserDepartmentTests"/>.
     /// </summary>
     [Fact]
-    public async Task Production_still_gives_an_existing_admin_a_profile_and_department()
+    public async Task Production_gives_an_existing_admin_a_profile_but_no_department_assignment()
     {
         var admin = await GivenExistingAdminAsync(OperatorPassword);
 
         await SeedAsync(ProductionPolicy());
 
         var profiles = await Db.EmployeeProfiles.ToListAsync();
-        var assignments = await Db.UserDepartments.ToListAsync();
 
         Assert.Single(profiles);
         Assert.Equal(admin.Id, profiles[0].UserId);
-        Assert.Single(assignments);
-        Assert.Equal(admin.Id, assignments[0].UserId);
+        Assert.Empty(await Db.UserDepartments.ToListAsync());
     }
 
     /// <summary>

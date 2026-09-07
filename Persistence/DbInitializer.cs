@@ -56,9 +56,9 @@ public class DbInitializer
         // Everything a real tenant needs regardless of whether it wants worked
         // examples: the role and type catalogues the app cannot function without,
         // the single app-settings row, the department list that every employee
-        // profile hangs off, the admin's own assignment and profile, and the
-        // backfills that repair rows predating a migration. This runs in every
-        // environment.
+        // profile hangs off, the admin's own profile, and the backfills and
+        // cleanups that repair rows predating a migration or a fix. This runs in
+        // every environment.
         //
         // Order matters: each seeder bails out early when its dependencies are
         // missing, so the catalogues must land before the rows that reference them
@@ -72,6 +72,7 @@ public class DbInitializer
         await SeedProjectTypes(context);
         await SeedDepartments(context);
         await SeedUserDepartments(context);
+        await RemoveNonManagerUserDepartments(context);
         await SeedEmployeeProfiles(context);
         // A no-op until projects exist, which is why it belongs here rather than
         // inside SeedProjects: the rows it repairs are real ones, and they need
@@ -82,8 +83,10 @@ public class DbInitializer
 
         // SeedUserDepartments and SeedEmployeeProfiles above each add demo rows too
         // — but only for demo users, and SeedUsers has already deleted those by this
-        // point when the policy withholds them. So they self-limit to the admin's
-        // own assignment and profile without needing the policy passed in.
+        // point when the policy withholds them. So they self-limit without needing
+        // the policy passed in: SeedEmployeeProfiles down to the admin's own
+        // profile, and SeedUserDepartments down to nothing at all, since a
+        // department assignment is meaningful only for a manager.
 
         if (!policy.SeedDemoData)
         {
@@ -865,6 +868,23 @@ public class DbInitializer
         await context.SaveChangesAsync();
     }
 
+    /// <summary>
+    /// A <see cref="UserDepartment"/> row only ever means one thing: an extra
+    /// department this <b>manager</b> covers, on top of the one on their own
+    /// profile. Nothing else reads it — <c>ProjectScope.DepartmentIdsForAsync</c>
+    /// consults it only when the caller is a manager, and an Admin short-circuits
+    /// to "sees everything" before departments are resolved at all.
+    ///
+    /// So a row for an Admin or an Employee changes nothing about what they can
+    /// see, while <c>DeleteDepartment</c> still counts it as an "assigned manager"
+    /// blocker and no endpoint exists to remove it. That is not a harmless
+    /// inconsistency: this seeder used to give the admin account ENG
+    /// unconditionally — in every environment, not just demo ones — which left
+    /// Engineering permanently undeletable on the deployed site.
+    /// Only managers get rows now, and
+    /// <see cref="RemoveNonManagerUserDepartments"/> clears the ones already
+    /// written. See Tests/WorkTrack.Tests/NonManagerUserDepartmentTests.cs.
+    /// </summary>
     private static async Task SeedUserDepartments(AppDbContext context)
     {
         if (context.UserDepartments.Any()) return;
@@ -873,21 +893,12 @@ public class DbInitializer
         if (adminUser is null) return;
 
         var engineering = context.Departments.FirstOrDefault(d => d.Code == "ENG");
-        var hr = context.Departments.FirstOrDefault(d => d.Code == "HR");
-        if (engineering is null || hr is null) return;
+        if (engineering is null) return;
 
-        var userDepartments = new List<UserDepartment>
-        {
-            new UserDepartment
-            {
-                UserId         = adminUser.Id,
-                DepartmentId   = engineering.Id,
-                AssignedByUserId = adminUser.Id,
-                AssignedAt     = DateTime.UtcNow
-            },
-        };
+        var userDepartments = new List<UserDepartment>();
 
-        // Demo assignments — these users exist only when demo data is enabled.
+        // Demo assignments — these users exist only when demo data is enabled, so
+        // on a real deployment this seeder now writes nothing at all.
         void Assign(string email, int departmentId)
         {
             var user = context.Users.FirstOrDefault(u => u.Email == email);
@@ -903,9 +914,54 @@ public class DbInitializer
         }
 
         Assign("manager1@annualleave.com", engineering.Id);
-        Assign("employee1a@annualleave.com", hr.Id);
+
+        if (userDepartments.Count == 0) return;
 
         await context.UserDepartments.AddRangeAsync(userDepartments);
+        await context.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Deletes <see cref="UserDepartment"/> rows whose user is not in the Manager
+    /// role. Runs on every seed run, in every environment, because the rows are
+    /// unreachable otherwise: the only <c>UserDepartments</c> route is a GET, no
+    /// client code calls even that, and the sole delete path is a side effect of
+    /// deleting the user outright. A department blocked by one of these could not
+    /// be unblocked by any action an admin was able to take.
+    ///
+    /// This is the development half only. <c>Seed:Enabled</c> is false in
+    /// <c>appsettings.Production.json</c>, so nothing here runs on the IIS host —
+    /// the <c>RemoveNonManagerUserDepartments</c> migration is what repairs a
+    /// deployed database, since <c>MigrateAsync</c> runs unconditionally.
+    ///
+    /// Deleting rather than merely ignoring them is the point. Leaving the row and
+    /// narrowing <c>DeleteDepartment</c>'s count instead would just trade the
+    /// explained 409 for the generic one, since the foreign key would still refuse
+    /// the delete on SaveChanges.
+    ///
+    /// This also catches a manager demoted through <c>SetAdminUserRoles</c> before
+    /// that command learned to clear their rows, and any row that survives a future
+    /// path which forgets to.
+    /// </summary>
+    private static async Task RemoveNonManagerUserDepartments(AppDbContext context)
+    {
+        // SeedRoles has already run, so this is only null on a database whose roles
+        // failed to seed — in which case nobody is a manager and every row is stale.
+        var managerRoleId = await context.Roles
+            .Where(r => r.Name == AppRoles.Manager)
+            .Select(r => r.Id)
+            .FirstOrDefaultAsync();
+
+        var stale = managerRoleId is null
+            ? await context.UserDepartments.ToListAsync()
+            : await context.UserDepartments
+                .Where(ud => !context.UserRoles
+                    .Any(ur => ur.UserId == ud.UserId && ur.RoleId == managerRoleId))
+                .ToListAsync();
+
+        if (stale.Count == 0) return;
+
+        context.UserDepartments.RemoveRange(stale);
         await context.SaveChangesAsync();
     }
 
