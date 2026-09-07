@@ -119,7 +119,8 @@ public class GetTimesheetStatusHistoryList
                     h.Timesheet != null
                     && h.Timesheet.Employee != null
                     && (h.Timesheet.Employee.UserId == request.RequestingUserId
-                        || scope.ManagedDepartmentIds.Contains(h.Timesheet.DepartmentId)
+                        || (h.Timesheet.DepartmentId != null
+                            && scope.ManagedDepartmentIds.Contains(h.Timesheet.DepartmentId.Value))
                         || scope.DirectReportUserIds.Contains(h.Timesheet.Employee.UserId)));
             }
             else

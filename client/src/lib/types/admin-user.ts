@@ -32,7 +32,8 @@ export interface AdminCreateUserRequest {
     email: string
     displayName: string
     roles: UserRole[]
-    departmentId: number
+    /** Null for an Admin, who belongs to no department. */
+    departmentId: number | null
     phoneNumber?: string | null
     dateOfBirth?: string | null
     managerId?: string | null

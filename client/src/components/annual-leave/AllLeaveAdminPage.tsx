@@ -288,7 +288,10 @@ const AllLeaveAdminPage = observer(function AllLeaveAdminPage({ user: _user }: {
         }
 
         for (const p of profiles) {
-            const cur = bucket(deptNameById.get(p.departmentId) ?? NO_DEPARTMENT)
+            // An Admin genuinely has no department, which is what NO_DEPARTMENT
+            // already says — the same bucket a dangling id falls into.
+            const cur = bucket(
+                (p.departmentId === null ? undefined : deptNameById.get(p.departmentId)) ?? NO_DEPARTMENT)
             cur.people.add(p.userId)
             cur.entitled += employeeAnnualEntitlement(p, annualAllowance)
         }

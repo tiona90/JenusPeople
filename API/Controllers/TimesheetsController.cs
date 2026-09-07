@@ -64,8 +64,16 @@ namespace API.Controllers
             var dispatch = new List<Task>
             {
                 _notificationsHub.Clients.Group(NotificationsHub.AdminGroup).SendAsync("notificationsUpdated", cancellationToken),
-                _notificationsHub.Clients.Group(NotificationsHub.DepartmentManagerGroup(audience.DepartmentId)).SendAsync("notificationsUpdated", cancellationToken),
             };
+
+            // No department means no department-manager group to notify — the
+            // sheet's author is an Admin, and the Admin group above already has it.
+            if (audience.DepartmentId is { } departmentId)
+            {
+                dispatch.Add(_notificationsHub.Clients
+                    .Group(NotificationsHub.DepartmentManagerGroup(departmentId))
+                    .SendAsync("notificationsUpdated", cancellationToken));
+            }
 
             if (!string.IsNullOrWhiteSpace(audience.EmployeeUserId))
             {

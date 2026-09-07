@@ -183,20 +183,25 @@ public class CompanyAttendanceAggregationTests
     }
 
     /// <summary>
-    /// The rollup groups on <c>p.Department?.Name ?? "Unassigned"</c>, which reads
-    /// as though an employee with no department shows up misfiled under
-    /// "Unassigned". It does not. EmployeeProfile.DepartmentId is a required FK, so
-    /// <c>Include(p =&gt; p.Department)</c> is an inner join and a profile whose
-    /// department row is missing is dropped from the query altogether — it vanishes
-    /// from the headcount instead.
+    /// The rollup groups on <c>p.Department?.Name ?? "Unassigned"</c>, and that
+    /// fallback is now the live path rather than dead code that looked live.
     ///
-    /// Pinned rather than fixed: the "Unassigned" fallback is dead code that looks
-    /// live, and the two readings differ in a way that matters if a database ever
-    /// does carry a dangling department id. Carried over unchanged from the version
-    /// this replaced, which had the identical Include.
+    /// It used to be unreachable: <c>EmployeeProfile.DepartmentId</c> was a required
+    /// foreign key, so <c>Include(p =&gt; p.Department)</c> was an inner join and a
+    /// profile whose department row was missing dropped out of the query entirely —
+    /// present in the table, absent from the headcount. The previous version of this
+    /// test pinned exactly that, and flagged the silent disappearance as the thing
+    /// that would matter if a database ever did carry a dangling id.
+    ///
+    /// The column is nullable now, so an Admin can have no department at all. That
+    /// makes the join a left join, and a profile with no reachable department is
+    /// counted and shown under "Unassigned" instead of vanishing. An Admin never
+    /// reaches this grouping — <c>AttendanceDay.ExcludeAdmins</c> drops them first —
+    /// so what lands here is a genuinely unassigned or dangling row, which is better
+    /// surfaced than swallowed.
     /// </summary>
     [Fact]
-    public async Task A_profile_with_a_dangling_department_id_is_dropped_not_grouped_as_unassigned()
+    public async Task A_profile_with_no_reachable_department_is_grouped_as_unassigned()
     {
         using var db = SeedWorld();
         db.Users.Add(new User { Id = "u-orphan", UserName = "orphan", DisplayName = "orphan" });
@@ -206,12 +211,14 @@ public class CompanyAttendanceAggregationTests
 
         var company = await Company(db);
 
-        // The row is there; the dashboard just cannot see it.
+        // Visible now, where it used to be dropped on the floor.
         Assert.Equal(5, db.EmployeeProfiles.Count());
-        Assert.Equal(4, company.Total);
-        Assert.DoesNotContain(company.Departments, d => d.Name == "Unassigned");
+        Assert.Equal(5, company.Total);
 
-        // Whatever it does include still has to add up.
+        var unassigned = Assert.Single(company.Departments, d => d.Name == "Unassigned");
+        Assert.Equal(1, unassigned.Total);
+
+        // And it still has to add up.
         Assert.Equal(company.Total, company.Departments.Sum(d => d.Total));
     }
 

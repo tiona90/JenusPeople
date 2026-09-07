@@ -536,6 +536,10 @@ export default function AllTimesheetsPage() {
     })
 
     const deptById = useMemo(() => new Map(departments.map((d) => [d.id, d.name])), [departments])
+    /* A sheet filed by someone with no department — an Admin — carries none, so the
+       id can be absent as well as unknown. The caller says how that should read. */
+    const deptNameOf = (id: number | null, fallback: string) =>
+        (id === null ? undefined : deptById.get(id)) ?? fallback
     const deptNames = useMemo(() => Array.from(new Set(departments.map((d) => d.name))).sort(), [departments])
 
     const approveMutation = useMutation({
@@ -741,7 +745,7 @@ export default function AllTimesheetsPage() {
             const sources = filtered.map((t, i) => ({
                 timesheet: t,
                 entries: (details[i]?.entries as TimesheetEntry[] | undefined) ?? [],
-                departmentName: deptById.get(t.departmentId) ?? '',
+                departmentName: deptNameOf(t.departmentId, ''),
             }))
 
             const csv = buildTimesheetsCsv(sources, projectById, typeById, componentById)
@@ -1110,7 +1114,7 @@ export default function AllTimesheetsPage() {
                                 <ReviewRow
                                     key={ts.id}
                                     ts={ts}
-                                    deptName={deptById.get(ts.departmentId) ?? '—'}
+                                    deptName={deptNameOf(ts.departmentId, '—')}
                                     selected={selectedIds.has(ts.id)}
                                     onToggleSelect={() => toggleSelect(ts.id)}
                                     expanded={expandedId === ts.id}

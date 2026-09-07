@@ -43,7 +43,12 @@ public static class ManagerNotificationRecipients
             .Select(r => r.Id)
             .FirstOrDefaultAsync(cancellationToken);
 
-        if (managerRoleId is not null)
+        // An Admin has no department, and "the same department as nobody" is not a
+        // match — without this the comparison below would equate one absent
+        // department with another and treat every other department-less profile as
+        // a colleague. Only the Manager-role join keeps that from mattering today,
+        // which is too fine a thread to leave it hanging on.
+        if (managerRoleId is not null && employeeProfile.DepartmentId is not null)
         {
             var departmentManagers = await (
                 from ep in context.EmployeeProfiles.AsNoTracking()

@@ -176,6 +176,10 @@ const TeamTimesheetPage = observer(function TeamTimesheetPage({ user }: { user: 
         () => new Map(departments.map((d) => [d.id, d.name])),
         [departments]
     )
+    /* A sheet filed by someone with no department — an Admin — carries none, so
+       the id can be absent as well as unknown. Both read as "—". */
+    const deptNameOf = (id: number | null) =>
+        (id === null ? undefined : deptById.get(id)) ?? '—'
 
     const approveMutation = useMutation({
         mutationFn: (id: string) => approveTimesheet(id),
@@ -359,7 +363,7 @@ const TeamTimesheetPage = observer(function TeamTimesheetPage({ user }: { user: 
                                 {filtered.map((ts) => {
                                     const isPending = needsAction(ts.status)
                                     const isWorking = actionTarget === ts.id
-                                    const deptName = deptById.get(ts.departmentId) ?? '—'
+                                    const deptName = deptNameOf(ts.departmentId)
 
                                     return (
                                         <TableRow

@@ -13,5 +13,5 @@ public class TeammateDto
 
     public string? JobTitle { get; set; }
 
-    public int DepartmentId { get; set; }
+    public int? DepartmentId { get; set; }
 }

@@ -45,7 +45,7 @@ public static class TimesheetScope
                 // Own timesheets
                 t.Employee!.UserId == requestingUserId
                 // Timesheets in managed departments
-                || scope.ManagedDepartmentIds.Contains(t.DepartmentId)
+                || (t.DepartmentId != null && scope.ManagedDepartmentIds.Contains(t.DepartmentId.Value))
                 // Direct reports' timesheets
                 || scope.DirectReportUserIds.Contains(t.Employee.UserId));
         }

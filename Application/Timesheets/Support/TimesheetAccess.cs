@@ -68,7 +68,8 @@ public static class TimesheetAccess
             var scope = await ManagerAccessScopeResolver.ResolveAsync(
                 context, requestingUserId, cancellationToken);
 
-            var inScope = scope.ManagedDepartmentIds.Contains(timesheet.DepartmentId);
+            var inScope = timesheet.DepartmentId != null
+                && scope.ManagedDepartmentIds.Contains(timesheet.DepartmentId.Value);
             if (!inScope && scope.ManagerProfileIds.Count > 0)
             {
                 inScope = await context.EmployeeProfiles

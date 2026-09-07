@@ -479,7 +479,13 @@ describe('AdminUsersPanel — Admin hides the Profile section', () => {
         expect(within(dialog).getByText('Profile')).toBeInTheDocument()
     })
 
-    it('creates an admin without a department being picked, falling back to an active one', async () => {
+    /// The dialog hides the department for an Admin and used to send "the first
+    /// active department" in its place, because the column was a required foreign
+    /// key. That invented assignment was not invisible: it put the admin in that
+    /// department's team strip and headcount on the Departments panel, in its "not
+    /// checked in" warning, and in the blocker list that refused to delete it. The
+    /// field it never asked about now goes unanswered.
+    it('creates an admin with no department at all, not a fallback one', async () => {
         const dialog = await openCreateDialog()
 
         api.createAdminUser.mockResolvedValue({
@@ -507,9 +513,103 @@ describe('AdminUsersPanel — Admin hides the Profile section', () => {
 
         expect(api.createAdminUser.mock.calls[0][0]).toMatchObject({
             roles: ['Admin'],
-            departmentId: DEPARTMENT.id,
+            departmentId: null,
             managerId: null,
             jobTitle: null,
+        })
+    })
+
+    // An Employee or Manager still has to be placed in one: it is where their
+    // manager, their leave routing and their project visibility come from.
+    it('still requires a department for every other role', async () => {
+        const dialog = await openCreateDialog()
+
+        fireEvent.change(within(dialog).getByLabelText(/email/i), { target: { value: 'newjoiner@example.test' } })
+        fireEvent.change(within(dialog).getByLabelText(/display name/i), { target: { value: 'New Joiner' } })
+
+        for (const role of ['Employee', 'Manager']) {
+            fireEvent.click(within(dialog).getByRole('radio', { name: role }))
+            expect(within(dialog).getByText('Department is required')).toBeInTheDocument()
+            expect(within(dialog).getByRole('button', { name: /^create$/i })).toBeDisabled()
+        }
+    })
+})
+
+// An Admin sits outside the department structure, so the edit dialog has to be
+// able to move a profile out of a department as well as into one — and must not
+// send back the department a promoted user is leaving behind.
+describe('AdminUsersPanel — editing across the Admin boundary', () => {
+    const EMPLOYEE_USER = { id: 'u-employee', userName: 'employee@example.test', email: 'employee@example.test', displayName: 'Theodoros Iona', imageUrl: '', emailConfirmed: true, isActive: true, roles: ['Employee'] }
+    const ADMIN_USER = { id: 'u-admin', userName: 'admin@example.test', email: 'admin@example.test', displayName: 'Admin User', imageUrl: '', emailConfirmed: true, isActive: true, roles: ['Admin'] }
+
+    const EMPLOYEE_PROFILE = { id: 'p-employee', userId: 'u-employee', displayName: 'Theodoros Iona', departmentId: DEPARTMENT.id, managerId: null, annualLeaveEntitlement: 20, leaveBalance: 20, jobTitle: null, createdAt: '2026-01-01' }
+    // What the server now returns for an admin: a profile, and no department.
+    const ADMIN_PROFILE = { id: 'p-admin', userId: 'u-admin', displayName: 'Admin User', departmentId: null, managerId: null, annualLeaveEntitlement: 20, leaveBalance: 20, jobTitle: null, createdAt: '2026-01-01' }
+
+    beforeEach(() => {
+        api.getAdminUsers.mockResolvedValue([EMPLOYEE_USER, ADMIN_USER] as never)
+        api.getEmployeeProfiles.mockResolvedValue([EMPLOYEE_PROFILE, ADMIN_PROFILE] as never)
+    })
+
+    async function openEditFor(displayName: string) {
+        renderPanel()
+        const nameEl = await screen.findByText(displayName)
+        const row = nameEl.parentElement!.parentElement!.parentElement!.parentElement!
+        fireEvent.click(within(row).getByTitle('Edit'))
+        return screen.getByRole('dialog')
+    }
+
+    it('clears the department when an employee is promoted to Admin', async () => {
+        const dialog = await openEditFor('Theodoros Iona')
+
+        await waitFor(() => expect(within(dialog).getByRole('radio', { name: 'Employee' })).toBeChecked())
+        fireEvent.click(within(dialog).getByRole('radio', { name: 'Admin' }))
+
+        fireEvent.click(within(dialog).getByRole('button', { name: /^save$/i }))
+
+        await waitFor(() => expect(api.updateEmployeeProfile).toHaveBeenCalledTimes(1))
+        // Not DEPARTMENT.id: the department the dialog stopped showing must not be
+        // the one it quietly sends back.
+        expect(api.updateEmployeeProfile.mock.calls[0][0]).toMatchObject({
+            id: EMPLOYEE_PROFILE.id,
+            departmentId: null,
+        })
+    })
+
+    it('saves an admin with no department rather than inventing one', async () => {
+        const dialog = await openEditFor('Admin User')
+
+        await waitFor(() => expect(within(dialog).getByRole('radio', { name: 'Admin' })).toBeChecked())
+        fireEvent.click(within(dialog).getByRole('button', { name: /^save$/i }))
+
+        await waitFor(() => expect(api.updateEmployeeProfile).toHaveBeenCalledTimes(1))
+        expect(api.updateEmployeeProfile.mock.calls[0][0]).toMatchObject({
+            id: ADMIN_PROFILE.id,
+            departmentId: null,
+        })
+    })
+
+    // The other direction has to supply one. An admin has no department to inherit,
+    // so demoting them without picking a department would save a nobody: invisible
+    // to every manager, with no leave routing.
+    it('will not save a demoted admin until a department is picked', async () => {
+        const dialog = await openEditFor('Admin User')
+
+        await waitFor(() => expect(within(dialog).getByRole('radio', { name: 'Admin' })).toBeChecked())
+        fireEvent.click(within(dialog).getByRole('radio', { name: 'Employee' }))
+
+        expect(within(dialog).getByText('Department is required')).toBeInTheDocument()
+        expect(within(dialog).getByRole('button', { name: /^save$/i })).toBeDisabled()
+
+        await selectDepartment(dialog)
+
+        expect(within(dialog).getByRole('button', { name: /^save$/i })).toBeEnabled()
+        fireEvent.click(within(dialog).getByRole('button', { name: /^save$/i }))
+
+        await waitFor(() => expect(api.updateEmployeeProfile).toHaveBeenCalledTimes(1))
+        expect(api.updateEmployeeProfile.mock.calls[0][0]).toMatchObject({
+            id: ADMIN_PROFILE.id,
+            departmentId: DEPARTMENT.id,
         })
     })
 })

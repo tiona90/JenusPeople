@@ -22,9 +22,13 @@ public class AdminCreateUserDto
     [MaxLength(1, ErrorMessage = "A user can have only one role.")]
     public List<string> Roles { get; set; } = new();
 
-    [Required]
+    /// <summary>
+    /// Required for an Employee or Manager, and must be absent for an Admin, who
+    /// sits outside the department structure. Role-dependent either way, so
+    /// <c>CreateAdminUserValidator</c> settles it rather than an annotation.
+    /// </summary>
     [Range(1, int.MaxValue, ErrorMessage = "Department is required.")]
-    public int DepartmentId { get; set; }
+    public int? DepartmentId { get; set; }
 
     [Phone]
     [StringLength(30)]

@@ -74,6 +74,9 @@ public class DbInitializer
         await SeedUserDepartments(context);
         await RemoveNonManagerUserDepartments(context);
         await SeedEmployeeProfiles(context);
+        // After SeedEmployeeProfiles, which bails out the moment any profile exists
+        // — so on the databases that need this repair it is the only thing that runs.
+        await RemoveAdminProfileDepartments(context);
         // A no-op until projects exist, which is why it belongs here rather than
         // inside SeedProjects: the rows it repairs are real ones, and they need
         // repairing whether or not this host wants demo data.
@@ -965,6 +968,55 @@ public class DbInitializer
         await context.SaveChangesAsync();
     }
 
+    /// <summary>
+    /// Clears <see cref="EmployeeProfile.DepartmentId"/> on every profile belonging
+    /// to a user in the Admin role. An Admin sees every department, so belonging to
+    /// one grants nothing — but the column was a required foreign key, so both write
+    /// paths invented a value: the seeder wrote Engineering unconditionally, and the
+    /// admin panel substituted "the first active department" for a field it hides.
+    ///
+    /// The invented assignment counted. It put the admin in that department's
+    /// headcount and team strip, in its "not checked in" warning and leave-used
+    /// figures, and in <c>DeleteDepartment</c>'s "employee" blocker count — and it
+    /// was unreachable, because the Profile section is hidden for Admins, so no
+    /// action an admin could take would move them out.
+    ///
+    /// This is the development half only. <c>Seed:Enabled</c> is false in
+    /// <c>appsettings.Production.json</c>, so nothing here runs on the IIS host —
+    /// the <c>ClearAdminProfileDepartments</c> migration is what repairs a deployed
+    /// database, since <c>MigrateAsync</c> runs unconditionally.
+    ///
+    /// It also catches an Employee or Manager promoted to Admin before
+    /// <c>EditEmployeeProfileRequestValidator</c> learned to require a blank
+    /// department from them, and any row a future path forgets to clear.
+    /// </summary>
+    private static async Task RemoveAdminProfileDepartments(AppDbContext context)
+    {
+        // SeedRoles has already run, so this is only null on a database whose roles
+        // failed to seed — in which case nobody is an Admin and there is nothing to
+        // repair.
+        var adminRoleId = await context.Roles
+            .Where(r => r.Name == AppRoles.Admin)
+            .Select(r => r.Id)
+            .FirstOrDefaultAsync();
+
+        if (adminRoleId is null) return;
+
+        var stale = await context.EmployeeProfiles
+            .Where(ep => ep.DepartmentId != null
+                && context.UserRoles.Any(ur => ur.UserId == ep.UserId && ur.RoleId == adminRoleId))
+            .ToListAsync();
+
+        if (stale.Count == 0) return;
+
+        foreach (var profile in stale)
+        {
+            profile.DepartmentId = null;
+        }
+
+        await context.SaveChangesAsync();
+    }
+
     private static async Task SeedEmployeeProfiles(AppDbContext context)
     {
         if (context.EmployeeProfiles.Any()) return;
@@ -974,14 +1026,22 @@ public class DbInitializer
         var finance = context.Departments.FirstOrDefault(d => d.Code == "FIN");
         if (adminUser is null || engineering is null || finance is null) return;
 
-        // Admin profile — no manager (top of hierarchy). Always seeded.
+        // Admin profile — no manager (top of hierarchy), and no department: the role
+        // sees every one of them, so belonging to one grants nothing. Giving it
+        // Engineering was not inert. It put the admin in that department's headcount
+        // and team strip on the Departments panel, in its "not checked in" warning,
+        // and in DeleteDepartment's "employee" blocker count — so a department the
+        // admin had never worked in could not be deleted, and no field in the panel
+        // could move them out, because the Profile section is hidden for Admins.
+        // The job title went the same way: "Engineering Manager" described the
+        // department it invented, not the account. Always seeded.
         var adminProfile = new EmployeeProfile
         {
             Id = Guid.NewGuid().ToString(),
             UserId = adminUser.Id,
-            DepartmentId = engineering.Id,
+            DepartmentId = null,
             ManagerId = null,
-            JobTitle = "Engineering Manager",
+            JobTitle = "System Administrator",
             AnnualLeaveEntitlement = 20,
             CreatedAt = DateTime.UtcNow
         };

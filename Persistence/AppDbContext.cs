@@ -193,7 +193,8 @@ public class AppDbContext : IdentityDbContext<
         {
             entity.Property(t => t.Id).HasMaxLength(450).IsRequired();
             entity.Property(t => t.EmployeeProfileId).HasMaxLength(450).IsRequired();
-            entity.Property(t => t.DepartmentId).IsRequired();
+            // Optional: an Admin has no department to file under. Restrict stays —
+            // a department with timesheets against it still cannot be deleted.
             entity.Property(t => t.PeriodStart).IsRequired();
             entity.Property(t => t.PeriodEnd).IsRequired();
             entity.Property(t => t.TotalHours).HasColumnType("decimal(5,2)").IsRequired();
@@ -459,6 +460,18 @@ public class AppDbContext : IdentityDbContext<
         {
             entity.Property(e => e.IsDeleted).HasDefaultValue(false).IsRequired();
             entity.HasQueryFilter(e => !e.IsDeleted);
+
+            // Spelled out because the convention default moves when DepartmentId
+            // becomes optional: a required foreign key gets Cascade, an optional one
+            // does not. Restrict is what this relationship should have said all
+            // along — DeleteDepartment's whole design is to count every reference
+            // and explain what to reassign, and cascading here would instead delete
+            // people's profiles out from under their leave and timesheet history
+            // (both Restrict, so the cascade could only ever have failed anyway).
+            entity.HasOne(e => e.Department)
+                .WithMany(d => d.EmployeeProfiles)
+                .HasForeignKey(e => e.DepartmentId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         builder.Entity<AuditLog>(entity =>

@@ -54,8 +54,8 @@ public class NotificationsHub : Hub
             // Manager's audience scope follows the existing visibility model:
             // the department(s) attached to the manager's own EmployeeProfile.
             var managedDeptIds = await _context.EmployeeProfiles
-                .Where(ep => ep.UserId == user.Id)
-                .Select(ep => ep.DepartmentId)
+                .Where(ep => ep.UserId == user.Id && ep.DepartmentId != null)
+                .Select(ep => ep.DepartmentId!.Value)
                 .Distinct()
                 .ToListAsync();
 

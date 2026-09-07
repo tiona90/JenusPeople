@@ -133,9 +133,15 @@ function DepartmentsPanel() {
         [adminUsers]
     )
     const userById = useMemo(() => new Map(adminUsers.map((u) => [u.id, u])), [adminUsers])
+    /* An Admin has no department, so they belong to none of these groups — every
+       headcount, team strip, "not checked in" warning and leave figure on this page
+       is derived from this map. Skipped explicitly: grouping them under a null key
+       would work by accident, since nothing looks that key up, but it reads as
+       though a department-less profile were filed somewhere. */
     const profilesByDept = useMemo(() => {
         const map = new Map<number, EmployeeProfile[]>()
         for (const p of profiles) {
+            if (p.departmentId === null) continue
             const arr = map.get(p.departmentId) ?? []
             arr.push(p); map.set(p.departmentId, arr)
         }

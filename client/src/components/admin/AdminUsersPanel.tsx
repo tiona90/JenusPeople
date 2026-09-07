@@ -271,7 +271,7 @@ function AdminUsersPanel() {
             displayName: string
             roles: UserRole[]
             profile: EmployeeProfile | undefined
-            departmentId: number
+            departmentId: number | null
             jobTitle: string
             annualLeaveEntitlement: number
             managerId: string | null
@@ -1219,7 +1219,7 @@ function EditUserDialog(props: {
         displayName: string
         roles: UserRole[]
         profile: EmployeeProfile | undefined
-        departmentId: number
+        departmentId: number | null
         jobTitle: string
         annualLeaveEntitlement: number
         managerId: string | null
@@ -1265,9 +1265,18 @@ function EditUserDialog(props: {
     )
 
     // Admins sit outside the department structure — same as CreateUserDialog, the
-    // Profile section is hidden for them. The profile row keeps whatever department
-    // it already had; it just isn't shown or edited here.
+    // Profile section is hidden for them, and the department goes with it. Sending
+    // back the stored value would strand a promoted user in the department they
+    // just left, which is the whole thing being fixed: nothing may hold a
+    // department for an Admin.
     const isAdmin = role === 'Admin'
+    const effectiveDepartmentId = isAdmin ? null : departmentId
+
+    // Derived from the live radio, not the stored role, so a demotion out of Admin
+    // has to pick a department before it can be saved: an admin has none to
+    // inherit, and an Employee without one is invisible to every manager and has
+    // no leave routing.
+    const departmentMissing = !isAdmin && !departmentId
 
     // Only an employee reports to the department's manager. A manager *is* one, so
     // the field is meaningless for them and hidden — and, being hidden, it neither
@@ -1349,9 +1358,9 @@ function EditUserDialog(props: {
                 <Button variant="outlined" onClick={props.onClose} disabled={props.isPending} sx={cancelBtnSx}>Cancel</Button>
                 <Button
                     variant="contained"
-                    disabled={props.isPending || !user}
+                    disabled={props.isPending || !user || departmentMissing}
                     onClick={() =>
-                        user && props.onSubmit({ userId: user.id, email, displayName, roles: [role], profile, departmentId, jobTitle, annualLeaveEntitlement, managerId: showManagerField ? departmentManager?.profileId ?? null : profile?.managerId ?? null, phoneNumber: phoneNumber.trim() || null, dateOfBirth: dateOfBirth || null })
+                        user && props.onSubmit({ userId: user.id, email, displayName, roles: [role], profile, departmentId: effectiveDepartmentId, jobTitle, annualLeaveEntitlement, managerId: showManagerField ? departmentManager?.profileId ?? null : profile?.managerId ?? null, phoneNumber: phoneNumber.trim() || null, dateOfBirth: dateOfBirth || null })
                     }
                     sx={saveBtnSx}
                 >
@@ -1372,7 +1381,7 @@ function CreateUserDialog(props: {
         email: string
         displayName: string
         roles: UserRole[]
-        departmentId: number
+        departmentId: number | null
         managerId: string | null
         jobTitle: string | null
         annualLeaveEntitlement: number
@@ -1409,15 +1418,13 @@ function CreateUserDialog(props: {
     )
 
     /* Admins sit outside the department structure, so the whole Profile section is
-       hidden for them. A profile row is still written server-side and its
-       DepartmentId is a required FK, so fall back to a real department rather than
-       asking for one that is never shown — the panel hides it for admins anyway. */
+       hidden for them — and the field it never asks about now goes unanswered. It
+       used to fall back to the first active department, because DepartmentId was a
+       required FK; that invented assignment then showed up as a real one, putting
+       the admin in that department's team strip and headcount and blocking its
+       deletion. A profile row is still written server-side, with no department. */
     const isAdmin = role === 'Admin'
-    const fallbackDepartmentId = useMemo(
-        () => props.departments.find((d) => d.isActive)?.id ?? props.departments[0]?.id ?? 0,
-        [props.departments],
-    )
-    const effectiveDepartmentId = isAdmin ? fallbackDepartmentId : departmentId
+    const effectiveDepartmentId = isAdmin ? null : departmentId
 
     // Only an employee reports to the department's manager — a manager *is* one, so
     // the field is hidden for them and no manager is set.

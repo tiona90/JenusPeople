@@ -109,6 +109,16 @@ function statCard(label: string) {
     return { value: root.children[1].textContent, sub: root.children[2].textContent }
 }
 
+/**
+ * The "N people" count beside a card's "Team members" heading. Read off the
+ * heading's sibling rather than by text, because a bare "3" also matches the
+ * pending/leave stat tiles further down the same card.
+ */
+function headcountOf(name: string) {
+    const label = within(card(name)).getByText('Team members')
+    return label.parentElement!.children[1].textContent
+}
+
 function statusOptions() {
     const select = screen.getAllByRole('combobox')
         .find((s) => Array.from(s.querySelectorAll('option')).some((o) => (o as HTMLOptionElement).value === 'attention'))!
@@ -207,5 +217,50 @@ describe('DepartmentsPanel — department status', () => {
         // An archived department is inactive, not "not set up yet".
         expect(statusOptions().labels).toContain('Not set up yet (2)')
         expect(within(card('Operations')).getByText('Inactive')).toBeInTheDocument()
+    })
+})
+
+// The screenshot that started this: the seeded admin sat in Engineering's team
+// strip, counted toward its headcount and toward its "employees not checked in"
+// warning. Nobody had put them there — EmployeeProfile.DepartmentId was a required
+// foreign key, so the seeder and the create dialog each invented a department for
+// an account the panel deliberately keeps outside the structure.
+describe('DepartmentsPanel — an admin belongs to no department', () => {
+    const ADMIN_PROFILE: EmployeeProfile = {
+        id: 'pr-admin', userId: 'admin', displayName: 'Admin User', departmentId: null,
+        managerId: null, annualLeaveEntitlement: 20, leaveBalance: 20, jobTitle: null,
+        createdAt: '2026-01-01T00:00:00',
+    }
+
+    beforeEach(() => {
+        api.getEmployeeProfiles.mockResolvedValue([...PROFILES, ADMIN_PROFILE])
+        api.getAdminUsers.mockResolvedValue([...USERS, user('admin', ['Admin'])])
+    })
+
+    it('leaves the admin out of every department card', async () => {
+        await renderPanel()
+
+        for (const name of ['Engineering', 'Finance', 'Human Resources', 'Marketing', 'Operations']) {
+            expect(within(card(name)).queryByTitle('Admin User')).not.toBeInTheDocument()
+        }
+    })
+
+    it('leaves the admin out of every headcount', async () => {
+        await renderPanel()
+
+        // Three each, as before the admin existed — not four.
+        expect(headcountOf('Engineering')).toBe('3people')
+        expect(headcountOf('Finance')).toBe('3people')
+        for (const name of ['Human Resources', 'Marketing', 'Operations']) {
+            expect(within(card(name)).getByText('No members yet')).toBeInTheDocument()
+        }
+    })
+
+    // The stat card counts people the departments actually hold, so a
+    // department-less admin is not one of them.
+    it('leaves the admin out of the company headcount', async () => {
+        await renderPanel()
+
+        expect(statCard('👥 Total Headcount').value).toBe('6')
     })
 })

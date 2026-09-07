@@ -256,7 +256,12 @@ export default function AppSettingsPanel() {
                 const expires = Math.max(0, closing - form.maxCarryoverDays)
                 // Each employee reopens on their own entitlement, not on one shared figure.
                 const newBalance = carryover + employeeAnnualEntitlement(p, annualAllowance)
-                return { name: p.displayName, dept: departmentNameById.get(p.departmentId) ?? '—', closing, carryover, expires, newBalance }
+                // An Admin has no department, so the id can be absent as well as
+                // unknown — both read as "—".
+                const dept = (p.departmentId === null
+                    ? undefined
+                    : departmentNameById.get(p.departmentId)) ?? '—'
+                return { name: p.displayName, dept, closing, carryover, expires, newBalance }
             })
             .sort((a, b) => a.name.localeCompare(b.name)),
         [profiles, departmentNameById, form.maxCarryoverDays, annualAllowance])

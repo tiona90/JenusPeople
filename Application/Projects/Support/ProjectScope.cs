@@ -61,8 +61,8 @@ public static class ProjectScope
         CancellationToken cancellationToken = default)
     {
         var departmentIds = await context.EmployeeProfiles
-            .Where(ep => ep.UserId == requestingUserId)
-            .Select(ep => ep.DepartmentId)
+            .Where(ep => ep.UserId == requestingUserId && ep.DepartmentId != null)
+            .Select(ep => ep.DepartmentId!.Value)
             .ToListAsync(cancellationToken);
 
         if (isManager)

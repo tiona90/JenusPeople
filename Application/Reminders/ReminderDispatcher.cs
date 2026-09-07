@@ -564,7 +564,10 @@ public class ReminderDispatcher(
             where ur.RoleId == roleId
             join u in context.Users on ep.UserId equals u.Id
             where u.Email != null && u.Email != ""
-            select new ManagerContact(u.Id, u.Email!, u.DisplayName, ep.DepartmentId)
+            // Every digest below is "what is pending in your department", so a
+            // manager without one has nothing to be told about.
+            where ep.DepartmentId != null
+            select new ManagerContact(u.Id, u.Email!, u.DisplayName, ep.DepartmentId!.Value)
         ).Distinct().ToListAsync(ct);
     }
 }

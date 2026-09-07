@@ -44,7 +44,7 @@ public class GetTeamAttendance
 
                 profilesQuery = profilesQuery.Where(p =>
                     p.UserId != request.RequestingUserId
-                    && (scope.ManagedDepartmentIds.Contains(p.DepartmentId)
+                    && ((p.DepartmentId != null && scope.ManagedDepartmentIds.Contains(p.DepartmentId.Value))
                         || (p.ManagerId != null && scope.ManagerProfileIds.Contains(p.ManagerId))));
             }
 

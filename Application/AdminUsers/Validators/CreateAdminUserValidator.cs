@@ -48,10 +48,33 @@ public class CreateAdminUserValidator : AbstractValidator<CreateAdminUser.Comman
                 .InclusiveBetween(0, 365)
                 .When(x => x.User.AnnualLeaveEntitlement.HasValue);
 
-            RuleFor(x => x.User.DepartmentId)
-                .MustAsync(async (departmentId, cancellationToken) =>
-                    await context.Departments.AnyAsync(d => d.Id == departmentId, cancellationToken))
-                .WithMessage("Selected department does not exist.");
+            // Who needs a department depends on the role being asked for, which is
+            // why this is here rather than a [Range] on the DTO. An Admin sees every
+            // department, so belonging to one grants them nothing — and the panel
+            // hides the field for them, which is why it used to send "the first
+            // active department" for a question it never asked.
+            When(x => !IsAdmin(x.User.Roles), () =>
+            {
+                RuleFor(x => x.User.DepartmentId)
+                    .Cascade(CascadeMode.Stop)
+                    .NotNull()
+                    .WithMessage("Department is required.")
+                    .MustAsync(async (departmentId, cancellationToken) =>
+                        await context.Departments.AnyAsync(d => d.Id == departmentId, cancellationToken))
+                    .WithMessage("Selected department does not exist.");
+            });
+
+            // Refused rather than ignored: the panel cannot send one, so a payload
+            // that carries a department for an Admin was built against the old
+            // shape, and accepting it would quietly recreate the invented
+            // assignment that put admins in a department's headcount and blocked
+            // its deletion.
+            When(x => IsAdmin(x.User.Roles), () =>
+            {
+                RuleFor(x => x.User.DepartmentId)
+                    .Null()
+                    .WithMessage("An Admin cannot belong to a department.");
+            });
 
             RuleFor(x => x.User.ManagerId)
                 .MustAsync(async (managerId, cancellationToken) =>
@@ -92,4 +115,11 @@ public class CreateAdminUserValidator : AbstractValidator<CreateAdminUser.Comman
             .ToList();
 
     private static int CountDistinct(IEnumerable<string>? roles) => Distinct(roles).Count;
+
+    /// <summary>
+    /// Whether Admin is the role being asked for. An omitted role means Employee —
+    /// the default <c>CreateAdminUser</c> applies — so a blank list is not an Admin.
+    /// </summary>
+    private static bool IsAdmin(IEnumerable<string>? roles) =>
+        Distinct(roles).Contains(AppRoles.Admin, StringComparer.OrdinalIgnoreCase);
 }
