@@ -105,7 +105,16 @@ Status enums: `AnnualLeaveStatus` (Pending, Approved, Rejected, Cancelled); `Tim
 
 ## Key Configuration
 
-- **DB:** SQL Server, connection string in `API/appsettings.Development.json` (`WorkTrack` database, trusted connection)
+- **DB:** SQL Server. The connection string lives in **`API/appsettings.json`** —
+  `Server=.` (local default instance), database `jpeople_dev`. There is no
+  `appsettings.Development.json`; both `appsettings.json` and
+  `appsettings.Production.json` are gitignored, so a fresh clone has neither and
+  you must create `API/appsettings.json` before the first run.
+  Startup runs `context.Database.MigrateAsync()` and the app **exits** if the
+  database is unreachable. If the API dies moments after launch — typically after
+  a reboot, when it starts before SQL Server finishes coming up — that is the
+  cause; check `API/Logs/worktrack-<date>.jsonl` for "Database migration or
+  seeding failed" and just start it again.
 - **File uploads:** Stored in the database, not on a CDN. `Application/Files/` holds
   the `StoreFile` command (one place for signature, size and extension validation)
   and the `GetStoredFile` query (per-purpose read authorization). `User.ImageUrl` and

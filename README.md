@@ -63,9 +63,11 @@ npm install
 npm run dev
 ```
 
-Backend configuration lives in `API/appsettings.Development.json` (connection
-string, email, OAuth). The database schema is created and seeded
-automatically on first run via EF Core migrations.
+Backend configuration lives in `API/appsettings.json` (connection string, email,
+OAuth). That file is gitignored and is **not** part of a fresh clone, so create
+it before the first run. The database schema is created and seeded automatically
+on startup via EF Core migrations — note that the app exits if SQL Server is
+unreachable at that point, so make sure it is running first.
 
 ### Database migrations
 
