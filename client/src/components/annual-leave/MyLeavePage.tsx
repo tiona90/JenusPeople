@@ -12,6 +12,7 @@ import DialogTitle from '@mui/material/DialogTitle'
 import Divider from '@mui/material/Divider'
 import Stack from '@mui/material/Stack'
 import Typography from '@mui/material/Typography'
+import { resolveFileUrl } from '../../lib/api/file-url'
 import { iconForLeaveType } from './leave-icons'
 import {
     deleteAnnualLeave,
@@ -752,7 +753,7 @@ function LeaveCard({
                         <Box sx={{ display: 'flex', gap: '6px', mt: '10px', flexWrap: 'wrap' }}>
                             <Box
                                 component="a"
-                                href={leave.evidenceUrl}
+                                href={resolveFileUrl(leave.evidenceUrl)}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 sx={{
@@ -964,7 +965,7 @@ function LeaveDetailsDialog({ leave, leaveTypeName, feedback, onClose }: {
                                     size="small"
                                     variant="outlined"
                                     component="a"
-                                    href={leave.evidenceUrl}
+                                    href={resolveFileUrl(leave.evidenceUrl)}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     sx={{

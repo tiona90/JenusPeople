@@ -346,7 +346,7 @@ private sealed class FakeAccountEmailSender : IAccountEmailSender
 ```
 
 **What to Mock:**
-- External dependencies: `IEmailService`, `IAccountEmailSender`, `IFileUploadService`
+- External dependencies: `IEmailService`, `IAccountEmailSender`
 - Keep mocks simple and focused (no complex verification chains)
 
 **What NOT to Mock:**

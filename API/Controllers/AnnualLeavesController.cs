@@ -2,9 +2,9 @@ using Application.AnnualLeaves.Commands;
 using Application.AnnualLeaves.DTOs;
 using Application.AnnualLeaves.Queries;
 using API.Hubs;
+using Application.Files;
+using Application.Files.Commands;
 using Domain;
-using Domain.Interfaces;
-using Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
@@ -20,16 +20,13 @@ namespace API.Controllers;
 public class AnnualLeavesController : BaseApiController
 {
     private readonly IHubContext<NotificationsHub> _notificationsHub;
-    private readonly IFileUploadService _fileUploadService;
     private readonly AppDbContext _context;
 
     public AnnualLeavesController(
         IHubContext<NotificationsHub> notificationsHub,
-        IFileUploadService fileUploadService,
         AppDbContext context)
     {
         _notificationsHub = notificationsHub;
-        _fileUploadService = fileUploadService;
         _context = context;
     }
 
@@ -139,37 +136,46 @@ public class AnnualLeavesController : BaseApiController
     [HttpPost("evidence-upload")]
     [Authorize(Policy = "AnnualLeaveCreate")]
     [RequestSizeLimit(10_000_000)]
-    public async Task<ActionResult> UploadEvidence([FromForm] IFormFile file)
+    public async Task<ActionResult> UploadEvidence([FromForm] IFormFile file, CancellationToken cancellationToken)
     {
         if (file is null || file.Length == 0)
         {
             return BadRequest(new { message = "Please select an evidence file." });
         }
 
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "anonymous";
-
-        await using var stream = file.OpenReadStream();
-
-        var allowed = new[]
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId))
         {
-            FileSignatureValidator.FileKind.Jpeg,
-            FileSignatureValidator.FileKind.Png,
-            FileSignatureValidator.FileKind.Pdf,
-        };
-        var detected = await FileSignatureValidator.DetectAsync(stream, allowed);
-        if (detected is null)
-        {
-            return BadRequest(new { message = "Supported evidence files are real JPG, PNG, or PDF." });
+            return Unauthorized(new { message = "User is not authenticated." });
         }
 
-        var uploadResult = await _fileUploadService.UploadEvidenceAsync(userId, stream, file.FileName, file.ContentType);
+        using var buffer = new MemoryStream();
+        await file.CopyToAsync(buffer, cancellationToken);
 
-        if (!uploadResult.IsSuccess)
+        // Signature, size and extension checks live in the StoreFile handler.
+        var stored = await Mediator.Send(
+            new StoreFile.Command
+            {
+                Content = buffer.ToArray(),
+                FileName = file.FileName,
+                DeclaredContentType = file.ContentType,
+                Purpose = StoredFilePurpose.LeaveEvidence,
+                UploadedById = userId,
+            },
+            cancellationToken);
+
+        if (!stored.IsSuccess || stored.Value is null)
         {
-            return BadRequest(new { message = uploadResult.ErrorMessage ?? "Failed to upload evidence." });
+            return HandleResult(stored);
         }
 
-        return Ok(new { evidenceUrl = uploadResult.Url, fileName = uploadResult.FileName });
+        // The caller attaches this path to the leave it is creating or editing.
+        // Until it does, only the uploader (and an Admin) can read the file back.
+        return Ok(new
+        {
+            evidenceUrl = StoredFilePath.For(stored.Value),
+            fileName = file.FileName,
+        });
     }
 
     // Admin can edit all leaves; Employee can edit own leaves; Manager can edit own and managed-department leaves.

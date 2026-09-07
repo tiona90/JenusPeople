@@ -40,10 +40,49 @@ public class AppDbContext : IdentityDbContext<
     public DbSet<ProjectComponentAssignment> ProjectComponentAssignments { get; set; }
     public DbSet<ProjectType> ProjectTypes { get; set; }
     public DbSet<ProjectTypeAssignment> ProjectTypeAssignments { get; set; }
+    public DbSet<StoredFile> StoredFiles { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+
+        builder.Entity<StoredFile>(entity =>
+        {
+            entity.Property(e => e.Id)
+                .HasMaxLength(450)
+                .IsRequired();
+
+            entity.Property(e => e.FileName)
+                .HasMaxLength(260)
+                .IsRequired();
+
+            entity.Property(e => e.ContentType)
+                .HasMaxLength(150)
+                .IsRequired();
+
+            // Base64 SHA-256 is always 44 characters.
+            entity.Property(e => e.Sha256)
+                .HasMaxLength(64)
+                .IsRequired();
+
+            entity.Property(e => e.UploadedById)
+                .HasMaxLength(450)
+                .IsRequired();
+
+            entity.Property(e => e.Content)
+                .IsRequired();
+
+            // Deleting a user must not cascade away files still referenced by an
+            // AnnualLeave row that outlives them (leave history is kept for audit).
+            entity.HasOne(e => e.UploadedBy)
+                .WithMany()
+                .HasForeignKey(e => e.UploadedById)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // The evidence authorization path looks a file up by purpose, and the
+            // orphan-cleanup story (deferred) will want it by age.
+            entity.HasIndex(e => new { e.Purpose, e.CreatedAt });
+        });
 
         builder.Entity<TimesheetStatusHistory>(entity =>
         {

@@ -23,8 +23,10 @@ public class SecurityHeadersMiddleware(RequestDelegate next)
 
     // The React SPA (served same-origin from wwwroot) loads its own bundled
     // JS from this origin and relies on inline styles (MUI/Emotion inject
-    // <style> tags at runtime). Images may come from Cloudinary / OAuth avatar
-    // hosts over https. API calls and the SignalR socket are same-origin.
+    // <style> tags at runtime). Uploaded images are served same-origin from
+    // /api/files, but https: is still needed for OAuth avatar hosts and for
+    // the absolute Cloudinary URLs left in rows predating the move to
+    // database-backed storage. API calls and the SignalR socket are same-origin.
     private const string AppCsp =
         "default-src 'self'; " +
         "script-src 'self'; " +

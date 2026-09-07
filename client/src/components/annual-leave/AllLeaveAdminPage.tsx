@@ -8,6 +8,7 @@ import {
     getAnnualLeaves, getAppSettings, getDepartments, getEmployeeProfiles, getHolidays,
     getLeaveStatusHistories, getLeaveTypes, updateLeaveStatus,
 } from '../../lib/api'
+import { resolveFileUrl } from '../../lib/api/file-url'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
 import {
     allowanceForLeaveType, allowanceForRequest, annualLeaveAllowance, employeeAnnualEntitlement,
@@ -1009,7 +1010,7 @@ function LeaveRow({
                             <Box sx={{ mt: '8px' }}>
                                 <Box
                                     component="a"
-                                    href={leave.evidenceUrl}
+                                    href={resolveFileUrl(leave.evidenceUrl)}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     onClick={(e: React.MouseEvent) => e.stopPropagation()}

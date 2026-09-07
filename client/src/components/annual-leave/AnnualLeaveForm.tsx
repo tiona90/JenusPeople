@@ -14,6 +14,7 @@ import Typography from '@mui/material/Typography'
 import { AttachFile as AttachFileIcon, CalendarMonth as CalendarMonthIcon, OpenInNew as OpenInNewIcon } from '@mui/icons-material'
 import Box from '@mui/material/Box'
 import { createAnnualLeave, editAnnualLeave, getLeaveTypes, getAdminUsers, uploadLeaveEvidence } from '../../lib/api'
+import { resolveFileUrl } from '../../lib/api/file-url'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
 import { useStore } from '../../lib/mobx'
 import { softBg } from '../../lib/theme-tokens'
@@ -450,7 +451,9 @@ function AnnualLeaveForm({ open, onClose, leave, isAdmin = false, readOnly = fal
                         ) : evidenceUrl ? (
                             <Button
                                 size="small"
-                                href={evidenceUrl}
+                                // Reached only when evidenceUrl is non-empty, so the
+                                // resolver cannot return undefined here.
+                                href={resolveFileUrl(evidenceUrl) ?? evidenceUrl}
                                 target="_blank"
                                 rel="noreferrer"
                                 endIcon={<OpenInNewIcon fontSize="inherit" />}

@@ -71,7 +71,6 @@
 - Serilog 10.0.0 - Structured logging (console + newline-delimited JSON to `Logs/worktrack-<date>.jsonl`)
 - Microsoft.Extensions.Http.Resilience 9.0.0 - Standard resilience pipeline (retry, circuit breaker, timeout)
 - MailKit 4.17.0 - SMTP client for email (used by pluggable email provider)
-- CloudinaryDotNet 1.28.0 - Cloud image/file upload client
 - Microsoft.AspNetCore.Identity.EntityFrameworkCore 9.0.0 - User and role management
 
 **UI Components:**
@@ -101,7 +100,6 @@
 - Serilog.AspNetCore 10.0.0 - Request logging and structured logging pipeline
 - FluentValidation 12.1.1 - Auto-runs validation via MediatR pipeline
 - AutoMapper 16.1.1 - DTO projections in handlers
-- CloudinaryDotNet 1.28.0 - Profile image and file upload
 - MailKit 4.17.0 - Email delivery (SMTP relay)
 - @microsoft/signalr 10.0.0 - Real-time notifications
 
@@ -112,7 +110,7 @@
 - Frontend: Vite proxy configured to relay `/api/*` and `/hubs/*` to backend at `http://127.0.0.1:5000`
 - Key env vars (backend):
   - `ConnectionStrings:DefaultConnection` - SQL Server connection (trusted auth locally, SQL auth remotely)
-  - `Cloudinary:CloudName`, `Cloudinary:ApiKey`, `Cloudinary:ApiSecret` - Image uploads
+  - (no file-storage keys — uploads are held in the database, see INTEGRATIONS.md)
   - `Email:Provider` - `"Brevo"` or `"Smtp"` to select email implementation
   - `Brevo:ApiKey` - Transactional email API key (Brevo HTTP API only)
   - `MailSettings:*` - SMTP config for Gmail/Brevo relay

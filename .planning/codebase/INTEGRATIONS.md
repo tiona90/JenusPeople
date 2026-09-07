@@ -6,7 +6,7 @@
 
 **Email Delivery (Pluggable):**
 - Brevo (HTTP API) - Transactional emails (account lifecycle: welcome, password reset, email change)
-  - SDK/Client: CloudinaryDotNet (no dedicated SDK; uses HttpClient in `Infrastructure/Services/Email/Providers/BrevoEmailProvider.cs`)
+  - SDK/Client: none (uses HttpClient in `Infrastructure/Services/Email/Providers/BrevoEmailProvider.cs`)
   - Auth: API key in `Brevo:ApiKey` env var (`API/appsettings.json`)
   - Selection: Enabled by setting `Email:Provider` to `"Brevo"` in `API/appsettings.json`
   - Limitation: Requires allowlisted IPv4 (configured hosts only); IPv6 privacy addresses will fail. Workaround: Dual-stack machine forces IPv4 via `SocketsHttpHandler.ConnectCallback` in `Infrastructure/DependencyInjection.cs`
@@ -18,11 +18,16 @@
   - Selection: Enabled by setting `Email:Provider` to `"Smtp"` (default in current config is `"Brevo"`)
 
 **File Storage:**
-- Cloudinary - Profile image uploads and evidence file uploads
-  - SDK/Client: CloudinaryDotNet 1.28.0
-  - Auth: `Cloudinary:CloudName`, `Cloudinary:ApiKey`, `Cloudinary:ApiSecret` (`API/appsettings.json`)
-  - Service: `IFileUploadService` implemented by `CloudinaryFileUploadService` (`Infrastructure/Services/CloudinaryFileUploadService.cs`)
-  - Dependency injection: Registered in `Infrastructure/DependencyInjection.cs`
+- None — no external provider. Profile images and leave evidence are held in the
+  `StoredFiles` table and served from `/api/files/{id}`.
+  - Write path: `StoreFile` command (`Application/Files/Commands/StoreFile.cs`) —
+    validates signature, size and extension, hashes, persists
+  - Read path: `GetStoredFile` query (`Application/Files/Queries/GetStoredFile.cs`) —
+    per-purpose authorization; leave evidence reuses `ManagerAccessScopeResolver`
+  - Endpoint: `API/Controllers/FilesController.cs`
+  - Cloudinary was removed; rows written before that still hold absolute
+    `res.cloudinary.com` URLs and are rendered as-is by the client's
+    `resolveFileUrl` helper (`client/src/lib/api/file-url.ts`)
 
 **Public Holidays API:**
 - Nager.Date (date.nager.at/api/v3) - Public holiday data for leave balance calculations

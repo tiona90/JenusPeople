@@ -47,6 +47,7 @@ import { ThemeProvider } from '@mui/material/styles'
 import { buildTheme } from '../../lib/theme'
 import { AppDialog, AppDialogTitle, AppDialogContent, AppDialogActions, cancelBtnSx, saveBtnSx } from '../ui'
 import { updateProfile, uploadProfileImage } from '../../lib/api'
+import { resolveFileUrl } from '../../lib/api/file-url'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
 import { useStore } from '../../lib/mobx'
 
@@ -366,7 +367,7 @@ const Sidebar = observer(function Sidebar() {
                             }}
                         >
                             <Avatar
-                                src={authStore.user?.imageUrl || undefined}
+                                src={resolveFileUrl(authStore.user?.imageUrl)}
                                 sx={{ width: 32, height: 32, fontSize: 12, fontWeight: 600, bgcolor: 'primary.main', color: 'primary.contrastText', flexShrink: 0 }}
                             >
                                 {initials}
@@ -416,7 +417,7 @@ const Sidebar = observer(function Sidebar() {
                 <AppDialogContent>
                     <Stack spacing={2}>
                         <Stack direction="row" spacing={1.5} alignItems="center">
-                            <Avatar src={authStore.user?.imageUrl || undefined} sx={{ width: 44, height: 44 }}>
+                            <Avatar src={resolveFileUrl(authStore.user?.imageUrl)} sx={{ width: 44, height: 44 }}>
                                 {initials}
                             </Avatar>
                             <Button

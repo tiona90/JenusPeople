@@ -3,9 +3,10 @@ using API.Security;
 using API.Services;
 using Application.Accounts.DTOs;
 using AccountCommands = Application.Accounts.Commands;
+using Application.Files;
+using Application.Files.Commands;
 using Domain;
 using Domain.Interfaces;
-using Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -26,8 +27,7 @@ public class AccountController(
     UserManager<User> userManager,
     SignInManager<User> signInManager,
     AppDbContext context,
-    IAccountEmailSender accountEmailSender,
-    IFileUploadService fileUploadService) : BaseApiController
+    IAccountEmailSender accountEmailSender) : BaseApiController
 {
     // There is deliberately no public registration endpoint. Accounts are
     // created only by an administrator via POST /api/AdminUsers, which is
@@ -352,7 +352,9 @@ public class AccountController(
     [Authorize]
     [HttpPost("profile-image")]
     [RequestSizeLimit(5_000_000)]
-    public async Task<ActionResult> UploadProfileImage([FromForm] UploadProfileImageDto dto)
+    public async Task<ActionResult> UploadProfileImage(
+        [FromForm] UploadProfileImageDto dto,
+        CancellationToken cancellationToken)
     {
         var file = dto.File;
         if (file is null || file.Length == 0)
@@ -366,26 +368,35 @@ public class AccountController(
             return Unauthorized(new { message = "User is not authenticated." });
         }
 
-        await using var stream = file.OpenReadStream();
+        // Signature, size and extension checks all live in the StoreFile handler
+        // now, so both upload endpoints enforce one set of rules.
+        var stored = await Mediator.Send(
+            new StoreFile.Command
+            {
+                Content = await ReadAllBytesAsync(file, cancellationToken),
+                FileName = file.FileName,
+                DeclaredContentType = file.ContentType,
+                Purpose = StoredFilePurpose.ProfileImage,
+                UploadedById = user.Id,
+            },
+            cancellationToken);
 
-        var allowed = new[] { FileSignatureValidator.FileKind.Jpeg, FileSignatureValidator.FileKind.Png };
-        var detected = await FileSignatureValidator.DetectAsync(stream, allowed);
-        if (detected is null)
+        if (!stored.IsSuccess || stored.Value is null)
         {
-            return BadRequest(new { message = "Only real JPG or PNG images are accepted." });
+            return HandleResult(stored);
         }
 
-        var uploadResult = await fileUploadService.UploadProfileImageAsync(user.Id, stream, file.FileName);
-
-        if (!uploadResult.IsSuccess)
-        {
-            return BadRequest(new { message = uploadResult.ErrorMessage ?? "Failed to upload image." });
-        }
-
-        user.ImageUrl = uploadResult.Url;
+        user.ImageUrl = StoredFilePath.For(stored.Value);
         await userManager.UpdateAsync(user);
 
         return Ok(new { imageUrl = user.ImageUrl });
+    }
+
+    private static async Task<byte[]> ReadAllBytesAsync(IFormFile file, CancellationToken cancellationToken)
+    {
+        using var buffer = new MemoryStream();
+        await file.CopyToAsync(buffer, cancellationToken);
+        return buffer.ToArray();
     }
 
     private IActionResult RedirectToAuthPage(string status, string message, string route = "login")

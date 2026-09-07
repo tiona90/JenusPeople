@@ -29,7 +29,7 @@ WorkTrack is a full-stack leave management and timesheet tracking application. I
 │  `Persistence/AppDbContext.cs`, `Persistence/Migrations/`       │
 │  Domain interceptors, model building rules                       │
 ├──────────────────────────────────────────────────────────────────┤
-│  Infrastructure Layer (Email, Cloudinary, Nager Holidays)        │
+│  Infrastructure Layer (Email, Nager Holidays)                    │
 │    Email providers, file upload, external service clients       │
 │  `Infrastructure/Services/`, `Infrastructure/DependencyInjection.cs`
 └──────────────────────────────────────────────────────────────────┘
@@ -37,7 +37,7 @@ WorkTrack is a full-stack leave management and timesheet tracking application. I
 ┌────────────────────────────▼───────────────────────────────────┐
 │                   Domain Layer (Entities)                       │
 │    User, AnnualLeave, Timesheet, Project, EmployeeProfile      │
-│    Service contracts: IEmailService, IFileUploadService        │
+│    Service contracts: IEmailService                            │
 │  `Domain/*.cs`, `Domain/Interfaces/`                          │
 └─────────────────────────────────────────────────────────────────┘
                              │
@@ -100,14 +100,14 @@ WorkTrack is a full-stack leave management and timesheet tracking application. I
 **Infrastructure (External Services):**
 - Purpose: Email, file upload, public holidays API, configuration
 - Location: `Infrastructure/`
-- Contains: Service implementations (email providers, file upload to Cloudinary, Nager client), dependency injection setup
+- Contains: Service implementations (email providers, Nager client), dependency injection setup
 - Depends on: Domain (implements its interfaces)
 - Used by: Application handlers, API services
 
 **Domain (Core Entities):**
 - Purpose: Business entities, enums, service contracts, no external dependencies
 - Location: `Domain/`
-- Contains: User, AnnualLeave, Timesheet, Project, EmployeeProfile, Departments, LeaveTypes, etc.; IEmailService, IFileUploadService interfaces
+- Contains: User, AnnualLeave, Timesheet, Project, EmployeeProfile, Departments, LeaveTypes, StoredFile, etc.; IEmailService interface
 - Depends on: (nothing — only ASP.NET Identity)
 - Used by: All other layers
 

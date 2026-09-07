@@ -1,4 +1,5 @@
 import { useMemo, useState, type MouseEvent } from 'react'
+import { resolveFileUrl } from '../../lib/api/file-url'
 import { softBg } from '../../lib/theme-tokens'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -188,7 +189,7 @@ function AnnualLeaveCard({ leave, user }: AnnualLeaveCardProps) {
 
                             {leave.evidenceUrl ? (
                                 <Link
-                                    href={leave.evidenceUrl}
+                                    href={resolveFileUrl(leave.evidenceUrl)}
                                     target="_blank"
                                     rel="noreferrer"
                                     underline="hover"

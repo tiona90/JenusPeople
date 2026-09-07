@@ -17,7 +17,6 @@ public static class DependencyInjection
     {
         services.AddOptions();
         services.Configure<AppUrlOptions>(configuration.GetSection(AppUrlOptions.SectionName));
-        services.Configure<CloudinaryOptions>(configuration.GetSection(CloudinaryOptions.SectionName));
         services.Configure<SlackOptions>(configuration.GetSection(SlackOptions.SectionName));
         services.Configure<MailSettings>(configuration.GetSection(MailSettings.SectionName));
         services.Configure<BrevoOptions>(configuration.GetSection(BrevoOptions.SectionName));
@@ -63,7 +62,6 @@ public static class DependencyInjection
         });
         services.AddScoped<IEmailService, EmailService>();
 
-        services.AddScoped<IFileUploadService, CloudinaryFileUploadService>();
         services.AddScoped<ICurrentUserAccessor, CurrentUserAccessor>();
 
         // Typed HttpClient for Slack incoming-webhook POSTs. Short timeout — we

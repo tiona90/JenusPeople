@@ -23,6 +23,7 @@ import TableRow from '@mui/material/TableRow'
 import Tabs from '@mui/material/Tabs'
 import Typography from '@mui/material/Typography'
 import { getAnnualLeaves, getLeaveStatusHistories, getLeaveTypes, updateLeaveStatus } from '../../lib/api'
+import { resolveFileUrl } from '../../lib/api/file-url'
 import type { AnnualLeave, AnnualLeaveStatus, LeaveStatusHistory, UserInfo } from '../../lib/types'
 import { softBg, type SxColor } from '../../lib/theme-tokens'
 
@@ -88,10 +89,6 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
             <Box sx={{ fontSize: 13, color: 'text.primary', flex: 1 }}>{value}</Box>
         </Stack>
     )
-}
-
-function evidenceFileName(url: string) {
-    return url.split('/').pop()?.split('?')[0] || 'evidence-file'
 }
 
 type StatusTab = 'all' | 'pending' | 'approved' | 'rejected'
@@ -512,10 +509,14 @@ const TeamLeavePage = observer(function TeamLeavePage({ user }: { user: UserInfo
                                             size="small"
                                             variant="outlined"
                                             component="a"
-                                            href={viewLeave.evidenceUrl}
+                                            href={resolveFileUrl(viewLeave.evidenceUrl)}
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            download={evidenceFileName(viewLeave.evidenceUrl)}
+                                            // Valueless: the server sends the real
+                                            // file name in Content-Disposition, and
+                                            // deriving one from the path would now
+                                            // yield a bare, extensionless id.
+                                            download
                                             sx={{
                                                 fontSize: 12, textTransform: 'none',
                                                 borderColor: 'primary.main', color: 'primary.main',

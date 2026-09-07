@@ -32,7 +32,7 @@ Built with **ASP.NET Core 10** (Clean Architecture) and **React 19**
 | Database | SQL Server |
 | Frontend | React 19, TypeScript, Vite, MobX, React Query, MUI |
 | Real-time | SignalR |
-| Media | Cloudinary (profile images, evidence uploads) |
+| Media | Profile images and evidence files held in SQL Server, served from `/api/files/{id}` |
 
 ## Architecture
 
@@ -64,7 +64,7 @@ npm run dev
 ```
 
 Backend configuration lives in `API/appsettings.Development.json` (connection
-string, email, OAuth, Cloudinary). The database schema is created and seeded
+string, email, OAuth). The database schema is created and seeded
 automatically on first run via EF Core migrations.
 
 ### Database migrations

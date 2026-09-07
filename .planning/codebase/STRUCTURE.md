@@ -100,7 +100,7 @@ WorkTrack/
 │   ├── AppRoles.cs                # Role constants (Admin, Manager, Employee)
 │   ├── Interfaces/                # Service contracts
 │   │   ├── IEmailService.cs       # Email sending (implemented by Infrastructure)
-│   │   ├── IFileUploadService.cs  # File upload (implemented by Infrastructure)
+│   │   ├── (file upload contract removed — see Application/Files/)
 │   │   ├── IAccountEmailSender.cs # Account lifecycle emails
 │   │   ├── IChatNotificationService.cs    # Chat notifications (contract only)
 │   │   └── ...
@@ -128,7 +128,7 @@ WorkTrack/
 │   │   │   ├── SmtpEmailProvider.cs      # MailKit for SMTP
 │   │   │   └── EmailService.cs    # Decorator/router selecting provider
 │   │   ├── File/                  # File upload service
-│   │   │   └── CloudinaryFileUploadService.cs   # Uploads to Cloudinary
+│   │   │   └── (file uploads now live in Application/Files/)
 │   │   ├── Holidays/              # Public holidays client
 │   │   │   └── NagerHolidayClient.cs    # HTTP client to Nager API
 │   │   └── ...
@@ -220,7 +220,7 @@ WorkTrack/
 
 **Domain/**
 - Purpose: Core business entities with no external dependencies; service contracts (interfaces)
-- Contains: Entity classes (User, AnnualLeave, Timesheet, Project, Department), enums (AnnualLeaveStatus, TimesheetStatus), service interfaces (IEmailService, IFileUploadService)
+- Contains: Entity classes (User, AnnualLeave, Timesheet, Project, Department, StoredFile), enums (AnnualLeaveStatus, TimesheetStatus, StoredFilePurpose), service interfaces (IEmailService)
 - Key files: Entity definitions, `AppRoles.cs` (role constants), `Interfaces/` directory with service contracts
 
 **Persistence/**
@@ -229,9 +229,9 @@ WorkTrack/
 - Key files: `AppDbContext.cs`, `Migrations/` (sorted by timestamp)
 
 **Infrastructure/**
-- Purpose: External service implementations; email providers (Brevo, SMTP), file upload (Cloudinary), public holidays API client (Nager)
+- Purpose: External service implementations; email providers (Brevo, SMTP), public holidays API client (Nager)
 - Contains: Service implementations, dependency injection registration
-- Key files: `DependencyInjection.cs` (service registration), `Services/Email/` (pluggable providers), `Services/File/CloudinaryFileUploadService.cs`
+- Key files: `DependencyInjection.cs` (service registration), `Services/Email/` (pluggable providers)
 
 **Tests/**
 - Purpose: Unit and integration tests; test database setup (in-memory EF, SQLite)

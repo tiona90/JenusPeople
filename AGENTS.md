@@ -45,7 +45,7 @@ actual project references:
 Domain          → nothing (entities, enums, service contracts)
 Persistence     → Domain (AppDbContext, EF configs, migrations)
 Application     → Domain + Persistence (MediatR CQRS)
-Infrastructure  → Domain (Email, Cloudinary, config)
+Infrastructure  → Domain (Email, holidays, config)
 API             → Application + Infrastructure
 client/         → React SPA (separate)
 ```
@@ -99,13 +99,20 @@ that means when adding code:
 | `TimesheetEntry` | `TimesheetId`, `ProjectId`, `Date`, `HoursWorked` (decimal 4,2) |
 | `Project` | `Name` (unique), `Code` (unique), `IsActive`, `DepartmentId` |
 | `EmployeeProfile` | Links `User` to `Department`, tracks leave entitlement |
+| `StoredFile` | An uploaded file's bytes in the database: `Content` (varbinary(max)), `FileName`, `ContentType` (**detected**, never the caller's claim), `Sha256` (also the HTTP ETag), `SizeBytes`, `UploadedById`. `Purpose` (`ProfileImage`, `LeaveEvidence`) drives both what the upload accepts and who may read it back |
 
 Status enums: `AnnualLeaveStatus` (Pending, Approved, Rejected, Cancelled); `TimesheetStatus` (Draft=0, Submitted=1, Approved=2, Rejected=3, Resubmitted=4).
 
 ## Key Configuration
 
 - **DB:** SQL Server, connection string in `API/appsettings.Development.json` (`WorkTrack` database, trusted connection)
-- **Cloudinary:** Used for profile image and evidence file uploads
+- **File uploads:** Stored in the database, not on a CDN. `Application/Files/` holds
+  the `StoreFile` command (one place for signature, size and extension validation)
+  and the `GetStoredFile` query (per-purpose read authorization). `User.ImageUrl` and
+  `AnnualLeave.EvidenceUrl` hold a relative `/api/files/{id}` path served by
+  `API/Controllers/FilesController.cs`. Rows predating this still hold absolute
+  Cloudinary URLs and keep rendering — the client's `resolveFileUrl` helper
+  (`client/src/lib/api/file-url.ts`) accepts both shapes.
 - **Email:** Pluggable provider architecture (`Infrastructure/Services/Email/`). `IEmailProvider` has two implementations — `BrevoEmailProvider` (Brevo transactional HTTP API) and `SmtpEmailProvider` (MailKit; Gmail/Office365/Brevo relay). `EmailService` selects one at startup via `Email:Provider` (`"Brevo"` or `"Smtp"`) in `appsettings.json`. Brevo config in the `Brevo` section (`ApiKey`); SMTP config in `MailSettings`. Note: the Brevo account has "Authorised IPs" enabled. This host's public **IPv4** is allowlisted but its rotating IPv6 privacy addresses are not, so the Brevo HTTP client is pinned to IPv4 via a `SocketsHttpHandler.ConnectCallback` in `Infrastructure/DependencyInjection.cs` (otherwise .NET prefers IPv6 → intermittent 401 "unrecognised IP"). See https://app.brevo.com/security/authorised_ips.
 - **OAuth:** Google and GitHub OAuth configured in `appsettings.json`; both are optional (skipped if `ClientId` is empty)
 ## Improvements & Roadmap

@@ -87,13 +87,12 @@ public class LoginLockoutTests
     }
 
     private static AccountController LoginController(ServiceProvider provider, AppDbContext db) =>
-        // Login touches only the SignInManager; the email sender and upload service
-        // are left null so this fails loudly rather than quietly if that changes.
+        // Login touches only the SignInManager; the email sender is left null so
+        // this fails loudly rather than quietly if that changes.
         new(
             provider.GetRequiredService<UserManager<User>>(),
             provider.GetRequiredService<SignInManager<User>>(),
             db,
-            null!,
             null!)
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
