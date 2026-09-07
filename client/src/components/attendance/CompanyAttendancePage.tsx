@@ -1,10 +1,14 @@
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
+import MenuItem from '@mui/material/MenuItem'
 import Paper from '@mui/material/Paper'
+import Select from '@mui/material/Select'
 import Stack from '@mui/material/Stack'
 import Table from '@mui/material/Table'
+import TextField from '@mui/material/TextField'
 import TableBody from '@mui/material/TableBody'
 import TableCell from '@mui/material/TableCell'
 import TableHead from '@mui/material/TableHead'
@@ -12,7 +16,7 @@ import TableRow from '@mui/material/TableRow'
 import Typography from '@mui/material/Typography'
 import { getCompanyAttendance } from '../../lib/api'
 import { activityIcon, formatElapsed, formatTime } from '../../lib/hooks/useAttendance'
-import type { CompanyAttendance, RecentActivity } from '../../lib/types'
+import type { RecentActivity } from '../../lib/types'
 import { softBg } from '../../lib/theme-tokens'
 
 const BLUE = 'primary.main'
@@ -136,9 +140,9 @@ function csvEscape(value: string): string {
     return value
 }
 
-function exportRecentToCsv(data: CompanyAttendance) {
+function exportRecentToCsv(recent: RecentActivity[]) {
     const header = ['Employee', 'Department', 'Action', 'Time', 'Minutes ago']
-    const rows = data.recent.map((r) => [
+    const rows = recent.map((r) => [
         csvEscape(r.employeeName),
         csvEscape(r.departmentName),
         csvEscape(r.action),
@@ -159,12 +163,82 @@ function exportRecentToCsv(data: CompanyAttendance) {
     URL.revokeObjectURL(url)
 }
 
+// The order the action select lists in — chronological through a working day,
+// with the timestamp-less synthetic row last. Actions the feed does not contain
+// are left out, so the list stays as short as the day was.
+const ACTION_ORDER = [
+    'Checked in',
+    'Late check-in',
+    'Started break',
+    'Back from break',
+    'Went idle',
+    'Back from idle',
+    'Checked out',
+    'Not checked in',
+]
+
+const TIME_WINDOWS: { value: string; label: string; minutes: number | null }[] = [
+    { value: 'all', label: 'All of today', minutes: null },
+    { value: '1h', label: 'Last hour', minutes: 60 },
+    { value: '4h', label: 'Last 4 hours', minutes: 240 },
+]
+
+const FILTER_SELECT_SX = {
+    fontSize: 12,
+    '& .MuiSelect-select': { py: '7px', px: '12px' },
+    '& fieldset': { borderColor: 'divider', borderRadius: '6px' },
+}
+
 export default function CompanyAttendancePage() {
     const { data, isLoading } = useQuery({
         queryKey: ['attendance', 'company'],
         queryFn: getCompanyAttendance,
         refetchInterval: 30_000,
     })
+
+    const [search, setSearch] = useState('')
+    const [deptFilter, setDeptFilter] = useState('all')
+    const [actionFilter, setActionFilter] = useState('all')
+    const [windowFilter, setWindowFilter] = useState('all')
+
+    const recent = useMemo(() => data?.recent ?? [], [data])
+
+    // Both option lists come from the feed rather than a fixed catalogue, so an
+    // admin is never offered a filter that can only return nothing.
+    const deptOptions = useMemo(
+        () => Array.from(new Set(recent.map((r) => r.departmentName))).sort(),
+        [recent],
+    )
+
+    const actionOptions = useMemo(() => {
+        const present = new Set(recent.map((r) => r.action))
+        return ACTION_ORDER.filter((a) => present.has(a))
+    }, [recent])
+
+    const filteredRecent = useMemo(() => {
+        let list = recent
+
+        if (deptFilter !== 'all') list = list.filter((r) => r.departmentName === deptFilter)
+        if (actionFilter !== 'all') list = list.filter((r) => r.action === actionFilter)
+
+        const window = TIME_WINDOWS.find((w) => w.value === windowFilter)?.minutes ?? null
+        if (window != null) {
+            // A "Not checked in" row has no timestamp and so happened inside no
+            // window; narrowing to one drops it rather than keeping a row the
+            // filter cannot place in time.
+            list = list.filter((r) => r.minutesAgo != null && r.minutesAgo <= window)
+        }
+
+        const q = search.trim().toLowerCase()
+        if (q) list = list.filter((r) => r.employeeName.toLowerCase().includes(q))
+
+        return list
+    }, [recent, deptFilter, actionFilter, windowFilter, search])
+
+    const filtersActive = search.trim() !== ''
+        || deptFilter !== 'all'
+        || actionFilter !== 'all'
+        || windowFilter !== 'all'
 
     if (isLoading && !data) {
         return (
@@ -328,12 +402,19 @@ export default function CompanyAttendancePage() {
                     borderBottom: '1px solid', borderColor: 'divider',
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 }}>
-                    <Typography sx={{ fontSize: 14, fontWeight: 600, color: 'text.primary' }}>Recent Activity</Typography>
+                    <Typography sx={{ fontSize: 14, fontWeight: 600, color: 'text.primary' }}>
+                        Recent Activity
+                        {filtersActive && (
+                            <Box component="span" sx={{ fontSize: 11, fontWeight: 400, color: 'text.secondary', ml: 0.75 }}>
+                                · {filteredRecent.length} of {recent.length}
+                            </Box>
+                        )}
+                    </Typography>
                     <Button
                         variant="outlined"
                         size="small"
-                        onClick={() => exportRecentToCsv(data)}
-                        disabled={data.recent.length === 0}
+                        onClick={() => exportRecentToCsv(filteredRecent)}
+                        disabled={filteredRecent.length === 0}
                         sx={{
                             fontSize: 12,
                             textTransform: 'none',
@@ -346,14 +427,68 @@ export default function CompanyAttendancePage() {
                         Export Log
                     </Button>
                 </Box>
+
+                {/* Filter toolbar, matching the one on All Timesheets. */}
+                <Stack
+                    direction="row"
+                    spacing={1}
+                    alignItems="center"
+                    flexWrap="wrap"
+                    useFlexGap
+                    sx={{ p: '12px 18px', borderBottom: '1px solid', borderColor: 'divider' }}
+                >
+                    <TextField
+                        size="small"
+                        placeholder="Search by name…"
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        sx={{
+                            minWidth: 220,
+                            '& .MuiInputBase-input': { fontSize: 12, py: '7px' },
+                            '& fieldset': { borderColor: 'divider', borderRadius: '6px' },
+                        }}
+                    />
+                    <Select
+                        size="small"
+                        value={deptFilter}
+                        onChange={(e) => setDeptFilter(e.target.value)}
+                        inputProps={{ 'aria-label': 'Filter by department' }}
+                        sx={FILTER_SELECT_SX}
+                    >
+                        <MenuItem value="all">All departments</MenuItem>
+                        {deptOptions.map((d) => <MenuItem key={d} value={d}>{d}</MenuItem>)}
+                    </Select>
+                    <Select
+                        size="small"
+                        value={actionFilter}
+                        onChange={(e) => setActionFilter(e.target.value)}
+                        inputProps={{ 'aria-label': 'Filter by action' }}
+                        sx={FILTER_SELECT_SX}
+                    >
+                        <MenuItem value="all">All actions</MenuItem>
+                        {actionOptions.map((a) => <MenuItem key={a} value={a}>{a}</MenuItem>)}
+                    </Select>
+                    <Select
+                        size="small"
+                        value={windowFilter}
+                        onChange={(e) => setWindowFilter(e.target.value)}
+                        inputProps={{ 'aria-label': 'Filter by time window' }}
+                        sx={FILTER_SELECT_SX}
+                    >
+                        {TIME_WINDOWS.map((w) => (
+                            <MenuItem key={w.value} value={w.value}>{w.label}</MenuItem>
+                        ))}
+                    </Select>
+                </Stack>
+
                 <Box sx={{ p: 2.25 }}>
                     <Stack spacing={1}>
-                        {data.recent.length === 0 ? (
+                        {filteredRecent.length === 0 ? (
                             <Typography sx={{ fontSize: 13, color: 'text.disabled', textAlign: 'center', py: 3 }}>
-                                No activity yet today.
+                                {filtersActive ? 'No activity matches the filters.' : 'No activity yet today.'}
                             </Typography>
                         ) : (
-                            data.recent.map((r, idx) => <ActivityRow key={`${r.employeeName}-${idx}`} r={r} />)
+                            filteredRecent.map((r, idx) => <ActivityRow key={`${r.employeeName}-${idx}`} r={r} />)
                         )}
                     </Stack>
                 </Box>

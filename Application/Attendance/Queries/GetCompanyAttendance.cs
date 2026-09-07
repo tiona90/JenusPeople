@@ -24,7 +24,11 @@ public class GetCompanyAttendance
     private const int LateCheckInHour = 10;
     private const int NominalStartHour = 9;
     private const int OvertimeMinutes = 600;
-    private const int RecentActivityLimit = 20;
+    // High enough that a day's feed is effectively complete, because Company
+    // Attendance filters it client-side: a cap of 20 would let a department or
+    // action filter report "no activity" while the day holds plenty. The
+    // dashboard's card shows the first 8 regardless, so this costs it nothing.
+    private const int RecentActivityLimit = 200;
     private const int NotCheckedInListLimit = 5;
     private const int LateNamesShown = 3;
 

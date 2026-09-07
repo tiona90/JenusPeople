@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -156,6 +156,93 @@ describe('not-checked-in reads the same on the dashboard and on Company Attendan
         expect(await screen.findByText('Not Checked In')).toBeInTheDocument()
         expect(screen.getByText('no check-in recorded yet')).toBeInTheDocument()
         expect(screen.queryByText(/requires follow-up/i)).not.toBeInTheDocument()
+    })
+})
+
+/**
+ * Pick an option from one of the Recent Activity filter selects. MUI's non-native
+ * Select opens on mouseDown, not click, and renders its options into a portal.
+ */
+function chooseFilter(name: RegExp, option: string) {
+    fireEvent.mouseDown(screen.getByRole('combobox', { name }))
+    fireEvent.click(within(screen.getByRole('listbox')).getByText(option))
+}
+
+function searchFor(text: string) {
+    fireEvent.change(screen.getByPlaceholderText(/search by name/i), { target: { value: text } })
+}
+
+describe('Recent Activity filters', () => {
+    it('narrows the feed to one department', async () => {
+        renderCompanyPage()
+        await screen.findByText(/Employee 2A/)
+
+        chooseFilter(/department/i, 'Engineering')
+
+        expect(screen.getByText(/Employee 1A/)).toBeInTheDocument()
+        expect(screen.getByText(/Employee 1D/)).toBeInTheDocument()
+        expect(screen.queryByText(/Employee 2A/)).not.toBeInTheDocument()
+        expect(screen.queryByText(/Theodoros Iona/)).not.toBeInTheDocument()
+    })
+
+    it('narrows the feed to one kind of action', async () => {
+        renderCompanyPage()
+        await screen.findByText(/Employee 2A/)
+
+        chooseFilter(/action/i, 'Not checked in')
+
+        expect(screen.getByText(/Theodoros Iona/)).toBeInTheDocument()
+        expect(screen.getByText(/Manager Two/)).toBeInTheDocument()
+        expect(screen.queryByText(/Employee 2A/)).not.toBeInTheDocument()
+        expect(screen.queryByText(/Employee 1A/)).not.toBeInTheDocument()
+    })
+
+    it('narrows the feed by employee name', async () => {
+        renderCompanyPage()
+        await screen.findByText(/Employee 2A/)
+
+        searchFor('theodoros')
+
+        expect(screen.getByText(/Theodoros Iona/)).toBeInTheDocument()
+        expect(screen.queryByText(/Manager Two/)).not.toBeInTheDocument()
+        expect(screen.queryByText(/Employee 2A/)).not.toBeInTheDocument()
+    })
+
+    // A synthetic "Not checked in" row carries no timestamp, so it did not happen
+    // inside any window. Narrowing to one drops it rather than keeping a row the
+    // filter cannot place in time.
+    it('keeps only events inside the chosen time window', async () => {
+        renderCompanyPage()
+        await screen.findByText(/Employee 2A/)
+
+        chooseFilter(/time/i, 'Last hour')
+
+        // 21 minutes ago.
+        expect(screen.getByText(/Employee 2A/)).toBeInTheDocument()
+        // 64 minutes ago.
+        expect(screen.queryByText(/Employee 1A/)).not.toBeInTheDocument()
+        expect(screen.queryByText(/Theodoros Iona/)).not.toBeInTheDocument()
+    })
+
+    it('says the filters are what emptied the feed, and disables the export', async () => {
+        renderCompanyPage()
+        await screen.findByText(/Employee 2A/)
+
+        searchFor('nobody here')
+
+        expect(screen.getByText(/no activity matches the filters/i)).toBeInTheDocument()
+        expect(screen.queryByText(/no activity yet today/i)).not.toBeInTheDocument()
+        expect(screen.getByRole('button', { name: /export log/i })).toBeDisabled()
+    })
+
+    it('offers only the departments and actions the feed actually contains', async () => {
+        renderCompanyPage()
+        await screen.findByText(/Employee 2A/)
+
+        fireEvent.mouseDown(screen.getByRole('combobox', { name: /action/i }))
+        const options = within(screen.getByRole('listbox')).getAllByRole('option').map((o) => o.textContent)
+
+        expect(options).toEqual(['All actions', 'Late check-in', 'Back from break', 'Not checked in'])
     })
 })
 
