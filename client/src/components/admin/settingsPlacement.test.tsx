@@ -158,11 +158,10 @@ describe('the allowance and its carryover cap are edited only on Leave Types', (
         renderPanel(<AppSettingsPanel />)
         await screen.findByText('Leave Year Configuration')
 
-        // Save is gated on isDirty, so move something this page does still own.
-        const weeklyHours = screen.getByText('Weekly Hours Target')
-            .parentElement!.querySelector('input')!
-        fireEvent.change(weeklyHours, { target: { value: '35' } })
-        fireEvent.click(screen.getByRole('button', { name: 'Save Settings' }))
+        // Save is gated on the card being dirty, so move something this page does
+        // still own. Weekly hours sits on the Organization card, which saves its own.
+        fireEvent.change(screen.getByLabelText('Weekly hours target'), { target: { value: '35' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
 
         await waitFor(() => expect(api.updateAppSettings).toHaveBeenCalledTimes(1))
         expect(api.updateLeaveType).not.toHaveBeenCalled()
@@ -238,15 +237,157 @@ describe('the year-end warning lead times are not settings', () => {
         expect(screen.getByText('30-day warning emails')).toBeInTheDocument()
         expect(screen.getByText('7-day final warning')).toBeInTheDocument()
 
-        const weeklyHours = screen.getByText('Weekly Hours Target')
-            .parentElement!.querySelector('input')!
-        fireEvent.change(weeklyHours, { target: { value: '35' } })
-        fireEvent.click(screen.getByRole('button', { name: 'Save Settings' }))
+        fireEvent.change(screen.getByLabelText('Weekly hours target'), { target: { value: '35' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
 
         await waitFor(() => expect(api.updateAppSettings).toHaveBeenCalledTimes(1))
         const sent = api.updateAppSettings.mock.calls[0][0]
         expect(sent).not.toHaveProperty('yearEndWarningDays')
         expect(sent).not.toHaveProperty('finalWarningDays')
+    })
+})
+
+/*
+ * Both cards on this page edit one settings object, and both Save buttons used to post
+ * the whole of it — so saving the leave year also committed whatever the admin had
+ * typed into the Organization card and not yet saved, and vice versa. Each card now
+ * builds its payload from the last saved settings and overrides only its own fields.
+ */
+describe('each card saves only its own fields', () => {
+    it('saving the leave year leaves the organization card\'s unsaved edits out of the payload', async () => {
+        renderPanel(<AppSettingsPanel />)
+        await screen.findByText('Leave Year Configuration')
+
+        // An edit left sitting in the other card.
+        fireEvent.change(screen.getByLabelText('Weekly hours target'), { target: { value: '35' } })
+
+        const monthSelect = screen.getByText('Leave Year Start Month')
+            .parentElement!.querySelector('[role="combobox"]')!
+        fireEvent.mouseDown(monthSelect)
+        fireEvent.click(await screen.findByRole('option', { name: 'April' }))
+        fireEvent.click(screen.getByRole('button', { name: 'Save Settings' }))
+
+        await waitFor(() => expect(api.updateAppSettings).toHaveBeenCalledTimes(1))
+        const sent = api.updateAppSettings.mock.calls[0][0]
+        expect(sent.leaveYearStartMonth).toBe(4)
+        expect(sent.weeklyHoursTarget).toBe(40) // the saved value, not the typed 35
+    })
+
+    it('saving the organization card leaves the leave year\'s unsaved edits out of the payload', async () => {
+        renderPanel(<AppSettingsPanel />)
+        await screen.findByText('Leave Year Configuration')
+
+        const monthSelect = screen.getByText('Leave Year Start Month')
+            .parentElement!.querySelector('[role="combobox"]')!
+        fireEvent.mouseDown(monthSelect)
+        fireEvent.click(await screen.findByRole('option', { name: 'April' }))
+
+        fireEvent.change(screen.getByLabelText('Weekly hours target'), { target: { value: '35' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+
+        await waitFor(() => expect(api.updateAppSettings).toHaveBeenCalledTimes(1))
+        const sent = api.updateAppSettings.mock.calls[0][0]
+        expect(sent.weeklyHoursTarget).toBe(35)
+        expect(sent.leaveYearStartMonth).toBe(1) // the saved month, not the chosen April
+        // Still mirrored onto the column nothing edits, so the two cannot drift.
+        expect(sent.financialYearStartMonth).toBe(1)
+    })
+
+    it('gates each Save on its own card being dirty', async () => {
+        renderPanel(<AppSettingsPanel />)
+        await screen.findByText('Leave Year Configuration')
+
+        expect(screen.getByRole('button', { name: 'Save Settings' })).toBeDisabled()
+        expect(screen.getByRole('button', { name: 'Save Changes' })).toBeDisabled()
+
+        // An organization edit must not arm the leave-year card's Save.
+        fireEvent.change(screen.getByLabelText('Weekly hours target'), { target: { value: '35' } })
+        expect(screen.getByRole('button', { name: 'Save Changes' })).toBeEnabled()
+        expect(screen.getByRole('button', { name: 'Save Settings' })).toBeDisabled()
+    })
+})
+
+/*
+ * "Notify managers of team expiries" CCs the manager on the year-end warning emails, so
+ * it does nothing at all while those emails are switched off. It used to sit as a
+ * fourth peer switch, freely settable with no hint that it was inert.
+ */
+describe('the manager CC is shown as a child of the emails it rides on', () => {
+    it('is disabled while year-end warning emails are off', async () => {
+        api.getAppSettings.mockResolvedValue({ ...SETTINGS, sendYearEndWarningEmails: false })
+        renderPanel(<AppSettingsPanel />)
+        await screen.findByText('Leave Year Configuration')
+
+        expect(screen.getByRole('switch', { name: 'Also notify their manager' })).toBeDisabled()
+    })
+
+    it('is settable once they are on', async () => {
+        renderPanel(<AppSettingsPanel />)
+        await screen.findByText('Leave Year Configuration')
+
+        expect(screen.getByRole('switch', { name: 'Also notify their manager' })).toBeEnabled()
+    })
+})
+
+/*
+ * The card's amber banner said "Changes take effect from the next rollover only" while
+ * the card also held a timesheet deadline and a public-holiday country, both of which
+ * apply immediately. The deferred field is the start month, and the banner now says so.
+ */
+describe('the deferred-change warning names the field it applies to', () => {
+    it('warns about the start month, not about every change on the card', async () => {
+        renderPanel(<AppSettingsPanel />)
+        await screen.findByText('Leave Year Configuration')
+
+        expect(screen.getByText(/Changing the start month takes effect from the/)).toBeInTheDocument()
+        expect(screen.queryByText(/Changes take effect from the/)).not.toBeInTheDocument()
+    })
+
+    it('states the leave year the change will not affect', async () => {
+        renderPanel(<AppSettingsPanel />)
+        await screen.findByText('Leave Year Configuration')
+
+        // The configured leave year starts in January, so it spans the calendar year.
+        const year = new Date().getFullYear()
+        expect(screen.getByText(
+            new RegExp(`The current leave year \\(1 Jan ${year} – 31 Dec ${year}\\) is unaffected`),
+        )).toBeInTheDocument()
+    })
+})
+
+/*
+ * The Upcoming Schedule card offered "▶ Run Rollover Manually" with no onClick at all:
+ * the most consequential action an admin could take on this page, doing nothing when
+ * pressed. Nothing performs a rollover yet — there is no command, endpoint or job — so
+ * the button is gone until there is something for it to call.
+ */
+describe('no button offers an action nothing implements', () => {
+    it('does not offer to run the rollover by hand', async () => {
+        renderPanel(<AppSettingsPanel />)
+        await screen.findByText('Upcoming Schedule')
+
+        expect(screen.queryByRole('button', { name: /Run Rollover/i })).not.toBeInTheDocument()
+    })
+
+    it('still shows the schedule the rollover is part of', async () => {
+        renderPanel(<AppSettingsPanel />)
+        await screen.findByText('Upcoming Schedule')
+
+        expect(screen.getByText('Year-end rollover')).toBeInTheDocument()
+        expect(screen.getByText('New year opens')).toBeInTheDocument()
+    })
+
+    /* Every labelled button left on the page does something. Guards against the next
+       dead control being added beside a live one. Icon-only buttons are excluded — the
+       holiday picker's dropdown indicator is one, and it is wired by MUI. */
+    it('leaves only buttons that are wired up', async () => {
+        renderPanel(<AppSettingsPanel />)
+        await screen.findByText('Leave Year Configuration')
+
+        const labelled = screen.getAllByRole('button')
+            .map((b) => b.textContent?.trim())
+            .filter((t): t is string => !!t)
+        expect(labelled).toEqual(['Cancel', 'Save Settings', 'Reset to defaults', 'Save Changes'])
     })
 })
 

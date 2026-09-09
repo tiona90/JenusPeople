@@ -95,19 +95,48 @@ function diffDays(a: Date, b: Date) {
     return Math.ceil((b.getTime() - a.getTime()) / 86400000)
 }
 
-function ToggleRow({ title, sub, checked, onChange }: {
+/* A switch that only does something while another switch is on is shown as its child:
+   indented, and greyed out and unclickable while the parent is off. The stored value is
+   left alone — turning the parent back on restores the choice that was made. */
+function ToggleRow({ title, sub, checked, onChange, disabled = false, indent = false }: {
     title: string; sub: string; checked: boolean; onChange: (v: boolean) => void
+    disabled?: boolean; indent?: boolean
 }) {
     return (
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 1.25, borderBottom: '1px solid', borderColor: 'divider', '&:last-child': { borderBottom: 'none' } }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2, py: 1.25, pl: indent ? 2.5 : 0, opacity: disabled ? 0.45 : 1, borderBottom: '1px solid', borderColor: 'divider', '&:last-child': { borderBottom: 'none' } }}>
             <Box>
-                <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'text.primary' }}>{title}</Typography>
+                <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'text.primary' }}>
+                    {indent && <Box component="span" sx={{ color: 'text.disabled', mr: 0.75 }}>↳</Box>}
+                    {title}
+                </Typography>
                 <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>{sub}</Typography>
             </Box>
-            <Switch checked={checked} onChange={(e) => onChange(e.target.checked)} size="small" />
+            {/* Without a label the switch has no accessible name at all — the title beside
+                it is a plain Typography, not a <label>. Two MUI 7 traps here: `inputProps`
+                is ignored (it must be `slotProps.input`), and `slotProps.input` *replaces*
+                the defaults rather than merging, so role="switch" has to be restated. */}
+            <Switch checked={checked} onChange={(e) => onChange(e.target.checked)} size="small" disabled={disabled}
+                slotProps={{ input: { role: 'switch', 'aria-label': title } }} />
         </Box>
     )
 }
+
+/* Every group of fields carries one of these, so no group is left to be told apart by
+   spacing alone. Written in Title Case, not upper — the uppercasing is CSS, and the
+   text here is what a screen reader and a test both read. */
+function SectionLabel({ children }: { children: React.ReactNode }) {
+    return (
+        <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 1 }}>
+            {children}
+        </Typography>
+    )
+}
+
+/** The bordered well a group of switches sits in. */
+const TOGGLE_GROUP = { border: '1px solid', borderColor: 'divider', borderRadius: '8px', px: 2, py: 0.5 } as const
+
+/** A field group below the first, separated by a rule. */
+const NEXT_GROUP = { borderTop: '1px solid', borderColor: 'divider', pt: 2 } as const
 
 function ScheduleRow({ label, date, color, bg, border, badge, badgeBg, badgeColor }: {
     label: string; date: string; color: string; bg: SxColor; border: string
@@ -136,6 +165,34 @@ function SettingRow({ label, desc, control }: { label: string; desc: string; con
             <Box sx={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 1.5 }}>{control}</Box>
         </Box>
     )
+}
+
+/* Each card on this page saves only its own fields. Both cards edit one `form`, but a
+   card's payload is built from the last *saved* settings and overridden with just that
+   card's fields — so pressing Save in one card cannot quietly commit edits the admin
+   left sitting in the other. Before this, both buttons posted the whole form. */
+type SaveGroup = 'leaveYear' | 'organization'
+
+const GROUP_FIELDS: Record<SaveGroup, readonly (keyof AppSettings)[]> = {
+    leaveYear: [
+        'leaveYearStartMonth',
+        'autoRunRollover',
+        'sendYearEndWarningEmails',
+        'notifyManagersOfTeamExpiries',
+        'blockLeaveSpanningIntoNextYear',
+    ],
+    organization: [
+        'workingHoursStart', 'workingHoursEnd', 'timeZoneId', 'workingDays', 'workingDaysCustom',
+        'weeklyHoursTarget', 'timesheetSubmissionDeadlineDay', 'timesheetSubmissionDeadlineTime',
+        'holidayCountryCode', 'holidayCountryName',
+    ],
+}
+
+/** `base`, with `fields` taken from `source`. */
+function withFields(base: AppSettings, source: AppSettings, fields: readonly (keyof AppSettings)[]): AppSettings {
+    const next: AppSettings = { ...base }
+    for (const key of fields) Object.assign(next, { [key]: source[key] })
+    return next
 }
 
 const DEFAULT: AppSettings = {
@@ -182,7 +239,7 @@ export default function AppSettingsPanel() {
     })
 
     const [form, setForm] = useState<AppSettings>(DEFAULT)
-    const [showSaved, setShowSaved] = useState(false)
+    const [savedGroup, setSavedGroup] = useState<SaveGroup | null>(null)
 
     // Sync the loaded settings into editable form state. Adjusted during render
     // (not an effect) per
@@ -200,29 +257,58 @@ export default function AppSettingsPanel() {
        Notifications, as "Financial year · When leave allocations reset" — the same
        concept as the leave year, in a second column nothing reads. The leave year is
        now the only control, and saving mirrors it so the column cannot drift. */
+    const baseline = saved ?? DEFAULT
+
+    const payloadFor = (group: SaveGroup): AppSettings => {
+        const next = withFields(baseline, form, GROUP_FIELDS[group])
+        return { ...next, financialYearStartMonth: next.leaveYearStartMonth }
+    }
+
     const mutation = useMutation({
-        mutationFn: () => updateAppSettings({ ...form, financialYearStartMonth: form.leaveYearStartMonth }),
-        onSuccess: (data) => {
+        mutationFn: (group: SaveGroup) => updateAppSettings(payloadFor(group)),
+        onSuccess: (data, group) => {
             queryClient.setQueryData(['appSettings'], data)
-            setShowSaved(true)
-            setTimeout(() => setShowSaved(false), 3000)
+            /* Refresh only the group that was saved. Adopting the response wholesale —
+               which the render-time sync below would otherwise do, since `saved` just
+               changed identity — would throw away the other card's unsaved edits. */
+            setPrevSaved(data)
+            setForm((f) => ({
+                ...withFields(f, data, GROUP_FIELDS[group]),
+                financialYearStartMonth: data.financialYearStartMonth,
+            }))
+            setSavedGroup(group)
+            setTimeout(() => setSavedGroup((g) => (g === group ? null : g)), 3000)
         },
     })
+
+    /** Which card, if any, is mid-save or has just failed — so its own card shows it. */
+    const pendingGroup = mutation.isPending ? mutation.variables : undefined
+    const errorGroup = mutation.isError ? mutation.variables : undefined
+
+    const isGroupDirty = (group: SaveGroup) =>
+        GROUP_FIELDS[group].some((key) => form[key] !== baseline[key])
+
+    /** Discard just this card's edits, leaving the other card's alone. */
+    const cancelGroup = (group: SaveGroup) =>
+        setForm((f) => withFields(f, baseline, GROUP_FIELDS[group]))
 
     // ── Derived leave year data ───────────────────────────────────────────────
     const { lyStart, lyEnd, startYear } = useMemo(
         () => getLeaveYearBounds(form.leaveYearStartMonth, now),
         [form.leaveYearStartMonth, now])
 
-    const endDate = useMemo(
-        () => getLeaveYearBounds(form.leaveYearStartMonth, now).lyEnd,
-        [form.leaveYearStartMonth, now])
-
     const customDaysInvalid =
         form.workingDays === 'custom' && (form.workingDaysCustom ?? '').split(',').filter(Boolean).length === 0
 
+    /* The working week and the timesheet policy have defaults worth restoring. The
+       holiday country does not — there is no default country, and clearing it would
+       silently drop every public holiday. */
     const resetOrgDefaults = () =>
-        setForm((prev) => ({ ...prev, workingHoursStart: '09:00', workingHoursEnd: '18:00', timeZoneId: 'UTC', workingDays: 'mon-fri' }))
+        setForm((prev) => ({
+            ...prev,
+            workingHoursStart: '09:00', workingHoursEnd: '18:00', timeZoneId: 'UTC', workingDays: 'mon-fri',
+            weeklyHoursTarget: 40, timesheetSubmissionDeadlineDay: 'fri', timesheetSubmissionDeadlineTime: '18:00',
+        }))
 
     const nextReset = addDays(lyEnd, 1)
     const daysRemaining = Math.max(0, diffDays(now, lyEnd))
@@ -269,8 +355,6 @@ export default function AppSettingsPanel() {
             .sort((a, b) => a.name.localeCompare(b.name)),
         [profiles, departmentNameById, carryoverCap, annualAllowance])
 
-    const isDirty = JSON.stringify(form) !== JSON.stringify(saved ?? DEFAULT)
-
     if (isLoading) return (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress size={28} /></Box>
     )
@@ -287,36 +371,50 @@ export default function AppSettingsPanel() {
                         </Box>
                         <Box sx={{ p: 2.25 }}>
                             <Stack spacing={2}>
-                                {/* Warning */}
-                                <Box sx={{ display: 'flex', gap: 1, p: '10px 14px', bgcolor: softBg('warning'), border: '1px solid #FDE68A', borderRadius: '8px', fontSize: 12, color: 'warning.dark' }}>
+                                {/* Names the one field it applies to. Sitting above the whole card, this
+                                    used to say "Changes take effect from the next rollover only" over a
+                                    timesheet deadline and a holiday country that both apply immediately. */}
+                                <Box sx={{ display: 'flex', gap: 1, p: '10px 14px', bgcolor: softBg('warning'), border: '1px solid', borderColor: 'warning.main', borderRadius: '8px', fontSize: 12, color: 'warning.dark' }}>
                                     <span>⚠️</span>
-                                    <span>Changes take effect from the <strong>next rollover only</strong>. The current year is not affected.</span>
+                                    <span>
+                                        Changing the start month takes effect from the <strong>next rollover only</strong>.
+                                        The current leave year ({fmt(lyStart)} – {fmt(lyEnd)}) is unaffected.
+                                    </span>
                                 </Box>
 
-                                {/* Leave Year Dates */}
-                                <Grid container spacing={1.5}>
-                                    <Grid size={{ xs: 12, sm: 6 }}>
-                                        <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'text.primary', mb: 0.75 }}>Leave Year Start Month</Typography>
-                                        <Select
-                                            size="small" fullWidth value={form.leaveYearStartMonth}
-                                            onChange={(e) => set('leaveYearStartMonth', Number(e.target.value))}
-                                            sx={{ fontSize: 13 }}
-                                        >
-                                            {MONTHS.map((name, i) => <MenuItem key={i + 1} value={i + 1}>{name}</MenuItem>)}
-                                        </Select>
-                                        <Typography sx={{ fontSize: 11, color: 'text.disabled', mt: 0.5 }}>
-                                            Also the financial year — when leave allocations reset
-                                        </Typography>
+                                {/* Leave year: one editable field, and the dates it derives */}
+                                <Box>
+                                    <SectionLabel>Leave Year</SectionLabel>
+                                    <Grid container spacing={1.5}>
+                                        <Grid size={{ xs: 12, sm: 6 }}>
+                                            <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'text.primary', mb: 0.75 }}>Leave Year Start Month</Typography>
+                                            <Select
+                                                size="small" fullWidth value={form.leaveYearStartMonth}
+                                                onChange={(e) => set('leaveYearStartMonth', Number(e.target.value))}
+                                                inputProps={{ 'aria-label': 'Leave year start month' }}
+                                                sx={{ fontSize: 13 }}
+                                            >
+                                                {MONTHS.map((name, i) => <MenuItem key={i + 1} value={i + 1}>{name}</MenuItem>)}
+                                            </Select>
+                                            <Typography sx={{ fontSize: 11, color: 'text.disabled', mt: 0.5 }}>
+                                                Also the financial year — when leave allocations reset
+                                            </Typography>
+                                        </Grid>
+                                        {/* Derived, so it is stated rather than shown in a greyed-out input —
+                                            a disabled text field reads as a control that is broken. */}
+                                        <Grid size={{ xs: 12, sm: 6 }}>
+                                            <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'text.primary', mb: 0.75 }}>Leave Year Dates</Typography>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, minHeight: 40, fontSize: 13, fontWeight: 600, color: 'text.primary' }}>
+                                                <span>{fmt(lyStart)}</span>
+                                                <Box component="span" sx={{ color: 'text.disabled', fontWeight: 400 }}>→</Box>
+                                                <span>{fmt(lyEnd)}</span>
+                                            </Box>
+                                            <Typography sx={{ fontSize: 11, color: 'text.disabled', mt: 0.5 }}>
+                                                Follows the start month — nothing to set here
+                                            </Typography>
+                                        </Grid>
                                     </Grid>
-                                    <Grid size={{ xs: 12, sm: 6 }}>
-                                        <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'text.primary', mb: 0.75 }}>Leave Year End Date</Typography>
-                                        <TextField
-                                            size="small" fullWidth disabled
-                                            value={fmt(endDate)}
-                                            sx={{ '& .MuiInputBase-input': { fontSize: 13, bgcolor: 'action.hover', color: 'text.secondary' } }}
-                                        />
-                                    </Grid>
-                                </Grid>
+                                </Box>
 
                                 {/* The allowance and the cap that bounds it are columns on the leave type,
                                     set on Leave Types — this page used to edit both, and then quoted both
@@ -325,106 +423,53 @@ export default function AppSettingsPanel() {
                                     Carryover Preview below and the Carryover Cap tile, so a leave-year
                                     form does not restate a leave-type setting it cannot change. */}
 
-                                {/* Timesheet policy */}
-                                <Box sx={{ borderTop: '1px solid', borderColor: 'divider', pt: 2 }}>
-                                    <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 1 }}>
-                                        Timesheet Policy
-                                    </Typography>
-                                    <Grid container spacing={1.5}>
-                                        <Grid size={{ xs: 12, sm: 4 }}>
-                                            <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'text.primary', mb: 0.75 }}>Weekly Hours Target</Typography>
-                                            <TextField
-                                                size="small" fullWidth type="number"
-                                                value={form.weeklyHoursTarget}
-                                                onChange={(e) => set('weeklyHoursTarget', Math.min(168, Math.max(1, Number(e.target.value))))}
-                                                inputProps={{ min: 1, max: 168 }}
-                                                sx={{ '& .MuiInputBase-input': { fontSize: 13 } }}
-                                            />
-                                        </Grid>
-                                        <Grid size={{ xs: 12, sm: 4 }}>
-                                            <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'text.primary', mb: 0.75 }}>Submission Deadline Day</Typography>
-                                            <Select
-                                                size="small" fullWidth value={form.timesheetSubmissionDeadlineDay}
-                                                onChange={(e) => set('timesheetSubmissionDeadlineDay', String(e.target.value))}
-                                                sx={{ fontSize: 13 }}
-                                            >
-                                                {WEEKDAYS.map(([token, label]) => <MenuItem key={token} value={token}>{label}</MenuItem>)}
-                                            </Select>
-                                        </Grid>
-                                        <Grid size={{ xs: 12, sm: 4 }}>
-                                            <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'text.primary', mb: 0.75 }}>Deadline Time (UTC)</Typography>
-                                            <TextField
-                                                size="small" fullWidth type="time"
-                                                value={form.timesheetSubmissionDeadlineTime}
-                                                onChange={(e) => set('timesheetSubmissionDeadlineTime', e.target.value)}
-                                                sx={{ '& .MuiInputBase-input': { fontSize: 13 } }}
-                                            />
-                                        </Grid>
-                                    </Grid>
-                                    <Typography sx={{ fontSize: 11, color: 'text.disabled', mt: 0.5 }}>
-                                        Drives the under/over-target colouring and the on-time/late flag on the All Timesheets review page.
-                                    </Typography>
+                                {/* What happens by itself at the year end. The two lead times are stated
+                                    here because the emails are the setting's whole effect — they were
+                                    only legible in the Upcoming Schedule card, a column away. */}
+                                <Box sx={NEXT_GROUP}>
+                                    <SectionLabel>Year-End Automation</SectionLabel>
+                                    <Box sx={TOGGLE_GROUP}>
+                                        <ToggleRow
+                                            title="Auto-run rollover on reset date"
+                                            sub={`Carries over, expires the excess and reopens balances on ${fmt(nextReset)}`}
+                                            checked={form.autoRunRollover} onChange={(v) => set('autoRunRollover', v)} />
+                                        <ToggleRow
+                                            title="Send year-end warning emails"
+                                            sub={`Emails employees with days at risk, ${YEAR_END_WARNING_DAYS} and ${FINAL_WARNING_DAYS} days before year end`}
+                                            checked={form.sendYearEndWarningEmails} onChange={(v) => set('sendYearEndWarningEmails', v)} />
+                                        <ToggleRow
+                                            indent disabled={!form.sendYearEndWarningEmails}
+                                            title="Also notify their manager"
+                                            sub="CC the employee's manager on those warning emails"
+                                            checked={form.notifyManagersOfTeamExpiries} onChange={(v) => set('notifyManagersOfTeamExpiries', v)} />
+                                    </Box>
                                 </Box>
 
-                                {/* Public holidays */}
-                                <Box>
-                                    <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'text.primary', mb: 0.75 }}>
-                                        Public Holidays — Country
-                                    </Typography>
-                                    <Autocomplete<HolidayCountry, false, false, false>
-                                        size="small"
-                                        loading={isLoadingCountries}
-                                        options={countries}
-                                        value={form.holidayCountryCode
-                                            ? countries.find(c => c.countryCode === form.holidayCountryCode)
-                                                ?? { countryCode: form.holidayCountryCode, name: form.holidayCountryName ?? form.holidayCountryCode }
-                                            : null}
-                                        getOptionLabel={(o) => `${o.name} (${o.countryCode})`}
-                                        isOptionEqualToValue={(o, v) => o.countryCode === v.countryCode}
-                                        onChange={(_, val) => {
-                                            setForm(f => ({
-                                                ...f,
-                                                holidayCountryCode: val?.countryCode ?? null,
-                                                holidayCountryName: val?.name ?? null,
-                                            }))
-                                        }}
-                                        renderInput={(params) => (
-                                            <TextField
-                                                {...params}
-                                                placeholder="Select a country for public holidays"
-                                                sx={{ '& .MuiInputBase-input': { fontSize: 13 } }}
-                                            />
-                                        )}
-                                    />
-                                    <Typography sx={{ fontSize: 11, color: 'text.disabled', mt: 0.5 }}>
-                                        Holidays are fetched from{' '}
-                                        <Box component="span" sx={{ fontFamily: 'monospace' }}>date.nager.at</Box>{' '}
-                                        and cached server-side. Changing country re-fetches on first request.
-                                    </Typography>
+                                {/* Not automation — a rule applied when leave is requested. */}
+                                <Box sx={NEXT_GROUP}>
+                                    <SectionLabel>Leave Requests</SectionLabel>
+                                    <Box sx={TOGGLE_GROUP}>
+                                        <ToggleRow
+                                            title="Block leave spanning into next year"
+                                            sub={`Employees cannot request leave ending after ${fmt(lyEnd)}`}
+                                            checked={form.blockLeaveSpanningIntoNextYear} onChange={(v) => set('blockLeaveSpanningIntoNextYear', v)} />
+                                    </Box>
                                 </Box>
 
-                                {/* Toggles */}
-                                <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: '8px', px: 2, py: 0.5 }}>
-                                    <ToggleRow title="Auto-run rollover on reset date" sub={`Resets balances automatically on ${fmt(nextReset)}`} checked={form.autoRunRollover} onChange={(v) => set('autoRunRollover', v)} />
-                                    <ToggleRow title="Send year-end warning emails" sub="Notify employees with days at risk" checked={form.sendYearEndWarningEmails} onChange={(v) => set('sendYearEndWarningEmails', v)} />
-                                    <ToggleRow title="Block leave spanning into next year" sub="Employees cannot submit leave beyond year end" checked={form.blockLeaveSpanningIntoNextYear} onChange={(v) => set('blockLeaveSpanningIntoNextYear', v)} />
-                                    <ToggleRow title="Notify managers of team expiries" sub="CC manager on warning emails" checked={form.notifyManagersOfTeamExpiries} onChange={(v) => set('notifyManagersOfTeamExpiries', v)} />
-                                </Box>
-
-                                {mutation.isError && (
+                                {errorGroup === 'leaveYear' && (
                                     <Alert severity="error">{getApiErrorMessage(mutation.error, 'Failed to save settings.')}</Alert>
                                 )}
-                                {showSaved && <Alert severity="success">Settings saved successfully.</Alert>}
+                                {savedGroup === 'leaveYear' && <Alert severity="success">Leave year settings saved.</Alert>}
 
                                 <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
-                                    <Button variant="outlined" size="small" onClick={() => saved && setForm(saved)} disabled={!isDirty || mutation.isPending}
+                                    <Button variant="outlined" size="small" onClick={() => cancelGroup('leaveYear')} disabled={!isGroupDirty('leaveYear') || mutation.isPending}
                                         sx={{ textTransform: 'none', borderColor: 'divider', color: 'text.secondary' }}>
                                         Cancel
                                     </Button>
-                                    <Button variant="contained" size="small" onClick={() => mutation.mutate()} disabled={!isDirty || mutation.isPending || customDaysInvalid}
-                                        startIcon={mutation.isPending ? <CircularProgress size={13} color="inherit" /> : null}
+                                    <Button variant="contained" size="small" onClick={() => mutation.mutate('leaveYear')} disabled={!isGroupDirty('leaveYear') || mutation.isPending}
+                                        startIcon={pendingGroup === 'leaveYear' ? <CircularProgress size={13} color="inherit" /> : null}
                                         sx={{ textTransform: 'none', bgcolor: 'primary.main', '&:hover': { bgcolor: 'primary.dark' }, boxShadow: 'none' }}>
-                                        {mutation.isPending ? 'Saving…' : 'Save Settings'}
+                                        {pendingGroup === 'leaveYear' ? 'Saving…' : 'Save Settings'}
                                     </Button>
                                 </Box>
                             </Stack>
@@ -500,9 +545,12 @@ export default function AppSettingsPanel() {
                                     <ScheduleRow label={`${FINAL_WARNING_DAYS}-day final warning`} date={fmt(finalWarnDate)} color="warning.dark" bg={softBg('warning')} border="warning.main" badge="Scheduled" badgeBg={softBg('warning')} badgeColor="warning.dark" />
                                     <ScheduleRow label="Year-end rollover" date={`${fmt(nextReset)} · midnight`} color="error.dark" bg={softBg('error')} border="error.main" badge="Year End" badgeBg={softBg('error')} badgeColor="error.dark" />
                                     <ScheduleRow label="New year opens" date={fmt(nextReset)} color="success.dark" bg={softBg('success')} border="success.main" badge="New Year" badgeBg={softBg('success')} badgeColor="success.dark" />
-                                    <Button variant="outlined" fullWidth size="small" sx={{ mt: 0.5, textTransform: 'none', borderColor: 'divider', color: 'text.secondary', fontSize: 12 }}>
-                                        ▶ Run Rollover Manually
-                                    </Button>
+                                    {/* A "▶ Run Rollover Manually" button sat here with no onClick — it
+                                        offered an admin the single most consequential action on the page
+                                        and did nothing at all when pressed. Nothing performs a rollover
+                                        yet: there is no command, endpoint or job for it anywhere, and
+                                        AutoRunRollover above is a stored flag nothing acts on either.
+                                        Restore the button when a rollover command exists to call. */}
                                 </Stack>
                             </Box>
                         </Box>
@@ -522,16 +570,21 @@ export default function AppSettingsPanel() {
                     <Box component="span" sx={{ fontSize: 11, fontWeight: 500, px: 1.1, py: 0.4, borderRadius: '20px', bgcolor: softBg('info'), color: 'info.dark' }}>Admin Only</Box>
                 </Box>
                 <Box sx={{ p: 2.25 }}>
+                    <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 2 }}>
+                        Everything here applies immediately, to everyone — none of it waits for the leave-year rollover.
+                    </Typography>
+
+                    <SectionLabel>Working Week</SectionLabel>
                     <SettingRow label="Working hours start" desc="Used for check-in alerts and attendance reports"
-                        control={<TextField type="time" size="small" value={form.workingHoursStart} onChange={(e) => set('workingHoursStart', e.target.value)} sx={{ '& .MuiInputBase-input': { fontSize: 13 }, minWidth: 130 }} />} />
+                        control={<TextField type="time" size="small" value={form.workingHoursStart} onChange={(e) => set('workingHoursStart', e.target.value)} inputProps={{ 'aria-label': 'Working hours start' }} sx={{ '& .MuiInputBase-input': { fontSize: 13 }, minWidth: 130 }} />} />
                     <SettingRow label="Working hours end" desc="Default work day ends"
-                        control={<TextField type="time" size="small" value={form.workingHoursEnd} onChange={(e) => set('workingHoursEnd', e.target.value)} sx={{ '& .MuiInputBase-input': { fontSize: 13 }, minWidth: 130 }} />} />
+                        control={<TextField type="time" size="small" value={form.workingHoursEnd} onChange={(e) => set('workingHoursEnd', e.target.value)} inputProps={{ 'aria-label': 'Working hours end' }} sx={{ '& .MuiInputBase-input': { fontSize: 13 }, minWidth: 130 }} />} />
                     <SettingRow label="Timezone" desc="Used for all time-based calculations"
-                        control={<Select size="small" value={form.timeZoneId} onChange={(e) => set('timeZoneId', e.target.value)} sx={{ fontSize: 13, minWidth: 190 }}>
+                        control={<Select size="small" value={form.timeZoneId} onChange={(e) => set('timeZoneId', e.target.value)} inputProps={{ 'aria-label': 'Timezone' }} sx={{ fontSize: 13, minWidth: 190 }}>
                             {TIMEZONES.map((tz) => <MenuItem key={tz} value={tz} sx={{ fontSize: 13 }}>{tz}</MenuItem>)}
                         </Select>} />
                     <SettingRow label="Weekends" desc="Define which days are working days"
-                        control={<Select size="small" value={form.workingDays} onChange={(e) => set('workingDays', e.target.value)} sx={{ fontSize: 13, minWidth: 250 }}>
+                        control={<Select size="small" value={form.workingDays} onChange={(e) => set('workingDays', e.target.value)} inputProps={{ 'aria-label': 'Weekends' }} sx={{ fontSize: 13, minWidth: 250 }}>
                             {WORKING_DAYS.map((w) => <MenuItem key={w.value} value={w.value} sx={{ fontSize: 13 }}>{w.label}</MenuItem>)}
                         </Select>} />
 
@@ -560,15 +613,79 @@ export default function AppSettingsPanel() {
                         )
                     })()}
 
+                    {/* Moved off the leave-year card, whose title did not cover either of them
+                        and whose "next rollover only" banner was wrong about both. */}
+                    <Box sx={{ ...NEXT_GROUP, mt: 1 }}>
+                        <SectionLabel>Timesheet Policy</SectionLabel>
+                        <SettingRow label="Weekly hours target" desc="Drives the under/over-target colouring on the All Timesheets review page"
+                            control={<TextField
+                                type="number" size="small"
+                                value={form.weeklyHoursTarget}
+                                onChange={(e) => set('weeklyHoursTarget', Math.min(168, Math.max(1, Number(e.target.value))))}
+                                inputProps={{ min: 1, max: 168, 'aria-label': 'Weekly hours target' }}
+                                sx={{ '& .MuiInputBase-input': { fontSize: 13 }, minWidth: 130 }} />} />
+                        <SettingRow label="Submission deadline" desc="Sets the on-time/late flag on All Timesheets. Evaluated in UTC."
+                            control={<>
+                                <Select size="small" value={form.timesheetSubmissionDeadlineDay}
+                                    onChange={(e) => set('timesheetSubmissionDeadlineDay', String(e.target.value))}
+                                    inputProps={{ 'aria-label': 'Submission deadline day' }}
+                                    sx={{ fontSize: 13, minWidth: 140 }}>
+                                    {WEEKDAYS.map(([token, label]) => <MenuItem key={token} value={token} sx={{ fontSize: 13 }}>{label}</MenuItem>)}
+                                </Select>
+                                <TextField type="time" size="small"
+                                    value={form.timesheetSubmissionDeadlineTime}
+                                    onChange={(e) => set('timesheetSubmissionDeadlineTime', e.target.value)}
+                                    inputProps={{ 'aria-label': 'Submission deadline time' }}
+                                    sx={{ '& .MuiInputBase-input': { fontSize: 13 }, minWidth: 130 }} />
+                            </>} />
+                    </Box>
+
+                    <Box sx={{ ...NEXT_GROUP, mt: 1 }}>
+                        <SectionLabel>Public Holidays</SectionLabel>
+                        <SettingRow label="Holiday calendar" desc="Fetched from date.nager.at and cached server-side. Changing country re-fetches on first request."
+                            control={<Autocomplete<HolidayCountry, false, false, false>
+                                size="small"
+                                loading={isLoadingCountries}
+                                options={countries}
+                                value={form.holidayCountryCode
+                                    ? countries.find(c => c.countryCode === form.holidayCountryCode)
+                                        ?? { countryCode: form.holidayCountryCode, name: form.holidayCountryName ?? form.holidayCountryCode }
+                                    : null}
+                                getOptionLabel={(o) => `${o.name} (${o.countryCode})`}
+                                isOptionEqualToValue={(o, v) => o.countryCode === v.countryCode}
+                                onChange={(_, val) => {
+                                    setForm(f => ({
+                                        ...f,
+                                        holidayCountryCode: val?.countryCode ?? null,
+                                        holidayCountryName: val?.name ?? null,
+                                    }))
+                                }}
+                                sx={{ minWidth: 280 }}
+                                renderInput={(params) => (
+                                    <TextField
+                                        {...params}
+                                        placeholder="Select a country for public holidays"
+                                        inputProps={{ ...params.inputProps, 'aria-label': 'Holiday calendar' }}
+                                        sx={{ '& .MuiInputBase-input': { fontSize: 13 } }}
+                                    />
+                                )}
+                            />} />
+                    </Box>
+
+                    {errorGroup === 'organization' && (
+                        <Alert severity="error" sx={{ mt: 2 }}>{getApiErrorMessage(mutation.error, 'Failed to save settings.')}</Alert>
+                    )}
+                    {savedGroup === 'organization' && <Alert severity="success" sx={{ mt: 2 }}>Organization settings saved.</Alert>}
+
                     <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', pt: 2, mt: 1, borderTop: '1px solid', borderColor: 'divider' }}>
                         <Button variant="outlined" size="small" onClick={resetOrgDefaults} disabled={mutation.isPending}
                             sx={{ textTransform: 'none', borderColor: 'divider', color: 'text.secondary' }}>
                             Reset to defaults
                         </Button>
-                        <Button variant="contained" size="small" onClick={() => mutation.mutate()} disabled={!isDirty || mutation.isPending || customDaysInvalid}
-                            startIcon={mutation.isPending ? <CircularProgress size={13} color="inherit" /> : null}
+                        <Button variant="contained" size="small" onClick={() => mutation.mutate('organization')} disabled={!isGroupDirty('organization') || mutation.isPending || customDaysInvalid}
+                            startIcon={pendingGroup === 'organization' ? <CircularProgress size={13} color="inherit" /> : null}
                             sx={{ textTransform: 'none', boxShadow: 'none' }}>
-                            {mutation.isPending ? 'Saving…' : '💾 Save changes'}
+                            {pendingGroup === 'organization' ? 'Saving…' : 'Save Changes'}
                         </Button>
                     </Box>
                 </Box>
