@@ -32,6 +32,9 @@ public class UpsertLeaveTypeRequest
     [StringLength(30)]
     public string AllowanceUnit { get; set; } = "days/year";
 
+    [Range(0, 365)]
+    public int MaxCarryoverDays { get; set; }
+
     [StringLength(250)]
     public string AccrualNotes { get; set; } = string.Empty;
 

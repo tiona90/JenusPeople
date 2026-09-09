@@ -33,7 +33,6 @@ const api = vi.mocked(await import('../../lib/api'))
 
 const SETTINGS: AppSettings = {
     leaveYearStartMonth: 1,
-    maxCarryoverDays: 5,
     yearEndWarningDays: 30,
     finalWarningDays: 7,
     autoRunRollover: true,
@@ -64,12 +63,13 @@ const SETTINGS: AppSettings = {
     ],
 }
 
-/* The row the allowance actually lives in. Leave Settings edits this, and so does
-   Leave Types — one column, two screens. */
+/* The row both figures live in: the allowance and the cap that bounds it. Leave Types
+   is the only screen that edits either. */
 const ANNUAL_LEAVE_TYPE = {
     id: 1, name: 'Annual Leave', requiresApproval: true, isActive: true, affectsBalance: true,
     icon: '🌴', colorKey: 'annual', description: 'Vacation days.', paid: true,
     attachmentPolicy: 'None', defaultAllowance: 25, allowanceUnit: 'days/year',
+    maxCarryoverDays: 5,
     accrualNotes: 'Resets 1 Jan', minNoticeDays: 7, maxConsecutiveDays: 15,
     halfDayAllowed: true, eligibilityNotes: 'All employees', eligibilityScope: 'All',
 } as const
@@ -134,88 +134,74 @@ describe('the leave year is editable in exactly one place', () => {
 })
 
 /*
- * The annual-leave allowance had the same drift problem the leave year did. Leave
- * Settings carried a "Fallback Entitlement" of its own, free to disagree with the
- * Annual Leave type's allowance on Leave Types — and out of the box it did: 20
- * against 25.
+ * Two numbers describe an annual-leave budget: how many days it grants, and how many
+ * unused ones survive the year end. Both used to be editable here — the allowance as a
+ * second surface onto LeaveType.DefaultAllowance, the cap as an org-wide AppSettings
+ * column sitting a screen away from the allowance it bounds, unable to say that sick
+ * leave carries nothing while annual leave carries five.
  *
- * It is editable from Leave Settings again, but there is no second column behind it:
- * the field writes LeaveType.DefaultAllowance, the same row Leave Types edits. Two
- * screens, one number — which is what the old setup could not manage.
+ * Both are columns on the leave type now, and Leave Types is the only screen that
+ * writes either. Leave Settings still quotes them, because the carryover preview is
+ * meaningless without them, but it cannot edit them and no longer saves a leave type.
  */
-describe('the annual-leave allowance is stored in exactly one place', () => {
-    it('offers no separate entitlement setting on Leave Settings', async () => {
+describe('the allowance and its carryover cap are edited only on Leave Types', () => {
+    it('offers neither as an input', async () => {
         renderPanel(<AppSettingsPanel />)
         await screen.findByText('Leave Year Configuration')
 
+        expect(screen.queryByText('Max Carryover Days')).not.toBeInTheDocument()
+        expect(screen.queryByLabelText(/annual leave allowance/i)).not.toBeInTheDocument()
+        // The older duplicates this page has already shed, still gone.
         expect(screen.queryByText('Default for New Employees (days)')).not.toBeInTheDocument()
         expect(screen.queryByText(/Fallback Entitlement/)).not.toBeInTheDocument()
-        expect(screen.getByText('Max Carryover Days')).toBeInTheDocument()
     })
 
-    it('sends no entitlement of its own in the settings payload', async () => {
+    it('saves app settings without touching a leave type, and sends neither figure', async () => {
         renderPanel(<AppSettingsPanel />)
         await screen.findByText('Leave Year Configuration')
 
-        // Save is gated on isDirty, so nudge the cap to enable it.
-        const cap = screen.getByText('Max Carryover Days')
+        // Save is gated on isDirty, so move something this page does still own.
+        const warning = screen.getByText('Year-End Warning (days before)')
             .parentElement!.querySelector('input')!
-        fireEvent.change(cap, { target: { value: '6' } })
-        fireEvent.click(screen.getByRole('button', { name: 'Save Settings' }))
-
-        await waitFor(() => expect(api.updateAppSettings).toHaveBeenCalledTimes(1))
-        expect(api.updateAppSettings.mock.calls[0][0]).not.toHaveProperty('defaultAnnualEntitlement')
-    })
-
-    it('offers the allowance as an editable field seeded from the leave type', async () => {
-        renderPanel(<AppSettingsPanel />)
-        await screen.findByText('Leave Year Configuration')
-
-        const input = screen.getByLabelText(/annual leave allowance/i)
-        expect(input).toBeEnabled()
-        expect(input).toHaveValue(ANNUAL_LEAVE_TYPE.defaultAllowance)
-    })
-
-    it('writes an edited allowance to the leave type, not to app settings', async () => {
-        renderPanel(<AppSettingsPanel />)
-        await screen.findByText('Leave Year Configuration')
-
-        fireEvent.change(screen.getByLabelText(/annual leave allowance/i), { target: { value: '30' } })
-        fireEvent.click(screen.getByRole('button', { name: 'Save Settings' }))
-
-        await waitFor(() => expect(api.updateLeaveType).toHaveBeenCalledTimes(1))
-        expect(api.updateLeaveType.mock.calls[0][0]).toBe(ANNUAL_LEAVE_TYPE.id)
-        // The rest of the type has to survive a save that only meant to move one number.
-        expect(api.updateLeaveType.mock.calls[0][1]).toMatchObject({
-            name: 'Annual Leave',
-            affectsBalance: true,
-            allowanceUnit: 'days/year',
-            defaultAllowance: 30,
-        })
-        expect(api.updateAppSettings.mock.calls[0][0]).not.toHaveProperty('defaultAllowance')
-    })
-
-    it('leaves the leave type alone when only the carryover cap moved', async () => {
-        renderPanel(<AppSettingsPanel />)
-        await screen.findByText('Leave Year Configuration')
-
-        const cap = screen.getByText('Max Carryover Days')
-            .parentElement!.querySelector('input')!
-        fireEvent.change(cap, { target: { value: '6' } })
+        fireEvent.change(warning, { target: { value: '45' } })
         fireEvent.click(screen.getByRole('button', { name: 'Save Settings' }))
 
         await waitFor(() => expect(api.updateAppSettings).toHaveBeenCalledTimes(1))
         expect(api.updateLeaveType).not.toHaveBeenCalled()
+        const sent = api.updateAppSettings.mock.calls[0][0]
+        expect(sent).not.toHaveProperty('maxCarryoverDays')
+        expect(sent).not.toHaveProperty('defaultAnnualEntitlement')
     })
 
-    /* Nothing to write the number into, so the field must not pretend to accept one —
-       an admin typing into it would have their edit silently dropped. */
-    it('disables the field when there is no annual-leave type to write to', async () => {
+    it('quotes both figures from the leave type', async () => {
+        renderPanel(<AppSettingsPanel />)
+        await screen.findByText('Leave Year Configuration')
+
+        expect(screen.getByText(/Both are set per leave type, on Leave Types/)).toBeInTheDocument()
+        expect(screen.getByText('25 days/year')).toBeInTheDocument()
+        // Quoted in the banner, and again on the sidebar's Carryover Cap tile.
+        expect(screen.getAllByText('5 days').length).toBeGreaterThan(1)
+    })
+
+    it('follows the leave type when the cap there changes', async () => {
+        api.getLeaveTypes.mockResolvedValue([{ ...ANNUAL_LEAVE_TYPE, maxCarryoverDays: 12 }] as never)
+        renderPanel(<AppSettingsPanel />)
+        await screen.findByText('Leave Year Configuration')
+
+        // The preview scenarios are computed from the cap, not from app settings.
+        expect(screen.getByText('At cap (= 12 days unused)')).toBeInTheDocument()
+        expect(screen.getAllByText('12 days').length).toBeGreaterThan(0)
+    })
+
+    /* With no annual-leave type there is nothing to quote. The page reads as zero
+       rather than falling back to a figure of its own — that fallback was the drift. */
+    it('reads as nothing configured when there is no annual-leave type', async () => {
         api.getLeaveTypes.mockResolvedValue([])
         renderPanel(<AppSettingsPanel />)
         await screen.findByText('Leave Year Configuration')
 
-        expect(screen.getByLabelText(/annual leave allowance/i)).toBeDisabled()
+        expect(screen.getByText('0 days/year')).toBeInTheDocument()
+        expect(screen.getByText('At cap (= 0 days unused)')).toBeInTheDocument()
     })
 })
 

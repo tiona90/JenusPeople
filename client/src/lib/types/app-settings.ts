@@ -9,7 +9,6 @@ export interface ReminderSetting {
 
 export interface AppSettings {
     leaveYearStartMonth: number
-    maxCarryoverDays: number
     yearEndWarningDays: number
     finalWarningDays: number
     autoRunRollover: boolean

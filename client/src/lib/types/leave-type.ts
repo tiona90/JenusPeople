@@ -14,6 +14,8 @@ export interface LeaveType {
     attachmentPolicy: AttachmentPolicy
     defaultAllowance: number
     allowanceUnit: string
+    /** Unused days of this type that survive the year-end rollover. 0 = none carry. */
+    maxCarryoverDays: number
     accrualNotes: string
     minNoticeDays: number
     maxConsecutiveDays: number

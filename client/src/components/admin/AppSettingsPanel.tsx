@@ -19,9 +19,9 @@ import TextField from '@mui/material/TextField'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Typography from '@mui/material/Typography'
-import { getAppSettings, getDepartments, getEmployeeProfiles, getHolidayCountries, getLeaveTypes, updateAppSettings, updateLeaveType } from '../../lib/api'
+import { getAppSettings, getDepartments, getEmployeeProfiles, getHolidayCountries, getLeaveTypes, updateAppSettings } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
-import { annualLeaveAllowance, employeeAnnualEntitlement } from '../../lib/leave-allowance'
+import { annualCarryoverCap, annualLeaveAllowance, employeeAnnualEntitlement } from '../../lib/leave-allowance'
 import type { AppSettings, HolidayCountry } from '../../lib/types'
 import { softBg, type SxColor } from '../../lib/theme-tokens'
 
@@ -132,7 +132,6 @@ function SettingRow({ label, desc, control }: { label: string; desc: string; con
 
 const DEFAULT: AppSettings = {
     leaveYearStartMonth: 1,
-    maxCarryoverDays: 5,
     yearEndWarningDays: 30,
     finalWarningDays: 7,
     autoRunRollover: true,
@@ -179,16 +178,6 @@ export default function AppSettingsPanel() {
     const [form, setForm] = useState<AppSettings>(DEFAULT)
     const [showSaved, setShowSaved] = useState(false)
 
-    /* The annual-leave allowance is not an app setting — it is a column on the leave
-       type, the same row Leave Types edits. This screen edits it too, so it is held
-       apart from `form` and saved through updateLeaveType. Two screens, one column:
-       there is no second number to drift. */
-    const annualLeaveType = useMemo(
-        () => leaveTypes.find((t) => t.isActive && t.affectsBalance)
-            ?? leaveTypes.find((t) => t.affectsBalance),
-        [leaveTypes])
-    const [allowanceDays, setAllowanceDays] = useState(0)
-
     // Sync the loaded settings into editable form state. Adjusted during render
     // (not an effect) per
     // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
@@ -196,12 +185,6 @@ export default function AppSettingsPanel() {
     if (saved !== prevSaved) {
         setPrevSaved(saved)
         if (saved) setForm(saved)
-    }
-
-    const [prevAllowance, setPrevAllowance] = useState<number | undefined>(undefined)
-    if (annualLeaveType && annualLeaveType.defaultAllowance !== prevAllowance) {
-        setPrevAllowance(annualLeaveType.defaultAllowance)
-        setAllowanceDays(annualLeaveType.defaultAllowance)
     }
 
     const set = <K extends keyof AppSettings>(key: K, val: AppSettings[K]) =>
@@ -212,22 +195,9 @@ export default function AppSettingsPanel() {
        concept as the leave year, in a second column nothing reads. The leave year is
        now the only control, and saving mirrors it so the column cannot drift. */
     const mutation = useMutation({
-        mutationFn: async () => {
-            const data = await updateAppSettings({ ...form, financialYearStartMonth: form.leaveYearStartMonth })
-            /* Only when it actually moved: an unchanged allowance must not rewrite the
-               leave type, which would re-stamp every employee's entitlement for nothing
-               (see UpdateLeaveType on the server). */
-            if (annualLeaveType && allowanceDays !== annualLeaveType.defaultAllowance) {
-                const { id, ...rest } = annualLeaveType
-                await updateLeaveType(id, { ...rest, defaultAllowance: allowanceDays })
-            }
-            return data
-        },
+        mutationFn: () => updateAppSettings({ ...form, financialYearStartMonth: form.leaveYearStartMonth }),
         onSuccess: (data) => {
             queryClient.setQueryData(['appSettings'], data)
-            queryClient.invalidateQueries({ queryKey: ['leaveTypes'] })
-            // Entitlements move with the allowance, so anything quoting one is stale.
-            queryClient.invalidateQueries({ queryKey: ['employeeProfiles'] })
             setShowSaved(true)
             setTimeout(() => setShowSaved(false), 3000)
         },
@@ -267,9 +237,11 @@ export default function AppSettingsPanel() {
         ]
     }, [form.leaveYearStartMonth])
 
-    /* The annual allowance lives on Leave Types, which is the only place it is edited.
-       This screen quotes it in the carryover preview below. See lib/leave-allowance.ts. */
+    /* Both figures live on the leave type, which is the only place either is edited —
+       the allowance and the cap that bounds it, in one row. This screen only quotes
+       them, in the carryover preview below. See lib/leave-allowance.ts. */
     const annualAllowance = useMemo(() => annualLeaveAllowance(leaveTypes), [leaveTypes])
+    const carryoverCap = useMemo(() => annualCarryoverCap(leaveTypes), [leaveTypes])
 
     // Carryover preview from real employee profiles
     const carryoverRows = useMemo(() =>
@@ -277,8 +249,8 @@ export default function AppSettingsPanel() {
             .filter(p => p.annualLeaveEntitlement > 0)
             .map(p => {
                 const closing = Math.max(0, p.leaveBalance ?? 0)
-                const carryover = Math.min(closing, form.maxCarryoverDays)
-                const expires = Math.max(0, closing - form.maxCarryoverDays)
+                const carryover = Math.min(closing, carryoverCap)
+                const expires = Math.max(0, closing - carryoverCap)
                 // Each employee reopens on their own entitlement, not on one shared figure.
                 const newBalance = carryover + employeeAnnualEntitlement(p, annualAllowance)
                 // An Admin has no department, so the id can be absent as well as
@@ -289,10 +261,9 @@ export default function AppSettingsPanel() {
                 return { name: p.displayName, dept, closing, carryover, expires, newBalance }
             })
             .sort((a, b) => a.name.localeCompare(b.name)),
-        [profiles, departmentNameById, form.maxCarryoverDays, annualAllowance])
+        [profiles, departmentNameById, carryoverCap, annualAllowance])
 
-    const allowanceDirty = !!annualLeaveType && allowanceDays !== annualLeaveType.defaultAllowance
-    const isDirty = JSON.stringify(form) !== JSON.stringify(saved ?? DEFAULT) || allowanceDirty
+    const isDirty = JSON.stringify(form) !== JSON.stringify(saved ?? DEFAULT)
 
     if (isLoading) return (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress size={28} /></Box>
@@ -341,39 +312,18 @@ export default function AppSettingsPanel() {
                                     </Grid>
                                 </Grid>
 
-                                {/* Carryover + the allowance it is measured against */}
-                                <Grid container spacing={1.5}>
-                                    <Grid size={{ xs: 12, sm: 6 }}>
-                                        <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'text.primary', mb: 0.75 }}>Max Carryover Days</Typography>
-                                        <TextField
-                                            size="small" fullWidth type="number"
-                                            value={form.maxCarryoverDays}
-                                            onChange={(e) => set('maxCarryoverDays', Math.max(0, Number(e.target.value)))}
-                                            inputProps={{ min: 0, max: 50 }}
-                                            sx={{ '& .MuiInputBase-input': { fontSize: 13 } }}
-                                        />
-                                        <Typography sx={{ fontSize: 11, color: 'text.disabled', mt: 0.5 }}>Days above this cap expire at year end</Typography>
-                                    </Grid>
-                                    {/* Editable here, but stored on the leave type — the same column Leave
-                                        Types edits, so the two screens cannot disagree. This screen used to
-                                        carry an entitlement of its own, which could and did. */}
-                                    <Grid size={{ xs: 12, sm: 6 }}>
-                                        <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'text.primary', mb: 0.75 }}>Annual Leave Allowance (days/year)</Typography>
-                                        <TextField
-                                            size="small" fullWidth type="number"
-                                            value={annualLeaveType ? allowanceDays : ''}
-                                            disabled={!annualLeaveType}
-                                            onChange={(e) => setAllowanceDays(Math.max(0, Number(e.target.value)))}
-                                            inputProps={{ min: 0, max: 365, 'aria-label': 'Annual Leave Allowance (days/year)' }}
-                                            sx={{ '& .MuiInputBase-input': { fontSize: 13 } }}
-                                        />
-                                        <Typography sx={{ fontSize: 11, color: 'text.disabled', mt: 0.5 }}>
-                                            {annualLeaveType
-                                                ? 'What every employee gets. Also editable on Leave Types — it is the same figure.'
-                                                : 'No annual-leave type is configured, so there is nothing to set. Add one on Leave Types.'}
-                                        </Typography>
-                                    </Grid>
-                                </Grid>
+                                {/* The allowance and the cap that bounds it are columns on the leave
+                                    type, set on Leave Types. This page used to edit both, which made it a
+                                    second home for figures that belong in one place — the allowance
+                                    duplicated Leave Types, and the cap sat a screen away from the number
+                                    it caps, unable to say that sick leave carries nothing. */}
+                                <Box sx={{ display: 'flex', gap: 1, p: '10px 14px', bgcolor: 'action.hover', borderRadius: '8px', fontSize: 12, color: 'text.secondary' }}>
+                                    <span>🌴</span>
+                                    <span>
+                                        Annual leave allows <strong>{annualAllowance} days/year</strong> and carries over at most{' '}
+                                        <strong>{carryoverCap} days</strong>. Both are set per leave type, on Leave Types.
+                                    </span>
+                                </Box>
 
                                 {/* Warning days */}
                                 <Grid container spacing={1.5}>
@@ -521,7 +471,7 @@ export default function AppSettingsPanel() {
                                     {([
                                         { bg: softBg('info'),      color: 'info.dark',      label: 'Year',           value: yearLabel },
                                         { bg: softBg('success'),   color: 'success.dark',   label: 'Days Remaining', value: String(daysRemaining) },
-                                        { bg: softBg('warning'),   color: 'warning.dark',   label: 'Carryover Cap',  value: `${form.maxCarryoverDays} days` },
+                                        { bg: softBg('warning'),   color: 'warning.dark',   label: 'Carryover Cap',  value: `${carryoverCap} days` },
                                         { bg: softBg('secondary'), color: 'secondary.dark', label: 'Next Reset',     value: fmt(nextReset) },
                                     ] as const).map(({ bg, color, label, value }) => (
                                         <Box key={label} sx={{ bgcolor: bg, borderRadius: '8px', p: '12px', textAlign: 'center' }}>
@@ -558,7 +508,7 @@ export default function AppSettingsPanel() {
                                 {/* Rollover info */}
                                 <Box sx={{ display: 'flex', gap: 1, p: '10px 14px', bgcolor: softBg('secondary'), border: '1px solid', borderColor: 'secondary.main', borderRadius: '8px', fontSize: 12, color: 'secondary.dark' }}>
                                     <span>🔁</span>
-                                    <span>On <strong>{fmt(nextReset)}</strong> the system will auto-calculate carryover (max {form.maxCarryoverDays} days), expire excess, and reset all balances.</span>
+                                    <span>On <strong>{fmt(nextReset)}</strong> the system will auto-calculate carryover (max {carryoverCap} days), expire excess, and reset all balances.</span>
                                 </Box>
                             </Box>
                         </Box>
@@ -655,7 +605,7 @@ export default function AppSettingsPanel() {
                         Carryover Preview — End of {yearLabel}
                     </Typography>
                     <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
-                        {form.maxCarryoverDays}-day max cap · entitlement {annualAllowance} days/year from Leave Types, unless set per employee
+                        {carryoverCap}-day max cap · entitlement {annualAllowance} days/year — both from Leave Types, entitlement unless set per employee
                     </Typography>
                 </Box>
 
@@ -663,9 +613,9 @@ export default function AppSettingsPanel() {
                 <Box sx={{ p: 2.25, pb: 0 }}>
                     <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '14px', mb: 2 }}>
                         {([
-                            { bg: softBg('success'), border: 'success.main', color: 'success.dark', title: `Under cap (< ${form.maxCarryoverDays} days unused)`, icon: '✅', body: 'All days carry over', sub: 'New balance = unused + entitlement' },
-                            { bg: softBg('warning'), border: 'warning.main', color: 'warning.dark', title: `At cap (= ${form.maxCarryoverDays} days unused)`, icon: '✅', body: `${form.maxCarryoverDays} days carry (cap hit)`, sub: `New balance = ${form.maxCarryoverDays} + entitlement` },
-                            { bg: softBg('error'),   border: 'error.main',   color: 'error.dark',   title: `Over cap (> ${form.maxCarryoverDays} days unused)`, icon: '⚠️', body: `${form.maxCarryoverDays} carry · excess expires`, sub: `New balance = ${form.maxCarryoverDays} + entitlement` },
+                            { bg: softBg('success'), border: 'success.main', color: 'success.dark', title: `Under cap (< ${carryoverCap} days unused)`, icon: '✅', body: 'All days carry over', sub: 'New balance = unused + entitlement' },
+                            { bg: softBg('warning'), border: 'warning.main', color: 'warning.dark', title: `At cap (= ${carryoverCap} days unused)`, icon: '✅', body: `${carryoverCap} days carry (cap hit)`, sub: `New balance = ${carryoverCap} + entitlement` },
+                            { bg: softBg('error'),   border: 'error.main',   color: 'error.dark',   title: `Over cap (> ${carryoverCap} days unused)`, icon: '⚠️', body: `${carryoverCap} carry · excess expires`, sub: `New balance = ${carryoverCap} + entitlement` },
                         ] as const).map(({ bg, border, color, title, icon, body, sub }) => (
                             <Box key={title} sx={{ bgcolor: bg, border: '1px solid', borderColor: border, borderRadius: '10px', p: '14px', textAlign: 'center' }}>
                                 <Typography sx={{ fontSize: 11, color, fontWeight: 600, mb: 0.75 }}>{title}</Typography>

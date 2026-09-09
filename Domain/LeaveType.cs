@@ -28,6 +28,11 @@ public class LeaveType
     public AttachmentPolicy AttachmentPolicy { get; set; } = AttachmentPolicy.None;
     public int DefaultAllowance { get; set; }
     public string AllowanceUnit { get; set; } = "days/year";
+    /* How many unused days of this type survive the year-end rollover. This was
+       org-wide (AppSettings.MaxCarryoverDays), which made it a second number free to
+       disagree with the allowance it caps, and left the cap unstated for every type
+       but annual leave. It belongs beside the allowance, per type. */
+    public int MaxCarryoverDays { get; set; }
     public string AccrualNotes { get; set; } = string.Empty;
     public int MinNoticeDays { get; set; }
     public int MaxConsecutiveDays { get; set; }

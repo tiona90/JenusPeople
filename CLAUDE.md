@@ -95,6 +95,7 @@ that means when adding code:
 |--------|-----------|
 | `User` | Extends `IdentityUser`; has `DisplayName`, `ImageUrl`, `IsActive` (may this account sign in — a leaver is switched off rather than deleted, since `DeleteAdminUser` nulls out every approval they gave) |
 | `AnnualLeave` | `EmployeeId`, `StartDate/EndDate`, `Status` (enum), `TotalDays` (computed, no weekends) |
+| `LeaveType` | `Name`, `IsActive`, `AffectsBalance` (is it deducted from the enforced pool), `DefaultAllowance` and `MaxCarryoverDays` — the allowance and the year-end cap that bounds it, both per type and both edited **only** on Leave Types. See [Leave is configured once](#domain-model-summary) |
 | `Timesheet` | `EmployeeId`, `PeriodStart/End`, `TotalHours`, `Status` (Draft→Submitted→Approved/Rejected), `DepartmentId` (nullable — the department it was filed under, kept for history so it outlives its author's move; null when the author has none, i.e. an Admin, matching `AnnualLeave.DepartmentId`) |
 | `TimesheetEntry` | `TimesheetId`, `ProjectId`, `Date`, `HoursWorked` (decimal 4,2), optional `ActivityTypeId`, `ProjectTypeId` and `ProjectComponentId`. One entry per project **+ type + component** per date |
 | `Project` | `Name` (unique), `Code` (unique), `IsActive`; belongs to many `Department` via `ProjectDepartment` (which departments can see it), narrows activities via `ProjectActivityAssignment`, components via `ProjectComponentAssignment`, and its kinds of engagement via `ProjectTypeAssignment` |
@@ -105,12 +106,22 @@ that means when adding code:
 
 Status enums: `AnnualLeaveStatus` (Pending, Approved, Rejected, Cancelled); `TimesheetStatus` (Draft=0, Submitted=1, Approved=2, Rejected=3, Resubmitted=4).
 
-**Leave is configured once, for everyone.** The annual-leave allowance is
-`LeaveType.DefaultAllowance` on the type flagged `AffectsBalance` (annual leave, in
-practice) — one row, one number, and the only thing to edit. Two screens write it:
-Leave Types, and the "Annual Leave Allowance" field on Leave Settings
-(`AppSettingsPanel` calls `updateLeaveType`). Two surfaces, one column, so they cannot
-disagree.
+**Leave is configured once, for everyone, on Leave Types.** Both numbers that describe
+an annual-leave budget are columns on the type flagged `AffectsBalance` (annual leave,
+in practice): `LeaveType.DefaultAllowance`, how many days it grants, and
+`LeaveType.MaxCarryoverDays`, how many unused ones survive the year end. One row, and
+the Leave Types screen is the only place either is edited.
+
+Leave Settings (`AppSettingsPanel`) **quotes** both — the carryover preview is
+meaningless without them — but no longer edits either, and saves no leave type. It
+used to edit both: the allowance as a second surface onto the same column, and the cap
+as an org-wide `AppSettings.MaxCarryoverDays` sitting a screen away from the allowance
+it bounds, with no way to say that sick leave carries nothing while annual leave
+carries five. The column is gone (migration `MoveCarryoverCapToLeaveType`, which
+copied the configured cap onto the `AffectsBalance` type first). A cap of 0 is an
+ordinary policy — nothing carries over — unlike a 0 allowance, which is a hazard.
+`client/src/lib/leave-allowance.ts` reads both figures (`annualLeaveAllowance`,
+`annualCarryoverCap`).
 
 `EmployeeProfile.AnnualLeaveEntitlement` and `LeaveBalance` are **derived, never
 edited per person**. Only three things write them, all from the allowance:
@@ -126,11 +137,12 @@ Two rules that follow, both learned the hard way:
   returns early on `<= 0`, so a 0 does not mean "no allowance" — it means *no balance
   check at all* for that employee. `UpdateLeaveType` refuses a 0 allowance outright for
   this reason.
-- **Do not add an org-wide allowance setting back.** `AppSettings` used to carry a third
-  number, `DefaultAnnualEntitlement`, free to disagree with the leave type and by
-  default doing so (20 against 25). It is gone (migration
+- **Do not add an org-wide allowance or carryover setting back.** `AppSettings` used to
+  carry a third allowance, `DefaultAnnualEntitlement`, free to disagree with the leave
+  type and by default doing so (20 against 25). It is gone (migration
   `RemoveAppSettingsDefaultAnnualEntitlement`), and every profile was aligned to the
-  allowance by `AlignEntitlementsWithAnnualLeaveAllowance`.
+  allowance by `AlignEntitlementsWithAnnualLeaveAllowance`. `MaxCarryoverDays` followed
+  it onto the leave type for the same reason (`MoveCarryoverCapToLeaveType`).
 
 The client mirrors this in `client/src/lib/leave-allowance.ts`; a type that sets no
 allowance reads as 0 and renders "—".

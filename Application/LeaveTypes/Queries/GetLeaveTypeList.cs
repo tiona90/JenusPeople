@@ -32,6 +32,7 @@ public class GetLeaveTypeList
                     AttachmentPolicy = lt.AttachmentPolicy,
                     DefaultAllowance = lt.DefaultAllowance,
                     AllowanceUnit = lt.AllowanceUnit,
+                    MaxCarryoverDays = lt.MaxCarryoverDays,
                     AccrualNotes = lt.AccrualNotes,
                     MinNoticeDays = lt.MinNoticeDays,
                     MaxConsecutiveDays = lt.MaxConsecutiveDays,

@@ -30,7 +30,6 @@ public class AppSettingsValidationTests
     private static UpdateAppSettings.Command Valid() => new()
     {
         LeaveYearStartMonth = 1,
-        MaxCarryoverDays = 5,
         FinancialYearStartMonth = 1,
         WorkingHoursStart = "09:00",
         WorkingHoursEnd = "18:00",
@@ -83,19 +82,6 @@ public class AppSettingsValidationTests
         command.FinancialYearStartMonth = month;
 
         AssertRejects(command, nameof(command.FinancialYearStartMonth));
-    }
-
-    [Fact]
-    public void Carryover_days_cannot_be_negative()
-    {
-        var command = Valid();
-        command.MaxCarryoverDays = -1;
-
-        AssertRejects(command, nameof(command.MaxCarryoverDays));
-
-        // Zero carryover is a real policy, not an error.
-        command.MaxCarryoverDays = 0;
-        Assert.True(Validate(command).IsValid);
     }
 
     [Theory]

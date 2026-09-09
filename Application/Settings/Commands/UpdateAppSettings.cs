@@ -12,7 +12,6 @@ public class UpdateAppSettings
     public class Command : IRequest<Result<AppSettingsDto>>
     {
         public int LeaveYearStartMonth { get; set; }
-        public int MaxCarryoverDays { get; set; }
         public int YearEndWarningDays { get; set; }
         public int FinalWarningDays { get; set; }
         public bool AutoRunRollover { get; set; }
@@ -58,8 +57,6 @@ public class UpdateAppSettings
             // which maps to 404 — the wrong answer for a malformed request.
             if (request.LeaveYearStartMonth < 1 || request.LeaveYearStartMonth > 12)
                 return Invalid(nameof(request.LeaveYearStartMonth), "Leave year start month must be between 1 and 12.");
-            if (request.MaxCarryoverDays < 0)
-                return Invalid(nameof(request.MaxCarryoverDays), "Max carryover days cannot be negative.");
             if (request.FinancialYearStartMonth < 1 || request.FinancialYearStartMonth > 12)
                 return Invalid(nameof(request.FinancialYearStartMonth), "Financial year start month must be between 1 and 12.");
             if (!WorkingTimeFormat.TryNormalizeTime(request.WorkingHoursStart, out var workStart))
@@ -81,7 +78,6 @@ public class UpdateAppSettings
             }
 
             settings.LeaveYearStartMonth = request.LeaveYearStartMonth;
-            settings.MaxCarryoverDays = request.MaxCarryoverDays;
             settings.YearEndWarningDays = request.YearEndWarningDays;
             settings.FinalWarningDays = request.FinalWarningDays;
             settings.AutoRunRollover = request.AutoRunRollover;

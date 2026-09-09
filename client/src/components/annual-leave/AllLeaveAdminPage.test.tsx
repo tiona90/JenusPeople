@@ -41,7 +41,7 @@ const SICK_LEAVE_TYPE = {
 } as const
 
 /** Leave Settings no longer carries an entitlement; only the carryover cap and year. */
-const APP_SETTINGS = { maxCarryoverDays: 5, leaveYearStartMonth: 1 }
+const APP_SETTINGS = { leaveYearStartMonth: 1 }
 
 /** An ISO date inside the current calendar year, so "used this year" is deterministic. */
 function sameYear(month: number, day: number) {

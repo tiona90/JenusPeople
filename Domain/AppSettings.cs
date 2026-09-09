@@ -5,7 +5,8 @@ public class AppSettings
     public int Id { get; set; }
 
     public int LeaveYearStartMonth { get; set; } = 1;
-    public int MaxCarryoverDays { get; set; } = 5;
+    // The carryover cap moved to LeaveType.MaxCarryoverDays, beside the allowance it
+    // caps -- see migration MoveCarryoverCapToLeaveType.
     public int YearEndWarningDays { get; set; } = 30;
     public int FinalWarningDays { get; set; } = 7;
     public bool AutoRunRollover { get; set; } = true;

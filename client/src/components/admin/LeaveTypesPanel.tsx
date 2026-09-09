@@ -194,6 +194,7 @@ function LeaveTypesPanel() {
             attachmentPolicy: t.attachmentPolicy,
             defaultAllowance: t.defaultAllowance,
             allowanceUnit: t.allowanceUnit,
+            maxCarryoverDays: t.maxCarryoverDays,
             accrualNotes: t.accrualNotes,
             minNoticeDays: t.minNoticeDays,
             maxConsecutiveDays: t.maxConsecutiveDays,
@@ -469,6 +470,11 @@ function LeaveTypeCard({ derived, onEdit, onToggle, onDelete }: {
                             {t.allowanceUnit}
                         </Box>
                     </Box>
+                    <Box sx={{ fontSize: 11, color: 'text.secondary', mt: '4px' }}>
+                        {t.maxCarryoverDays > 0
+                            ? `Carries over up to ${t.maxCarryoverDays} days`
+                            : 'No carryover — unused days expire at year end'}
+                    </Box>
                     {t.accrualNotes && (
                         <Box sx={{ fontSize: 11, color: 'text.secondary', mt: '4px' }}>{t.accrualNotes}</Box>
                     )}
@@ -732,6 +738,7 @@ function LeaveTypeFormDialog(props: {
     const [attachmentPolicy, setAttachmentPolicy] = useState<AttachmentPolicy>(i?.attachmentPolicy ?? 'None')
     const [defaultAllowance, setDefaultAllowance] = useState<number>(i?.defaultAllowance ?? 0)
     const [allowanceUnit, setAllowanceUnit] = useState(i?.allowanceUnit ?? 'days/year')
+    const [maxCarryoverDays, setMaxCarryoverDays] = useState<number>(i?.maxCarryoverDays ?? 0)
     const [accrualNotes, setAccrualNotes] = useState(i?.accrualNotes ?? '')
     const [minNoticeDays, setMinNoticeDays] = useState<number>(i?.minNoticeDays ?? 0)
     const [maxConsecutiveDays, setMaxConsecutiveDays] = useState<number>(i?.maxConsecutiveDays ?? 0)
@@ -752,6 +759,7 @@ function LeaveTypeFormDialog(props: {
             attachmentPolicy,
             defaultAllowance: Number(defaultAllowance) || 0,
             allowanceUnit: allowanceUnit.trim() || 'days/year',
+            maxCarryoverDays: Number(maxCarryoverDays) || 0,
             accrualNotes: accrualNotes.trim(),
             minNoticeDays: Number(minNoticeDays) || 0,
             maxConsecutiveDays: Number(maxConsecutiveDays) || 0,
@@ -824,6 +832,18 @@ function LeaveTypeFormDialog(props: {
                             helperText="e.g. days/year, days/event"
                         />
                     </Stack>
+                    {/* The cap belongs beside the allowance it bounds. It used to be one
+                        org-wide number on Leave Settings, which could not say that sick
+                        leave carries nothing while annual leave carries five. */}
+                    <TextField
+                        label="Max carryover (days)"
+                        type="number"
+                        value={maxCarryoverDays}
+                        onChange={(e) => setMaxCarryoverDays(Math.max(0, Number(e.target.value)))}
+                        inputProps={{ min: 0, max: 365 }}
+                        sx={{ width: 220 }}
+                        helperText="Unused days above this expire at year end. 0 = none carry over."
+                    />
                     <TextField
                         label="Accrual notes"
                         value={accrualNotes}

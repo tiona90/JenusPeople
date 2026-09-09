@@ -23,10 +23,6 @@ public class UpdateAppSettingsValidator : AbstractValidator<UpdateAppSettings.Co
             .InclusiveBetween(1, 12)
             .WithMessage("Leave year start month must be between 1 and 12.");
 
-        RuleFor(x => x.MaxCarryoverDays)
-            .GreaterThanOrEqualTo(0)
-            .WithMessage("Max carryover days cannot be negative.");
-
         RuleFor(x => x.FinancialYearStartMonth)
             .InclusiveBetween(1, 12)
             .WithMessage("Financial year start month must be between 1 and 12.");

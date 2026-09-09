@@ -48,6 +48,26 @@ export function annualLeaveAllowance(leaveTypes: LeaveType[]) {
 }
 
 /**
+ * The leave type the pooled balance is kept in — the one `affectsBalance` marks, which
+ * is annual leave in practice. Distinct from `isAnnualLeaveType`, which matches on name:
+ * this asks which type the API actually enforces a balance for.
+ */
+export function balanceLeaveType(leaveTypes: LeaveType[]) {
+    return leaveTypes.find((t) => t.isActive && t.affectsBalance)
+        ?? leaveTypes.find((t) => t.affectsBalance)
+}
+
+/**
+ * How many unused annual-leave days survive the year-end rollover, as configured on
+ * Leave Types beside the allowance they cap. This was an org-wide AppSettings column,
+ * free to disagree with the per-type allowance and unable to say that sick leave
+ * carries nothing. 0 means nothing carries over.
+ */
+export function annualCarryoverCap(leaveTypes: LeaveType[]) {
+    return balanceLeaveType(leaveTypes)?.maxCarryoverDays ?? 0
+}
+
+/**
  * How many annual-leave days one employee gets: their own entitlement when it is set,
  * otherwise the allowance from Leave Types. Replaces the literal `20` that several
  * rollups used to fall back to.

@@ -26,6 +26,9 @@ public class UpsertLeaveTypeRequestValidator : AbstractValidator<UpsertLeaveType
         RuleFor(x => x.EligibilityNotes).MaximumLength(250);
 
         RuleFor(x => x.DefaultAllowance).InclusiveBetween(0, 365);
+        RuleFor(x => x.MaxCarryoverDays)
+            .InclusiveBetween(0, 365)
+            .WithMessage("Max carryover days must be between 0 and 365.");
         RuleFor(x => x.MinNoticeDays).InclusiveBetween(0, 365);
         RuleFor(x => x.MaxConsecutiveDays).InclusiveBetween(0, 365);
     }

@@ -22,7 +22,6 @@ import {
     getDepartments,
     getEmployeeProfiles,
     getLeaveStatusHistories,
-    getLeaveTypes,
     getTimesheetStatusHistories,
     getUserPresence,
     setAdminUserActive,
@@ -31,7 +30,6 @@ import {
     updateEmployeeProfile,
 } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
-import { annualLeaveAllowance } from '../../lib/leave-allowance'
 import { softBg, type SxColor } from '../../lib/theme-tokens'
 import type {
     AdminUser, Department, EmployeeProfile, LeaveStatusHistory, PresenceStatus, TimesheetStatusHistory, UserRole,
@@ -132,15 +130,6 @@ function AdminUsersPanel() {
     const { data: leaveHistories = [] } = useQuery({ queryKey: ['leaveStatusHistories'], queryFn: getLeaveStatusHistories })
     const { data: timesheetHistories = [] } = useQuery({ queryKey: ['timesheetStatusHistories'], queryFn: getTimesheetStatusHistories })
     const { data: leaves = [] } = useQuery({ queryKey: ['annualLeaves'], queryFn: getAnnualLeaves })
-    const { data: leaveTypes = [] } = useQuery({ queryKey: ['leaveTypes'], queryFn: getLeaveTypes })
-
-    /* What a row's leave bar is measured against is the employee's own entitlement, which
-       overrides the annual-leave allowance from Leave Types. The dialogs below say so, and
-       a new employee starts from that allowance rather than a number hard-coded here.
-       See lib/leave-allowance.ts. */
-    const annualAllowance = useMemo(
-        () => annualLeaveAllowance(leaveTypes),
-        [leaveTypes])
 
     const profilesByUserId = useMemo(() => new Map(profiles.map((p) => [p.userId, p])), [profiles])
     const deptById = useMemo(() => new Map(departments.map((d) => [d.id, d])), [departments])
@@ -646,14 +635,12 @@ function AdminUsersPanel() {
                 departments={departments}
                 profiles={profiles}
                 users={users}
-                annualAllowance={annualAllowance}
             />
             <EditUserDialog
                 data={editData}
                 departments={departments}
                 profiles={profiles}
                 users={users}
-                annualAllowance={annualAllowance}
                 isPending={editMutation.isPending}
                 error={editMutation.error}
                 onClose={() => setEditData(null)}
@@ -1204,7 +1191,6 @@ function EditUserDialog(props: {
     departments: Department[]
     profiles: EmployeeProfile[]
     users: AdminUser[]
-    annualAllowance: number
     onClose: () => void
     isPending: boolean
     error: unknown
@@ -1247,7 +1233,7 @@ function EditUserDialog(props: {
             })
         }
 
-    }, [props.data, props.annualAllowance])
+    }, [props.data])
 
     // If the person being edited *is* their department's manager, they have no
     // manager of their own here — excludeUserId keeps them from matching themselves.
@@ -1331,11 +1317,6 @@ function EditUserDialog(props: {
                                 onChange={(e) => setJobTitle(e.target.value)}
                                 fullWidth
                             />
-                            {/* Stated, never edited here: leave is configured once, on Leave
-                                Types, and applies to everyone. */}
-                            <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
-                                Annual leave: <strong>{props.annualAllowance} days/year</strong>, set for everyone on Leave Types.
-                            </Typography>
                         </>
                     )}
 
@@ -1364,7 +1345,6 @@ function EditUserDialog(props: {
 
 function CreateUserDialog(props: {
     open: boolean
-    annualAllowance: number
     onClose: () => void
     isPending: boolean
     error: unknown
@@ -1488,10 +1468,6 @@ function CreateUserDialog(props: {
                                 onChange={(e) => setJobTitle(e.target.value)}
                                 fullWidth
                             />
-                            {/* Not asked for: every employee is on the Leave Types allowance. */}
-                            <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
-                                Annual leave: <strong>{props.annualAllowance} days/year</strong>, set for everyone on Leave Types.
-                            </Typography>
                         </>
                     )}
 

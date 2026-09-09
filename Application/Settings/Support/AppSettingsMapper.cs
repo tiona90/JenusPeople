@@ -7,7 +7,6 @@ public static class AppSettingsMapper
     public static AppSettingsDto ToDto(Domain.AppSettings s) => new()
     {
         LeaveYearStartMonth = s.LeaveYearStartMonth,
-        MaxCarryoverDays = s.MaxCarryoverDays,
         YearEndWarningDays = s.YearEndWarningDays,
         FinalWarningDays = s.FinalWarningDays,
         AutoRunRollover = s.AutoRunRollover,

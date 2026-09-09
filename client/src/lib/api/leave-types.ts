@@ -13,6 +13,7 @@ export interface UpsertLeaveTypeRequest {
     attachmentPolicy: AttachmentPolicy
     defaultAllowance: number
     allowanceUnit: string
+    maxCarryoverDays: number
     accrualNotes: string
     minNoticeDays: number
     maxConsecutiveDays: number
