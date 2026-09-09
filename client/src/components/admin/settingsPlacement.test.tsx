@@ -24,6 +24,7 @@ vi.mock('../../lib/api', () => ({
     getHolidayCountries: vi.fn(),
     getLeaveTypes: vi.fn(),
     updateAppSettings: vi.fn(),
+    updateLeaveType: vi.fn(),
     resetReminders: vi.fn(),
     clearApprovalHistory: vi.fn(),
 }))
@@ -63,14 +64,25 @@ const SETTINGS: AppSettings = {
     ],
 }
 
+/* The row the allowance actually lives in. Leave Settings edits this, and so does
+   Leave Types — one column, two screens. */
+const ANNUAL_LEAVE_TYPE = {
+    id: 1, name: 'Annual Leave', requiresApproval: true, isActive: true, affectsBalance: true,
+    icon: '🌴', colorKey: 'annual', description: 'Vacation days.', paid: true,
+    attachmentPolicy: 'None', defaultAllowance: 25, allowanceUnit: 'days/year',
+    accrualNotes: 'Resets 1 Jan', minNoticeDays: 7, maxConsecutiveDays: 15,
+    halfDayAllowed: true, eligibilityNotes: 'All employees', eligibilityScope: 'All',
+} as const
+
 beforeEach(() => {
     vi.clearAllMocks()
     api.getAppSettings.mockResolvedValue(SETTINGS)
     api.getDepartments.mockResolvedValue([])
     api.getEmployeeProfiles.mockResolvedValue([])
     api.getHolidayCountries.mockResolvedValue([])
-    api.getLeaveTypes.mockResolvedValue([])
+    api.getLeaveTypes.mockResolvedValue([ANNUAL_LEAVE_TYPE] as never)
     api.updateAppSettings.mockResolvedValue(SETTINGS)
+    api.updateLeaveType.mockResolvedValue(ANNUAL_LEAVE_TYPE as never)
 })
 
 function renderPanel(ui: React.ReactElement) {
@@ -125,20 +137,23 @@ describe('the leave year is editable in exactly one place', () => {
  * The annual-leave allowance had the same drift problem the leave year did. Leave
  * Settings carried a "Fallback Entitlement" of its own, free to disagree with the
  * Annual Leave type's allowance on Leave Types — and out of the box it did: 20
- * against 25. Leave Types is the one home now, and it is where a new joiner's
- * entitlement comes from (see CreateAdminUser).
+ * against 25.
+ *
+ * It is editable from Leave Settings again, but there is no second column behind it:
+ * the field writes LeaveType.DefaultAllowance, the same row Leave Types edits. Two
+ * screens, one number — which is what the old setup could not manage.
  */
-describe('the annual-leave allowance is editable in exactly one place', () => {
-    it('offers no entitlement field on Leave Settings', async () => {
+describe('the annual-leave allowance is stored in exactly one place', () => {
+    it('offers no separate entitlement setting on Leave Settings', async () => {
         renderPanel(<AppSettingsPanel />)
         await screen.findByText('Leave Year Configuration')
 
+        expect(screen.queryByText('Default for New Employees (days)')).not.toBeInTheDocument()
         expect(screen.queryByText(/Fallback Entitlement/)).not.toBeInTheDocument()
-        // The carryover cap beside it stays — it has no home anywhere else.
         expect(screen.getByText('Max Carryover Days')).toBeInTheDocument()
     })
 
-    it('sends no entitlement of its own when Leave Settings is saved', async () => {
+    it('sends no entitlement of its own in the settings payload', async () => {
         renderPanel(<AppSettingsPanel />)
         await screen.findByText('Leave Year Configuration')
 
@@ -150,6 +165,57 @@ describe('the annual-leave allowance is editable in exactly one place', () => {
 
         await waitFor(() => expect(api.updateAppSettings).toHaveBeenCalledTimes(1))
         expect(api.updateAppSettings.mock.calls[0][0]).not.toHaveProperty('defaultAnnualEntitlement')
+    })
+
+    it('offers the allowance as an editable field seeded from the leave type', async () => {
+        renderPanel(<AppSettingsPanel />)
+        await screen.findByText('Leave Year Configuration')
+
+        const input = screen.getByLabelText(/annual leave allowance/i)
+        expect(input).toBeEnabled()
+        expect(input).toHaveValue(ANNUAL_LEAVE_TYPE.defaultAllowance)
+    })
+
+    it('writes an edited allowance to the leave type, not to app settings', async () => {
+        renderPanel(<AppSettingsPanel />)
+        await screen.findByText('Leave Year Configuration')
+
+        fireEvent.change(screen.getByLabelText(/annual leave allowance/i), { target: { value: '30' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Save Settings' }))
+
+        await waitFor(() => expect(api.updateLeaveType).toHaveBeenCalledTimes(1))
+        expect(api.updateLeaveType.mock.calls[0][0]).toBe(ANNUAL_LEAVE_TYPE.id)
+        // The rest of the type has to survive a save that only meant to move one number.
+        expect(api.updateLeaveType.mock.calls[0][1]).toMatchObject({
+            name: 'Annual Leave',
+            affectsBalance: true,
+            allowanceUnit: 'days/year',
+            defaultAllowance: 30,
+        })
+        expect(api.updateAppSettings.mock.calls[0][0]).not.toHaveProperty('defaultAllowance')
+    })
+
+    it('leaves the leave type alone when only the carryover cap moved', async () => {
+        renderPanel(<AppSettingsPanel />)
+        await screen.findByText('Leave Year Configuration')
+
+        const cap = screen.getByText('Max Carryover Days')
+            .parentElement!.querySelector('input')!
+        fireEvent.change(cap, { target: { value: '6' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Save Settings' }))
+
+        await waitFor(() => expect(api.updateAppSettings).toHaveBeenCalledTimes(1))
+        expect(api.updateLeaveType).not.toHaveBeenCalled()
+    })
+
+    /* Nothing to write the number into, so the field must not pretend to accept one —
+       an admin typing into it would have their edit silently dropped. */
+    it('disables the field when there is no annual-leave type to write to', async () => {
+        api.getLeaveTypes.mockResolvedValue([])
+        renderPanel(<AppSettingsPanel />)
+        await screen.findByText('Leave Year Configuration')
+
+        expect(screen.getByLabelText(/annual leave allowance/i)).toBeDisabled()
     })
 })
 

@@ -271,7 +271,6 @@ function AdminUsersPanel() {
             profile: EmployeeProfile | undefined
             departmentId: number | null
             jobTitle: string
-            annualLeaveEntitlement: number
             managerId: string | null
             phoneNumber: string | null
             dateOfBirth: string | null
@@ -283,8 +282,6 @@ function AdminUsersPanel() {
                     id: payload.profile.id,
                     departmentId: payload.departmentId,
                     managerId: payload.managerId,
-                    annualLeaveEntitlement: payload.annualLeaveEntitlement,
-                    leaveBalance: payload.profile.leaveBalance,
                     jobTitle: payload.jobTitle || null,
                 })
             }
@@ -1219,7 +1216,6 @@ function EditUserDialog(props: {
         profile: EmployeeProfile | undefined
         departmentId: number | null
         jobTitle: string
-        annualLeaveEntitlement: number
         managerId: string | null
         phoneNumber: string | null
         dateOfBirth: string | null
@@ -1234,7 +1230,6 @@ function EditUserDialog(props: {
     const [role, setRole] = useState<UserRole>('Employee')
     const [departmentId, setDepartmentId] = useState(0)
     const [jobTitle, setJobTitle] = useState('')
-    const [annualLeaveEntitlement, setAnnualLeaveEntitlement] = useState(0)
     const [phoneNumber, setPhoneNumber] = useState('')
     const [dateOfBirth, setDateOfBirth] = useState('')
 
@@ -1247,13 +1242,12 @@ function EditUserDialog(props: {
                 setRole(primaryRoleOf(props.data!.user.roles))
                 setDepartmentId(props.data!.profile?.departmentId ?? 0)
                 setJobTitle(props.data!.profile?.jobTitle ?? '')
-                setAnnualLeaveEntitlement(props.data!.profile?.annualLeaveEntitlement ?? 0)
                 setPhoneNumber(props.data!.user.phoneNumber ?? '')
                 setDateOfBirth(props.data!.user.dateOfBirth ?? '')
             })
         }
-         
-    }, [props.data])
+
+    }, [props.data, props.annualAllowance])
 
     // If the person being edited *is* their department's manager, they have no
     // manager of their own here — excludeUserId keeps them from matching themselves.
@@ -1337,15 +1331,11 @@ function EditUserDialog(props: {
                                 onChange={(e) => setJobTitle(e.target.value)}
                                 fullWidth
                             />
-                            <TextField
-                                label="Annual leave entitlement"
-                                type="number"
-                                value={annualLeaveEntitlement}
-                                onChange={(e) => setAnnualLeaveEntitlement(Number(e.target.value))}
-                                inputProps={{ min: 0, step: 0.5 }}
-                                fullWidth
-                                helperText={`This employee's own allowance, overriding the ${props.annualAllowance} days/year Leave Types sets for annual leave.`}
-                            />
+                            {/* Stated, never edited here: leave is configured once, on Leave
+                                Types, and applies to everyone. */}
+                            <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+                                Annual leave: <strong>{props.annualAllowance} days/year</strong>, set for everyone on Leave Types.
+                            </Typography>
                         </>
                     )}
 
@@ -1358,7 +1348,10 @@ function EditUserDialog(props: {
                     variant="contained"
                     disabled={props.isPending || !user || departmentMissing}
                     onClick={() =>
-                        user && props.onSubmit({ userId: user.id, email, displayName, roles: [role], profile, departmentId: effectiveDepartmentId, jobTitle, annualLeaveEntitlement, managerId: showManagerField ? departmentManager?.profileId ?? null : profile?.managerId ?? null, phoneNumber: phoneNumber.trim() || null, dateOfBirth: dateOfBirth || null })
+                        /* No override means the leave type's own allowance, not 0: a stored 0
+                           switches the approval-time balance check off outright (see
+                           Application/AnnualLeaves/Commands/AnnualLeaveBalanceCalculator.cs). */
+                        user && props.onSubmit({ userId: user.id, email, displayName, roles: [role], profile, departmentId: effectiveDepartmentId, jobTitle, managerId: showManagerField ? departmentManager?.profileId ?? null : profile?.managerId ?? null, phoneNumber: phoneNumber.trim() || null, dateOfBirth: dateOfBirth || null })
                     }
                     sx={saveBtnSx}
                 >
@@ -1382,7 +1375,6 @@ function CreateUserDialog(props: {
         departmentId: number | null
         managerId: string | null
         jobTitle: string | null
-        annualLeaveEntitlement: number
         phoneNumber: string | null
         dateOfBirth: string | null
     }) => void
@@ -1396,17 +1388,8 @@ function CreateUserDialog(props: {
     const [role, setRole] = useState<UserRole>('Employee')
     const [departmentId, setDepartmentId] = useState<number>(0)
     const [jobTitle, setJobTitle] = useState('')
-    const [annualLeaveEntitlement, setAnnualLeaveEntitlement] = useState(props.annualAllowance)
     const [phoneNumber, setPhoneNumber] = useState('')
     const [dateOfBirth, setDateOfBirth] = useState('')
-
-    /* The allowance arrives with the leave-types query, which can settle after this
-       dialog has mounted, so the field is seeded when it opens rather than at mount. */
-    useEffect(() => {
-        if (props.open) {
-            Promise.resolve().then(() => setAnnualLeaveEntitlement(props.annualAllowance))
-        }
-    }, [props.open, props.annualAllowance])
 
     // Same rule as EditUserDialog: a new hire reports to whoever manages the
     // department they're placed in — not a free pick.
@@ -1434,7 +1417,6 @@ function CreateUserDialog(props: {
         setRole('Employee')
         setDepartmentId(0)
         setJobTitle('')
-        setAnnualLeaveEntitlement(props.annualAllowance)
         setPhoneNumber('')
         setDateOfBirth('')
         props.onClose()
@@ -1506,15 +1488,10 @@ function CreateUserDialog(props: {
                                 onChange={(e) => setJobTitle(e.target.value)}
                                 fullWidth
                             />
-                            <TextField
-                                label="Annual leave entitlement"
-                                type="number"
-                                value={annualLeaveEntitlement}
-                                onChange={(e) => setAnnualLeaveEntitlement(Number(e.target.value))}
-                                inputProps={{ min: 0, step: 0.5 }}
-                                fullWidth
-                                helperText={`Starts from the ${props.annualAllowance}-day annual leave allowance on Leave Types; change it to give this employee a different one.`}
-                            />
+                            {/* Not asked for: every employee is on the Leave Types allowance. */}
+                            <Typography sx={{ fontSize: 12, color: "text.secondary" }}>
+                                Annual leave: <strong>{props.annualAllowance} days/year</strong>, set for everyone on Leave Types.
+                            </Typography>
                         </>
                     )}
 
@@ -1533,7 +1510,6 @@ function CreateUserDialog(props: {
                         departmentId: effectiveDepartmentId,
                         managerId: showManagerField ? departmentManager?.profileId ?? null : null,
                         jobTitle: isAdmin ? null : jobTitle.trim() || null,
-                        annualLeaveEntitlement,
                         phoneNumber: phoneNumber.trim() || null,
                         dateOfBirth: dateOfBirth || null,
                     })}

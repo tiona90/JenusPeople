@@ -142,9 +142,9 @@ describe('AdminUsersPanel — Create User', () => {
             departmentId: DEPARTMENT.id,
             managerId: null,
             jobTitle: null,
-            // The annual-leave allowance from Leave Types, not a number typed into
-            // the panel's source.
-            annualLeaveEntitlement: ANNUAL_LEAVE_TYPE.defaultAllowance,
+            // No entitlement at all: the server reads the allowance off the
+            // balance-affecting leave type (CreateAdminUser), so the client has no
+            // figure to send and no chance to send a stale one.
             phoneNumber: null,
             dateOfBirth: null,
         })
@@ -716,6 +716,59 @@ describe('AdminUsersPanel — activating and deactivating', () => {
         expect(api.setAdminUserActive.mock.calls[0].slice(0, 2)).toEqual([ACTIVE.id, { isActive: false }])
         // Deleting is a separate, still-available action — not what this button does.
         expect(api.deleteAdminUser).not.toHaveBeenCalled()
+    })
+})
+
+/*
+ * Leave is no longer configured per person. The annual-leave allowance on Leave Types
+ * is what every employee gets, so neither user dialog asks for an entitlement, and
+ * saving a user must not write one — a stale number sent back from a dialog that no
+ * longer shows it would silently override the allowance for that person, and a 0
+ * would switch their balance check off entirely (AnnualLeaveBalanceCalculator).
+ */
+describe('AdminUsersPanel — leave is not configured per user', () => {
+    const EMPLOYEE = { id: 'u-employee', userName: 'e@example.test', email: 'e@example.test', displayName: 'Some Employee', imageUrl: '', emailConfirmed: true, isActive: true, roles: ['Employee'] }
+    const PROFILE = { id: 'p-employee', userId: 'u-employee', displayName: 'Some Employee', departmentId: DEPARTMENT.id, managerId: null, annualLeaveEntitlement: 20, leaveBalance: 14, jobTitle: 'Engineer', createdAt: '2026-01-01' }
+
+    beforeEach(() => {
+        api.getAdminUsers.mockResolvedValue([EMPLOYEE] as never)
+        api.getEmployeeProfiles.mockResolvedValue([PROFILE] as never)
+    })
+
+    async function openEditDialog() {
+        renderPanel()
+        const nameEl = await screen.findByText('Some Employee')
+        const row = nameEl.parentElement!.parentElement!.parentElement!.parentElement!
+        fireEvent.click(within(row).getByTitle('Edit'))
+        return screen.getByRole('dialog')
+    }
+
+    it('offers no entitlement field when editing a user', async () => {
+        const dialog = await openEditDialog()
+
+        await waitFor(() => expect(within(dialog).getByLabelText(/job title/i)).toHaveValue('Engineer'))
+        expect(within(dialog).queryByLabelText(/annual leave entitlement/i)).not.toBeInTheDocument()
+        expect(within(dialog).queryByRole('switch', { name: /own entitlement/i })).not.toBeInTheDocument()
+    })
+
+    it('offers no entitlement field when creating a user', async () => {
+        const dialog = await openCreateDialog()
+
+        expect(within(dialog).queryByLabelText(/annual leave entitlement/i)).not.toBeInTheDocument()
+    })
+
+    it('sends no leave numbers when a user is saved', async () => {
+        const dialog = await openEditDialog()
+
+        await waitFor(() => expect(within(dialog).getByLabelText(/job title/i)).toHaveValue('Engineer'))
+        fireEvent.change(within(dialog).getByLabelText(/job title/i), { target: { value: 'Senior Engineer' } })
+        fireEvent.click(within(dialog).getByRole('button', { name: /^save$/i }))
+
+        await waitFor(() => expect(api.updateEmployeeProfile).toHaveBeenCalledTimes(1))
+        const sent = api.updateEmployeeProfile.mock.calls[0][0]
+        expect(sent).toMatchObject({ id: PROFILE.id, jobTitle: 'Senior Engineer' })
+        expect(sent).not.toHaveProperty('annualLeaveEntitlement')
+        expect(sent).not.toHaveProperty('leaveBalance')
     })
 })
 

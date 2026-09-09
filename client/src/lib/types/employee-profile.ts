@@ -23,12 +23,17 @@ export interface Teammate {
     departmentId: number | null
 }
 
+/**
+ * Deliberately carries no leave numbers. `annualLeaveEntitlement` and `leaveBalance`
+ * are not edited per person any more — the allowance on Leave Types governs everyone,
+ * and the server writes both columns from it (see UpdateLeaveType and CreateAdminUser).
+ * Sending them from here is what let a dialog echo a stale figure back and override
+ * the allowance for one employee.
+ */
 export interface EditEmployeeProfileRequest {
     id: string
     /** Null only for an Admin; required for every other role. */
     departmentId: number | null
     managerId: string | null
-    annualLeaveEntitlement: number
-    leaveBalance: number
     jobTitle: string | null
 }

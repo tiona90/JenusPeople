@@ -25,8 +25,6 @@ public class EditEmployeeProfile
 
             employeeProfile.DepartmentId = request.EmployeeProfile.DepartmentId;
             employeeProfile.ManagerId = request.EmployeeProfile.ManagerId;
-            employeeProfile.AnnualLeaveEntitlement = request.EmployeeProfile.AnnualLeaveEntitlement;
-            employeeProfile.LeaveBalance = request.EmployeeProfile.LeaveBalance;
             employeeProfile.JobTitle = request.EmployeeProfile.JobTitle;
 
             await context.SaveChangesAsync(cancellationToken);

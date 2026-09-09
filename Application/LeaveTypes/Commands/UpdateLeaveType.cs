@@ -26,10 +26,37 @@ public class UpdateLeaveType
                 return Result<LeaveTypeDto>.Failure("Leave type not found.");
 
             var wasRequiringApproval = leaveType.RequiresApproval;
+            var previousAllowance = leaveType.DefaultAllowance;
 
             mapper.Map(request.LeaveType, leaveType);
 
             var affectedProfiles = new Dictionary<string, EmployeeProfile>();
+
+            /* Leave is configured once, for everyone: this allowance is the annual-leave
+               budget, so moving it has to move every employee with it. Leaving profiles
+               on their old AnnualLeaveEntitlement would have the screens quote the new
+               figure while AnnualLeaveBalanceCalculator still enforces the old one. */
+            var allowanceMoved = leaveType.AffectsBalance && leaveType.DefaultAllowance != previousAllowance;
+
+            if (allowanceMoved && leaveType.DefaultAllowance <= 0)
+            {
+                // An entitlement of 0 switches the balance check off outright, so this
+                // would quietly unpolice every request in the company at once.
+                return Result<LeaveTypeDto>.Failure(
+                    "The annual leave allowance must be at least 1 day — a 0 would remove the balance check for every employee.");
+            }
+
+            if (allowanceMoved)
+            {
+                var everyProfile = await context.EmployeeProfiles.ToListAsync(cancellationToken);
+                foreach (var employeeProfile in everyProfile)
+                {
+                    employeeProfile.AnnualLeaveEntitlement = leaveType.DefaultAllowance;
+                    // Picked up by the balance sync below, which recomputes what is left
+                    // after the days each of them has already taken.
+                    affectedProfiles[employeeProfile.Id] = employeeProfile;
+                }
+            }
 
             if (wasRequiringApproval && !leaveType.RequiresApproval && leaveType.IsActive)
             {

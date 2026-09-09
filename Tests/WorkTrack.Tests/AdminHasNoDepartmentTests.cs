@@ -116,8 +116,6 @@ public class AdminHasNoDepartmentTests : IDisposable
         {
             UserId = userId,
             DepartmentId = departmentId,
-            AnnualLeaveEntitlement = 20,
-            LeaveBalance = 20,
         };
 
         Db.EmployeeProfiles.Add(profile);
@@ -185,7 +183,10 @@ public class AdminHasNoDepartmentTests : IDisposable
         Assert.Null(profile.DepartmentId);
         // The profile itself still exists: an Admin books their own leave against
         // it, and it is the foreign key their leave and timesheet history hangs on.
-        Assert.Equal(20, profile.AnnualLeaveEntitlement);
+        // No annual-leave type is seeded here, so the entitlement is the compiled-in
+        // fallback rather than an allowance — and must never be a 0, which would
+        // switch their balance check off (AnnualLeaveBalanceCalculator).
+        Assert.Equal(CreateAdminUser.Handler.DefaultEntitlement, profile.AnnualLeaveEntitlement);
     }
 
     /// <summary>
@@ -241,8 +242,6 @@ public class AdminHasNoDepartmentTests : IDisposable
         {
             Id = profile.Id,
             DepartmentId = null,
-            AnnualLeaveEntitlement = 20,
-            LeaveBalance = 20,
         });
 
         Assert.True(result.IsValid, Errors(result));
@@ -271,8 +270,6 @@ public class AdminHasNoDepartmentTests : IDisposable
         {
             Id = profile.Id,
             DepartmentId = null,
-            AnnualLeaveEntitlement = 20,
-            LeaveBalance = 20,
         };
 
         var validation = await ValidateEdit(request);
@@ -304,8 +301,6 @@ public class AdminHasNoDepartmentTests : IDisposable
         {
             Id = profile.Id,
             DepartmentId = null,
-            AnnualLeaveEntitlement = 20,
-            LeaveBalance = 20,
         });
 
         Assert.False(result.IsValid);
@@ -323,8 +318,6 @@ public class AdminHasNoDepartmentTests : IDisposable
         {
             Id = profile.Id,
             DepartmentId = departmentId,
-            AnnualLeaveEntitlement = 20,
-            LeaveBalance = 20,
         });
 
         Assert.False(result.IsValid);

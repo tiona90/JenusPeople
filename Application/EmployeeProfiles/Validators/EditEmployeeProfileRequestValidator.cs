@@ -85,18 +85,6 @@ public class EditEmployeeProfileRequestValidator : AbstractValidator<EditEmploye
                 })
                 .WithMessage("Manager profile is invalid.");
 
-            RuleFor(x => x.EmployeeProfile.AnnualLeaveEntitlement)
-                .InclusiveBetween(0, 365)
-                .WithMessage("AnnualLeaveEntitlement must be between 0 and 365.");
-
-            RuleFor(x => x.EmployeeProfile.LeaveBalance)
-                .InclusiveBetween(0, 365)
-                .WithMessage("LeaveBalance must be between 0 and 365.");
-
-            RuleFor(x => x.EmployeeProfile)
-                .Must(profile => profile.LeaveBalance <= profile.AnnualLeaveEntitlement)
-                .WithMessage("LeaveBalance cannot exceed AnnualLeaveEntitlement.");
-
             RuleFor(x => x.EmployeeProfile.JobTitle)
                 .Must(jobTitle => string.IsNullOrEmpty(jobTitle) || !string.IsNullOrWhiteSpace(jobTitle))
                 .WithMessage("JobTitle cannot be whitespace only.")

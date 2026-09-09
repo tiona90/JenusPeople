@@ -17,11 +17,11 @@ public class EditEmployeeProfileRequest
 
     public string? ManagerId { get; set; }
 
-    [Range(0, 365)]
-    public int AnnualLeaveEntitlement { get; set; }
-
-    [Range(0, 365)]
-    public int LeaveBalance { get; set; }
+    // No leave numbers on purpose. AnnualLeaveEntitlement and LeaveBalance are
+    // written from the Leave Types allowance (CreateAdminUser on hire, UpdateLeaveType
+    // when it moves), never per person from this screen. When they were here, a dialog
+    // that no longer showed the field still echoed a value back — and an omitted one
+    // arrived as 0, which switches the balance check off (AnnualLeaveBalanceCalculator).
 
     [StringLength(100)]
     public string? JobTitle { get; set; }

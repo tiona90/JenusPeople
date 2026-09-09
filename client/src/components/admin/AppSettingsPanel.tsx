@@ -19,7 +19,7 @@ import TextField from '@mui/material/TextField'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Typography from '@mui/material/Typography'
-import { getAppSettings, getDepartments, getEmployeeProfiles, getHolidayCountries, getLeaveTypes, updateAppSettings } from '../../lib/api'
+import { getAppSettings, getDepartments, getEmployeeProfiles, getHolidayCountries, getLeaveTypes, updateAppSettings, updateLeaveType } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
 import { annualLeaveAllowance, employeeAnnualEntitlement } from '../../lib/leave-allowance'
 import type { AppSettings, HolidayCountry } from '../../lib/types'
@@ -179,6 +179,16 @@ export default function AppSettingsPanel() {
     const [form, setForm] = useState<AppSettings>(DEFAULT)
     const [showSaved, setShowSaved] = useState(false)
 
+    /* The annual-leave allowance is not an app setting — it is a column on the leave
+       type, the same row Leave Types edits. This screen edits it too, so it is held
+       apart from `form` and saved through updateLeaveType. Two screens, one column:
+       there is no second number to drift. */
+    const annualLeaveType = useMemo(
+        () => leaveTypes.find((t) => t.isActive && t.affectsBalance)
+            ?? leaveTypes.find((t) => t.affectsBalance),
+        [leaveTypes])
+    const [allowanceDays, setAllowanceDays] = useState(0)
+
     // Sync the loaded settings into editable form state. Adjusted during render
     // (not an effect) per
     // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
@@ -186,6 +196,12 @@ export default function AppSettingsPanel() {
     if (saved !== prevSaved) {
         setPrevSaved(saved)
         if (saved) setForm(saved)
+    }
+
+    const [prevAllowance, setPrevAllowance] = useState<number | undefined>(undefined)
+    if (annualLeaveType && annualLeaveType.defaultAllowance !== prevAllowance) {
+        setPrevAllowance(annualLeaveType.defaultAllowance)
+        setAllowanceDays(annualLeaveType.defaultAllowance)
     }
 
     const set = <K extends keyof AppSettings>(key: K, val: AppSettings[K]) =>
@@ -196,9 +212,22 @@ export default function AppSettingsPanel() {
        concept as the leave year, in a second column nothing reads. The leave year is
        now the only control, and saving mirrors it so the column cannot drift. */
     const mutation = useMutation({
-        mutationFn: () => updateAppSettings({ ...form, financialYearStartMonth: form.leaveYearStartMonth }),
+        mutationFn: async () => {
+            const data = await updateAppSettings({ ...form, financialYearStartMonth: form.leaveYearStartMonth })
+            /* Only when it actually moved: an unchanged allowance must not rewrite the
+               leave type, which would re-stamp every employee's entitlement for nothing
+               (see UpdateLeaveType on the server). */
+            if (annualLeaveType && allowanceDays !== annualLeaveType.defaultAllowance) {
+                const { id, ...rest } = annualLeaveType
+                await updateLeaveType(id, { ...rest, defaultAllowance: allowanceDays })
+            }
+            return data
+        },
         onSuccess: (data) => {
             queryClient.setQueryData(['appSettings'], data)
+            queryClient.invalidateQueries({ queryKey: ['leaveTypes'] })
+            // Entitlements move with the allowance, so anything quoting one is stale.
+            queryClient.invalidateQueries({ queryKey: ['employeeProfiles'] })
             setShowSaved(true)
             setTimeout(() => setShowSaved(false), 3000)
         },
@@ -238,9 +267,8 @@ export default function AppSettingsPanel() {
         ]
     }, [form.leaveYearStartMonth])
 
-    /* The annual allowance is the Annual Leave type's, configured on Leave Types, and
-       this screen no longer keeps a second number beside it. Quoted below in the
-       carryover preview. See lib/leave-allowance.ts. */
+    /* The annual allowance lives on Leave Types, which is the only place it is edited.
+       This screen quotes it in the carryover preview below. See lib/leave-allowance.ts. */
     const annualAllowance = useMemo(() => annualLeaveAllowance(leaveTypes), [leaveTypes])
 
     // Carryover preview from real employee profiles
@@ -263,7 +291,8 @@ export default function AppSettingsPanel() {
             .sort((a, b) => a.name.localeCompare(b.name)),
         [profiles, departmentNameById, form.maxCarryoverDays, annualAllowance])
 
-    const isDirty = JSON.stringify(form) !== JSON.stringify(saved ?? DEFAULT)
+    const allowanceDirty = !!annualLeaveType && allowanceDays !== annualLeaveType.defaultAllowance
+    const isDirty = JSON.stringify(form) !== JSON.stringify(saved ?? DEFAULT) || allowanceDirty
 
     if (isLoading) return (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress size={28} /></Box>
@@ -312,7 +341,7 @@ export default function AppSettingsPanel() {
                                     </Grid>
                                 </Grid>
 
-                                {/* Carryover */}
+                                {/* Carryover + the allowance it is measured against */}
                                 <Grid container spacing={1.5}>
                                     <Grid size={{ xs: 12, sm: 6 }}>
                                         <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'text.primary', mb: 0.75 }}>Max Carryover Days</Typography>
@@ -324,6 +353,25 @@ export default function AppSettingsPanel() {
                                             sx={{ '& .MuiInputBase-input': { fontSize: 13 } }}
                                         />
                                         <Typography sx={{ fontSize: 11, color: 'text.disabled', mt: 0.5 }}>Days above this cap expire at year end</Typography>
+                                    </Grid>
+                                    {/* Editable here, but stored on the leave type — the same column Leave
+                                        Types edits, so the two screens cannot disagree. This screen used to
+                                        carry an entitlement of its own, which could and did. */}
+                                    <Grid size={{ xs: 12, sm: 6 }}>
+                                        <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'text.primary', mb: 0.75 }}>Annual Leave Allowance (days/year)</Typography>
+                                        <TextField
+                                            size="small" fullWidth type="number"
+                                            value={annualLeaveType ? allowanceDays : ''}
+                                            disabled={!annualLeaveType}
+                                            onChange={(e) => setAllowanceDays(Math.max(0, Number(e.target.value)))}
+                                            inputProps={{ min: 0, max: 365, 'aria-label': 'Annual Leave Allowance (days/year)' }}
+                                            sx={{ '& .MuiInputBase-input': { fontSize: 13 } }}
+                                        />
+                                        <Typography sx={{ fontSize: 11, color: 'text.disabled', mt: 0.5 }}>
+                                            {annualLeaveType
+                                                ? 'What every employee gets. Also editable on Leave Types — it is the same figure.'
+                                                : 'No annual-leave type is configured, so there is nothing to set. Add one on Leave Types.'}
+                                        </Typography>
                                     </Grid>
                                 </Grid>
 

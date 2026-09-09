@@ -98,12 +98,42 @@ that means when adding code:
 | `Timesheet` | `EmployeeId`, `PeriodStart/End`, `TotalHours`, `Status` (Draft→Submitted→Approved/Rejected), `DepartmentId` (nullable — the department it was filed under, kept for history so it outlives its author's move; null when the author has none, i.e. an Admin, matching `AnnualLeave.DepartmentId`) |
 | `TimesheetEntry` | `TimesheetId`, `ProjectId`, `Date`, `HoursWorked` (decimal 4,2), optional `ActivityTypeId`, `ProjectTypeId` and `ProjectComponentId`. One entry per project **+ type + component** per date |
 | `Project` | `Name` (unique), `Code` (unique), `IsActive`; belongs to many `Department` via `ProjectDepartment` (which departments can see it), narrows activities via `ProjectActivityAssignment`, components via `ProjectComponentAssignment`, and its kinds of engagement via `ProjectTypeAssignment` |
-| `EmployeeProfile` | Links `User` to `Department`, tracks leave entitlement. `DepartmentId` is **nullable, and null is what an Admin gets** — the role sees every department, so belonging to one grants nothing, and an invented assignment counted for real (headcount, attendance warnings, `DeleteDepartment` blockers). The validators enforce it both ways: required for Employee/Manager, refused for Admin. Anything grouping profiles by department must skip the nulls |
+| `EmployeeProfile` | Links `User` to `Department`, tracks leave entitlement. `DepartmentId` is **nullable, and null is what an Admin gets** — the role sees every department, so belonging to one grants nothing, and an invented assignment counted for real (headcount, attendance warnings, `DeleteDepartment` blockers). The validators enforce it both ways: required for Employee/Manager, refused for Admin. Anything grouping profiles by department must skip the nulls. `AnnualLeaveEntitlement` and `LeaveBalance` are the pool the API enforces on approval, but are **derived from the annual-leave allowance, never edited per person** — see [Leave is configured once](#domain-model-summary) below the table. **A stored 0 switches the balance check off entirely** (`AnnualLeaveBalanceCalculator.CheckSufficientBalanceAsync`), so never write one |
 | `ProjectComponent` | Org-wide catalogue of deliverables (DM, Lasernet, jDocs): `Name` (unique), `Icon`, `ColorKey`, `IsActive`. Projects declare theirs via `ProjectComponentAssignment`, and a `TimesheetEntry` logs against one — narrowed by its project the same way the activity is |
 | `ProjectType` | Org-wide catalogue of engagement kinds (Task, Issue, Inquiry, Support): `Name` (unique), `Icon`, `ColorKey`, `IsActive`. Projects carry any number via `ProjectTypeAssignment`, or none; a type projects still carry cannot be deleted. A `TimesheetEntry` also logs against one — narrowed to the types its project carries, and the field that narrows its project picker |
 | `StoredFile` | An uploaded file's bytes in the database: `Content` (varbinary(max)), `FileName`, `ContentType` (**detected**, never the caller's claim), `Sha256` (also the HTTP ETag), `SizeBytes`, `UploadedById`. `Purpose` (`ProfileImage`, `LeaveEvidence`) drives both what the upload accepts and who may read it back |
 
 Status enums: `AnnualLeaveStatus` (Pending, Approved, Rejected, Cancelled); `TimesheetStatus` (Draft=0, Submitted=1, Approved=2, Rejected=3, Resubmitted=4).
+
+**Leave is configured once, for everyone.** The annual-leave allowance is
+`LeaveType.DefaultAllowance` on the type flagged `AffectsBalance` (annual leave, in
+practice) — one row, one number, and the only thing to edit. Two screens write it:
+Leave Types, and the "Annual Leave Allowance" field on Leave Settings
+(`AppSettingsPanel` calls `updateLeaveType`). Two surfaces, one column, so they cannot
+disagree.
+
+`EmployeeProfile.AnnualLeaveEntitlement` and `LeaveBalance` are **derived, never
+edited per person**. Only three things write them, all from the allowance:
+`CreateAdminUser` on hire, `UpdateLeaveType` when the allowance moves (it re-stamps
+every profile and recomputes balances), and `DbInitializer.FixZeroEntitlementProfiles`
+for anything sitting at 0. `EditEmployeeProfileRequest` deliberately carries neither
+field — when it did, a dialog that had stopped showing the input still echoed a stale
+value back.
+
+Two rules that follow, both learned the hard way:
+
+- **Never write a 0 entitlement.** `AnnualLeaveBalanceCalculator.CheckSufficientBalanceAsync`
+  returns early on `<= 0`, so a 0 does not mean "no allowance" — it means *no balance
+  check at all* for that employee. `UpdateLeaveType` refuses a 0 allowance outright for
+  this reason.
+- **Do not add an org-wide allowance setting back.** `AppSettings` used to carry a third
+  number, `DefaultAnnualEntitlement`, free to disagree with the leave type and by
+  default doing so (20 against 25). It is gone (migration
+  `RemoveAppSettingsDefaultAnnualEntitlement`), and every profile was aligned to the
+  allowance by `AlignEntitlementsWithAnnualLeaveAllowance`.
+
+The client mirrors this in `client/src/lib/leave-allowance.ts`; a type that sets no
+allowance reads as 0 and renders "—".
 
 ## Key Configuration
 

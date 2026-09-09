@@ -1026,6 +1026,16 @@ public class DbInitializer
         var finance = context.Departments.FirstOrDefault(d => d.Code == "FIN");
         if (adminUser is null || engineering is null || finance is null) return;
 
+        // Everyone is seeded on the annual-leave allowance — the one place leave is
+        // configured. A literal here would be exactly the second opinion this app spent
+        // three settings learning to do without. The fallback covers only the ordering
+        // case where leave types have not been seeded yet.
+        var allowance = await context.LeaveTypes
+            .Where(lt => lt.AffectsBalance && lt.IsActive && lt.DefaultAllowance > 0)
+            .OrderBy(lt => lt.Id)
+            .Select(lt => (int?)lt.DefaultAllowance)
+            .FirstOrDefaultAsync() ?? 20;
+
         // Admin profile — no manager (top of hierarchy), and no department: the role
         // sees every one of them, so belonging to one grants nothing. Giving it
         // Engineering was not inert. It put the admin in that department's headcount
@@ -1042,7 +1052,7 @@ public class DbInitializer
             DepartmentId = null,
             ManagerId = null,
             JobTitle = "System Administrator",
-            AnnualLeaveEntitlement = 20,
+            AnnualLeaveEntitlement = allowance,
             CreatedAt = DateTime.UtcNow
         };
 
@@ -1060,7 +1070,7 @@ public class DbInitializer
                 DepartmentId = departmentId,
                 ManagerId = adminProfile.Id,
                 JobTitle = jobTitle,
-                AnnualLeaveEntitlement = 20,
+                AnnualLeaveEntitlement = allowance,
                 CreatedAt = DateTime.UtcNow
             };
             profiles.Add(profile);
@@ -1078,7 +1088,7 @@ public class DbInitializer
                 DepartmentId = departmentId,
                 ManagerId = managerProfileId,
                 JobTitle = jobTitle,
-                AnnualLeaveEntitlement = 20,
+                AnnualLeaveEntitlement = allowance,
                 CreatedAt = DateTime.UtcNow
             });
         }
@@ -1119,7 +1129,16 @@ public class DbInitializer
         await context.SaveChangesAsync();
     }
 
-    // Runs on every startup — brings any profile with entitlement=0 up to 20 days.
+    /// <summary>
+    /// Runs on every startup. An entitlement of 0 switches the approval-time balance
+    /// check off for that employee (see AnnualLeaveBalanceCalculator), so any profile
+    /// sitting at 0 is unpoliced and has to be brought up.
+    ///
+    /// It is brought up to the annual-leave allowance — the figure every screen quotes
+    /// and the only place leave is configured — not to a number written down here. A
+    /// hard-coded 20 was exactly the kind of second opinion that let the app disagree
+    /// with itself.
+    /// </summary>
     private static async Task FixZeroEntitlementProfiles(AppDbContext context)
     {
         var profiles = await context.EmployeeProfiles
@@ -1128,10 +1147,20 @@ public class DbInitializer
 
         if (profiles.Count == 0) return;
 
+        var allowance = await context.LeaveTypes
+            .Where(lt => lt.AffectsBalance && lt.IsActive && lt.DefaultAllowance > 0)
+            .OrderBy(lt => lt.Id)
+            .Select(lt => (int?)lt.DefaultAllowance)
+            .FirstOrDefaultAsync();
+
+        // Nothing configured to bring them up to. Leaving them at 0 is visible on every
+        // screen; inventing a number here would not be.
+        if (allowance is null) return;
+
         foreach (var profile in profiles)
         {
-            profile.AnnualLeaveEntitlement = 20;
-            profile.LeaveBalance = 20;
+            profile.AnnualLeaveEntitlement = allowance.Value;
+            profile.LeaveBalance = allowance.Value;
         }
 
         await context.SaveChangesAsync();
