@@ -25,9 +25,6 @@ public static class AppSettingsMapper
         EmailNotificationsEnabled = s.EmailNotificationsEnabled,
         EmailDailyDigest = s.EmailDailyDigest,
         EmailUrgentOnly = s.EmailUrgentOnly,
-        SlackEnabled = s.SlackEnabled,
         Reminders = ReminderSerializer.FromJson(s.RemindersJson),
-        // SlackConnected is populated by the API layer (webhook config lives in
-        // Infrastructure, not the DB).
     };
 }

@@ -169,7 +169,7 @@ public class LeaveBalanceAtomicityTests
         await SeedLeaveAsync(db, AnnualLeaveStatus.Pending);
         interceptor.Arm();
 
-        var handler = new UpdateLeaveStatus.Handler(db, new FakeEmailService(), new FakeChatNotificationService());
+        var handler = new UpdateLeaveStatus.Handler(db, new FakeEmailService());
 
         await AssertBalanceWriteFailedAsync(interceptor, () => handler.Handle(
             new UpdateLeaveStatus.Command
@@ -276,7 +276,7 @@ public class LeaveBalanceAtomicityTests
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
 
-        var handler = new UpdateLeaveStatus.Handler(db, new FakeEmailService(), new FakeChatNotificationService());
+        var handler = new UpdateLeaveStatus.Handler(db, new FakeEmailService());
 
         var result = await handler.Handle(
             new UpdateLeaveStatus.Command

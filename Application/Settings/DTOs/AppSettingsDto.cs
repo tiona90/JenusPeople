@@ -29,11 +29,6 @@ public class AppSettingsDto
     public bool EmailDailyDigest { get; set; } = true;
     public bool EmailUrgentOnly { get; set; }
 
-    // ── Slack integration ──────────────────────────────────────────────────
-    public bool SlackEnabled { get; set; }
-    // Computed (not stored): whether a webhook is configured server-side.
-    public bool SlackConnected { get; set; }
-
     // ── Reminders ──────────────────────────────────────────────────────────
     public List<ReminderSettingDto> Reminders { get; set; } = new();
 }

@@ -23,7 +23,6 @@ namespace Application.Reminders;
 public class ReminderDispatcher(
     AppDbContext context,
     IEmailService emailService,
-    IChatNotificationService chat,
     ILogger<ReminderDispatcher> logger)
 {
     // Matches the client copy ("fewer than 5 days remaining").
@@ -126,8 +125,6 @@ public class ReminderDispatcher(
             logger.LogInformation("pending-approvals: email notifications disabled; skipping emails.");
         }
 
-        await MaybeSlackAsync(settings,
-            $"⏳ Pending approvals: {totalLeave} leave request(s) and {totalTimesheets} timesheet(s) awaiting review.", ct);
 
         logger.LogInformation("pending-approvals: dispatched. Emails sent: {Sent}.", sent);
     }
@@ -197,8 +194,6 @@ public class ReminderDispatcher(
             logger.LogInformation("late-submissions: email notifications disabled; skipping emails.");
         }
 
-        await MaybeSlackAsync(settings,
-            $"📋 Late submissions: {byEmployee.Count} employee(s) have an un-submitted (draft) timesheet.", ct);
 
         logger.LogInformation("late-submissions: dispatched. Emails sent: {Sent}.", sent);
     }
@@ -239,8 +234,6 @@ public class ReminderDispatcher(
             logger.LogInformation("low-balance: email notifications disabled; skipping emails.");
         }
 
-        await MaybeSlackAsync(settings,
-            $"🔔 Low balance: {low.Count} employee(s) have fewer than {LowBalanceThreshold} leave days remaining.", ct);
 
         logger.LogInformation("low-balance: dispatched. Emails sent: {Sent}.", sent);
     }
@@ -308,8 +301,6 @@ public class ReminderDispatcher(
             logger.LogInformation("birthday-reminder: email notifications disabled; skipping emails.");
         }
 
-        await MaybeSlackAsync(settings,
-            $"🎂 Upcoming birthdays ({BirthdayLookaheadDays} days): {string.Join(", ", upcoming.Select(u => $"{u.Name} ({u.Date:dd MMM})"))}.", ct);
 
         logger.LogInformation("birthday-reminder: dispatched. Emails sent: {Sent}.", sent);
     }
@@ -358,8 +349,6 @@ public class ReminderDispatcher(
             logger.LogInformation("check-in: email notifications disabled; skipping emails.");
         }
 
-        await MaybeSlackAsync(settings,
-            $"🟢 Check-in reminder: {targets.Count} employee(s) have not checked in yet.", ct);
 
         logger.LogInformation("check-in: dispatched. Emails sent: {Sent}.", sent);
     }
@@ -408,8 +397,6 @@ public class ReminderDispatcher(
             logger.LogInformation("check-out: email notifications disabled; skipping emails.");
         }
 
-        await MaybeSlackAsync(settings,
-            $"🔴 Check-out reminder: {targets.Count} employee(s) are still checked in.", ct);
 
         logger.LogInformation("check-out: dispatched. Emails sent: {Sent}.", sent);
     }
@@ -527,13 +514,6 @@ public class ReminderDispatcher(
             logger.LogError(ex, "Reminder email to {Email} failed.", email);
             return false;
         }
-    }
-
-    private async Task MaybeSlackAsync(AppSettings settings, string message, CancellationToken ct)
-    {
-        if (!settings.SlackEnabled) return;
-        // SlackNotificationService is fire-and-forget safe (no-ops without a webhook).
-        await chat.SendMessageAsync(message, ct);
     }
 
     private record UserContact(string UserId, string Email, string? DisplayName);

@@ -55,10 +55,3 @@ internal sealed class FakeEmailService : IEmailService
         return Task.FromResult(SendResult);
     }
 }
-
-/// <summary>No-op chat notifier.</summary>
-internal sealed class FakeChatNotificationService : IChatNotificationService
-{
-    public Task SendMessageAsync(string text, CancellationToken cancellationToken = default)
-        => Task.CompletedTask;
-}

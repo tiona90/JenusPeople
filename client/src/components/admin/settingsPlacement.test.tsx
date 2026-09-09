@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppSettings } from '../../lib/types'
 import AppSettingsPanel from './AppSettingsPanel'
 import DataMaintenancePanel from './DataMaintenancePanel'
@@ -53,8 +53,6 @@ const SETTINGS: AppSettings = {
     emailNotificationsEnabled: true,
     emailDailyDigest: true,
     emailUrgentOnly: false,
-    slackEnabled: false,
-    slackConnected: false,
     reminders: [
         { id: 'pending-approvals', enabled: true, time: '09:00', frequency: 'daily' },
         { id: 'low-balance', enabled: false, time: '10:00', frequency: 'weekly' },
@@ -186,7 +184,7 @@ describe('the allowance and its carryover cap are edited only on Leave Types', (
         renderPanel(<AppSettingsPanel />)
         await screen.findByText('Leave Year Configuration')
 
-        expect(screen.getByText(/entitlement 25 days\/year — both from Leave Types/)).toBeInTheDocument()
+        expect(screen.getByText(/entitlement of 25 days\/year — both set on Leave Types/)).toBeInTheDocument()
         // The sidebar's Carryover Cap tile, and the rollover line beside it.
         expect(screen.getByText('5 days')).toBeInTheDocument()
         expect(screen.getByText(/auto-calculate carryover \(max 5 days\)/)).toBeInTheDocument()
@@ -197,8 +195,8 @@ describe('the allowance and its carryover cap are edited only on Leave Types', (
         renderPanel(<AppSettingsPanel />)
         await screen.findByText('Leave Year Configuration')
 
-        // The preview scenarios are computed from the cap, not from app settings.
-        expect(screen.getByText('At cap (= 12 days unused)')).toBeInTheDocument()
+        // The preview is computed from the cap on the leave type, not from app settings.
+        expect(screen.getByText(/12-day carryover cap/)).toBeInTheDocument()
         expect(screen.getAllByText('12 days').length).toBeGreaterThan(0)
     })
 
@@ -209,8 +207,8 @@ describe('the allowance and its carryover cap are edited only on Leave Types', (
         renderPanel(<AppSettingsPanel />)
         await screen.findByText('Leave Year Configuration')
 
-        expect(screen.getByText(/entitlement 0 days\/year/)).toBeInTheDocument()
-        expect(screen.getByText('At cap (= 0 days unused)')).toBeInTheDocument()
+        expect(screen.getByText(/entitlement of 0 days\/year/)).toBeInTheDocument()
+        expect(screen.getByText(/0-day carryover cap/)).toBeInTheDocument()
     })
 })
 
@@ -308,6 +306,61 @@ describe('each card saves only its own fields', () => {
 })
 
 /*
+ * Both year-end warning switches are email preferences, and they now sit with the other
+ * email preferences rather than on the leave-year form — an admin looking for which
+ * emails go out was reading a page about when the leave year turns over.
+ *
+ * Leave Settings still *reports* whether the emails are on, in the Upcoming Schedule
+ * card that lists them, because a card claiming "Scheduled" for an email nobody sends
+ * is worse than not mentioning it. It reports; it does not edit.
+ */
+describe('the year-end warning emails are configured with the other email preferences', () => {
+    it('offers both switches on Notification Settings', async () => {
+        renderPanel(<OrgSettingsPanel />)
+        await screen.findByText('🔔 Notification Settings')
+
+        expect(screen.getByRole('switch', { name: 'Send year-end warning emails' })).toBeInTheDocument()
+        expect(screen.getByRole('switch', { name: 'Also notify their manager' })).toBeInTheDocument()
+    })
+
+    it('offers neither on Leave Settings', async () => {
+        renderPanel(<AppSettingsPanel />)
+        await screen.findByText('Leave Year Configuration')
+
+        expect(screen.queryByRole('switch', { name: 'Send year-end warning emails' })).not.toBeInTheDocument()
+        expect(screen.queryByRole('switch', { name: 'Also notify their manager' })).not.toBeInTheDocument()
+        // The rollover the group is left with is still set here.
+        expect(screen.getByRole('switch', { name: 'Auto-run rollover on reset date' })).toBeEnabled()
+    })
+
+    it('points from the leave year to where they are set', async () => {
+        renderPanel(<AppSettingsPanel />)
+        await screen.findByText('Leave Year Configuration')
+
+        expect(screen.getByText(/Warning emails are configured on Notification Settings/)).toBeInTheDocument()
+    })
+
+    it('reports them as scheduled while they are on', async () => {
+        renderPanel(<AppSettingsPanel />)
+        await screen.findByText('Upcoming Schedule')
+
+        // Both warning rows; the rollover and new-year rows carry their own badges.
+        expect(screen.getAllByText('Scheduled')).toHaveLength(2)
+    })
+
+    it('reports them as off in the schedule when they are switched off', async () => {
+        api.getAppSettings.mockResolvedValue({ ...SETTINGS, sendYearEndWarningEmails: false })
+        renderPanel(<AppSettingsPanel />)
+        await screen.findByText('Upcoming Schedule')
+
+        expect(screen.queryByText('Scheduled')).not.toBeInTheDocument()
+        expect(screen.getAllByText('Off')).toHaveLength(2)
+        // The dates stay: this is when they would go out, not a claim that they will.
+        expect(screen.getByText('30-day warning emails')).toBeInTheDocument()
+    })
+})
+
+/*
  * "Notify managers of team expiries" CCs the manager on the year-end warning emails, so
  * it does nothing at all while those emails are switched off. It used to sit as a
  * fourth peer switch, freely settable with no hint that it was inert.
@@ -315,15 +368,15 @@ describe('each card saves only its own fields', () => {
 describe('the manager CC is shown as a child of the emails it rides on', () => {
     it('is disabled while year-end warning emails are off', async () => {
         api.getAppSettings.mockResolvedValue({ ...SETTINGS, sendYearEndWarningEmails: false })
-        renderPanel(<AppSettingsPanel />)
-        await screen.findByText('Leave Year Configuration')
+        renderPanel(<OrgSettingsPanel />)
+        await screen.findByText('🔔 Notification Settings')
 
         expect(screen.getByRole('switch', { name: 'Also notify their manager' })).toBeDisabled()
     })
 
     it('is settable once they are on', async () => {
-        renderPanel(<AppSettingsPanel />)
-        await screen.findByText('Leave Year Configuration')
+        renderPanel(<OrgSettingsPanel />)
+        await screen.findByText('🔔 Notification Settings')
 
         expect(screen.getByRole('switch', { name: 'Also notify their manager' })).toBeEnabled()
     })
@@ -387,7 +440,7 @@ describe('no button offers an action nothing implements', () => {
         const labelled = screen.getAllByRole('button')
             .map((b) => b.textContent?.trim())
             .filter((t): t is string => !!t)
-        expect(labelled).toEqual(['Cancel', 'Save Settings', 'Reset to defaults', 'Save Changes'])
+        expect(labelled).toEqual(['Cancel', 'Save Settings', 'Reset working week & policy', 'Save Changes'])
     })
 })
 
@@ -415,7 +468,8 @@ describe('each settings block has one home', () => {
         // that were already on this page.
         expect(screen.getByText('Working hours start')).toBeInTheDocument()
         expect(screen.getByText('Timezone')).toBeInTheDocument()
-        expect(screen.getByText('Weekends')).toBeInTheDocument()
+        // Labelled "Weekends" when it moved here, though it is the working days it sets.
+        expect(screen.getByText('Working days')).toBeInTheDocument()
         expect(screen.getByText('Timesheet Policy')).toBeInTheDocument()
     })
 
@@ -455,5 +509,121 @@ describe('the irreversible action is off the preferences page', () => {
         expect(screen.getByText(/This cannot be undone/)).toBeInTheDocument()
         // Nothing on this page is a preference.
         expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
+    })
+})
+
+/*
+ * "Year Progress" was four equal saturated blocks labelled Q1–Q4 with a fixed-width
+ * purple "Roll" sliver on the end: a legend, not a bar. It showed neither how much of
+ * the leave year had gone nor where today fell — the one thing its title promised —
+ * and the blocks ran green, green, amber, red, which reads as a severity scale for
+ * what are just four quarters. It is a real progress bar now, and it reports the
+ * elapsed share to a screen reader as well as on screen.
+ */
+describe('year progress shows how much of the leave year has gone', () => {
+    beforeEach(() => {
+        // Mid-year at noon, so the assertion below survives an off-by-one day either
+        // way in how the elapsed share is counted. Only Date is faked: React Query and
+        // waitFor still need real timers.
+        vi.useFakeTimers({ toFake: ['Date'] })
+        vi.setSystemTime(new Date(2026, 6, 2, 12))
+    })
+    afterEach(() => vi.useRealTimers())
+
+    it('exposes the elapsed share as a progress bar', async () => {
+        renderPanel(<AppSettingsPanel />)
+        await screen.findByText('Year Progress')
+
+        const bar = screen.getByRole('progressbar', { name: /leave year progress/i })
+        expect(bar).toHaveAttribute('aria-valuemin', '0')
+        expect(bar).toHaveAttribute('aria-valuemax', '100')
+        expect(bar).toHaveAttribute('aria-valuenow', '50')
+        expect(screen.getByText('50% elapsed')).toBeInTheDocument()
+    })
+
+    it('marks the quarters without colouring them as a severity scale', async () => {
+        renderPanel(<AppSettingsPanel />)
+        await screen.findByText('Year Progress')
+
+        // The tick names the month its quarter opens in, which is the part that is
+        // not obvious once the leave year does not start in January.
+        expect(screen.getByText('Q1 Jan')).toBeInTheDocument()
+        expect(screen.getByText('Q4 Oct')).toBeInTheDocument()
+        // The old block strip, its month ranges and its rollover sliver.
+        expect(screen.queryByText('Roll')).not.toBeInTheDocument()
+        expect(screen.queryByText(/Q1 Jan–Mar/)).not.toBeInTheDocument()
+    })
+})
+
+/*
+ * 1 Jan 2027 was stated four times on one card: the Next Reset tile, a filled panel
+ * explaining what the rollover does, and two schedule rows. The explanation belongs to
+ * the event, so it sits on the schedule’s rollover row and nowhere else.
+ */
+describe('the rollover is explained once, on the event it explains', () => {
+    it('carries the explanation on the rollover event itself', async () => {
+        renderPanel(<AppSettingsPanel />)
+        await screen.findByText('Upcoming Schedule')
+
+        const schedule = screen.getByRole('list', { name: /upcoming schedule/i })
+        const events = within(schedule).getAllByRole('listitem')
+        const rollover = events.find((li) => li.textContent?.includes('Year-end rollover'))
+
+        expect(rollover).toHaveTextContent('auto-calculate carryover (max 5 days)')
+        // And only there — it had a filled panel of its own, beside the tile that
+        // already stated the date.
+        expect(screen.getAllByText(/auto-calculate carryover/)).toHaveLength(1)
+    })
+})
+
+/*
+ * Three worked examples used to sit above this table, restating the same formula for
+ * the under-cap, at-cap and over-cap case, above a table that does that arithmetic on
+ * every row already. What an admin opens the card for is the total about to be lost
+ * and who is losing it, so that is what it states — and the rows at risk sort to the
+ * top, where ordering by name used to bury them.
+ */
+describe('unused leave leads with what is about to be lost', () => {
+    const profile = (displayName: string, leaveBalance: number) => ({
+        id: displayName, userId: displayName, displayName,
+        departmentId: null, managerId: null,
+        annualLeaveEntitlement: 25, leaveBalance,
+        jobTitle: null, createdAt: '2026-01-01T00:00:00Z',
+    })
+
+    beforeEach(() => {
+        /* The cap is 5, so 12 unused days lose 7 and 9 unused lose 4, while 3 unused
+           lose nothing. Deliberately not in name order, and not in loss order either. */
+        api.getEmployeeProfiles.mockResolvedValue([
+            profile('Anna Zeta', 3), profile('Bob Alpha', 12), profile('Cara Beta', 9),
+        ])
+    })
+
+    it('totals the days at risk and the people losing them', async () => {
+        renderPanel(<AppSettingsPanel />)
+        await screen.findByText(/Unused Leave — End of/)
+
+        expect(screen.getByText('Would Expire').parentElement).toHaveTextContent('11 days')
+        expect(screen.getByText('Employees Affected').parentElement).toHaveTextContent('2 of 3')
+        expect(screen.getByText('Would Carry Over').parentElement).toHaveTextContent('13 days')
+    })
+
+    it('puts whoever loses most first', async () => {
+        renderPanel(<AppSettingsPanel />)
+        await screen.findByText(/Unused Leave — End of/)
+
+        const names = screen.getAllByRole('row').slice(1)
+            .map((row) => row.querySelector('td')?.textContent)
+        expect(names).toEqual(['Bob Alpha', 'Cara Beta', 'Anna Zeta'])
+    })
+
+    it('states the projection as a projection, and drops the worked examples', async () => {
+        renderPanel(<AppSettingsPanel />)
+        await screen.findByText(/Unused Leave — End of/)
+
+        // No rollover command, endpoint or job exists, so nothing here has run.
+        expect(screen.getByText(/Nothing here has happened yet/)).toBeInTheDocument()
+        expect(screen.queryByText(/^Under cap/)).not.toBeInTheDocument()
+        expect(screen.queryByText(/New balance = /)).not.toBeInTheDocument()
     })
 })

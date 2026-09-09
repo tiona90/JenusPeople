@@ -46,12 +46,6 @@ public class AppSettings
     public bool EmailDailyDigest { get; set; } = true;
     public bool EmailUrgentOnly { get; set; }
 
-    // ── Slack integration ──────────────────────────────────────────────────
-    // User preference to post reminders to Slack. The webhook URL itself is
-    // configured server-side (Infrastructure.Configuration.SlackOptions); this
-    // flag only controls whether enabled flows fan out to it.
-    public bool SlackEnabled { get; set; }
-
     // ── Reminders ──────────────────────────────────────────────────────────
     // Serialized JSON list of ReminderSetting (id/enabled/time/frequency).
     // Empty string means "use defaults". Kept as a single column because the

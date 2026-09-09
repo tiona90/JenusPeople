@@ -34,10 +34,6 @@ export interface AppSettings {
     emailDailyDigest: boolean
     emailUrgentOnly: boolean
 
-    // Slack
-    slackEnabled: boolean
-    slackConnected: boolean // read-only: webhook configured server-side
-
     // Reminders
     reminders: ReminderSetting[]
 }

@@ -31,7 +31,7 @@ const TH = {
     textTransform: 'uppercase' as const, letterSpacing: '0.05em',
     bgcolor: 'action.hover', borderBottom: '1px solid', borderColor: 'divider',
 }
-const TD = { py: '11px', px: '14px', fontSize: 13, color: 'text.primary', borderBottom: `1px solid #F3F4F6` }
+const TD = { py: '11px', px: '14px', fontSize: 13, color: 'text.primary', borderBottom: '1px solid', borderColor: 'divider' }
 
 const MONTHS = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -124,9 +124,9 @@ function ToggleRow({ title, sub, checked, onChange, disabled = false, indent = f
 /* Every group of fields carries one of these, so no group is left to be told apart by
    spacing alone. Written in Title Case, not upper — the uppercasing is CSS, and the
    text here is what a screen reader and a test both read. */
-function SectionLabel({ children }: { children: React.ReactNode }) {
+function SectionLabel({ children, mb = 1 }: { children: React.ReactNode; mb?: number }) {
     return (
-        <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 1 }}>
+        <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.05em', mb }}>
             {children}
         </Typography>
     )
@@ -138,32 +138,135 @@ const TOGGLE_GROUP = { border: '1px solid', borderColor: 'divider', borderRadius
 /** A field group below the first, separated by a rule. */
 const NEXT_GROUP = { borderTop: '1px solid', borderColor: 'divider', pt: 2 } as const
 
-function ScheduleRow({ label, date, color, bg, border, badge, badgeBg, badgeColor }: {
-    label: string; date: string; color: string; bg: SxColor; border: string
-    badge: string; badgeBg: SxColor; badgeColor: string
+/* What the Organization card's Reset button restores. The holiday country is
+   deliberately not in here: there is no default country, and clearing it would
+   silently drop every public holiday. */
+const ORG_DEFAULTS = {
+    workingHoursStart: '09:00',
+    workingHoursEnd: '18:00',
+    timeZoneId: 'UTC',
+    workingDays: 'mon-fri',
+    weeklyHoursTarget: 40,
+    timesheetSubmissionDeadlineDay: 'fri',
+    timesheetSubmissionDeadlineTime: '18:00',
+} satisfies Partial<AppSettings>
+
+const ORG_DEFAULT_KEYS = Object.keys(ORG_DEFAULTS) as (keyof typeof ORG_DEFAULTS)[]
+
+/* One figure in the leave-year summary. These were four tiles filled with four
+   different semantic tints — amber over a carryover cap that is only a policy number,
+   green over a day count that says nothing about health. The well is neutral now, and
+   the one cell that takes a colour is the one figure that can turn urgent. */
+function StatCell({ label, value, valueColor, divideLeft, divideTop }: {
+    label: string; value: string; valueColor?: SxColor
+    divideLeft: boolean; divideTop: boolean
 }) {
     return (
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', p: '10px 12px', bgcolor: bg, border: '1px solid', borderColor: border, borderRadius: '8px' }}>
-            <Box>
-                <Typography sx={{ fontSize: 12, fontWeight: 500, color }}>{label}</Typography>
-                <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>{date}</Typography>
+        <Box sx={{
+            px: 1.75, py: 1.4,
+            borderLeft: divideLeft ? '1px solid' : 'none',
+            borderTop: divideTop ? '1px solid' : 'none',
+            borderColor: 'divider',
+        }}>
+            <Typography sx={{ fontSize: 10, fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 0.4 }}>
+                {label}
+            </Typography>
+            <Typography sx={{ fontSize: 15, fontWeight: 700, color: valueColor ?? 'text.primary' }}>{value}</Typography>
+        </Box>
+    )
+}
+
+/* The leave year as a bar: how much of it has gone, and where the quarters begin.
+   This was four equal saturated blocks labelled Q1–Q4 with a fixed-width purple
+   "Roll" sliver on the end — a legend, not a bar. It marked neither today nor the
+   elapsed share its own title promised, and it ran green→amber→red, which reads as a
+   severity scale for what are only four quarters. Quarters are boundaries here: a
+   tick and a label, no fill of their own. Today is the edge of the fill, marked. */
+function YearProgress({ pct, ticks, startLabel, endLabel }: {
+    pct: number; ticks: { label: string; at: number }[]; startLabel: string; endLabel: string
+}) {
+    const rounded = Math.round(pct)
+    return (
+        <Box>
+            <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', mb: 1 }}>
+                <SectionLabel mb={0}>Year Progress</SectionLabel>
+                <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary' }}>{rounded}% elapsed</Typography>
             </Box>
-            <Box component="span" sx={{ fontSize: 11, fontWeight: 500, px: 1.1, py: 0.4, borderRadius: '20px', bgcolor: badgeBg, color: badgeColor, whiteSpace: 'nowrap' }}>
-                {badge}
+            {/* A bar that conveys a position should say so: the block strip it replaces
+                had no role and no value, so a screen reader got four coloured divs. */}
+            <Box
+                role="progressbar" aria-label="Leave year progress"
+                aria-valuemin={0} aria-valuemax={100} aria-valuenow={rounded}
+                aria-valuetext={`${rounded}% of the leave year elapsed`}
+                sx={{ position: 'relative', height: 8, borderRadius: '4px', bgcolor: 'action.hover', overflow: 'hidden' }}
+            >
+                <Box sx={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: `${pct}%`, bgcolor: 'primary.main' }} />
+                {ticks.filter((t) => t.at > 0).map((t) => (
+                    <Box key={t.label} sx={{ position: 'absolute', top: 0, bottom: 0, left: `${t.at}%`, width: '1px', bgcolor: 'background.paper' }} />
+                ))}
+                {/* Today, at the fill's edge — the boundary is already visible, this puts
+                    an exact mark on it. */}
+                <Box sx={{ position: 'absolute', top: 0, bottom: 0, left: `calc(${pct}% - 1px)`, width: '2px', bgcolor: 'primary.dark' }} />
+            </Box>
+            <Box sx={{ position: 'relative', height: 15, mt: 0.4 }}>
+                {ticks.map((t) => (
+                    <Typography key={t.label} sx={{ position: 'absolute', left: `${t.at}%`, ml: '3px', fontSize: 10, fontWeight: 600, color: 'text.disabled', whiteSpace: 'nowrap' }}>
+                        {t.label}
+                    </Typography>
+                ))}
+            </Box>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'text.disabled' }}>
+                <span>{startLabel}</span>
+                <span>{endLabel}</span>
             </Box>
         </Box>
     )
 }
 
-function SettingRow({ label, desc, control }: { label: string; desc: string; control: React.ReactNode }) {
+/* One event on the year-end timeline. These were four filled colour blocks stacked on
+   each other: four competing hues, no hierarchy, and nothing to say the list is simply
+   chronological. The rail carries the order, the dot and the badge carry the state,
+   and the rows are a real list, so a screen reader is told how many there are. */
+function ScheduleEvent({ label, date, note, dot, filled, badge, badgeBg, badgeColor, last = false }: {
+    label: string; date: string; note?: string
+    dot: SxColor; filled?: boolean
+    badge: string; badgeBg: SxColor; badgeColor: string; last?: boolean
+}) {
     return (
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 2, py: 1.5, borderBottom: '1px solid', borderColor: 'divider', '&:last-of-type': { borderBottom: 'none' } }}>
-            <Box sx={{ flex: 1 }}>
-                <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'text.primary' }}>{label}</Typography>
-                <Typography sx={{ fontSize: 12, color: 'text.secondary', lineHeight: 1.4 }}>{desc}</Typography>
+        <Box component="li" sx={{ display: 'flex', gap: 1.5, pb: last ? 0 : 2 }}>
+            {/* The rail runs from under this event's dot down to the next one's. */}
+            <Box sx={{ position: 'relative', width: 9, flexShrink: 0 }}>
+                {!last && <Box sx={{ position: 'absolute', top: 15, bottom: 0, left: 4, width: '1px', bgcolor: 'divider' }} />}
+                <Box sx={{ width: 9, height: 9, mt: '4px', borderRadius: '50%', border: '2px solid', borderColor: dot, bgcolor: filled ? dot : 'background.paper' }} />
             </Box>
-            <Box sx={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 1.5 }}>{control}</Box>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+                    <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: 'text.primary' }}>{label}</Typography>
+                    <Box component="span" sx={{ fontSize: 10.5, fontWeight: 500, px: 1, py: 0.3, borderRadius: '20px', bgcolor: badgeBg, color: badgeColor, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        {badge}
+                    </Box>
+                </Box>
+                <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>{date}</Typography>
+                {note && <Typography sx={{ fontSize: 11, color: 'text.secondary', mt: 0.5, lineHeight: 1.5 }}>{note}</Typography>}
+            </Box>
         </Box>
+    )
+}
+
+/* One organization setting: its name, its control directly beneath, and what the
+   setting drives under that. This was a label-left / control-right row, which is fine
+   in a sidebar and unreadable in a card that spans the page — it left every input some
+   700px from the label it belonged to, with nothing but whitespace pairing them. Laid
+   out like the fields on the Leave Year card beside it. */
+function Field({ label, hint, span = 3, children }: {
+    label: string; hint: string; span?: number; children: React.ReactNode
+}) {
+    return (
+        <Grid size={{ xs: 12, sm: 6, md: span }}>
+            <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'text.primary', mb: 0.75 }}>{label}</Typography>
+            {children}
+            <Typography sx={{ fontSize: 11, color: 'text.disabled', mt: 0.5, lineHeight: 1.45 }}>{hint}</Typography>
+        </Grid>
     )
 }
 
@@ -174,11 +277,12 @@ function SettingRow({ label, desc, control }: { label: string; desc: string; con
 type SaveGroup = 'leaveYear' | 'organization'
 
 const GROUP_FIELDS: Record<SaveGroup, readonly (keyof AppSettings)[]> = {
+    // The two year-end warning-email flags were listed here while this card edited
+    // them. They are set on Notification Settings now, so they are not this card's to
+    // send: withFields leaves them at their last saved value.
     leaveYear: [
         'leaveYearStartMonth',
         'autoRunRollover',
-        'sendYearEndWarningEmails',
-        'notifyManagersOfTeamExpiries',
         'blockLeaveSpanningIntoNextYear',
     ],
     organization: [
@@ -215,8 +319,6 @@ const DEFAULT: AppSettings = {
     emailNotificationsEnabled: true,
     emailDailyDigest: true,
     emailUrgentOnly: false,
-    slackEnabled: false,
-    slackConnected: false,
     reminders: [],
 }
 
@@ -300,15 +402,12 @@ export default function AppSettingsPanel() {
     const customDaysInvalid =
         form.workingDays === 'custom' && (form.workingDaysCustom ?? '').split(',').filter(Boolean).length === 0
 
-    /* The working week and the timesheet policy have defaults worth restoring. The
-       holiday country does not — there is no default country, and clearing it would
-       silently drop every public holiday. */
-    const resetOrgDefaults = () =>
-        setForm((prev) => ({
-            ...prev,
-            workingHoursStart: '09:00', workingHoursEnd: '18:00', timeZoneId: 'UTC', workingDays: 'mon-fri',
-            weeklyHoursTarget: 40, timesheetSubmissionDeadlineDay: 'fri', timesheetSubmissionDeadlineTime: '18:00',
-        }))
+    const resetOrgDefaults = () => setForm((prev) => ({ ...prev, ...ORG_DEFAULTS }))
+
+    /* Nothing to restore, so the button says so rather than being pressable and inert.
+       Note this is not the same question as whether the card is dirty: an admin can
+       have unsaved edits that happen to be the defaults. */
+    const atOrgDefaults = ORG_DEFAULT_KEYS.every((key) => form[key] === ORG_DEFAULTS[key])
 
     const nextReset = addDays(lyEnd, 1)
     const daysRemaining = Math.max(0, diffDays(now, lyEnd))
@@ -317,17 +416,33 @@ export default function AppSettingsPanel() {
     const warningDate = addDays(lyEnd, -YEAR_END_WARNING_DAYS)
     const finalWarnDate = addDays(lyEnd, -FINAL_WARNING_DAYS)
 
-    // Quarter labels based on start month
-    const quarters = useMemo(() => {
+    /* Both warning rows are only pending if the emails are switched on — the switch is
+       on Notification Settings now, and a row still badged "Scheduled" for an email
+       nobody sends would be the schedule lying about the one thing it is for. The dates
+       stay either way: they are when the emails would go out. */
+    const warningsOn = form.sendYearEndWarningEmails
+    const WARNING_EVENT = warningsOn
+        ? { dot: 'warning.main', badge: 'Scheduled', badgeBg: softBg('warning'), badgeColor: 'warning.dark' }
+        : { dot: 'divider', badge: 'Off', badgeBg: 'action.selected', badgeColor: 'text.secondary' }
+
+    /* The leave year as an elapsed share plus its quarter boundaries, both measured in
+       days from the start — so a leave year opening in a 31-day month puts the Q2 tick
+       where Q2 begins, not at a flat quarter of the bar. */
+    const yearProgress = useMemo(() => {
+        const total = Math.max(1, diffDays(lyStart, addDays(lyEnd, 1)))
+        const elapsed = Math.min(total, Math.max(0, diffDays(lyStart, now)))
         const m = form.leaveYearStartMonth - 1
-        const qStart = (offset: number) => MONTHS[(m + offset) % 12].slice(0, 3)
-        return [
-            `Q1 ${qStart(0)}–${qStart(2)}`,
-            `Q2 ${qStart(3)}–${qStart(5)}`,
-            `Q3 ${qStart(6)}–${qStart(8)}`,
-            `Q4 ${qStart(9)}–${qStart(11)}`,
-        ]
-    }, [form.leaveYearStartMonth])
+        const ticks = [0, 1, 2, 3].map((q) => ({
+            label: `Q${q + 1} ${MONTHS[(m + q * 3) % 12].slice(0, 3)}`,
+            at: (diffDays(lyStart, new Date(lyStart.getFullYear(), m + q * 3, 1)) / total) * 100,
+        }))
+        return { pct: (elapsed / total) * 100, ticks }
+    }, [lyStart, lyEnd, now, form.leaveYearStartMonth])
+
+    /* The one figure in the summary that can turn urgent, and so the one that takes a
+       colour. Everything else there is a date or a policy number. */
+    const daysRemainingColor: SxColor | undefined =
+        daysRemaining <= 7 ? 'error.dark' : daysRemaining <= 30 ? 'warning.dark' : undefined
 
     /* Both figures live on the leave type, which is the only place either is edited —
        the allowance and the cap that bounds it, in one row. This screen only quotes
@@ -352,8 +467,19 @@ export default function AppSettingsPanel() {
                     : departmentNameById.get(p.departmentId)) ?? '—'
                 return { name: p.displayName, dept, closing, carryover, expires, newBalance }
             })
-            .sort((a, b) => a.name.localeCompare(b.name)),
+            /* Most at risk first. Everyone reads the same while no leave is booked, so
+               the ordering only shows itself in real data — which is when it matters. */
+            .sort((a, b) => b.expires - a.expires || a.name.localeCompare(b.name)),
         [profiles, departmentNameById, carryoverCap, annualAllowance])
+
+    /* What the table is actually scanned for: how much is about to be lost and by how
+       many people. Three worked examples used to sit above it spelling out the
+       arithmetic three times, over a table that already does the arithmetic per row. */
+    const carryoverSummary = useMemo(() => ({
+        expiring: carryoverRows.reduce((sum, r) => sum + r.expires, 0),
+        carrying: carryoverRows.reduce((sum, r) => sum + r.carryover, 0),
+        affected: carryoverRows.filter((r) => r.expires > 0).length,
+    }), [carryoverRows])
 
     if (isLoading) return (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress size={28} /></Box>
@@ -423,9 +549,11 @@ export default function AppSettingsPanel() {
                                     Carryover Preview below and the Carryover Cap tile, so a leave-year
                                     form does not restate a leave-type setting it cannot change. */}
 
-                                {/* What happens by itself at the year end. The two lead times are stated
-                                    here because the emails are the setting's whole effect — they were
-                                    only legible in the Upcoming Schedule card, a column away. */}
+                                {/* What happens by itself at the year end. The two year-end warning-email
+                                    switches were here too; which emails go out is an email preference,
+                                    so they sit with the rest of those on Notification Settings. The
+                                    pointer is there because this card is where an admin comes looking,
+                                    and the schedule beside it lists the emails themselves. */}
                                 <Box sx={NEXT_GROUP}>
                                     <SectionLabel>Year-End Automation</SectionLabel>
                                     <Box sx={TOGGLE_GROUP}>
@@ -433,16 +561,10 @@ export default function AppSettingsPanel() {
                                             title="Auto-run rollover on reset date"
                                             sub={`Carries over, expires the excess and reopens balances on ${fmt(nextReset)}`}
                                             checked={form.autoRunRollover} onChange={(v) => set('autoRunRollover', v)} />
-                                        <ToggleRow
-                                            title="Send year-end warning emails"
-                                            sub={`Emails employees with days at risk, ${YEAR_END_WARNING_DAYS} and ${FINAL_WARNING_DAYS} days before year end`}
-                                            checked={form.sendYearEndWarningEmails} onChange={(v) => set('sendYearEndWarningEmails', v)} />
-                                        <ToggleRow
-                                            indent disabled={!form.sendYearEndWarningEmails}
-                                            title="Also notify their manager"
-                                            sub="CC the employee's manager on those warning emails"
-                                            checked={form.notifyManagersOfTeamExpiries} onChange={(v) => set('notifyManagersOfTeamExpiries', v)} />
                                     </Box>
+                                    <Typography sx={{ fontSize: 11, color: 'text.disabled', mt: 0.75 }}>
+                                        Warning emails are configured on Notification Settings › Email Notifications
+                                    </Typography>
                                 </Box>
 
                                 {/* Not automation — a rule applied when leave is requested. */}
@@ -477,84 +599,59 @@ export default function AppSettingsPanel() {
                     </Box>
                 </Grid>
 
-                {/* ── Right: Status + Schedule ─────────────────────────────── */}
+                {/* ── Right: the year as it stands, and what happens to it ─────────
+                     One card, not two. The schedule is this same leave year's timeline,
+                     so splitting it into a card of its own bought nothing and left the
+                     configuration column beside it ending in a stretch of empty page. */}
                 <Grid size={{ xs: 12, md: 5 }}>
-                    <Stack spacing={2}>
-                        {/* Current Leave Year */}
-                        <Box sx={{ bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider', borderRadius: '10px', overflow: 'hidden' }}>
-                            <Box sx={{ px: 2.25, py: 1.75, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                <Typography sx={{ fontSize: 14, fontWeight: 600, color: 'text.primary' }}>Current Leave Year</Typography>
-                                <Box component="span" sx={{ fontSize: 11, fontWeight: 500, px: 1.1, py: 0.4, borderRadius: '20px', bgcolor: softBg('success'), color: 'success.dark' }}>● Active</Box>
-                            </Box>
-                            <Box sx={{ p: 2.25 }}>
-                                {/* Stats 2×2 */}
-                                <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', mb: 2 }}>
+                    <Box sx={{ bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider', borderRadius: '10px', overflow: 'hidden' }}>
+                        <Box sx={{ px: 2.25, py: 1.75, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <Typography sx={{ fontSize: 14, fontWeight: 600, color: 'text.primary' }}>Current Leave Year</Typography>
+                            <Box component="span" sx={{ fontSize: 11, fontWeight: 500, px: 1.1, py: 0.4, borderRadius: '20px', bgcolor: softBg('success'), color: 'success.dark' }}>● Active</Box>
+                        </Box>
+                        <Box sx={{ p: 2.25 }}>
+                            <Stack spacing={2}>
+                                {/* The four figures, in one well rather than four coloured tiles */}
+                                <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', border: '1px solid', borderColor: 'divider', borderRadius: '8px', overflow: 'hidden' }}>
                                     {([
-                                        { bg: softBg('info'),      color: 'info.dark',      label: 'Year',           value: yearLabel },
-                                        { bg: softBg('success'),   color: 'success.dark',   label: 'Days Remaining', value: String(daysRemaining) },
-                                        { bg: softBg('warning'),   color: 'warning.dark',   label: 'Carryover Cap',  value: `${carryoverCap} days` },
-                                        { bg: softBg('secondary'), color: 'secondary.dark', label: 'Next Reset',     value: fmt(nextReset) },
-                                    ] as const).map(({ bg, color, label, value }) => (
-                                        <Box key={label} sx={{ bgcolor: bg, borderRadius: '8px', p: '12px', textAlign: 'center' }}>
-                                            <Typography sx={{ fontSize: 11, color, mb: 0.5 }}>{label}</Typography>
-                                            <Typography sx={{ fontSize: 15, fontWeight: 700, color: 'text.primary' }}>{value}</Typography>
-                                        </Box>
+                                        { label: 'Year', value: yearLabel },
+                                        { label: 'Days Remaining', value: String(daysRemaining), valueColor: daysRemainingColor },
+                                        { label: 'Carryover Cap', value: `${carryoverCap} days` },
+                                        { label: 'Next Reset', value: fmt(nextReset) },
+                                    ] as { label: string; value: string; valueColor?: SxColor }[]).map((stat, idx) => (
+                                        <StatCell key={stat.label} {...stat} divideLeft={idx % 2 === 1} divideTop={idx > 1} />
                                     ))}
                                 </Box>
 
-                                {/* Year progress bar */}
-                                <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.05em', mb: 0.75 }}>
-                                    Year Progress
-                                </Typography>
-                                <Box sx={{ display: 'flex', borderRadius: '6px', overflow: 'hidden', height: 26, mb: 0.5 }}>
-                                    {[
-                                        { label: quarters[0], color: 'primary.main' },
-                                        { label: quarters[1], color: 'success.main' },
-                                        { label: quarters[2], color: 'warning.main' },
-                                        { label: quarters[3], color: 'error.main' },
-                                    ].map(({ label, color }) => (
-                                        <Box key={label} sx={{ flex: 1, bgcolor: color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: '#fff', fontWeight: 500 }}>
-                                            {label}
-                                        </Box>
-                                    ))}
-                                    <Box sx={{ width: 36, bgcolor: '#8B5CF6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: '#fff', fontWeight: 500 }}>
-                                        Roll
+                                <YearProgress pct={yearProgress.pct} ticks={yearProgress.ticks}
+                                    startLabel={fmt(lyStart)} endLabel={fmt(lyEnd)} />
+
+                                {/* What is coming, in the order it comes. The rollover row carries the
+                                    sentence that had a filled panel of its own, three restatements of
+                                    the reset date away from the event it describes. */}
+                                <Box sx={NEXT_GROUP}>
+                                    <SectionLabel>Upcoming Schedule</SectionLabel>
+                                    <Box component="ul" aria-label="Upcoming schedule" sx={{ listStyle: 'none', m: 0, p: 0 }}>
+                                        <ScheduleEvent label={`${YEAR_END_WARNING_DAYS}-day warning emails`} date={fmt(warningDate)} {...WARNING_EVENT} />
+                                        <ScheduleEvent label={`${FINAL_WARNING_DAYS}-day final warning`} date={fmt(finalWarnDate)} {...WARNING_EVENT} />
+                                        <ScheduleEvent
+                                            label="Year-end rollover" date={`${fmt(nextReset)} · midnight`}
+                                            note={`Will auto-calculate carryover (max ${carryoverCap} days), expire excess, and reset all balances.`}
+                                            dot="error.main" filled badge="Year End" badgeBg={softBg('error')} badgeColor="error.dark" />
+                                        <ScheduleEvent
+                                            label="New year opens" date={fmt(nextReset)}
+                                            dot="success.main" badge="New Year" badgeBg={softBg('success')} badgeColor="success.dark" last />
+                                        {/* A "▶ Run Rollover Manually" button sat here with no onClick — it
+                                            offered an admin the single most consequential action on the page
+                                            and did nothing at all when pressed. Nothing performs a rollover
+                                            yet: there is no command, endpoint or job for it anywhere, and
+                                            AutoRunRollover above is a stored flag nothing acts on either.
+                                            Restore the button when a rollover command exists to call. */}
                                     </Box>
                                 </Box>
-                                <Box sx={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'text.disabled', mb: 1.75 }}>
-                                    <span>{fmt(lyStart)}</span>
-                                    <span>{fmt(lyEnd)}</span>
-                                </Box>
-
-                                {/* Rollover info */}
-                                <Box sx={{ display: 'flex', gap: 1, p: '10px 14px', bgcolor: softBg('secondary'), border: '1px solid', borderColor: 'secondary.main', borderRadius: '8px', fontSize: 12, color: 'secondary.dark' }}>
-                                    <span>🔁</span>
-                                    <span>On <strong>{fmt(nextReset)}</strong> the system will auto-calculate carryover (max {carryoverCap} days), expire excess, and reset all balances.</span>
-                                </Box>
-                            </Box>
+                            </Stack>
                         </Box>
-
-                        {/* Upcoming Schedule */}
-                        <Box sx={{ bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider', borderRadius: '10px', overflow: 'hidden' }}>
-                            <Box sx={{ px: 2.25, py: 1.75, borderBottom: '1px solid', borderColor: 'divider' }}>
-                                <Typography sx={{ fontSize: 14, fontWeight: 600, color: 'text.primary' }}>Upcoming Schedule</Typography>
-                            </Box>
-                            <Box sx={{ p: 2.25 }}>
-                                <Stack spacing={1}>
-                                    <ScheduleRow label={`${YEAR_END_WARNING_DAYS}-day warning emails`} date={fmt(warningDate)} color="warning.dark" bg={softBg('warning')} border="warning.main" badge="Scheduled" badgeBg={softBg('warning')} badgeColor="warning.dark" />
-                                    <ScheduleRow label={`${FINAL_WARNING_DAYS}-day final warning`} date={fmt(finalWarnDate)} color="warning.dark" bg={softBg('warning')} border="warning.main" badge="Scheduled" badgeBg={softBg('warning')} badgeColor="warning.dark" />
-                                    <ScheduleRow label="Year-end rollover" date={`${fmt(nextReset)} · midnight`} color="error.dark" bg={softBg('error')} border="error.main" badge="Year End" badgeBg={softBg('error')} badgeColor="error.dark" />
-                                    <ScheduleRow label="New year opens" date={fmt(nextReset)} color="success.dark" bg={softBg('success')} border="success.main" badge="New Year" badgeBg={softBg('success')} badgeColor="success.dark" />
-                                    {/* A "▶ Run Rollover Manually" button sat here with no onClick — it
-                                        offered an admin the single most consequential action on the page
-                                        and did nothing at all when pressed. Nothing performs a rollover
-                                        yet: there is no command, endpoint or job for it anywhere, and
-                                        AutoRunRollover above is a stored flag nothing acts on either.
-                                        Restore the button when a rollover command exists to call. */}
-                                </Stack>
-                            </Box>
-                        </Box>
-                    </Stack>
+                    </Box>
                 </Grid>
             </Grid>
 
@@ -564,9 +661,10 @@ export default function AppSettingsPanel() {
                  financial-year row did not come with them — see the leave year above. */}
             <Box sx={{ bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider', borderRadius: '10px', overflow: 'hidden' }}>
                 <Box sx={{ px: 2.25, py: 1.75, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <Typography sx={{ fontSize: 14, fontWeight: 600, color: 'text.primary', display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Box component="span" sx={{ fontSize: 16 }}>🏢</Box>Organization
-                    </Typography>
+                    {/* Named for what it holds. "Organization" was also the title of the
+                        page this card sits on — see Sidebar's admin item and Topbar's page
+                        title — so the header repeated its own container. */}
+                    <Typography sx={{ fontSize: 14, fontWeight: 600, color: 'text.primary' }}>Working Week &amp; Policy</Typography>
                     <Box component="span" sx={{ fontSize: 11, fontWeight: 500, px: 1.1, py: 0.4, borderRadius: '20px', bgcolor: softBg('info'), color: 'info.dark' }}>Admin Only</Box>
                 </Box>
                 <Box sx={{ p: 2.25 }}>
@@ -575,112 +673,137 @@ export default function AppSettingsPanel() {
                     </Typography>
 
                     <SectionLabel>Working Week</SectionLabel>
-                    <SettingRow label="Working hours start" desc="Used for check-in alerts and attendance reports"
-                        control={<TextField type="time" size="small" value={form.workingHoursStart} onChange={(e) => set('workingHoursStart', e.target.value)} inputProps={{ 'aria-label': 'Working hours start' }} sx={{ '& .MuiInputBase-input': { fontSize: 13 }, minWidth: 130 }} />} />
-                    <SettingRow label="Working hours end" desc="Default work day ends"
-                        control={<TextField type="time" size="small" value={form.workingHoursEnd} onChange={(e) => set('workingHoursEnd', e.target.value)} inputProps={{ 'aria-label': 'Working hours end' }} sx={{ '& .MuiInputBase-input': { fontSize: 13 }, minWidth: 130 }} />} />
-                    <SettingRow label="Timezone" desc="Used for all time-based calculations"
-                        control={<Select size="small" value={form.timeZoneId} onChange={(e) => set('timeZoneId', e.target.value)} inputProps={{ 'aria-label': 'Timezone' }} sx={{ fontSize: 13, minWidth: 190 }}>
-                            {TIMEZONES.map((tz) => <MenuItem key={tz} value={tz} sx={{ fontSize: 13 }}>{tz}</MenuItem>)}
-                        </Select>} />
-                    <SettingRow label="Weekends" desc="Define which days are working days"
-                        control={<Select size="small" value={form.workingDays} onChange={(e) => set('workingDays', e.target.value)} inputProps={{ 'aria-label': 'Weekends' }} sx={{ fontSize: 13, minWidth: 250 }}>
-                            {WORKING_DAYS.map((w) => <MenuItem key={w.value} value={w.value} sx={{ fontSize: 13 }}>{w.label}</MenuItem>)}
-                        </Select>} />
+                    <Grid container spacing={2}>
+                        <Field label="Working hours start" hint="Check-in alerts and attendance reports">
+                            <TextField type="time" size="small" fullWidth value={form.workingHoursStart}
+                                onChange={(e) => set('workingHoursStart', e.target.value)}
+                                inputProps={{ 'aria-label': 'Working hours start' }} sx={{ '& .MuiInputBase-input': { fontSize: 13 } }} />
+                        </Field>
+                        <Field label="Working hours end" hint="Ends the default work day">
+                            <TextField type="time" size="small" fullWidth value={form.workingHoursEnd}
+                                onChange={(e) => set('workingHoursEnd', e.target.value)}
+                                inputProps={{ 'aria-label': 'Working hours end' }} sx={{ '& .MuiInputBase-input': { fontSize: 13 } }} />
+                        </Field>
+                        <Field label="Timezone" hint="All time-based calculations">
+                            <Select size="small" fullWidth value={form.timeZoneId}
+                                onChange={(e) => set('timeZoneId', e.target.value)}
+                                inputProps={{ 'aria-label': 'Timezone' }} sx={{ fontSize: 13 }}>
+                                {TIMEZONES.map((tz) => <MenuItem key={tz} value={tz} sx={{ fontSize: 13 }}>{tz}</MenuItem>)}
+                            </Select>
+                        </Field>
+                        {/* Labelled "Weekends" until now, while its own description said it
+                            defines the working days and its value read "Monday – Friday". It
+                            sets the working days; the weekend is what is left. */}
+                        <Field label="Working days" hint="Everything else counts as a weekend">
+                            <Select size="small" fullWidth value={form.workingDays}
+                                onChange={(e) => set('workingDays', e.target.value)}
+                                inputProps={{ 'aria-label': 'Working days' }} sx={{ fontSize: 13 }}>
+                                {WORKING_DAYS.map((w) => <MenuItem key={w.value} value={w.value} sx={{ fontSize: 13 }}>{w.label}</MenuItem>)}
+                            </Select>
+                        </Field>
 
-                    {form.workingDays === 'custom' && (() => {
-                        const selected = (form.workingDaysCustom ?? '').split(',').map((t) => t.trim()).filter(Boolean)
-                        return (
-                            <Box sx={{ py: 1.5, borderTop: '1px solid', borderColor: 'divider' }}>
-                                <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.04em', mb: 1 }}>
-                                    Custom working days
-                                </Typography>
-                                <ToggleButtonGroup
-                                    size="small"
-                                    value={selected}
-                                    onChange={(_, vals: string[]) =>
-                                        set('workingDaysCustom', CUSTOM_DAYS.filter((d) => vals.includes(d.token)).map((d) => d.token).join(','))}
-                                    sx={{ flexWrap: 'wrap' }}
-                                >
-                                    {CUSTOM_DAYS.map((d) => (
-                                        <ToggleButton key={d.token} value={d.token} sx={{ textTransform: 'none', fontSize: 12, px: 1.75 }}>{d.label}</ToggleButton>
-                                    ))}
-                                </ToggleButtonGroup>
-                                {selected.length === 0 && (
-                                    <Typography sx={{ fontSize: 12, color: 'error.main', mt: 0.75 }}>Select at least one working day.</Typography>
-                                )}
-                            </Box>
-                        )
-                    })()}
+                        {form.workingDays === 'custom' && (() => {
+                            const selected = (form.workingDaysCustom ?? '').split(',').map((t) => t.trim()).filter(Boolean)
+                            return (
+                                <Grid size={12}>
+                                    <SectionLabel>Custom working days</SectionLabel>
+                                    <ToggleButtonGroup
+                                        size="small"
+                                        value={selected}
+                                        onChange={(_, vals: string[]) =>
+                                            set('workingDaysCustom', CUSTOM_DAYS.filter((d) => vals.includes(d.token)).map((d) => d.token).join(','))}
+                                        sx={{ flexWrap: 'wrap' }}
+                                    >
+                                        {CUSTOM_DAYS.map((d) => (
+                                            <ToggleButton key={d.token} value={d.token} sx={{ textTransform: 'none', fontSize: 12, px: 1.75 }}>{d.label}</ToggleButton>
+                                        ))}
+                                    </ToggleButtonGroup>
+                                    {selected.length === 0 && (
+                                        <Typography sx={{ fontSize: 12, color: 'error.main', mt: 0.75 }}>Select at least one working day.</Typography>
+                                    )}
+                                </Grid>
+                            )
+                        })()}
+                    </Grid>
 
                     {/* Moved off the leave-year card, whose title did not cover either of them
                         and whose "next rollover only" banner was wrong about both. */}
-                    <Box sx={{ ...NEXT_GROUP, mt: 1 }}>
+                    <Box sx={{ ...NEXT_GROUP, mt: 2.5 }}>
                         <SectionLabel>Timesheet Policy</SectionLabel>
-                        <SettingRow label="Weekly hours target" desc="Drives the under/over-target colouring on the All Timesheets review page"
-                            control={<TextField
-                                type="number" size="small"
-                                value={form.weeklyHoursTarget}
-                                onChange={(e) => set('weeklyHoursTarget', Math.min(168, Math.max(1, Number(e.target.value))))}
-                                inputProps={{ min: 1, max: 168, 'aria-label': 'Weekly hours target' }}
-                                sx={{ '& .MuiInputBase-input': { fontSize: 13 }, minWidth: 130 }} />} />
-                        <SettingRow label="Submission deadline" desc="Sets the on-time/late flag on All Timesheets. Evaluated in UTC."
-                            control={<>
-                                <Select size="small" value={form.timesheetSubmissionDeadlineDay}
-                                    onChange={(e) => set('timesheetSubmissionDeadlineDay', String(e.target.value))}
-                                    inputProps={{ 'aria-label': 'Submission deadline day' }}
-                                    sx={{ fontSize: 13, minWidth: 140 }}>
-                                    {WEEKDAYS.map(([token, label]) => <MenuItem key={token} value={token} sx={{ fontSize: 13 }}>{label}</MenuItem>)}
-                                </Select>
-                                <TextField type="time" size="small"
-                                    value={form.timesheetSubmissionDeadlineTime}
-                                    onChange={(e) => set('timesheetSubmissionDeadlineTime', e.target.value)}
-                                    inputProps={{ 'aria-label': 'Submission deadline time' }}
-                                    sx={{ '& .MuiInputBase-input': { fontSize: 13 }, minWidth: 130 }} />
-                            </>} />
+                        <Grid container spacing={2}>
+                            <Field label="Weekly hours target" hint="Drives the under/over-target colouring on All Timesheets">
+                                <TextField
+                                    type="number" size="small" fullWidth
+                                    value={form.weeklyHoursTarget}
+                                    onChange={(e) => set('weeklyHoursTarget', Math.min(168, Math.max(1, Number(e.target.value))))}
+                                    inputProps={{ min: 1, max: 168, 'aria-label': 'Weekly hours target' }} sx={{ '& .MuiInputBase-input': { fontSize: 13 } }} />
+                            </Field>
+                            <Field label="Submission deadline" span={6}
+                                hint="Sets the on-time/late flag on All Timesheets. Evaluated in UTC.">
+                                <Box sx={{ display: 'flex', gap: 1.5 }}>
+                                    <Select size="small" value={form.timesheetSubmissionDeadlineDay}
+                                        onChange={(e) => set('timesheetSubmissionDeadlineDay', String(e.target.value))}
+                                        inputProps={{ 'aria-label': 'Submission deadline day' }}
+                                        sx={{ fontSize: 13, flex: 1 }}>
+                                        {WEEKDAYS.map(([token, label]) => <MenuItem key={token} value={token} sx={{ fontSize: 13 }}>{label}</MenuItem>)}
+                                    </Select>
+                                    <TextField type="time" size="small"
+                                        value={form.timesheetSubmissionDeadlineTime}
+                                        onChange={(e) => set('timesheetSubmissionDeadlineTime', e.target.value)}
+                                        inputProps={{ 'aria-label': 'Submission deadline time' }}
+                                        sx={{ '& .MuiInputBase-input': { fontSize: 13 }, flex: 1 }} />
+                                </Box>
+                            </Field>
+                        </Grid>
                     </Box>
 
-                    <Box sx={{ ...NEXT_GROUP, mt: 1 }}>
+                    <Box sx={{ ...NEXT_GROUP, mt: 2.5 }}>
                         <SectionLabel>Public Holidays</SectionLabel>
-                        <SettingRow label="Holiday calendar" desc="Fetched from date.nager.at and cached server-side. Changing country re-fetches on first request."
-                            control={<Autocomplete<HolidayCountry, false, false, false>
-                                size="small"
-                                loading={isLoadingCountries}
-                                options={countries}
-                                value={form.holidayCountryCode
-                                    ? countries.find(c => c.countryCode === form.holidayCountryCode)
-                                        ?? { countryCode: form.holidayCountryCode, name: form.holidayCountryName ?? form.holidayCountryCode }
-                                    : null}
-                                getOptionLabel={(o) => `${o.name} (${o.countryCode})`}
-                                isOptionEqualToValue={(o, v) => o.countryCode === v.countryCode}
-                                onChange={(_, val) => {
-                                    setForm(f => ({
-                                        ...f,
-                                        holidayCountryCode: val?.countryCode ?? null,
-                                        holidayCountryName: val?.name ?? null,
-                                    }))
-                                }}
-                                sx={{ minWidth: 280 }}
-                                renderInput={(params) => (
-                                    <TextField
-                                        {...params}
-                                        placeholder="Select a country for public holidays"
-                                        inputProps={{ ...params.inputProps, 'aria-label': 'Holiday calendar' }}
-                                        sx={{ '& .MuiInputBase-input': { fontSize: 13 } }}
-                                    />
-                                )}
-                            />} />
+                        <Grid container spacing={2}>
+                            <Field label="Holiday calendar" span={6}
+                                hint="Fetched from date.nager.at and cached server-side. Changing country re-fetches on the next request.">
+                                <Autocomplete<HolidayCountry, false, false, false>
+                                    size="small" fullWidth
+                                    loading={isLoadingCountries}
+                                    options={countries}
+                                    value={form.holidayCountryCode
+                                        ? countries.find(c => c.countryCode === form.holidayCountryCode)
+                                            ?? { countryCode: form.holidayCountryCode, name: form.holidayCountryName ?? form.holidayCountryCode }
+                                        : null}
+                                    getOptionLabel={(o) => `${o.name} (${o.countryCode})`}
+                                    isOptionEqualToValue={(o, v) => o.countryCode === v.countryCode}
+                                    onChange={(_, val) => {
+                                        setForm(f => ({
+                                            ...f,
+                                            holidayCountryCode: val?.countryCode ?? null,
+                                            holidayCountryName: val?.name ?? null,
+                                        }))
+                                    }}
+                                    renderInput={(params) => (
+                                        <TextField
+                                            {...params}
+                                            placeholder="Select a country for public holidays"
+                                            inputProps={{ ...params.inputProps, 'aria-label': 'Holiday calendar' }}
+                                            sx={{ '& .MuiInputBase-input': { fontSize: 13 } }}
+                                        />
+                                    )}
+                                />
+                            </Field>
+                        </Grid>
                     </Box>
 
                     {errorGroup === 'organization' && (
                         <Alert severity="error" sx={{ mt: 2 }}>{getApiErrorMessage(mutation.error, 'Failed to save settings.')}</Alert>
                     )}
-                    {savedGroup === 'organization' && <Alert severity="success" sx={{ mt: 2 }}>Organization settings saved.</Alert>}
+                    {savedGroup === 'organization' && <Alert severity="success" sx={{ mt: 2 }}>Working week &amp; policy saved.</Alert>}
 
-                    <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', pt: 2, mt: 1, borderTop: '1px solid', borderColor: 'divider' }}>
-                        <Button variant="outlined" size="small" onClick={resetOrgDefaults} disabled={mutation.isPending}
+                    {/* "Reset to defaults" until now — it has never touched the holiday
+                        country, for the reason given on ORG_DEFAULTS, so it promised the whole
+                        card and restored two thirds of it. */}
+                    <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', pt: 2, mt: 2.5, borderTop: '1px solid', borderColor: 'divider' }}>
+                        <Button variant="outlined" size="small" onClick={resetOrgDefaults} disabled={atOrgDefaults || mutation.isPending}
                             sx={{ textTransform: 'none', borderColor: 'divider', color: 'text.secondary' }}>
-                            Reset to defaults
+                            Reset working week & policy
                         </Button>
                         <Button variant="contained" size="small" onClick={() => mutation.mutate('organization')} disabled={!isGroupDirty('organization') || mutation.isPending || customDaysInvalid}
                             startIcon={pendingGroup === 'organization' ? <CircularProgress size={13} color="inherit" /> : null}
@@ -691,32 +814,39 @@ export default function AppSettingsPanel() {
                 </Box>
             </Box>
 
-            {/* ── Carryover Preview ─────────────────────────────────────────── */}
+            {/* ── Unused leave at the year end ──────────────────────────────────
+                 Titled "Carryover Preview" while nothing performs a carryover: there is
+                 no rollover command, endpoint or job anywhere, which is why the manual
+                 rollover button was removed from the card above. So this states what a
+                 rollover *would* do to today's balances, and says so. */}
             <Box sx={{ bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider', borderRadius: '10px', overflow: 'hidden' }}>
-                <Box sx={{ px: 2.25, py: 1.75, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Box sx={{ px: 2.25, py: 1.75, borderBottom: '1px solid', borderColor: 'divider' }}>
                     <Typography sx={{ fontSize: 14, fontWeight: 600, color: 'text.primary' }}>
-                        Carryover Preview — End of {yearLabel}
-                    </Typography>
-                    <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
-                        {carryoverCap}-day max cap · entitlement {annualAllowance} days/year — both from Leave Types, entitlement unless set per employee
+                        Unused Leave — End of {yearLabel}
                     </Typography>
                 </Box>
 
-                {/* Example cards */}
-                <Box sx={{ p: 2.25, pb: 0 }}>
-                    <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '14px', mb: 2 }}>
-                        {([
-                            { bg: softBg('success'), border: 'success.main', color: 'success.dark', title: `Under cap (< ${carryoverCap} days unused)`, icon: '✅', body: 'All days carry over', sub: 'New balance = unused + entitlement' },
-                            { bg: softBg('warning'), border: 'warning.main', color: 'warning.dark', title: `At cap (= ${carryoverCap} days unused)`, icon: '✅', body: `${carryoverCap} days carry (cap hit)`, sub: `New balance = ${carryoverCap} + entitlement` },
-                            { bg: softBg('error'),   border: 'error.main',   color: 'error.dark',   title: `Over cap (> ${carryoverCap} days unused)`, icon: '⚠️', body: `${carryoverCap} carry · excess expires`, sub: `New balance = ${carryoverCap} + entitlement` },
-                        ] as const).map(({ bg, border, color, title, icon, body, sub }) => (
-                            <Box key={title} sx={{ bgcolor: bg, border: '1px solid', borderColor: border, borderRadius: '10px', p: '14px', textAlign: 'center' }}>
-                                <Typography sx={{ fontSize: 11, color, fontWeight: 600, mb: 0.75 }}>{title}</Typography>
-                                <Typography sx={{ fontSize: 18, fontWeight: 700, my: 0.5, color: 'text.primary' }}>{icon} {body}</Typography>
-                                <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>{sub}</Typography>
-                            </Box>
-                        ))}
-                    </Box>
+                <Box sx={{ p: 2.25 }}>
+                    {/* Both figures were quoted in a single run-on line in the header, which
+                        had to be read twice to be parsed. Two lines, one job each. */}
+                    <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+                        Measured against the {carryoverCap}-day carryover cap and an entitlement of {annualAllowance} days/year — both set on Leave Types, the entitlement unless a per-employee figure overrides it.
+                    </Typography>
+                    <Typography sx={{ fontSize: 11, color: 'text.disabled', mt: 0.5 }}>
+                        Nothing here has happened yet: this is what a year-end rollover would do to today’s balances if no further leave is booked.
+                    </Typography>
+
+                    {carryoverRows.length > 0 && (
+                        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', border: '1px solid', borderColor: 'divider', borderRadius: '8px', overflow: 'hidden', mt: 2 }}>
+                            <StatCell label="Would Expire" value={`${carryoverSummary.expiring} days`}
+                                valueColor={carryoverSummary.expiring > 0 ? 'error.dark' : undefined}
+                                divideLeft={false} divideTop={false} />
+                            <StatCell label="Employees Affected" value={`${carryoverSummary.affected} of ${carryoverRows.length}`}
+                                divideLeft divideTop={false} />
+                            <StatCell label="Would Carry Over" value={`${carryoverSummary.carrying} days`}
+                                divideLeft divideTop={false} />
+                        </Box>
+                    )}
                 </Box>
 
                 <Box sx={{ overflowX: 'auto' }}>
@@ -725,7 +855,9 @@ export default function AppSettingsPanel() {
                             <TableRow>
                                 <TableCell sx={TH}>Employee</TableCell>
                                 <TableCell sx={TH}>Dept</TableCell>
-                                <TableCell sx={TH}>Closing Balance</TableCell>
+                                {/* "Closing Balance" until now, over EmployeeProfile.leaveBalance —
+                                    which is the balance as it stands, not a projected closing one. */}
+                                <TableCell sx={TH}>Unused Now</TableCell>
                                 <TableCell sx={TH}>Carry Over</TableCell>
                                 <TableCell sx={TH}>Expires</TableCell>
                                 <TableCell sx={TH}>New Opening Balance</TableCell>
@@ -745,11 +877,13 @@ export default function AppSettingsPanel() {
                                         <Box component="span" sx={{ fontSize: 11, px: 1, py: 0.3, bgcolor: softBg('info'), color: 'info.dark', borderRadius: '4px', fontWeight: 500 }}>{row.dept}</Box>
                                     </TableCell>
                                     <TableCell sx={TD}>{row.closing} days</TableCell>
-                                    <TableCell sx={{ ...TD, color: '#7C3AED', fontWeight: 500 }}>
+                                    <TableCell sx={{ ...TD, color: 'secondary.dark', fontWeight: 500 }}>
                                         {row.carryover > 0 ? `${row.carryover} days${row.expires > 0 ? ' (cap)' : ''}` : '—'}
                                     </TableCell>
+                                    {/* The warning triangle was on every row that had a figure at all,
+                                        so it flagged nothing. The red figure carries it. */}
                                     <TableCell sx={{ ...TD, color: row.expires > 0 ? 'error.main' : 'text.secondary', fontWeight: row.expires > 0 ? 500 : 400 }}>
-                                        {row.expires > 0 ? `${row.expires} days ⚠️` : '—'}
+                                        {row.expires > 0 ? `${row.expires} days` : '—'}
                                     </TableCell>
                                     <TableCell sx={{ ...TD, fontWeight: 600 }}>{row.newBalance} days</TableCell>
                                 </TableRow>

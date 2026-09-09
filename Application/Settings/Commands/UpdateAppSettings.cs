@@ -37,9 +37,6 @@ public class UpdateAppSettings
         public bool EmailDailyDigest { get; set; } = true;
         public bool EmailUrgentOnly { get; set; }
 
-        // Slack
-        public bool SlackEnabled { get; set; }
-
         // Reminders
         public List<ReminderSettingDto> Reminders { get; set; } = new();
     }
@@ -95,7 +92,6 @@ public class UpdateAppSettings
             settings.EmailNotificationsEnabled = request.EmailNotificationsEnabled;
             settings.EmailDailyDigest = request.EmailDailyDigest;
             settings.EmailUrgentOnly = request.EmailUrgentOnly;
-            settings.SlackEnabled = request.SlackEnabled;
             settings.RemindersJson = ReminderSerializer.ToJson(request.Reminders);
 
             var newCode = request.HolidayCountryCode?.Trim().ToUpperInvariant();

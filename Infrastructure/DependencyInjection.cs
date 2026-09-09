@@ -17,7 +17,6 @@ public static class DependencyInjection
     {
         services.AddOptions();
         services.Configure<AppUrlOptions>(configuration.GetSection(AppUrlOptions.SectionName));
-        services.Configure<SlackOptions>(configuration.GetSection(SlackOptions.SectionName));
         services.Configure<MailSettings>(configuration.GetSection(MailSettings.SectionName));
         services.Configure<BrevoOptions>(configuration.GetSection(BrevoOptions.SectionName));
         services.Configure<EmailOptions>(configuration.GetSection(EmailOptions.SectionName));
@@ -63,15 +62,6 @@ public static class DependencyInjection
         services.AddScoped<IEmailService, EmailService>();
 
         services.AddScoped<ICurrentUserAccessor, CurrentUserAccessor>();
-
-        // Typed HttpClient for Slack incoming-webhook POSTs. Short timeout — we
-        // never want a slow Slack to delay a user-facing response. The service
-        // swallows exceptions, so no resilience handler is wired up; if Slack
-        // is down the message is lost rather than retried.
-        services.AddHttpClient<IChatNotificationService, SlackNotificationService>(client =>
-        {
-            client.Timeout = TimeSpan.FromSeconds(5);
-        });
 
         return services;
     }

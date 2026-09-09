@@ -21,8 +21,7 @@ public class UpdateLeaveStatus
 
     public class Handler(
         AppDbContext context,
-        IEmailService emailService,
-        IChatNotificationService chatNotificationService)
+        IEmailService emailService)
         : IRequestHandler<Command, Result<Unit>>
     {
         public async Task<Result<Unit>> Handle(Command request, CancellationToken cancellationToken)
@@ -181,15 +180,6 @@ public class UpdateLeaveStatus
                 body.Html,
                 body.Text,
                 cancellationToken);
-
-            // Slack notification — only when the leave flips to Approved.
-            // The notification service swallows transport errors itself, so
-            // we can await it without wrapping in try/catch here.
-            if (newStatus == AnnualLeaveStatus.Approved)
-            {
-                var slackMessage = $"🎉 {employeeContact.Name}'s leave for {dateRange} has been approved!";
-                await chatNotificationService.SendMessageAsync(slackMessage, cancellationToken);
-            }
 
             return Result<Unit>.Success(Unit.Value);
         }

@@ -146,7 +146,7 @@ public class ManagerScopeAuthorizationTests
         db.AnnualLeaves.Add(leave);
         await db.SaveChangesAsync();
 
-        var handler = new UpdateLeaveStatus.Handler(db, new FakeEmailService(), new FakeChatNotificationService());
+        var handler = new UpdateLeaveStatus.Handler(db, new FakeEmailService());
         var result = await handler.Handle(
             new UpdateLeaveStatus.Command
             {

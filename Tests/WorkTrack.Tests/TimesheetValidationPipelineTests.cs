@@ -39,7 +39,6 @@ public class TimesheetValidationPipelineTests
         // container can construct them. AddLogging supplies ILoggerFactory + ILogger<>.
         services.AddLogging();
         services.AddSingleton<Domain.Interfaces.IEmailService, FakeEmailService>();
-        services.AddSingleton<Domain.Interfaces.IChatNotificationService, FakeChatNotificationService>();
 
         return services.BuildServiceProvider();
     }

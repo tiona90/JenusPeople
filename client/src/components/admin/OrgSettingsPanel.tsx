@@ -14,7 +14,7 @@ import Typography from '@mui/material/Typography'
 import { getAppSettings, resetReminders, updateAppSettings } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
 import type { AppSettings, ReminderFrequency, ReminderSetting } from '../../lib/types'
-import { softBg, type SxColor } from '../../lib/theme-tokens'
+import type { SxColor } from '../../lib/theme-tokens'
 import { SweetAlert } from '../ui'
 
 // ── Static reminder catalogue (display metadata; configurable state comes from
@@ -68,14 +68,32 @@ function Card({ title, icon, sub, head, headBg, borderColor, children }: {
     )
 }
 
-function SettingRow({ label, desc, control }: { label: string; desc: string; control: React.ReactNode }) {
+/* A switch and the sentence explaining it. `indent` marks a row that only means
+   anything while the row above it is on, and `disabled` is how that is enforced — the
+   child's own value is left alone, so turning the parent back on restores the choice
+   that was made. Mirrors ToggleRow in AppSettingsPanel. */
+function ToggleRow({ label, desc, checked, onChange, disabled = false, indent = false }: {
+    label: string; desc: string; checked: boolean; onChange: (v: boolean) => void
+    disabled?: boolean; indent?: boolean
+}) {
     return (
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 2, py: 1.5, borderBottom: '1px solid', borderColor: 'divider', '&:last-of-type': { borderBottom: 'none' } }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 2, py: 1.5, pl: indent ? 2.5 : 0, opacity: disabled ? 0.45 : 1, borderBottom: '1px solid', borderColor: 'divider', '&:last-of-type': { borderBottom: 'none' } }}>
             <Box sx={{ flex: 1 }}>
-                <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'text.primary' }}>{label}</Typography>
+                <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'text.primary' }}>
+                    {indent && <Box component="span" sx={{ color: 'text.disabled', mr: 0.75 }}>↳</Box>}
+                    {label}
+                </Typography>
                 <Typography sx={{ fontSize: 12, color: 'text.secondary', lineHeight: 1.4 }}>{desc}</Typography>
             </Box>
-            <Box sx={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 1.5 }}>{control}</Box>
+            {/* Without a label the switch has no accessible name at all — the label beside
+                it is a plain Typography, not a <label>. Two MUI 7 traps here: `inputProps`
+                is ignored (it must be `slotProps.input`), and `slotProps.input` *replaces*
+                the defaults rather than merging, so role="switch" has to be restated. */}
+            <Box sx={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                <Switch size="small" checked={checked} disabled={disabled}
+                    onChange={(e) => onChange(e.target.checked)}
+                    slotProps={{ input: { role: 'switch', 'aria-label': label } }} />
+            </Box>
         </Box>
     )
 }
@@ -141,11 +159,6 @@ export default function OrgSettingsPanel() {
         if (res.isConfirmed) resetRemindersMutation.mutate()
     }
 
-    const onConnectSlack = () => SweetAlert.fire({
-        icon: 'info', title: 'Slack is configured server-side',
-        html: 'Set the incoming-webhook URL in the server configuration (<code>Slack:WebhookUrl</code>) to connect a workspace. Once set, enable “Send to Slack” here to route reminders to your channel.',
-    })
-
     return (
         <Stack spacing={2}>
             {/* Header */}
@@ -206,43 +219,25 @@ export default function OrgSettingsPanel() {
                 })}
             </Card>
 
-            <Grid container spacing={2}>
-                {/* Email notifications */}
-                <Grid size={{ xs: 12, md: 6 }}>
-                    <Card title="Email Notifications" icon="📧">
-                        <SettingRow label="Notification emails" desc="Send reminders and alerts via email"
-                            control={<Switch size="small" checked={form.emailNotificationsEnabled} onChange={(e) => set('emailNotificationsEnabled', e.target.checked)} />} />
-                        <SettingRow label="Daily digest" desc="Single email per day with all notifications"
-                            control={<Switch size="small" checked={form.emailDailyDigest} onChange={(e) => set('emailDailyDigest', e.target.checked)} />} />
-                        <SettingRow label="Urgent alerts only" desc="Only send critical issues, not routine reminders"
-                            control={<Switch size="small" checked={form.emailUrgentOnly} onChange={(e) => set('emailUrgentOnly', e.target.checked)} />} />
-                    </Card>
-                </Grid>
-
-                {/* Slack */}
-                <Grid size={{ xs: 12, md: 6 }}>
-                    <Card title="Slack Integration" icon="💬">
-                        <SettingRow label="Send to Slack" desc="Post reminders to your configured Slack channel"
-                            control={<Switch size="small" checked={form.slackEnabled} disabled={!form.slackConnected} onChange={(e) => set('slackEnabled', e.target.checked)} />} />
-                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pt: 1.5 }}>
-                            <Box component="span" sx={{
-                                display: 'inline-flex', alignItems: 'center', gap: 0.75, px: 1.25, py: 0.4, borderRadius: '20px', fontSize: 11, fontWeight: 600,
-                                bgcolor: form.slackConnected ? softBg('success') : 'action.hover',
-                                color: form.slackConnected ? 'success.dark' : 'text.secondary',
-                            }}>
-                                <Box component="span" sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: form.slackConnected ? 'success.main' : 'text.disabled' }} />
-                                {form.slackConnected ? 'Connected' : 'Not connected'}
-                            </Box>
-                        </Box>
-                        {!form.slackConnected && (
-                            <Button onClick={onConnectSlack} variant="outlined" size="small" fullWidth
-                                sx={{ mt: 1.5, textTransform: 'none', borderColor: 'divider', color: 'text.secondary' }}>
-                                🔗 Connect Slack Workspace
-                            </Button>
-                        )}
-                    </Card>
-                </Grid>
-            </Grid>
+            <Card title="Email Notifications" icon="📧">
+                <ToggleRow label="Notification emails" desc="Send reminders and alerts via email"
+                    checked={form.emailNotificationsEnabled} onChange={(v) => set('emailNotificationsEnabled', v)} />
+                <ToggleRow label="Daily digest" desc="Single email per day with all notifications"
+                    checked={form.emailDailyDigest} onChange={(v) => set('emailDailyDigest', v)} />
+                <ToggleRow label="Urgent alerts only" desc="Only send critical issues, not routine reminders"
+                    checked={form.emailUrgentOnly} onChange={(v) => set('emailUrgentOnly', v)} />
+                {/* Which emails go out is an email preference, so both of these live here
+                    rather than on the leave-year form they used to sit on. The lead times
+                    are fixed points of the rollover, not settings — see
+                    YEAR_END_WARNING_DAYS in AppSettingsPanel. */}
+                <ToggleRow label="Send year-end warning emails"
+                    desc="Emails employees with days at risk, 30 and 7 days before year end"
+                    checked={form.sendYearEndWarningEmails} onChange={(v) => set('sendYearEndWarningEmails', v)} />
+                <ToggleRow indent disabled={!form.sendYearEndWarningEmails}
+                    label="Also notify their manager"
+                    desc="CC the employee's manager on those warning emails"
+                    checked={form.notifyManagersOfTeamExpiries} onChange={(v) => set('notifyManagersOfTeamExpiries', v)} />
+            </Card>
 
             {/* Reset lives with the reminders it resets, and is a preference reset — the
                 irreversible data deletion that used to sit beside it under a "Danger

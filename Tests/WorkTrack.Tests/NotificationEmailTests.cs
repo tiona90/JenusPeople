@@ -224,7 +224,7 @@ public class NotificationEmailTests
 
         var mail = new FakeEmailService();
 
-        var result = await new UpdateLeaveStatus.Handler(db, mail, new FakeChatNotificationService()).Handle(
+        var result = await new UpdateLeaveStatus.Handler(db, mail).Handle(
             new UpdateLeaveStatus.Command
             {
                 LeaveId = LeaveId,
