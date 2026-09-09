@@ -19,7 +19,6 @@ import {
     useAttendanceToday,
     useLiveElapsedMinutes,
 } from '../../lib/hooks/useAttendance'
-import { useIdleAutoBreak } from '../../lib/hooks/useIdleAutoBreak'
 
 const FULL_DAY_MINUTES = 8 * 60
 
@@ -68,7 +67,6 @@ export default function AttendanceWidget({ enabled }: { enabled: boolean }) {
     const { data: today, isLoading } = useAttendanceToday(enabled)
     const { checkIn, checkOut, startBreak, endBreak, anyPending } = useAttendanceActions()
     const elapsed = useLiveElapsedMinutes(today)
-    useIdleAutoBreak(enabled ? today : undefined)
     const [showEarlyCheckOutWarning, setShowEarlyCheckOutWarning] = useState(false)
 
     if (!enabled) return null

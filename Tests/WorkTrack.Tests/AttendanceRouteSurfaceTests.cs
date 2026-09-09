@@ -11,8 +11,12 @@ namespace WorkTrack.Tests;
 /// feature rather than a failing test.
 ///
 /// So this pins the surface by exact equality against the running application's
-/// endpoint table: twelve actions, each mapped twice (versioned and unversioned),
+/// endpoint table: ten actions, each mapped twice (versioned and unversioned),
 /// none anonymous.
+///
+/// It was twelve until the automatic-break pair (break/auto-start, break/auto-end)
+/// was removed. Breaks are started and ended by the person, never by a timer — see
+/// the note on <c>StartBreak.Command.IsAutomatic</c>.
 /// </summary>
 [Collection(ApiRouteTableCollection.Name)]
 public class AttendanceRouteSurfaceTests(ApiRouteTableFixture routeTable)
@@ -29,8 +33,6 @@ public class AttendanceRouteSurfaceTests(ApiRouteTableFixture routeTable)
         "GET /api/Attendance/presence",
         "GET /api/Attendance/team",
         "GET /api/Attendance/team/history",
-        "POST /api/Attendance/break/auto-end",
-        "POST /api/Attendance/break/auto-start",
         "POST /api/Attendance/break/end",
         "POST /api/Attendance/break/start",
         "POST /api/Attendance/check-in",
@@ -44,7 +46,7 @@ public class AttendanceRouteSurfaceTests(ApiRouteTableFixture routeTable)
     ];
 
     [Fact]
-    public void The_attendance_surface_is_exactly_the_twelve_documented_endpoints()
+    public void The_attendance_surface_is_exactly_the_ten_documented_endpoints()
     {
         var actual = AttendanceRoutes
             .Select(r => $"{string.Join(",", r.HttpMethods)} /{r.UnversionedPattern}")
