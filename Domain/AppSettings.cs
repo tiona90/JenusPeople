@@ -7,8 +7,10 @@ public class AppSettings
     public int LeaveYearStartMonth { get; set; } = 1;
     // The carryover cap moved to LeaveType.MaxCarryoverDays, beside the allowance it
     // caps -- see migration MoveCarryoverCapToLeaveType.
-    public int YearEndWarningDays { get; set; } = 30;
-    public int FinalWarningDays { get; set; } = 7;
+    // YearEndWarningDays and FinalWarningDays were here too: editable on Leave
+    // Settings, read by nothing but that same page's schedule preview -- two knobs
+    // that moved a caption and no behaviour. They are fixed points of the rollover
+    // now, stated by the client (migration RemoveAppSettingsWarningDays).
     public bool AutoRunRollover { get; set; } = true;
     public bool SendYearEndWarningEmails { get; set; } = true;
     public bool BlockLeaveSpanningIntoNextYear { get; set; } = true;

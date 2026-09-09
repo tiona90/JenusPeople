@@ -12,8 +12,6 @@ public class UpdateAppSettings
     public class Command : IRequest<Result<AppSettingsDto>>
     {
         public int LeaveYearStartMonth { get; set; }
-        public int YearEndWarningDays { get; set; }
-        public int FinalWarningDays { get; set; }
         public bool AutoRunRollover { get; set; }
         public bool SendYearEndWarningEmails { get; set; }
         public bool BlockLeaveSpanningIntoNextYear { get; set; }
@@ -78,8 +76,6 @@ public class UpdateAppSettings
             }
 
             settings.LeaveYearStartMonth = request.LeaveYearStartMonth;
-            settings.YearEndWarningDays = request.YearEndWarningDays;
-            settings.FinalWarningDays = request.FinalWarningDays;
             settings.AutoRunRollover = request.AutoRunRollover;
             settings.SendYearEndWarningEmails = request.SendYearEndWarningEmails;
             settings.BlockLeaveSpanningIntoNextYear = request.BlockLeaveSpanningIntoNextYear;

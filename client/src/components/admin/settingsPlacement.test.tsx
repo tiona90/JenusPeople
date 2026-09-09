@@ -33,8 +33,6 @@ const api = vi.mocked(await import('../../lib/api'))
 
 const SETTINGS: AppSettings = {
     leaveYearStartMonth: 1,
-    yearEndWarningDays: 30,
-    finalWarningDays: 7,
     autoRunRollover: true,
     sendYearEndWarningEmails: true,
     blockLeaveSpanningIntoNextYear: true,
@@ -161,9 +159,9 @@ describe('the allowance and its carryover cap are edited only on Leave Types', (
         await screen.findByText('Leave Year Configuration')
 
         // Save is gated on isDirty, so move something this page does still own.
-        const warning = screen.getByText('Year-End Warning (days before)')
+        const weeklyHours = screen.getByText('Weekly Hours Target')
             .parentElement!.querySelector('input')!
-        fireEvent.change(warning, { target: { value: '45' } })
+        fireEvent.change(weeklyHours, { target: { value: '35' } })
         fireEvent.click(screen.getByRole('button', { name: 'Save Settings' }))
 
         await waitFor(() => expect(api.updateAppSettings).toHaveBeenCalledTimes(1))
@@ -173,14 +171,26 @@ describe('the allowance and its carryover cap are edited only on Leave Types', (
         expect(sent).not.toHaveProperty('defaultAnnualEntitlement')
     })
 
-    it('quotes both figures from the leave type', async () => {
+    /* The leave-year card quoted both figures in a banner of its own once it stopped
+       editing them. That banner is gone too: a form restating a setting it cannot
+       change is just a second place to read a stale number. Both figures survive where
+       they are being applied — the carryover preview and the Carryover Cap tile. */
+    it('does not restate either figure in the leave-year card', async () => {
         renderPanel(<AppSettingsPanel />)
         await screen.findByText('Leave Year Configuration')
 
-        expect(screen.getByText(/Both are set per leave type, on Leave Types/)).toBeInTheDocument()
-        expect(screen.getByText('25 days/year')).toBeInTheDocument()
-        // Quoted in the banner, and again on the sidebar's Carryover Cap tile.
-        expect(screen.getAllByText('5 days').length).toBeGreaterThan(1)
+        expect(screen.queryByText(/Both are set per leave type, on Leave Types/)).not.toBeInTheDocument()
+        expect(screen.queryByText(/Annual leave allows/)).not.toBeInTheDocument()
+    })
+
+    it('quotes both figures where they are applied', async () => {
+        renderPanel(<AppSettingsPanel />)
+        await screen.findByText('Leave Year Configuration')
+
+        expect(screen.getByText(/entitlement 25 days\/year — both from Leave Types/)).toBeInTheDocument()
+        // The sidebar's Carryover Cap tile, and the rollover line beside it.
+        expect(screen.getByText('5 days')).toBeInTheDocument()
+        expect(screen.getByText(/auto-calculate carryover \(max 5 days\)/)).toBeInTheDocument()
     })
 
     it('follows the leave type when the cap there changes', async () => {
@@ -200,8 +210,43 @@ describe('the allowance and its carryover cap are edited only on Leave Types', (
         renderPanel(<AppSettingsPanel />)
         await screen.findByText('Leave Year Configuration')
 
-        expect(screen.getByText('0 days/year')).toBeInTheDocument()
+        expect(screen.getByText(/entitlement 0 days\/year/)).toBeInTheDocument()
         expect(screen.getByText('At cap (= 0 days unused)')).toBeInTheDocument()
+    })
+})
+
+/*
+ * The year-end and final warning days were two more inputs on this page, stored as
+ * AppSettings columns that nothing read but the schedule preview beside them. No job
+ * sends a warning email on that lead time, so changing 30 to 45 changed a caption and
+ * a preview date and nothing an employee would ever see. The lead times are stated by
+ * the page now; the columns are gone (migration RemoveAppSettingsWarningDays).
+ */
+describe('the year-end warning lead times are not settings', () => {
+    it('offers neither as an input', async () => {
+        renderPanel(<AppSettingsPanel />)
+        await screen.findByText('Leave Year Configuration')
+
+        expect(screen.queryByText('Year-End Warning (days before)')).not.toBeInTheDocument()
+        expect(screen.queryByText('Final Warning (days before)')).not.toBeInTheDocument()
+    })
+
+    it('still shows both warnings in the schedule, and saves neither figure', async () => {
+        renderPanel(<AppSettingsPanel />)
+        await screen.findByText('Upcoming Schedule')
+
+        expect(screen.getByText('30-day warning emails')).toBeInTheDocument()
+        expect(screen.getByText('7-day final warning')).toBeInTheDocument()
+
+        const weeklyHours = screen.getByText('Weekly Hours Target')
+            .parentElement!.querySelector('input')!
+        fireEvent.change(weeklyHours, { target: { value: '35' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Save Settings' }))
+
+        await waitFor(() => expect(api.updateAppSettings).toHaveBeenCalledTimes(1))
+        const sent = api.updateAppSettings.mock.calls[0][0]
+        expect(sent).not.toHaveProperty('yearEndWarningDays')
+        expect(sent).not.toHaveProperty('finalWarningDays')
     })
 })
 

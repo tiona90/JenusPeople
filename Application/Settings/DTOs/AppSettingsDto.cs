@@ -4,8 +4,6 @@ public class AppSettingsDto
 {
 
     public int LeaveYearStartMonth { get; set; }
-    public int YearEndWarningDays { get; set; }
-    public int FinalWarningDays { get; set; }
     public bool AutoRunRollover { get; set; }
     public bool SendYearEndWarningEmails { get; set; }
     public bool BlockLeaveSpanningIntoNextYear { get; set; }

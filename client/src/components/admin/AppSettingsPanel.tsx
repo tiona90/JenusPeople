@@ -40,6 +40,14 @@ const MONTHS = [
 
 const TIMEZONES = ['UTC', 'UTC-5 (Eastern)', 'UTC-6 (Central)', 'UTC-7 (Mountain)', 'UTC-8 (Pacific)']
 
+/* When the two year-end warnings go out, relative to the leave year end. These were
+   AppSettings columns edited on this page, and the schedule preview below was the only
+   thing that read them — the emails they described are not scheduled from a setting,
+   so the inputs moved a caption and nothing else. Fixed here until something sends
+   them. See migration RemoveAppSettingsWarningDays. */
+const YEAR_END_WARNING_DAYS = 30
+const FINAL_WARNING_DAYS = 7
+
 const WORKING_DAYS: { value: string; label: string }[] = [
     { value: 'mon-fri',  label: 'Monday – Friday (5-day week)' },
     { value: 'mon-sat',  label: 'Monday – Saturday (6-day week)' },
@@ -132,8 +140,6 @@ function SettingRow({ label, desc, control }: { label: string; desc: string; con
 
 const DEFAULT: AppSettings = {
     leaveYearStartMonth: 1,
-    yearEndWarningDays: 30,
-    finalWarningDays: 7,
     autoRunRollover: true,
     sendYearEndWarningEmails: true,
     blockLeaveSpanningIntoNextYear: true,
@@ -222,8 +228,8 @@ export default function AppSettingsPanel() {
     const daysRemaining = Math.max(0, diffDays(now, lyEnd))
     const yearLabel = `${startYear}–${String(startYear + 1).slice(2)}`
 
-    const warningDate = addDays(lyEnd, -form.yearEndWarningDays)
-    const finalWarnDate = addDays(lyEnd, -form.finalWarningDays)
+    const warningDate = addDays(lyEnd, -YEAR_END_WARNING_DAYS)
+    const finalWarnDate = addDays(lyEnd, -FINAL_WARNING_DAYS)
 
     // Quarter labels based on start month
     const quarters = useMemo(() => {
@@ -312,42 +318,12 @@ export default function AppSettingsPanel() {
                                     </Grid>
                                 </Grid>
 
-                                {/* The allowance and the cap that bounds it are columns on the leave
-                                    type, set on Leave Types. This page used to edit both, which made it a
-                                    second home for figures that belong in one place — the allowance
-                                    duplicated Leave Types, and the cap sat a screen away from the number
-                                    it caps, unable to say that sick leave carries nothing. */}
-                                <Box sx={{ display: 'flex', gap: 1, p: '10px 14px', bgcolor: 'action.hover', borderRadius: '8px', fontSize: 12, color: 'text.secondary' }}>
-                                    <span>🌴</span>
-                                    <span>
-                                        Annual leave allows <strong>{annualAllowance} days/year</strong> and carries over at most{' '}
-                                        <strong>{carryoverCap} days</strong>. Both are set per leave type, on Leave Types.
-                                    </span>
-                                </Box>
-
-                                {/* Warning days */}
-                                <Grid container spacing={1.5}>
-                                    <Grid size={{ xs: 12, sm: 6 }}>
-                                        <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'text.primary', mb: 0.75 }}>Year-End Warning (days before)</Typography>
-                                        <TextField
-                                            size="small" fullWidth type="number"
-                                            value={form.yearEndWarningDays}
-                                            onChange={(e) => set('yearEndWarningDays', Math.max(1, Number(e.target.value)))}
-                                            inputProps={{ min: 1 }}
-                                            sx={{ '& .MuiInputBase-input': { fontSize: 13 } }}
-                                        />
-                                    </Grid>
-                                    <Grid size={{ xs: 12, sm: 6 }}>
-                                        <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'text.primary', mb: 0.75 }}>Final Warning (days before)</Typography>
-                                        <TextField
-                                            size="small" fullWidth type="number"
-                                            value={form.finalWarningDays}
-                                            onChange={(e) => set('finalWarningDays', Math.max(1, Number(e.target.value)))}
-                                            inputProps={{ min: 1 }}
-                                            sx={{ '& .MuiInputBase-input': { fontSize: 13 } }}
-                                        />
-                                    </Grid>
-                                </Grid>
+                                {/* The allowance and the cap that bounds it are columns on the leave type,
+                                    set on Leave Types — this page used to edit both, and then quoted both
+                                    here once it stopped. Neither is repeated in this card any more: the
+                                    figures are stated where they are actually being applied, on the
+                                    Carryover Preview below and the Carryover Cap tile, so a leave-year
+                                    form does not restate a leave-type setting it cannot change. */}
 
                                 {/* Timesheet policy */}
                                 <Box sx={{ borderTop: '1px solid', borderColor: 'divider', pt: 2 }}>
@@ -520,8 +496,8 @@ export default function AppSettingsPanel() {
                             </Box>
                             <Box sx={{ p: 2.25 }}>
                                 <Stack spacing={1}>
-                                    <ScheduleRow label={`${form.yearEndWarningDays}-day warning emails`} date={fmt(warningDate)} color="warning.dark" bg={softBg('warning')} border="warning.main" badge="Scheduled" badgeBg={softBg('warning')} badgeColor="warning.dark" />
-                                    <ScheduleRow label={`${form.finalWarningDays}-day final warning`} date={fmt(finalWarnDate)} color="warning.dark" bg={softBg('warning')} border="warning.main" badge="Scheduled" badgeBg={softBg('warning')} badgeColor="warning.dark" />
+                                    <ScheduleRow label={`${YEAR_END_WARNING_DAYS}-day warning emails`} date={fmt(warningDate)} color="warning.dark" bg={softBg('warning')} border="warning.main" badge="Scheduled" badgeBg={softBg('warning')} badgeColor="warning.dark" />
+                                    <ScheduleRow label={`${FINAL_WARNING_DAYS}-day final warning`} date={fmt(finalWarnDate)} color="warning.dark" bg={softBg('warning')} border="warning.main" badge="Scheduled" badgeBg={softBg('warning')} badgeColor="warning.dark" />
                                     <ScheduleRow label="Year-end rollover" date={`${fmt(nextReset)} · midnight`} color="error.dark" bg={softBg('error')} border="error.main" badge="Year End" badgeBg={softBg('error')} badgeColor="error.dark" />
                                     <ScheduleRow label="New year opens" date={fmt(nextReset)} color="success.dark" bg={softBg('success')} border="success.main" badge="New Year" badgeBg={softBg('success')} badgeColor="success.dark" />
                                     <Button variant="outlined" fullWidth size="small" sx={{ mt: 0.5, textTransform: 'none', borderColor: 'divider', color: 'text.secondary', fontSize: 12 }}>
