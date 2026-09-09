@@ -7,16 +7,20 @@ import type { LeaveType } from './types'
  * not have to agree. This module fixes the order they are consulted in so every
  * surface quotes the same figure:
  *
- *  1. `LeaveType.defaultAllowance` — **authoritative**. It is the only one that can
- *     vary per leave type, which is what an allowance actually does: annual leave and
- *     sick leave are different budgets, not one budget quoted twice.
- *  2. `AppSettings.defaultAnnualEntitlement` — fallback only, for a leave type that
- *     sets no allowance of its own (`defaultAllowance === 0`) and for an employee who
- *     has no entitlement on record. It is not "the annual allowance"; the Leave
- *     Settings screen labels it as the fallback it is.
- *  3. `EmployeeProfile.annualLeaveEntitlement` — the per-employee override of the
+ *  1. `LeaveType.defaultAllowance` — **authoritative**, and the only place the figure
+ *     is edited. It is the only one that can vary per leave type, which is what an
+ *     allowance actually does: annual leave and sick leave are different budgets, not
+ *     one budget quoted twice. It is also where a new joiner's entitlement comes from
+ *     (see Application/AdminUsers/Commands/CreateAdminUser.cs, which reads the
+ *     `affectsBalance` type). A type that sets none reads as 0, rendered "—".
+ *  2. `EmployeeProfile.annualLeaveEntitlement` — the per-employee override of the
  *     annual-leave budget, and the pool the API enforces on approval. A non-zero
- *     value beats the leave type's figure *for that person only*.
+ *     value beats the leave type's figure *for that person only*, which is how
+ *     pro-rata and part-time entitlements are expressed.
+ *
+ * There was a third: `AppSettings.defaultAnnualEntitlement`, an org-wide number on
+ * Leave Settings that was free to disagree with (1) and out of the box did — 20
+ * against annual leave's 25. It is gone; nothing falls back to it any more.
  *
  * `LeaveType.affectsBalance` is a separate question from the allowance: it says whether
  * the type is deducted from the pooled budget the API enforces on approval (see
@@ -31,16 +35,16 @@ export function isAnnualLeaveType(name?: string | null) {
     return n.includes('annual') || n.includes('vacation')
 }
 
-/** A leave type's own allowance, falling back to the app-wide default when it sets none. */
-export function allowanceForLeaveType(type: LeaveType | undefined, fallbackDays: number) {
-    return type && type.defaultAllowance > 0 ? type.defaultAllowance : fallbackDays
+/** A leave type's own allowance. 0 means the type sets none — callers render that "—". */
+export function allowanceForLeaveType(type: LeaveType | undefined) {
+    return type && type.defaultAllowance > 0 ? type.defaultAllowance : 0
 }
 
 /** The annual-leave allowance as configured on Leave Types. */
-export function annualLeaveAllowance(leaveTypes: LeaveType[], fallbackDays: number) {
+export function annualLeaveAllowance(leaveTypes: LeaveType[]) {
     const annual = leaveTypes.find((t) => t.isActive && isAnnualLeaveType(t.name))
         ?? leaveTypes.find((t) => isAnnualLeaveType(t.name))
-    return allowanceForLeaveType(annual, fallbackDays)
+    return allowanceForLeaveType(annual)
 }
 
 /**
@@ -64,8 +68,7 @@ export function employeeAnnualEntitlement(
 export function allowanceForRequest(
     type: LeaveType | undefined,
     profile: { annualLeaveEntitlement: number } | undefined,
-    fallbackDays: number,
 ) {
-    const typeAllowance = allowanceForLeaveType(type, fallbackDays)
+    const typeAllowance = allowanceForLeaveType(type)
     return isAnnualLeaveType(type?.name) ? employeeAnnualEntitlement(profile, typeAllowance) : typeAllowance
 }

@@ -33,7 +33,6 @@ const api = vi.mocked(await import('../../lib/api'))
 const SETTINGS: AppSettings = {
     leaveYearStartMonth: 1,
     maxCarryoverDays: 5,
-    defaultAnnualEntitlement: 20,
     yearEndWarningDays: 30,
     finalWarningDays: 7,
     autoRunRollover: true,
@@ -119,6 +118,38 @@ describe('the leave year is editable in exactly one place', () => {
         const sent = api.updateAppSettings.mock.calls[0][0]
         expect(sent.leaveYearStartMonth).toBe(4)
         expect(sent.financialYearStartMonth).toBe(4)
+    })
+})
+
+/*
+ * The annual-leave allowance had the same drift problem the leave year did. Leave
+ * Settings carried a "Fallback Entitlement" of its own, free to disagree with the
+ * Annual Leave type's allowance on Leave Types — and out of the box it did: 20
+ * against 25. Leave Types is the one home now, and it is where a new joiner's
+ * entitlement comes from (see CreateAdminUser).
+ */
+describe('the annual-leave allowance is editable in exactly one place', () => {
+    it('offers no entitlement field on Leave Settings', async () => {
+        renderPanel(<AppSettingsPanel />)
+        await screen.findByText('Leave Year Configuration')
+
+        expect(screen.queryByText(/Fallback Entitlement/)).not.toBeInTheDocument()
+        // The carryover cap beside it stays — it has no home anywhere else.
+        expect(screen.getByText('Max Carryover Days')).toBeInTheDocument()
+    })
+
+    it('sends no entitlement of its own when Leave Settings is saved', async () => {
+        renderPanel(<AppSettingsPanel />)
+        await screen.findByText('Leave Year Configuration')
+
+        // Save is gated on isDirty, so nudge the cap to enable it.
+        const cap = screen.getByText('Max Carryover Days')
+            .parentElement!.querySelector('input')!
+        fireEvent.change(cap, { target: { value: '6' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Save Settings' }))
+
+        await waitFor(() => expect(api.updateAppSettings).toHaveBeenCalledTimes(1))
+        expect(api.updateAppSettings.mock.calls[0][0]).not.toHaveProperty('defaultAnnualEntitlement')
     })
 })
 

@@ -40,8 +40,8 @@ const SICK_LEAVE_TYPE = {
     affectsBalance: false,
 } as const
 
-/** The app-wide fallback entitlement — only used by types that set no allowance. */
-const APP_SETTINGS = { defaultAnnualEntitlement: 20, maxCarryoverDays: 5, leaveYearStartMonth: 1 }
+/** Leave Settings no longer carries an entitlement; only the carryover cap and year. */
+const APP_SETTINGS = { maxCarryoverDays: 5, leaveYearStartMonth: 1 }
 
 /** An ISO date inside the current calendar year, so "used this year" is deterministic. */
 function sameYear(month: number, day: number) {
@@ -361,8 +361,6 @@ describe('AllLeaveAdminPage — a request is measured against its own leave type
                 startDate: sameYear(11, 3), endDate: sameYear(11, 5), totalDays: 3,
             }),
         ])
-        // No allowance on the type and no fallback configured either.
-        api.getAppSettings.mockResolvedValue({ ...APP_SETTINGS, defaultAnnualEntitlement: 0 } as never)
         await renderPage()
 
         expect(screen.getByText('—')).toBeInTheDocument()

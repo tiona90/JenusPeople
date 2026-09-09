@@ -59,7 +59,7 @@ beforeEach(() => {
     api.getTimesheetStatusHistories.mockResolvedValue([])
     api.getAnnualLeaves.mockResolvedValue([])
     api.getLeaveTypes.mockResolvedValue([ANNUAL_LEAVE_TYPE] as never)
-    api.getAppSettings.mockResolvedValue({ defaultAnnualEntitlement: 20 } as never)
+    api.getAppSettings.mockResolvedValue({} as never)
 })
 
 function renderPanel() {

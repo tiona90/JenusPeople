@@ -19,7 +19,6 @@ import {
     deleteAdminUser,
     getAdminUsers,
     getAnnualLeaves,
-    getAppSettings,
     getDepartments,
     getEmployeeProfiles,
     getLeaveStatusHistories,
@@ -134,15 +133,14 @@ function AdminUsersPanel() {
     const { data: timesheetHistories = [] } = useQuery({ queryKey: ['timesheetStatusHistories'], queryFn: getTimesheetStatusHistories })
     const { data: leaves = [] } = useQuery({ queryKey: ['annualLeaves'], queryFn: getAnnualLeaves })
     const { data: leaveTypes = [] } = useQuery({ queryKey: ['leaveTypes'], queryFn: getLeaveTypes })
-    const { data: appSettings } = useQuery({ queryKey: ['appSettings'], queryFn: getAppSettings })
 
     /* What a row's leave bar is measured against is the employee's own entitlement, which
        overrides the annual-leave allowance from Leave Types. The dialogs below say so, and
        a new employee starts from that allowance rather than a number hard-coded here.
        See lib/leave-allowance.ts. */
     const annualAllowance = useMemo(
-        () => annualLeaveAllowance(leaveTypes, appSettings?.defaultAnnualEntitlement ?? 0),
-        [leaveTypes, appSettings?.defaultAnnualEntitlement])
+        () => annualLeaveAllowance(leaveTypes),
+        [leaveTypes])
 
     const profilesByUserId = useMemo(() => new Map(profiles.map((p) => [p.userId, p])), [profiles])
     const deptById = useMemo(() => new Map(departments.map((d) => [d.id, d])), [departments])

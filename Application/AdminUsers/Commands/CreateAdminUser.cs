@@ -63,15 +63,23 @@ public class CreateAdminUser
                 return IdentityFailure("Failed to create user.", createResult);
             }
 
-            // The admin-configurable fallback (Leave Settings) is what "leave it blank"
-            // means; DefaultEntitlement only covers a database with no settings row yet.
-            var configuredDefault = await context.AppSettings
+            // "Leave it blank" means the annual-leave allowance on Leave Types — the same
+            // figure every screen quotes, rather than a second one an admin could set
+            // out of step with it. AffectsBalance picks the type an entitlement *is* the
+            // budget for; the other types carry allowances of their own that are separate
+            // budgets (sick leave's 10 days is not an annual-leave entitlement).
+            // DefaultEntitlement covers a database with no such type configured yet: a
+            // stored 0 would switch the approval-time balance check off outright
+            // (see AnnualLeaveBalanceCalculator), so it must never be the stamped value.
+            var leaveTypeAllowance = await context.LeaveTypes
                 .AsNoTracking()
-                .Select(s => (int?)s.DefaultAnnualEntitlement)
+                .Where(lt => lt.AffectsBalance && lt.IsActive && lt.DefaultAllowance > 0)
+                .Select(lt => (int?)lt.DefaultAllowance)
                 .FirstOrDefaultAsync(cancellationToken);
 
             var entitlement = request.User.AnnualLeaveEntitlement
-                ?? (configuredDefault > 0 ? configuredDefault.Value : DefaultEntitlement);
+                ?? leaveTypeAllowance
+                ?? DefaultEntitlement;
             var employeeProfile = new EmployeeProfile
             {
                 UserId = user.Id,

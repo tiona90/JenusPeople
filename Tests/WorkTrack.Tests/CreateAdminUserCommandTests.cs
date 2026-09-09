@@ -142,17 +142,35 @@ public class CreateAdminUserCommandTests : IDisposable
     }
 
     /// <summary>
-    /// A blank entitlement field means "use the default", and the default an admin can
-    /// actually see is the one on Leave Settings — not a constant compiled in here.
+    /// Adds the leave type whose budget an entitlement actually is: the one flagged
+    /// <see cref="LeaveType.AffectsBalance"/>, which is what the balance calculator
+    /// measures a request against.
     /// </summary>
-    [Fact]
-    public async Task A_blank_entitlement_takes_the_default_configured_in_settings()
+    private async Task SeedAnnualLeaveTypeAsync(int defaultAllowance, bool isActive = true)
     {
-        await SeedAsync();
         var db = Db;
-        db.AppSettings.Add(new AppSettings { DefaultAnnualEntitlement = 26 });
+        db.LeaveTypes.Add(new LeaveType
+        {
+            Name = "Annual Leave",
+            IsActive = isActive,
+            AffectsBalance = true,
+            RequiresApproval = true,
+            DefaultAllowance = defaultAllowance,
+        });
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
+    }
+
+    /// <summary>
+    /// A blank entitlement field means "use the default", and the default an admin can
+    /// actually see is the allowance on Leave Types — the one every screen quotes.
+    /// It used to come from a separate app setting that was free to disagree with it.
+    /// </summary>
+    [Fact]
+    public async Task A_blank_entitlement_takes_the_allowance_from_the_annual_leave_type()
+    {
+        await SeedAsync();
+        await SeedAnnualLeaveTypeAsync(26);
 
         var result = await Handle(Payload(), new FakeAccountEmailSender());
 
@@ -163,13 +181,10 @@ public class CreateAdminUserCommandTests : IDisposable
     }
 
     [Fact]
-    public async Task An_explicit_entitlement_still_wins_over_the_configured_default()
+    public async Task An_explicit_entitlement_still_wins_over_the_leave_type_allowance()
     {
         await SeedAsync();
-        var db = Db;
-        db.AppSettings.Add(new AppSettings { DefaultAnnualEntitlement = 26 });
-        await db.SaveChangesAsync();
-        db.ChangeTracker.Clear();
+        await SeedAnnualLeaveTypeAsync(26);
 
         var payload = Payload();
         payload.AnnualLeaveEntitlement = 12;
@@ -179,6 +194,72 @@ public class CreateAdminUserCommandTests : IDisposable
         Assert.True(result.IsSuccess, result.Error);
         var profile = await Db.EmployeeProfiles.AsNoTracking().SingleAsync();
         Assert.Equal(12, profile.AnnualLeaveEntitlement);
+    }
+
+    /// <summary>
+    /// Only the balance-affecting type answers the question. Sick leave has an
+    /// allowance of its own, but it is a separate budget — it must not become the
+    /// annual-leave entitlement a new joiner starts on.
+    /// </summary>
+    [Fact]
+    public async Task A_leave_type_that_does_not_affect_balance_is_not_the_entitlement()
+    {
+        await SeedAsync();
+        await SeedAnnualLeaveTypeAsync(26);
+        var db = Db;
+        db.LeaveTypes.Add(new LeaveType
+        {
+            Name = "Sick Leave",
+            IsActive = true,
+            AffectsBalance = false,
+            RequiresApproval = true,
+            DefaultAllowance = 99,
+        });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var result = await Handle(Payload(), new FakeAccountEmailSender());
+
+        Assert.True(result.IsSuccess, result.Error);
+        var profile = await Db.EmployeeProfiles.AsNoTracking().SingleAsync();
+        Assert.Equal(26, profile.AnnualLeaveEntitlement);
+    }
+
+    /// <summary>
+    /// An entitlement of 0 switches the approval-time balance check off entirely
+    /// (see AnnualLeaveBalanceCalculator), so "no allowance configured" must fall back
+    /// to the compiled-in default rather than stamping a 0 that silently unpolices
+    /// every request the new joiner makes.
+    /// </summary>
+    [Fact]
+    public async Task An_annual_leave_type_with_no_allowance_falls_back_rather_than_stamping_zero()
+    {
+        await SeedAsync();
+        await SeedAnnualLeaveTypeAsync(0);
+
+        var result = await Handle(Payload(), new FakeAccountEmailSender());
+
+        Assert.True(result.IsSuccess, result.Error);
+        var profile = await Db.EmployeeProfiles.AsNoTracking().SingleAsync();
+        Assert.Equal(CreateAdminUser.Handler.DefaultEntitlement, profile.AnnualLeaveEntitlement);
+        Assert.True(profile.AnnualLeaveEntitlement > 0);
+    }
+
+    /// <summary>
+    /// A retired annual-leave type is not the current policy, so it must not set the
+    /// figure a new joiner starts on.
+    /// </summary>
+    [Fact]
+    public async Task An_inactive_annual_leave_type_does_not_set_the_entitlement()
+    {
+        await SeedAsync();
+        await SeedAnnualLeaveTypeAsync(26, isActive: false);
+
+        var result = await Handle(Payload(), new FakeAccountEmailSender());
+
+        Assert.True(result.IsSuccess, result.Error);
+        var profile = await Db.EmployeeProfiles.AsNoTracking().SingleAsync();
+        Assert.Equal(CreateAdminUser.Handler.DefaultEntitlement, profile.AnnualLeaveEntitlement);
     }
 
     [Fact]

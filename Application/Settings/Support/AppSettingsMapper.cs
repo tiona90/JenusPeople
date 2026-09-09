@@ -8,7 +8,6 @@ public static class AppSettingsMapper
     {
         LeaveYearStartMonth = s.LeaveYearStartMonth,
         MaxCarryoverDays = s.MaxCarryoverDays,
-        DefaultAnnualEntitlement = s.DefaultAnnualEntitlement,
         YearEndWarningDays = s.YearEndWarningDays,
         FinalWarningDays = s.FinalWarningDays,
         AutoRunRollover = s.AutoRunRollover,

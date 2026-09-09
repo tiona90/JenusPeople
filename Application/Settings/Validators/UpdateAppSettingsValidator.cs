@@ -27,10 +27,6 @@ public class UpdateAppSettingsValidator : AbstractValidator<UpdateAppSettings.Co
             .GreaterThanOrEqualTo(0)
             .WithMessage("Max carryover days cannot be negative.");
 
-        RuleFor(x => x.DefaultAnnualEntitlement)
-            .GreaterThanOrEqualTo(1)
-            .WithMessage("Default annual entitlement must be at least 1.");
-
         RuleFor(x => x.FinancialYearStartMonth)
             .InclusiveBetween(1, 12)
             .WithMessage("Financial year start month must be between 1 and 12.");

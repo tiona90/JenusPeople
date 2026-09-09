@@ -13,7 +13,6 @@ public class UpdateAppSettings
     {
         public int LeaveYearStartMonth { get; set; }
         public int MaxCarryoverDays { get; set; }
-        public int DefaultAnnualEntitlement { get; set; }
         public int YearEndWarningDays { get; set; }
         public int FinalWarningDays { get; set; }
         public bool AutoRunRollover { get; set; }
@@ -61,8 +60,6 @@ public class UpdateAppSettings
                 return Invalid(nameof(request.LeaveYearStartMonth), "Leave year start month must be between 1 and 12.");
             if (request.MaxCarryoverDays < 0)
                 return Invalid(nameof(request.MaxCarryoverDays), "Max carryover days cannot be negative.");
-            if (request.DefaultAnnualEntitlement < 1)
-                return Invalid(nameof(request.DefaultAnnualEntitlement), "Default annual entitlement must be at least 1.");
             if (request.FinancialYearStartMonth < 1 || request.FinancialYearStartMonth > 12)
                 return Invalid(nameof(request.FinancialYearStartMonth), "Financial year start month must be between 1 and 12.");
             if (!WorkingTimeFormat.TryNormalizeTime(request.WorkingHoursStart, out var workStart))
@@ -85,7 +82,6 @@ public class UpdateAppSettings
 
             settings.LeaveYearStartMonth = request.LeaveYearStartMonth;
             settings.MaxCarryoverDays = request.MaxCarryoverDays;
-            settings.DefaultAnnualEntitlement = request.DefaultAnnualEntitlement;
             settings.YearEndWarningDays = request.YearEndWarningDays;
             settings.FinalWarningDays = request.FinalWarningDays;
             settings.AutoRunRollover = request.AutoRunRollover;

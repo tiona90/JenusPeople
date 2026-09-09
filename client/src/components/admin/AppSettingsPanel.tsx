@@ -133,7 +133,6 @@ function SettingRow({ label, desc, control }: { label: string; desc: string; con
 const DEFAULT: AppSettings = {
     leaveYearStartMonth: 1,
     maxCarryoverDays: 5,
-    defaultAnnualEntitlement: 20,
     yearEndWarningDays: 30,
     finalWarningDays: 7,
     autoRunRollover: true,
@@ -239,12 +238,10 @@ export default function AppSettingsPanel() {
         ]
     }, [form.leaveYearStartMonth])
 
-    /* The annual allowance is the Annual Leave type's, configured on Leave Types — the
-       field below is only the fallback for a type that sets none of its own. See
-       lib/leave-allowance.ts for the ordering. */
-    const annualAllowance = useMemo(
-        () => annualLeaveAllowance(leaveTypes, form.defaultAnnualEntitlement),
-        [leaveTypes, form.defaultAnnualEntitlement])
+    /* The annual allowance is the Annual Leave type's, configured on Leave Types, and
+       this screen no longer keeps a second number beside it. Quoted below in the
+       carryover preview. See lib/leave-allowance.ts. */
+    const annualAllowance = useMemo(() => annualLeaveAllowance(leaveTypes), [leaveTypes])
 
     // Carryover preview from real employee profiles
     const carryoverRows = useMemo(() =>
@@ -315,7 +312,7 @@ export default function AppSettingsPanel() {
                                     </Grid>
                                 </Grid>
 
-                                {/* Carryover + Entitlement */}
+                                {/* Carryover */}
                                 <Grid container spacing={1.5}>
                                     <Grid size={{ xs: 12, sm: 6 }}>
                                         <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'text.primary', mb: 0.75 }}>Max Carryover Days</Typography>
@@ -327,20 +324,6 @@ export default function AppSettingsPanel() {
                                             sx={{ '& .MuiInputBase-input': { fontSize: 13 } }}
                                         />
                                         <Typography sx={{ fontSize: 11, color: 'text.disabled', mt: 0.5 }}>Days above this cap expire at year end</Typography>
-                                    </Grid>
-                                    <Grid size={{ xs: 12, sm: 6 }}>
-                                        <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'text.primary', mb: 0.75 }}>Fallback Entitlement (days)</Typography>
-                                        <TextField
-                                            size="small" fullWidth type="number"
-                                            value={form.defaultAnnualEntitlement}
-                                            onChange={(e) => set('defaultAnnualEntitlement', Math.max(1, Number(e.target.value)))}
-                                            inputProps={{ min: 1, max: 365 }}
-                                            sx={{ '& .MuiInputBase-input': { fontSize: 13 } }}
-                                        />
-                                        <Typography sx={{ fontSize: 11, color: 'text.disabled', mt: 0.5 }}>
-                                            For a leave type that sets no allowance, and for a new employee.
-                                            Annual leave is <strong>{annualAllowance} days/year</strong>, set on Leave Types.
-                                        </Typography>
                                     </Grid>
                                 </Grid>
 

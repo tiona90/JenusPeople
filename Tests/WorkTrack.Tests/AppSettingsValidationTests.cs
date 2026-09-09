@@ -25,14 +25,12 @@ public class AppSettingsValidationTests
 {
     /// <summary>
     /// A settings payload that passes. Worth noting the command's own defaults do
-    /// not: LeaveYearStartMonth and DefaultAnnualEntitlement default to 0, which
-    /// both rules reject.
+    /// not: LeaveYearStartMonth defaults to 0, which its rule rejects.
     /// </summary>
     private static UpdateAppSettings.Command Valid() => new()
     {
         LeaveYearStartMonth = 1,
         MaxCarryoverDays = 5,
-        DefaultAnnualEntitlement = 25,
         FinancialYearStartMonth = 1,
         WorkingHoursStart = "09:00",
         WorkingHoursEnd = "18:00",
@@ -98,15 +96,6 @@ public class AppSettingsValidationTests
         // Zero carryover is a real policy, not an error.
         command.MaxCarryoverDays = 0;
         Assert.True(Validate(command).IsValid);
-    }
-
-    [Fact]
-    public void The_default_entitlement_must_be_at_least_one_day()
-    {
-        var command = Valid();
-        command.DefaultAnnualEntitlement = 0;
-
-        AssertRejects(command, nameof(command.DefaultAnnualEntitlement));
     }
 
     [Theory]

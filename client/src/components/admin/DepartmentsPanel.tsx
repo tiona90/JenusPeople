@@ -19,7 +19,6 @@ import {
     deleteDepartment,
     getAdminUsers,
     getAnnualLeaves,
-    getAppSettings,
     getCompanyAttendance,
     getDepartments,
     getEmployeeProfiles,
@@ -120,13 +119,12 @@ function DepartmentsPanel() {
     const { data: leaves = [] } = useQuery({ queryKey: ['annualLeaves'], queryFn: getAnnualLeaves })
     const { data: timesheets = [] } = useQuery({ queryKey: ['timesheets'], queryFn: getTimesheets })
     const { data: leaveTypes = [] } = useQuery({ queryKey: ['leaveTypes'], queryFn: getLeaveTypes })
-    const { data: appSettings } = useQuery({ queryKey: ['appSettings'], queryFn: getAppSettings })
 
     /* An employee with no entitlement of their own falls back to the annual-leave
        allowance from Leave Types, not to a number typed in here. */
     const annualAllowance = useMemo(
-        () => annualLeaveAllowance(leaveTypes, appSettings?.defaultAnnualEntitlement ?? 0),
-        [leaveTypes, appSettings?.defaultAnnualEntitlement])
+        () => annualLeaveAllowance(leaveTypes),
+        [leaveTypes])
 
     const managerUserIds = useMemo(
         () => new Set(adminUsers.filter((u) => u.roles.includes('Manager')).map((u) => u.id)),

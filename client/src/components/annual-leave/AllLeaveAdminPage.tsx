@@ -5,7 +5,7 @@ import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import CircularProgress from '@mui/material/CircularProgress'
 import {
-    getAnnualLeaves, getAppSettings, getDepartments, getEmployeeProfiles, getHolidays,
+    getAnnualLeaves, getDepartments, getEmployeeProfiles, getHolidays,
     getLeaveStatusHistories, getLeaveTypes, updateLeaveStatus,
 } from '../../lib/api'
 import { resolveFileUrl } from '../../lib/api/file-url'
@@ -116,7 +116,6 @@ const AllLeaveAdminPage = observer(function AllLeaveAdminPage({ user: _user }: {
 
     const { data: leaves = [], isLoading } = useQuery({ queryKey: ['annualLeaves'], queryFn: getAnnualLeaves })
     const { data: leaveTypes = [] } = useQuery({ queryKey: ['leaveTypes'], queryFn: getLeaveTypes })
-    const { data: appSettings } = useQuery({ queryKey: ['appSettings'], queryFn: getAppSettings })
     const { data: profiles = [] } = useQuery({ queryKey: ['employeeProfiles'], queryFn: getEmployeeProfiles })
     const { data: departmentList = [] } = useQuery({ queryKey: ['departments'], queryFn: getDepartments })
     const { data: histories = [] } = useQuery({ queryKey: ['leaveStatusHistories'], queryFn: getLeaveStatusHistories })
@@ -127,12 +126,9 @@ const AllLeaveAdminPage = observer(function AllLeaveAdminPage({ user: _user }: {
     })
 
     const leaveTypeById = useMemo(() => new Map(leaveTypes.map((lt) => [lt.id, lt])), [leaveTypes])
-    /* An allowance belongs to a leave type; the app setting is only the fallback for a
-       type that sets none of its own. See lib/leave-allowance.ts for the ordering. */
-    const fallbackAllowance = appSettings?.defaultAnnualEntitlement ?? 0
-    const annualAllowance = useMemo(
-        () => annualLeaveAllowance(leaveTypes, fallbackAllowance),
-        [leaveTypes, fallbackAllowance])
+    /* An allowance belongs to a leave type, and Leave Types is where it is set. A
+       type that sets none reads as 0, which renders "—". See lib/leave-allowance.ts. */
+    const annualAllowance = useMemo(() => annualLeaveAllowance(leaveTypes), [leaveTypes])
     const profileByUserId = useMemo(() => new Map(profiles.map((p) => [p.userId, p])), [profiles])
 
     /* Detect conflicts (overlapping in same dept, both pending/approved) */
@@ -563,7 +559,6 @@ const AllLeaveAdminPage = observer(function AllLeaveAdminPage({ user: _user }: {
                     leave={l}
                     leaveTypeById={leaveTypeById}
                     profile={profileByUserId.get(l.employeeId)}
-                    fallbackAllowance={fallbackAllowance}
                     isExpanded={expanded.has(l.id)}
                     isSelected={selected.has(l.id)}
                     isUrgent={isUrgent(l)}
@@ -590,7 +585,6 @@ const AllLeaveAdminPage = observer(function AllLeaveAdminPage({ user: _user }: {
                     leave={l}
                     leaveTypeById={leaveTypeById}
                     profile={profileByUserId.get(l.employeeId)}
-                    fallbackAllowance={fallbackAllowance}
                     isExpanded={expanded.has(l.id)}
                     isSelected={false}
                     isUrgent={false}
@@ -767,14 +761,13 @@ function SectionHeader({ title, subtitle, meta }: { title: string; subtitle?: st
 }
 
 function LeaveRow({
-    leave, leaveTypeById, profile, fallbackAllowance, isExpanded, isSelected, isUrgent,
+    leave, leaveTypeById, profile, isExpanded, isSelected, isUrgent,
     conflicts, history, lastHistory, leaves,
     onToggleExpand, onToggleSelect, onApprove, onReject, disabled, hideCheckbox,
 }: {
     leave: AnnualLeave
     leaveTypeById: Map<number, LeaveType>
     profile?: EmployeeProfile
-    fallbackAllowance: number
     isExpanded: boolean
     isSelected: boolean
     isUrgent: boolean
@@ -829,7 +822,7 @@ function LeaveRow({
             .reduce((sum, l) => sum + l.totalDays, 0)
     }, [leaves, leave.employeeId, leave.leaveTypeId])
 
-    const entitlement = allowanceForRequest(leaveType, profile, fallbackAllowance)
+    const entitlement = allowanceForRequest(leaveType, profile)
     const balAfter = entitlement - usedThisYear - (leave.status === 'Pending' ? leave.totalDays : 0)
     const balPct = entitlement > 0 ? Math.min(100, (usedThisYear / entitlement) * 100) : 0
     const fillColor = balPct >= 95 ? 'error.main' : balPct >= 80 ? 'warning.main' : 'success.main'
@@ -838,7 +831,7 @@ function LeaveRow({
        spelling out on hover rather than leaving an admin to reconcile numbers across
        pages: an entitlement that overrides what Leave Types says for annual leave, and
        a type that is not deducted from the pooled balance the API enforces. */
-    const typeAllowance = allowanceForLeaveType(leaveType, fallbackAllowance)
+    const typeAllowance = allowanceForLeaveType(leaveType)
     const allowanceUnit = leaveType?.allowanceUnit?.trim() || 'days/year'
     const balanceTitle = entitlement <= 0
         ? `${typeName ?? 'This leave type'} has no allowance on record`

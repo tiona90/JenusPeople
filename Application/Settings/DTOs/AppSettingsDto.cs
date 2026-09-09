@@ -5,7 +5,6 @@ public class AppSettingsDto
 
     public int LeaveYearStartMonth { get; set; }
     public int MaxCarryoverDays { get; set; }
-    public int DefaultAnnualEntitlement { get; set; }
     public int YearEndWarningDays { get; set; }
     public int FinalWarningDays { get; set; }
     public bool AutoRunRollover { get; set; }
