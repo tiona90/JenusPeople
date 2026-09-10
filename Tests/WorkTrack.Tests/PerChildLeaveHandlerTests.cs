@@ -27,6 +27,15 @@ public class PerChildLeaveHandlerTests
         new CreateAnnualLeave.Handler(db, BuildMapper(), new FakeEmailService())
             .Handle(new CreateAnnualLeave.Command { AnnualLeave = request }, CancellationToken.None);
 
+    private static Task<Result<Unit>> Edit(AppDbContext db, EditAnnualLeaveRequest request, bool isAdmin = false) =>
+        new EditAnnualLeave.Handler(db)
+            .Handle(new EditAnnualLeave.Command
+            {
+                AnnualLeave = request,
+                ChangedByUserId = PerChildLeaveWorld.UserId,
+                IsAdmin = isAdmin,
+            }, CancellationToken.None);
+
     private static CreateAnnualLeaveRequest Request(string? childId, DateTime start, DateTime end) => new()
     {
         EmployeeId = PerChildLeaveWorld.UserId,
@@ -134,5 +143,71 @@ public class PerChildLeaveHandlerTests
 
         Assert.False(secondResult.IsSuccess);
         Assert.Contains("left for the leave year", secondResult.Error);
+    }
+
+    /// <summary>
+    /// Mirrors <see cref="A_child_is_not_kept_on_a_type_that_has_no_per_child_entitlement"/>
+    /// on the edit path. If <c>EditAnnualLeave</c> ever assigned
+    /// <c>request.AnnualLeave.ChildId</c> straight from the client instead of gating it
+    /// on the (possibly just-changed) leave type, this request would keep the child
+    /// attached after being switched to an ordinary Annual Leave type — and the
+    /// calculator's usage query (which filters on child and status, not leave type)
+    /// would then silently charge that child's ledger for annual leave never spent
+    /// against the per-child cap.
+    /// </summary>
+    [Fact]
+    public async Task Editing_off_a_per_child_type_clears_the_child()
+    {
+        await using var db = await PerChildLeaveWorld.CreateAsync();
+        var child = await PerChildLeaveWorld.AddChildAsync(db, "Andreas", new DateOnly(2019, 3, 4));
+
+        var leave = PerChildLeaveWorld.Request(child.Id, new DateTime(2026, 6, 1), new DateTime(2026, 6, 5));
+        db.AnnualLeaves.Add(leave);
+        await db.SaveChangesAsync();
+
+        var result = await Edit(db, new EditAnnualLeaveRequest
+        {
+            Id = leave.Id,
+            LeaveTypeId = PerChildLeaveWorld.AnnualLeaveTypeId,
+            ChildId = child.Id, // still posted by the client — the handler must ignore it
+            StartDate = leave.StartDate,
+            EndDate = leave.EndDate,
+            Reason = "Switched to annual leave",
+        });
+
+        Assert.True(result.IsSuccess);
+        var stored = await db.AnnualLeaves.SingleAsync();
+        Assert.Null(stored.ChildId);
+    }
+
+    /// <summary>
+    /// If <c>EditAnnualLeave</c> called the calculator without <c>excludeLeaveId</c>,
+    /// the row being edited would still be read back as its own pre-edit approved
+    /// usage and count against the very cap the edit is trying to satisfy — refusing
+    /// every edit of an approved per-child request, even ones that only shrink it.
+    /// With the exclusion, the request's own prior usage is not double-counted.
+    /// </summary>
+    [Fact]
+    public async Task Editing_an_approved_request_does_not_count_it_against_itself()
+    {
+        await using var db = await PerChildLeaveWorld.CreateAsync();
+        var child = await PerChildLeaveWorld.AddChildAsync(db, "Andreas", new DateOnly(2019, 3, 4));
+
+        // Five weeks = 25 business days: the full yearly cap for this child, used up
+        // entirely by this one approved request.
+        await PerChildLeaveWorld.ApproveLeaveAsync(db, child.Id, new DateTime(2026, 1, 5), new DateTime(2026, 2, 6));
+        var leave = await db.AnnualLeaves.SingleAsync();
+
+        var result = await Edit(db, new EditAnnualLeaveRequest
+        {
+            Id = leave.Id,
+            LeaveTypeId = PerChildLeaveWorld.PaternityTypeId,
+            ChildId = child.Id,
+            StartDate = leave.StartDate,
+            EndDate = leave.EndDate.AddDays(-1), // shrink it by one business day
+            Reason = "Paternity",
+        }, isAdmin: true); // editing an Approved request requires admin
+
+        Assert.True(result.IsSuccess);
     }
 }
