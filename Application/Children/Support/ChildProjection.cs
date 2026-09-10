@@ -14,22 +14,32 @@ namespace Application.Children.Support;
 internal static class ChildProjection
 {
     /// <summary>
-    /// The age at which a child stops being eligible, per the active per-child
-    /// leave type (there is at most meant to be one — see
-    /// <c>LeaveType.PerChildEntitlement</c>). No invented fallback: when no such
-    /// type exists, 0 is returned, which reads every child as ineligible. That is
-    /// the truth — nothing grants per-child leave — where a made-up number like 15
-    /// would tell a caller "eligible" only to have the leave request refused later
-    /// against the real, unconfigured figure.
+    /// The active leave type carrying a per-child entitlement (there is at most
+    /// meant to be one — see <c>LeaveType.PerChildEntitlement</c>), or <c>null</c>
+    /// when none is configured. Extracted so the age-only callers
+    /// (<see cref="ResolveEligibleUntilAgeAsync"/>) and a caller needing the whole
+    /// row (the entitlement ledger, which also reads
+    /// <c>PerChildTotalWeeks</c>/<c>PerChildWeeksPerYear</c>) share one lookup
+    /// rather than two copies drifting apart.
     /// </summary>
-    public static async Task<int> ResolveEligibleUntilAgeAsync(AppDbContext context, CancellationToken cancellationToken)
-    {
-        var leaveType = await context.LeaveTypes
+    public static Task<LeaveType?> ResolvePerChildLeaveTypeAsync(AppDbContext context, CancellationToken cancellationToken)
+        => context.LeaveTypes
             .AsNoTracking()
             .Where(lt => lt.PerChildEntitlement && lt.IsActive)
             .OrderBy(lt => lt.Id)
             .FirstOrDefaultAsync(cancellationToken);
 
+    /// <summary>
+    /// The age at which a child stops being eligible, per the active per-child
+    /// leave type. No invented fallback: when no such type exists, 0 is returned,
+    /// which reads every child as ineligible. That is the truth — nothing grants
+    /// per-child leave — where a made-up number like 15 would tell a caller
+    /// "eligible" only to have the leave request refused later against the real,
+    /// unconfigured figure.
+    /// </summary>
+    public static async Task<int> ResolveEligibleUntilAgeAsync(AppDbContext context, CancellationToken cancellationToken)
+    {
+        var leaveType = await ResolvePerChildLeaveTypeAsync(context, cancellationToken);
         return leaveType?.ChildEligibleUntilAge ?? 0;
     }
 

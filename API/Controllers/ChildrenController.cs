@@ -78,4 +78,22 @@ public class ChildrenController : BaseApiController
         });
         return HandleResult(result);
     }
+
+    /// <summary>
+    /// The per-child leave ledger: entitlement, used and remaining, per child and in
+    /// total. Read-only and derived — there is nothing here to write.
+    /// </summary>
+    [HttpGet("entitlements")]
+    public async Task<ActionResult<ChildLeaveEntitlementSummaryDto>> GetEntitlements(
+        [FromQuery] string? employeeId)
+    {
+        var result = await Mediator.Send(new GetChildLeaveEntitlements.Query
+        {
+            EmployeeId = employeeId,
+            CallerUserId = CallerUserId,
+            IsAdmin = IsAdmin,
+            IsManager = IsManager,
+        });
+        return HandleResult(result);
+    }
 }

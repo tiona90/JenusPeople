@@ -136,11 +136,15 @@ internal static class PerChildLeaveBalanceCalculator
     // ── DB helpers ─────────────────────────────────────────────────────────────
 
     /// <summary>
+    /// Internal rather than private so <c>GetChildLeaveEntitlements</c> reads usage
+    /// through exactly the arithmetic this class enforces. A screen promising more
+    /// than the API will approve is worse than no screen.
+    ///
     /// Approved leave for one child. Only Approved counts — the same rule the pooled
     /// balance applies — and rows with a null ChildId are excluded by construction,
     /// since this is queried by child.
     /// </summary>
-    private static Task<List<AnnualLeave>> ApprovedLeaveForChildAsync(
+    internal static Task<List<AnnualLeave>> ApprovedLeaveForChildAsync(
         AppDbContext context,
         string childId,
         string? excludeLeaveId,
@@ -158,7 +162,7 @@ internal static class PerChildLeaveBalanceCalculator
     /// spanning the whole set rather than one per row: the set is small and the
     /// dates are sparse, so the range read costs less than N round trips.
     /// </summary>
-    private static async Task<int> UsedBusinessDaysAsync(
+    internal static async Task<int> UsedBusinessDaysAsync(
         AppDbContext context,
         List<AnnualLeave> approved,
         CancellationToken cancellationToken)
