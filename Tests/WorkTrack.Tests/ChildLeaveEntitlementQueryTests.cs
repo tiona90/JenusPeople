@@ -187,6 +187,36 @@ public class ChildLeaveEntitlementQueryTests
         Assert.Empty(result.Value.Children);
     }
 
+    /// <summary>
+    /// Deactivating the per-child leave type must not empty the ledger, because it
+    /// does not stop enforcement: <c>PerChildLeaveBalanceCalculator</c> and
+    /// <c>EditAnnualLeave</c> look the type up by id with no <c>IsActive</c> filter.
+    /// When the ledger filtered and they did not, deactivating Paternity Leave left
+    /// the API demanding a child on an edit or an approval while every screen reported
+    /// no entitlement at all — the picker telling an employee with children to go and
+    /// add some. The ledger is now matched to enforcement; only
+    /// <c>PerChildEntitlement</c> being off empties it (see
+    /// <see cref="Without_a_per_child_leave_type_the_ledger_is_empty"/>).
+    /// </summary>
+    [Fact]
+    public async Task Deactivating_the_per_child_leave_type_still_reports_the_ledger()
+    {
+        await using var db = await PerChildLeaveWorld.CreateAsync();
+        var paternity = await db.LeaveTypes.FindAsync(PerChildLeaveWorld.PaternityTypeId);
+        paternity!.IsActive = false;
+        await db.SaveChangesAsync();
+
+        await PerChildLeaveWorld.AddChildAsync(db, "Andreas", YoungChild);
+
+        var result = await Query(db);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(PerChildLeaveWorld.PaternityTypeId, result.Value!.LeaveTypeId);
+        var child = Assert.Single(result.Value.Children);
+        Assert.True(child.IsEligible);
+        Assert.Equal(90, child.TotalDays);
+    }
+
     /// <summary>The Monday of the first full week of the current calendar year.</summary>
     private static DateTime ThisYearsMonday() => MondayInYear(DateTime.UtcNow.Year);
 

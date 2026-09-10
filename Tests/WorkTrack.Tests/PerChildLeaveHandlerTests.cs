@@ -210,4 +210,74 @@ public class PerChildLeaveHandlerTests
 
         Assert.True(result.IsSuccess);
     }
+
+    /// <summary>
+    /// A Pending paternity row that predates this feature carries no ChildId, and no
+    /// live surface can attach one — the child picker only appears while a request is
+    /// being written. Before this, the per-child check refused the approval outright
+    /// and the row was stranded: the manager could neither approve it nor fix it.
+    ///
+    /// The approval now skips the per-child check when ChildId is null, charging
+    /// nobody's ledger — exactly as the design already treats a legacy *approved*
+    /// row. Nothing is opened up, because no live path can produce such a row:
+    /// CreateAnnualLeave refuses a per-child request with no child, and
+    /// EditAnnualLeave sets ChildId from the leave type.
+    /// </summary>
+    [Fact]
+    public async Task Approving_a_legacy_paternity_row_with_no_child_succeeds()
+    {
+        await using var db = await PerChildLeaveWorld.CreateAsync();
+
+        // A child exists, but this row does not name one — legacy data.
+        await PerChildLeaveWorld.AddChildAsync(db, "Andreas", new DateOnly(2019, 3, 4));
+
+        var legacy = PerChildLeaveWorld.Request(childId: null, new DateTime(2026, 6, 1), new DateTime(2026, 6, 5));
+        db.AnnualLeaves.Add(legacy);
+        db.Users.Add(new User { Id = "admin-1", UserName = "admin@example.com", Email = "admin@example.com", DisplayName = "Admin" });
+        await db.SaveChangesAsync();
+
+        var result = await Approve(db, legacy.Id);
+
+        Assert.True(result.IsSuccess);
+        var stored = await db.AnnualLeaves.SingleAsync();
+        Assert.Equal(AnnualLeaveStatus.Approved, stored.Status);
+        Assert.Null(stored.ChildId);
+    }
+
+    /// <summary>
+    /// The other half of that rule: skipping the check on a null child must not have
+    /// loosened it for a row that names one. This child aged out long ago, so the
+    /// eligibility check still refuses the approval.
+    /// (<see cref="Approving_paternity_leave_re_checks_the_cap"/> pins the same for
+    /// the yearly cap.)
+    /// </summary>
+    [Fact]
+    public async Task Approving_a_paternity_row_that_names_a_child_still_enforces_the_rules()
+    {
+        await using var db = await PerChildLeaveWorld.CreateAsync();
+        var agedOut = await PerChildLeaveWorld.AddChildAsync(db, "Petros", new DateOnly(2005, 1, 20));
+
+        var leave = PerChildLeaveWorld.Request(agedOut.Id, new DateTime(2026, 6, 1), new DateTime(2026, 6, 5));
+        db.AnnualLeaves.Add(leave);
+        db.Users.Add(new User { Id = "admin-1", UserName = "admin@example.com", Email = "admin@example.com", DisplayName = "Admin" });
+        await db.SaveChangesAsync();
+
+        var result = await Approve(db, leave.Id);
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains("must end on or before", result.Error);
+        // No assertion on the stored status: the handler assigns the new status
+        // before running its checks and simply returns a Failure without saving,
+        // so the tracked entity this context hands back still reads Approved.
+    }
+
+    private static Task<Result<Unit>> Approve(AppDbContext db, string leaveId) =>
+        new UpdateLeaveStatus.Handler(db, new FakeEmailService())
+            .Handle(new UpdateLeaveStatus.Command
+            {
+                LeaveId = leaveId,
+                Request = new UpdateLeaveStatusRequest { Status = AnnualLeaveStatus.Approved },
+                ChangedByUserId = "admin-1",
+                IsAdmin = true,
+            }, CancellationToken.None);
 }

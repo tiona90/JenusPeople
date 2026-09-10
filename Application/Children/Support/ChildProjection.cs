@@ -14,19 +14,38 @@ namespace Application.Children.Support;
 internal static class ChildProjection
 {
     /// <summary>
-    /// The active leave type carrying a per-child entitlement (there is at most
-    /// meant to be one — see <c>LeaveType.PerChildEntitlement</c>), or <c>null</c>
-    /// when none is configured. Extracted so the age-only callers
+    /// The leave type carrying a per-child entitlement (there is at most meant to be
+    /// one — see <c>LeaveType.PerChildEntitlement</c>), or <c>null</c> when none is
+    /// configured. Extracted so the age-only callers
     /// (<see cref="ResolveEligibleUntilAgeAsync"/>) and a caller needing the whole
     /// row (the entitlement ledger, which also reads
     /// <c>PerChildTotalWeeks</c>/<c>PerChildWeeksPerYear</c>) share one lookup
     /// rather than two copies drifting apart.
+    ///
+    /// <para><b>Deliberately not filtered on <c>IsActive</c>.</b> Enforcement does not
+    /// filter either: <see cref="Application.AnnualLeaves.Commands.PerChildLeaveBalanceCalculator"/>
+    /// and <c>EditAnnualLeave</c> both look the type up by id alone. When the two
+    /// disagreed, deactivating Paternity Leave left the API still demanding a child on
+    /// an edit or an approval while this ledger reported no per-child type at all — so
+    /// the picker told an employee with three children to go and add some, and a
+    /// pending row became unapprovable. Reporting is now matched to enforcement rather
+    /// than the other way round: making the calculator skip an inactive type would
+    /// instead turn every cap off the moment the type is deactivated, letting a pending
+    /// paternity row approve for unbounded days. A deactivated type cannot be chosen
+    /// for a new request anyway — <c>CreateAnnualLeave</c> filters on <c>IsActive</c>
+    /// — so nothing new is offered by reporting it; only the rows that already exist
+    /// are described correctly.</para>
+    ///
+    /// <para>An active type still wins when several carry the toggle, so the ordinary
+    /// case (one active per-child type, plus a retired one) resolves exactly as it did
+    /// before.</para>
     /// </summary>
     public static Task<LeaveType?> ResolvePerChildLeaveTypeAsync(AppDbContext context, CancellationToken cancellationToken)
         => context.LeaveTypes
             .AsNoTracking()
-            .Where(lt => lt.PerChildEntitlement && lt.IsActive)
-            .OrderBy(lt => lt.Id)
+            .Where(lt => lt.PerChildEntitlement)
+            .OrderByDescending(lt => lt.IsActive)
+            .ThenBy(lt => lt.Id)
             .FirstOrDefaultAsync(cancellationToken);
 
     /// <summary>

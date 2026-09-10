@@ -29,7 +29,13 @@ namespace Persistence.Migrations
                     [DefaultAllowance]      = 0,
                     -- Display-only, but 14 contradicted the 5-week annual cap.
                     [MaxConsecutiveDays]    = 25,
-                    [AccrualNotes]          = '18 weeks per child · Max 5 weeks per child per year · Until the child turns 15',
+                    -- N-prefixed: the '·' is non-ASCII, and an unprefixed literal is
+                    -- varchar, converted through the database collation. The seeder
+                    -- writes this same string as parameterised nvarchar, so without
+                    -- the N a collation lacking that character would leave a migrated
+                    -- database and a fresh clone disagreeing on exactly the text this
+                    -- migration exists to keep in step.
+                    [AccrualNotes]          = N'18 weeks per child · Max 5 weeks per child per year · Until the child turns 15',
                     [EligibilityNotes]      = 'Employees with children under 15',
                     [Description]           = 'Time off for a father around the birth of a child, and while that child is young.'
                 WHERE [Name] = 'Paternity Leave';
@@ -48,7 +54,8 @@ namespace Persistence.Migrations
                     [AllowanceUnit]         = 'days/event',
                     [DefaultAllowance]      = 14,
                     [MaxConsecutiveDays]    = 14,
-                    [AccrualNotes]          = 'Granted per event · Once per child',
+                    -- N-prefixed for the same reason as in Up: the '·' is non-ASCII.
+                    [AccrualNotes]          = N'Granted per event · Once per child',
                     [EligibilityNotes]      = 'Male employees',
                     [Description]           = 'Time off for new fathers around the birth of a child.'
                 WHERE [Name] = 'Paternity Leave';

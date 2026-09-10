@@ -34,8 +34,10 @@ public class GetChildLeaveEntitlements
 
             var profile = access.Value!;
 
-            // Whichever active leave type carries a per-child entitlement — paternity
-            // in practice. No type, no ledger: there is nothing to be entitled to.
+            // Whichever leave type carries a per-child entitlement — paternity in
+            // practice. No type, no ledger: there is nothing to be entitled to.
+            // Not filtered on IsActive, deliberately: see ResolvePerChildLeaveTypeAsync.
+            // The ledger has to describe the same rows enforcement will measure.
             var leaveType = await ChildProjection.ResolvePerChildLeaveTypeAsync(context, cancellationToken);
 
             var summary = new ChildLeaveEntitlementSummaryDto();

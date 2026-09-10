@@ -74,14 +74,26 @@ public class UpdateLeaveStatus
                 if (balanceError is not null)
                     return Result<Unit>.Failure(balanceError);
 
-                var perChildError = await PerChildLeaveBalanceCalculator.CheckPerChildEntitlementAsync(
-                    context,
-                    annualLeave,
-                    employeeProfile,
-                    excludeLeaveId: annualLeave.Id,
-                    cancellationToken);
-                if (perChildError is not null)
-                    return Result<Unit>.Failure(perChildError);
+                /* A null ChildId on a per-child type can only be a row that predates
+                   this feature: CreateAnnualLeave refuses a per-child request with no
+                   child, and EditAnnualLeave sets ChildId from the leave type. So no
+                   live path can produce one, and skipping the check here closes no
+                   hole — it only stops a legacy Pending row being stranded, since no
+                   surface can attach a child to it and the check would refuse every
+                   approval. That treats a legacy pending row exactly as the design
+                   already treats a legacy approved one: charging nobody's ledger.
+                   A row that *does* name a child still gets both caps enforced. */
+                if (annualLeave.ChildId is not null)
+                {
+                    var perChildError = await PerChildLeaveBalanceCalculator.CheckPerChildEntitlementAsync(
+                        context,
+                        annualLeave,
+                        employeeProfile,
+                        excludeLeaveId: annualLeave.Id,
+                        cancellationToken);
+                    if (perChildError is not null)
+                        return Result<Unit>.Failure(perChildError);
+                }
             }
 
             if (newStatus == AnnualLeaveStatus.Approved)
