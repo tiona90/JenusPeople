@@ -42,6 +42,7 @@ public class UpdateAdminUser
             user.DisplayName = request.User.DisplayName;
             user.PhoneNumber = string.IsNullOrWhiteSpace(request.User.PhoneNumber) ? null : request.User.PhoneNumber.Trim();
             user.DateOfBirth = request.User.DateOfBirth;
+            user.Gender = request.User.Gender;
 
             var updateResult = await userManager.UpdateAsync(user);
             if (!updateResult.Succeeded)

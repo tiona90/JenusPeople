@@ -1,5 +1,13 @@
 import type { UserRole } from './user'
 
+/**
+ * Recorded HR data an admin maintains. Nothing consults it — it does not gate
+ * maternity or paternity leave. A string union rather than a number because the
+ * API serialises enums by name (`JsonStringEnumConverter`), same as
+ * `AttachmentPolicy`. Absent or null means not specified.
+ */
+export type Gender = 'Male' | 'Female'
+
 export interface AdminUser {
     id: string
     userName: string
@@ -8,6 +16,7 @@ export interface AdminUser {
     imageUrl: string
     phoneNumber?: string | null
     dateOfBirth?: string | null // ISO date "yyyy-MM-dd"
+    gender?: Gender | null
     emailConfirmed: boolean
     /**
      * Whether the account may sign in. A leaver is switched off rather than
@@ -36,16 +45,22 @@ export interface AdminCreateUserRequest {
     departmentId: number | null
     phoneNumber?: string | null
     dateOfBirth?: string | null
+    gender?: Gender | null
     managerId?: string | null
     jobTitle?: string | null
     annualLeaveEntitlement?: number
 }
 
+/**
+ * A full replace, not a patch — the server assigns every field it carries, so
+ * a null clears the stored value rather than leaving it alone.
+ */
 export interface AdminUpdateUserRequest {
     email: string
     displayName: string
     phoneNumber?: string | null
     dateOfBirth?: string | null
+    gender?: Gender | null
 }
 
 export interface AdminSetUserRolesRequest {

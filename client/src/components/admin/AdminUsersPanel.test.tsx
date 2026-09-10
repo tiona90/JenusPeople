@@ -147,6 +147,9 @@ describe('AdminUsersPanel — Create User', () => {
             // figure to send and no chance to send a stale one.
             phoneNumber: null,
             dateOfBirth: null,
+            // Untouched, and sent as null rather than omitted: the DTO is a full
+            // replace, so null is the value that means "not specified".
+            gender: null,
         })
     })
 
@@ -423,8 +426,10 @@ describe('AdminUsersPanel — role selection', () => {
         expect(within(dialog).getByRole('radio', { name: 'Admin' })).toBeChecked()
         expect(within(dialog).getByRole('radio', { name: 'Manager' })).not.toBeChecked()
 
-        // Exactly one radio checked at any time.
-        const checked = within(dialog).getAllByRole('radio').filter((r) => (r as HTMLInputElement).checked)
+        // Exactly one role checked at any time. Scoped to the role group by its
+        // input name rather than counting every radio in the dialog — Gender is
+        // a radio group too, and always has one of its own selected.
+        const checked = dialog.querySelectorAll('input[name="create-user-role"]:checked')
         expect(checked).toHaveLength(1)
     })
 
@@ -769,6 +774,109 @@ describe('AdminUsersPanel — leave is not configured per user', () => {
         expect(sent).toMatchObject({ id: PROFILE.id, jobTitle: 'Senior Engineer' })
         expect(sent).not.toHaveProperty('annualLeaveEntitlement')
         expect(sent).not.toHaveProperty('leaveBalance')
+    })
+})
+
+/*
+ * Gender is recorded HR data an admin maintains — nothing in the app reads it.
+ * So what is worth covering is that the control round-trips: it shows what is
+ * stored, it sends what is picked, and "Not specified" can undo a value set by
+ * mistake. That last one is the reason the option exists at all; without it the
+ * field would be write-once in practice.
+ */
+describe('AdminUsersPanel — recording gender', () => {
+    const MALE_USER = { id: 'u-male', userName: 'm@example.test', email: 'm@example.test', displayName: 'Stored Male', imageUrl: '', emailConfirmed: true, isActive: true, roles: ['Employee'], gender: 'Male' }
+    const UNSET_USER = { id: 'u-unset', userName: 'u@example.test', email: 'u@example.test', displayName: 'No Gender', imageUrl: '', emailConfirmed: true, isActive: true, roles: ['Employee'], gender: null }
+
+    const MALE_PROFILE = { id: 'p-male', userId: 'u-male', displayName: 'Stored Male', departmentId: DEPARTMENT.id, managerId: null, annualLeaveEntitlement: 20, leaveBalance: 20, jobTitle: null, createdAt: '2026-01-01' }
+    const UNSET_PROFILE = { id: 'p-unset', userId: 'u-unset', displayName: 'No Gender', departmentId: DEPARTMENT.id, managerId: null, annualLeaveEntitlement: 20, leaveBalance: 20, jobTitle: null, createdAt: '2026-01-01' }
+
+    beforeEach(() => {
+        api.getAdminUsers.mockResolvedValue([MALE_USER, UNSET_USER] as never)
+        api.getEmployeeProfiles.mockResolvedValue([MALE_PROFILE, UNSET_PROFILE] as never)
+    })
+
+    async function openEditFor(displayName: string) {
+        renderPanel()
+        const nameEl = await screen.findByText(displayName)
+        const row = nameEl.parentElement!.parentElement!.parentElement!.parentElement!
+        fireEvent.click(within(row).getByTitle('Edit'))
+        return screen.getByRole('dialog')
+    }
+
+    /** What updateAdminUser was called with, once the save has gone through. */
+    async function savedUserPayload() {
+        await waitFor(() => expect(api.updateAdminUser).toHaveBeenCalledTimes(1))
+        return api.updateAdminUser.mock.calls[0][1]
+    }
+
+    it('offers the three choices as radios, including an explicit Not specified', async () => {
+        const dialog = await openEditFor('No Gender')
+
+        for (const option of ['Male', 'Female', 'Not specified']) {
+            expect(within(dialog).getByRole('radio', { name: option })).toBeInTheDocument()
+        }
+        // Not a dropdown: it sits directly above the Role radios and matches them.
+        expect(within(dialog).queryByRole('combobox', { name: /gender/i })).not.toBeInTheDocument()
+    })
+
+    it('starts on Not specified for a user who has none stored', async () => {
+        const dialog = await openEditFor('No Gender')
+
+        await waitFor(() => expect(within(dialog).getByRole('radio', { name: 'Not specified' })).toBeChecked())
+        expect(within(dialog).getByRole('radio', { name: 'Male' })).not.toBeChecked()
+        expect(within(dialog).getByRole('radio', { name: 'Female' })).not.toBeChecked()
+    })
+
+    it('shows the stored gender when the dialog opens', async () => {
+        const dialog = await openEditFor('Stored Male')
+
+        await waitFor(() => expect(within(dialog).getByRole('radio', { name: 'Male' })).toBeChecked())
+        expect(within(dialog).getByRole('radio', { name: 'Not specified' })).not.toBeChecked()
+    })
+
+    it('sends the gender the admin picks', async () => {
+        const dialog = await openEditFor('No Gender')
+
+        await waitFor(() => expect(within(dialog).getByRole('radio', { name: 'Not specified' })).toBeChecked())
+        fireEvent.click(within(dialog).getByRole('radio', { name: 'Female' }))
+        fireEvent.click(within(dialog).getByRole('button', { name: /^save$/i }))
+
+        expect(await savedUserPayload()).toMatchObject({ gender: 'Female' })
+    })
+
+    // The point of the option. The update DTO is a full replace, so a null here
+    // genuinely clears the column — an admin who ticked the wrong one can take
+    // it back rather than being stuck with it.
+    it('sends null when the admin picks Not specified, clearing a stored value', async () => {
+        const dialog = await openEditFor('Stored Male')
+
+        await waitFor(() => expect(within(dialog).getByRole('radio', { name: 'Male' })).toBeChecked())
+        fireEvent.click(within(dialog).getByRole('radio', { name: 'Not specified' }))
+        fireEvent.click(within(dialog).getByRole('button', { name: /^save$/i }))
+
+        expect(await savedUserPayload()).toMatchObject({ gender: null })
+    })
+
+    // A save that touches nothing else must not drop the stored answer.
+    it('sends the stored gender back unchanged when it is not touched', async () => {
+        const dialog = await openEditFor('Stored Male')
+
+        await waitFor(() => expect(within(dialog).getByRole('radio', { name: 'Male' })).toBeChecked())
+        fireEvent.click(within(dialog).getByRole('button', { name: /^save$/i }))
+
+        expect(await savedUserPayload()).toMatchObject({ gender: 'Male' })
+    })
+
+    it('quotes the recorded gender on the expanded row', async () => {
+        renderPanel()
+
+        const nameEl = await screen.findByText('Stored Male')
+        const row = nameEl.parentElement!.parentElement!.parentElement!.parentElement!
+        fireEvent.click(nameEl)
+
+        const gender = await within(row.parentElement!).findByText('Gender')
+        expect(within(gender.parentElement!).getByText('Male')).toBeInTheDocument()
     })
 })
 

@@ -32,11 +32,44 @@ import {
 import { getApiErrorMessage } from '../../lib/api/error-utils'
 import { softBg, type SxColor } from '../../lib/theme-tokens'
 import type {
-    AdminUser, Department, EmployeeProfile, LeaveStatusHistory, PresenceStatus, TimesheetStatusHistory, UserRole,
+    AdminUser, Department, EmployeeProfile, Gender, LeaveStatusHistory, PresenceStatus, TimesheetStatusHistory, UserRole,
 } from '../../lib/types'
 
 const PROTECTED_ADMIN_EMAIL = 'admin@annualleave.com'
 const ALL_ROLES: UserRole[] = ['Admin', 'Manager', 'Employee']
+
+/**
+ * Male / Female / Not specified, styled as radios to match the Role row it sits
+ * above. Recorded only — nothing in the app reads it, and in particular it does
+ * not gate maternity or paternity leave (the per-child paternity entitlement is
+ * deliberately gender-neutral).
+ *
+ * The explicit "Not specified" option is load-bearing rather than decorative:
+ * both admin DTOs are full-replace, so a null genuinely clears the column, and
+ * without a way to select it an admin who set a value by mistake could never
+ * take it back.
+ */
+function GenderRadioGroup(props: {
+    name: string
+    value: Gender | null
+    onChange: (value: Gender | null) => void
+}) {
+    return (
+        <Box>
+            <Typography variant="subtitle2" color="text.secondary">Gender</Typography>
+            <RadioGroup
+                row
+                name={props.name}
+                value={props.value ?? ''}
+                onChange={(e) => props.onChange((e.target.value || null) as Gender | null)}
+            >
+                <FormControlLabel value="Male" control={<Radio />} label="Male" />
+                <FormControlLabel value="Female" control={<Radio />} label="Female" />
+                <FormControlLabel value="" control={<Radio />} label="Not specified" />
+            </RadioGroup>
+        </Box>
+    )
+}
 
 type StatusTab = 'all' | 'admins' | 'managers' | 'employees' | 'deactivated' | 'online'
 
@@ -263,8 +296,9 @@ function AdminUsersPanel() {
             managerId: string | null
             phoneNumber: string | null
             dateOfBirth: string | null
+            gender: Gender | null
         }) => {
-            await updateAdminUser(payload.userId, { email: payload.email, displayName: payload.displayName, phoneNumber: payload.phoneNumber, dateOfBirth: payload.dateOfBirth })
+            await updateAdminUser(payload.userId, { email: payload.email, displayName: payload.displayName, phoneNumber: payload.phoneNumber, dateOfBirth: payload.dateOfBirth, gender: payload.gender })
             await setAdminUserRoles(payload.userId, { roles: payload.roles })
             if (payload.profile) {
                 await updateEmployeeProfile({
@@ -917,6 +951,7 @@ function UserRow({
                         <ExpandRow label="Joined" value={fmtJoined(derived.profile?.createdAt)} />
                         <ExpandRow label="Phone" value={u.phoneNumber || '—'} />
                         <ExpandRow label="Date of birth" value={u.dateOfBirth ? new Date(u.dateOfBirth).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'} />
+                        <ExpandRow label="Gender" value={u.gender ?? '—'} />
                         {/* Admins sit outside the department structure and carry no
                             entitlement, so none of these rows apply to them. */}
                         {role !== 'Admin' && (
@@ -1205,6 +1240,7 @@ function EditUserDialog(props: {
         managerId: string | null
         phoneNumber: string | null
         dateOfBirth: string | null
+        gender: Gender | null
     }) => void
 }) {
     const open = !!props.data
@@ -1218,6 +1254,7 @@ function EditUserDialog(props: {
     const [jobTitle, setJobTitle] = useState('')
     const [phoneNumber, setPhoneNumber] = useState('')
     const [dateOfBirth, setDateOfBirth] = useState('')
+    const [gender, setGender] = useState<Gender | null>(null)
 
     useEffect(() => {
         if (props.data) {
@@ -1230,6 +1267,7 @@ function EditUserDialog(props: {
                 setJobTitle(props.data!.profile?.jobTitle ?? '')
                 setPhoneNumber(props.data!.user.phoneNumber ?? '')
                 setDateOfBirth(props.data!.user.dateOfBirth ?? '')
+                setGender(props.data!.user.gender ?? null)
             })
         }
 
@@ -1270,6 +1308,7 @@ function EditUserDialog(props: {
                     <TextField label="Display name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} fullWidth />
                     <TextField label="Phone number" type="tel" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} fullWidth />
                     <TextField label="Date of birth" type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} fullWidth slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: new Date().toISOString().slice(0, 10) } }} helperText="Used for birthday reminders." />
+                    <GenderRadioGroup name="edit-user-gender" value={gender} onChange={setGender} />
 
                     <Divider />
                     <Typography variant="subtitle2" color="text.secondary">Role</Typography>
@@ -1332,7 +1371,7 @@ function EditUserDialog(props: {
                         /* No override means the leave type's own allowance, not 0: a stored 0
                            switches the approval-time balance check off outright (see
                            Application/AnnualLeaves/Commands/AnnualLeaveBalanceCalculator.cs). */
-                        user && props.onSubmit({ userId: user.id, email, displayName, roles: [role], profile, departmentId: effectiveDepartmentId, jobTitle, managerId: showManagerField ? departmentManager?.profileId ?? null : profile?.managerId ?? null, phoneNumber: phoneNumber.trim() || null, dateOfBirth: dateOfBirth || null })
+                        user && props.onSubmit({ userId: user.id, email, displayName, roles: [role], profile, departmentId: effectiveDepartmentId, jobTitle, managerId: showManagerField ? departmentManager?.profileId ?? null : profile?.managerId ?? null, phoneNumber: phoneNumber.trim() || null, dateOfBirth: dateOfBirth || null, gender })
                     }
                     sx={saveBtnSx}
                 >
@@ -1357,6 +1396,7 @@ function CreateUserDialog(props: {
         jobTitle: string | null
         phoneNumber: string | null
         dateOfBirth: string | null
+        gender: Gender | null
     }) => void
     departments: Department[]
     profiles: EmployeeProfile[]
@@ -1370,6 +1410,7 @@ function CreateUserDialog(props: {
     const [jobTitle, setJobTitle] = useState('')
     const [phoneNumber, setPhoneNumber] = useState('')
     const [dateOfBirth, setDateOfBirth] = useState('')
+    const [gender, setGender] = useState<Gender | null>(null)
 
     // Same rule as EditUserDialog: a new hire reports to whoever manages the
     // department they're placed in — not a free pick.
@@ -1399,6 +1440,7 @@ function CreateUserDialog(props: {
         setJobTitle('')
         setPhoneNumber('')
         setDateOfBirth('')
+        setGender(null)
         props.onClose()
     }
 
@@ -1424,6 +1466,7 @@ function CreateUserDialog(props: {
                     />
                     <TextField label="Phone number" type="tel" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} fullWidth />
                     <TextField label="Date of birth" type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} fullWidth slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: new Date().toISOString().slice(0, 10) } }} helperText="Used for birthday reminders." />
+                    <GenderRadioGroup name="create-user-gender" value={gender} onChange={setGender} />
 
                     <Divider />
                     <Typography variant="subtitle2" color="text.secondary">Role</Typography>
@@ -1488,6 +1531,7 @@ function CreateUserDialog(props: {
                         jobTitle: isAdmin ? null : jobTitle.trim() || null,
                         phoneNumber: phoneNumber.trim() || null,
                         dateOfBirth: dateOfBirth || null,
+                        gender,
                     })}
                     sx={saveBtnSx}
                 >

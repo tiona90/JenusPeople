@@ -51,6 +51,7 @@ public class CreateAdminUser
                 DisplayName = displayName,
                 PhoneNumber = string.IsNullOrWhiteSpace(request.User.PhoneNumber) ? null : request.User.PhoneNumber.Trim(),
                 DateOfBirth = request.User.DateOfBirth,
+                Gender = request.User.Gender,
                 EmailConfirmed = true,
             };
 
