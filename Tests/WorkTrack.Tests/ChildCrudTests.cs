@@ -517,47 +517,96 @@ public class ChildCrudTests
     }
 
     /// <summary>
-    /// The declaration and the list must not be able to disagree. Saying "no
-    /// children" while children are on the profile is refused rather than silently
-    /// ignored — a flag that contradicts the rows beside it is the failure mode
-    /// CLAUDE.md documents for every duplicated leave figure.
+    /// A client that does not send the field must not silently retract a
+    /// declaration, so null means "leave it alone" rather than "false" — checked
+    /// against a profile already declared <c>true</c>. This is the case the null
+    /// short-circuit exists for: it fails if that short-circuit is ever removed
+    /// (the count query would still find nothing to object to, but a careless
+    /// rewrite that unconditionally assigned <c>requested.Value</c> would crash on
+    /// the null here rather than silently misbehaving, which is exactly why cell 2
+    /// below is needed too).
     /// </summary>
     [Fact]
-    public async Task Declaring_no_children_while_children_exist_is_refused()
+    public async Task An_absent_declaration_leaves_a_true_declaration_alone()
     {
         await using var db = TestDb.Create();
         var profile = await SeedProfileAsync(db);
-        await Create(db, profile.UserId, Andreas());
+        profile.HasChildren = true;
+        await db.SaveChangesAsync();
 
-        var error = await HasChildrenDeclaration.ValidateAsync(
-            db, profile, requested: false, CancellationToken.None);
+        var error = await HasChildrenDeclaration.ApplyAsync(
+            db, profile, requested: null, CancellationToken.None);
 
-        Assert.Equal("Remove the 1 child(ren) on your profile before saying you have none.", error);
-    }
-
-    [Fact]
-    public async Task Declaring_no_children_is_fine_when_there_are_none()
-    {
-        await using var db = TestDb.Create();
-        var profile = await SeedProfileAsync(db);
-
-        Assert.Null(await HasChildrenDeclaration.ValidateAsync(
-            db, profile, requested: false, CancellationToken.None));
+        Assert.Null(error);
+        Assert.True((await db.EmployeeProfiles.SingleAsync(ep => ep.Id == profile.Id)).HasChildren);
     }
 
     /// <summary>
-    /// A client that does not send the field must not silently retract a
-    /// declaration, so null means "leave it alone" rather than "false".
+    /// Same as above but against a profile declared <c>false</c> — proves the
+    /// null short-circuit does not quietly flip a stored <c>false</c> to
+    /// <c>true</c> (or anything else) on its way through.
     /// </summary>
     [Fact]
-    public async Task An_absent_declaration_changes_nothing()
+    public async Task An_absent_declaration_leaves_a_false_declaration_alone()
+    {
+        await using var db = TestDb.Create();
+        var profile = await SeedProfileAsync(db);
+        profile.HasChildren = false;
+        await db.SaveChangesAsync();
+
+        var error = await HasChildrenDeclaration.ApplyAsync(
+            db, profile, requested: null, CancellationToken.None);
+
+        Assert.Null(error);
+        Assert.False((await db.EmployeeProfiles.SingleAsync(ep => ep.Id == profile.Id)).HasChildren);
+    }
+
+    /// <summary>
+    /// The declaration and the list must not be able to disagree. Saying "no
+    /// children" while children are on the profile is refused rather than silently
+    /// ignored — a flag that contradicts the rows beside it is the failure mode
+    /// CLAUDE.md documents for every duplicated leave figure. The refusal must
+    /// also leave the stored value exactly where it was, not just report an error.
+    /// </summary>
+    [Fact]
+    public async Task Declaring_no_children_while_children_exist_is_refused_and_leaves_the_value_unchanged()
     {
         await using var db = TestDb.Create();
         var profile = await SeedProfileAsync(db);
         await Create(db, profile.UserId, Andreas());
 
-        Assert.Null(await HasChildrenDeclaration.ValidateAsync(
-            db, profile, requested: null, CancellationToken.None));
+        var error = await HasChildrenDeclaration.ApplyAsync(
+            db, profile, requested: false, CancellationToken.None);
+
+        Assert.Equal("Remove the 1 child(ren) on your profile before saying you have none.", error);
+        Assert.True((await db.EmployeeProfiles.SingleAsync(ep => ep.Id == profile.Id)).HasChildren);
+    }
+
+    [Fact]
+    public async Task Declaring_no_children_is_saved_when_there_are_none()
+    {
+        await using var db = TestDb.Create();
+        var profile = await SeedProfileAsync(db);
+        Assert.Null(profile.HasChildren);
+
+        var error = await HasChildrenDeclaration.ApplyAsync(
+            db, profile, requested: false, CancellationToken.None);
+
+        Assert.Null(error);
+        Assert.False((await db.EmployeeProfiles.SingleAsync(ep => ep.Id == profile.Id)).HasChildren);
+    }
+
+    [Fact]
+    public async Task Declaring_has_children_is_saved()
+    {
+        await using var db = TestDb.Create();
+        var profile = await SeedProfileAsync(db);
+
+        var error = await HasChildrenDeclaration.ApplyAsync(
+            db, profile, requested: true, CancellationToken.None);
+
+        Assert.Null(error);
+        Assert.True((await db.EmployeeProfiles.SingleAsync(ep => ep.Id == profile.Id)).HasChildren);
     }
 
     [Fact]

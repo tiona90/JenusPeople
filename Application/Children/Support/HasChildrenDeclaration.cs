@@ -14,25 +14,32 @@ namespace Application.Children.Support;
 public static class HasChildrenDeclaration
 {
     /// <summary>
-    /// An error message when the requested declaration contradicts the profile's
-    /// children, or <c>null</c> when it may be saved. A <c>null</c> request leaves
-    /// the stored answer alone — a client that does not send the field must not
-    /// silently retract a declaration.
+    /// Applies a requested declaration to the profile, or returns an error message
+    /// when it contradicts the children already on it. A <c>null</c> request leaves
+    /// the stored answer alone — an older client that does not send the field must
+    /// not silently retract a declaration. Both the validation and the assignment
+    /// live here, in one place, so the rule cannot drift between what is checked
+    /// and what is saved.
     /// </summary>
-    public static async Task<string?> ValidateAsync(
+    public static async Task<string?> ApplyAsync(
         AppDbContext context,
         EmployeeProfile profile,
         bool? requested,
         CancellationToken cancellationToken)
     {
-        if (requested is not false)
+        if (requested is null)
             return null;
 
-        var childCount = await context.Children
-            .CountAsync(child => child.EmployeeProfileId == profile.Id, cancellationToken);
+        if (requested is false)
+        {
+            var childCount = await context.Children
+                .CountAsync(child => child.EmployeeProfileId == profile.Id, cancellationToken);
 
-        return childCount == 0
-            ? null
-            : $"Remove the {childCount} child(ren) on your profile before saying you have none.";
+            if (childCount > 0)
+                return $"Remove the {childCount} child(ren) on your profile before saying you have none.";
+        }
+
+        profile.HasChildren = requested.Value;
+        return null;
     }
 }

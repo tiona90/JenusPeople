@@ -249,17 +249,12 @@ public class AccountController(
             return BadRequest(new { message = "Employee profile could not be found." });
         }
 
-        var declarationError = await HasChildrenDeclaration.ValidateAsync(
+        var declarationError = await HasChildrenDeclaration.ApplyAsync(
             context, employeeProfile, request.HasChildren, HttpContext.RequestAborted);
 
         if (declarationError is not null)
         {
             return BadRequest(new { message = declarationError });
-        }
-
-        if (request.HasChildren.HasValue)
-        {
-            employeeProfile.HasChildren = request.HasChildren.Value;
         }
 
         // Department is assigned by an administrator (see AdminUsersController), not
