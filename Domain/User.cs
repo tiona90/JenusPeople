@@ -11,6 +11,19 @@ public class User : IdentityUser
     // PhoneNumber is inherited from IdentityUser.
     public DateOnly? DateOfBirth { get; set; }
 
+    /// <summary>
+    /// Recorded HR data, maintained by an administrator. Nothing consults it: it
+    /// does not gate maternity or paternity leave, and the eligibility notes on
+    /// those leave types stay decorative. Deliberately so — the per-child
+    /// paternity entitlement is gender-neutral, and a rule here would narrow it.
+    ///
+    /// Nullable because every account predating the column has no value, and a
+    /// default would assert a fact about a real person that nobody entered.
+    /// <c>null</c> means "not specified", which an admin can also choose
+    /// explicitly to clear a value set by mistake.
+    /// </summary>
+    public Gender? Gender { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     /// <summary>
@@ -34,4 +47,15 @@ public class User : IdentityUser
     public EmployeeProfile? EmployeeProfile { get; set; }
     public ICollection<Timesheet> ApprovedTimesheets { get; set; } = new List<Timesheet>();
     public ICollection<TimesheetStatusHistory> ChangedTimesheetStatuses { get; set; } = new List<TimesheetStatusHistory>();
+}
+
+/// <summary>
+/// Serialised as "Male" / "Female" rather than 1 / 2: <c>API/Program.cs</c>
+/// registers <c>JsonStringEnumConverter</c>, so the client types this as a string
+/// union the same way it types <c>AttachmentPolicy</c> and <c>EligibilityScope</c>.
+/// </summary>
+public enum Gender
+{
+    Male = 1,
+    Female = 2,
 }

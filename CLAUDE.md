@@ -77,6 +77,8 @@ that means when adding code:
 
 **Validation pipeline:** `FluentValidation` validators auto-run via MediatR's `ValidationBehavior` pipeline behavior. Add a validator class in the same folder as the command/query.
 
+**Full-replace update DTOs:** `AdminUpdateUserDto` is a replace, not a patch — `UpdateAdminUser` assigns every field it carries unconditionally, so a `null` in the request genuinely clears the stored value. Anything added to it has to follow that: mixing in a "a null leaves the stored answer alone" rule for one field gives a field that looks editable but quietly refuses to be cleared. A nullable field on such a DTO therefore needs a way for the UI to *send* null — hence the explicit "Not specified" radio beside `User.Gender`.
+
 **Authorization:** Policy-based (`"AnnualLeaveRead"`, `"AnnualLeaveCreate"`, etc.) defined in `API/Program.cs`. Roles: `Admin`, `Manager`, `Employee`. Managers are scoped to their departments in queries.
 
 ### Frontend Patterns
@@ -93,7 +95,7 @@ that means when adding code:
 
 | Entity | Key Fields |
 |--------|-----------|
-| `User` | Extends `IdentityUser`; has `DisplayName`, `ImageUrl`, `IsActive` (may this account sign in — a leaver is switched off rather than deleted, since `DeleteAdminUser` nulls out every approval they gave) |
+| `User` | Extends `IdentityUser`; has `DisplayName`, `ImageUrl`, `IsActive` (may this account sign in — a leaver is switched off rather than deleted, since `DeleteAdminUser` nulls out every approval they gave). `DateOfBirth` and `Gender` are recorded HR data an admin maintains on the Users panel; **nothing consults `Gender`** — in particular it does not gate maternity or paternity leave, and the eligibility notes on those leave types stay decorative. The per-child paternity entitlement below is deliberately gender-neutral. It is nullable and `null` means "not specified", which the dialog offers explicitly so a value set by mistake can be taken back — see **Full-replace update DTOs** under [Backend Patterns](#backend-patterns) |
 | `AnnualLeave` | `EmployeeId`, `StartDate/EndDate`, `Status` (enum), `TotalDays` (computed, no weekends). `ChildId` is nullable — required on a request against a `PerChildEntitlement` type, `null` on every row predating the feature (and on any request against a type that isn't per-child), and a `null` `ChildId` counts against no per-child ledger |
 | `LeaveType` | `Name`, `IsActive`, `AffectsBalance` (is it deducted from the enforced pool), `DefaultAllowance` and `MaxCarryoverDays` — the allowance and the year-end cap that bounds it, both per type and both edited **only** on Leave Types. See [Leave is configured once](#domain-model-summary). `PerChildEntitlement` plus its three numbers (`PerChildTotalWeeks`, `PerChildWeeksPerYear`, `ChildEligibleUntilAge`) configure the second, per-child ledger — see [the two leave ledgers](#domain-model-summary) below the table |
 | `Timesheet` | `EmployeeId`, `PeriodStart/End`, `TotalHours`, `Status` (Draft→Submitted→Approved/Rejected), `DepartmentId` (nullable — the department it was filed under, kept for history so it outlives its author's move; null when the author has none, i.e. an Admin, matching `AnnualLeave.DepartmentId`) |

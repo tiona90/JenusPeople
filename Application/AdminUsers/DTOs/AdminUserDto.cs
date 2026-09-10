@@ -1,4 +1,6 @@
-﻿namespace Application.AdminUsers.DTOs;
+﻿using Domain;
+
+namespace Application.AdminUsers.DTOs;
 
 public class AdminUserDto
 {
@@ -9,6 +11,8 @@ public class AdminUserDto
     public string ImageUrl { get; set; } = string.Empty;
     public string? PhoneNumber { get; set; }
     public DateOnly? DateOfBirth { get; set; }
+    /// <summary>Serialises as "Male" / "Female"; null means not specified.</summary>
+    public Gender? Gender { get; set; }
     public bool EmailConfirmed { get; set; }
     public bool IsActive { get; set; }
     public List<string> Roles { get; set; } = new();

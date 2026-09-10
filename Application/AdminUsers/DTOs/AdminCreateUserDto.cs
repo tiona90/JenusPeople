@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using Domain;
 
 namespace Application.AdminUsers.DTOs;
 
@@ -35,6 +36,9 @@ public class AdminCreateUserDto
     public string? PhoneNumber { get; set; }
 
     public DateOnly? DateOfBirth { get; set; }
+
+    /// <summary>Optional. Null means not specified, and nothing consults it.</summary>
+    public Gender? Gender { get; set; }
 
     /// <summary>
     /// The profile id of who this person reports to. The admin UI derives this

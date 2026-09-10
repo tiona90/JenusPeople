@@ -22,6 +22,7 @@ public static class AdminUserMapper
         ImageUrl = user.ImageUrl ?? string.Empty,
         PhoneNumber = user.PhoneNumber,
         DateOfBirth = user.DateOfBirth,
+        Gender = user.Gender,
         EmailConfirmed = user.EmailConfirmed,
         IsActive = user.IsActive,
         Roles = roles.OrderBy(r => r).ToList(),
