@@ -18,6 +18,7 @@ import {
     deleteAnnualLeave,
     getAnnualLeaves,
     getAppSettings,
+    getChildLeaveEntitlements,
     getEmployeeProfiles,
     getLeaveStatusHistories,
     getLeaveTypes,
@@ -87,6 +88,12 @@ const MyLeavePage = observer(function MyLeavePage({ user }: { user: UserInfo }) 
     const { data: profiles = [] } = useQuery({ queryKey: ['employeeProfiles'], queryFn: getEmployeeProfiles })
     const { data: settings } = useQuery({ queryKey: ['appSettings'], queryFn: getAppSettings })
     const { data: histories = [] } = useQuery({ queryKey: ['leaveStatusHistories'], queryFn: getLeaveStatusHistories })
+    // Prefix-matched by an earlier task's invalidation of ['childLeaveEntitlements'] —
+    // keep the key as ['childLeaveEntitlements', 'me'].
+    const { data: childEntitlements } = useQuery({
+        queryKey: ['childLeaveEntitlements', 'me'],
+        queryFn: () => getChildLeaveEntitlements(),
+    })
 
     const leaveTypeById = useMemo(
         () => new Map(leaveTypes.map((lt) => [lt.id, lt])),
@@ -311,6 +318,48 @@ const MyLeavePage = observer(function MyLeavePage({ user }: { user: UserInfo }) 
                     </Box>
                 </Box>
             </Box>
+
+            {/* Per-child ledger (paternity leave, in practice). Renders only when the
+                employee has at least one child *and* an active leave type actually carries
+                a per-child entitlement — either gap means nothing to show, not an empty
+                card. */}
+            {childEntitlements?.leaveTypeId != null && childEntitlements.children.length > 0 && (
+                <Box sx={{ bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider', borderRadius: '12px', p: '18px 20px', mb: '14px' }}>
+                    <Stack spacing={1}>
+                        <Box>
+                            <Typography variant="subtitle2" fontWeight={700}>
+                                {childEntitlements.leaveTypeName}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                                {`Leave year ${formatDate(childEntitlements.children[0].leaveYearStart)} – ${formatDate(childEntitlements.children[0].leaveYearEnd)}`}
+                            </Typography>
+                        </Box>
+
+                        {childEntitlements.children.map((child) => (
+                            <Stack
+                                key={child.childId}
+                                direction="row"
+                                justifyContent="space-between"
+                                alignItems="baseline"
+                                sx={{ opacity: child.isEligible ? 1 : 0.6 }}
+                            >
+                                <Typography variant="body2">
+                                    {`${child.name} · age ${child.ageYears}`}
+                                </Typography>
+                                <Typography variant="body2" color="text.secondary">
+                                    {child.isEligible
+                                        ? `${child.remainingDays} of ${child.totalDays} days left · ${child.thisYearRemainingDays} of ${child.thisYearCapDays} this year`
+                                        : `no longer eligible · ${child.usedDays} days used`}
+                                </Typography>
+                            </Stack>
+                        ))}
+
+                        <Typography variant="caption" color="text.secondary">
+                            {`${childEntitlements.eligibleChildCount} eligible child(ren) · ${childEntitlements.totalRemainingDays} days remaining in total`}
+                        </Typography>
+                    </Stack>
+                </Box>
+            )}
 
             {/* Year usage timeline */}
             <Box sx={{ bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider', borderRadius: '12px', p: '18px 20px', mb: '14px' }}>
@@ -949,6 +998,10 @@ function LeaveDetailsDialog({ leave, leaveTypeName, feedback, onClose }: {
                         </Box>
                     )}
                     <LeaveDetailRow label="Leave Type" value={leaveTypeName ?? 'Annual Leave'} />
+                    {/* Per-child leave only — every other row has no child and
+                        renders exactly as before. This is the fact the per-child
+                        cap turns on, so it belongs beside the type it qualifies. */}
+                    {!!leave.childName && <LeaveDetailRow label="Child" value={leave.childName} />}
                     <Divider sx={{ my: 0.5 }} />
                     <LeaveDetailRow label="Start Date" value={formatDate(leave.startDate)} />
                     <LeaveDetailRow label="End Date" value={formatDate(leave.endDate)} />

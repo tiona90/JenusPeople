@@ -25,6 +25,7 @@ public class GetAnnualLeaveDetails
         {
             IQueryable<Domain.AnnualLeave> annualLeaveQuery = context.AnnualLeaves
                 .Include(al => al.Delegate)
+                .Include(al => al.Child)
                 .AsNoTracking()
                 .Where(al => al.Id == request.Id);
 

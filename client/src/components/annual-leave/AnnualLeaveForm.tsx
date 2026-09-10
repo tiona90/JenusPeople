@@ -19,6 +19,7 @@ import { getApiErrorMessage } from '../../lib/api/error-utils'
 import { useStore } from '../../lib/mobx'
 import { softBg } from '../../lib/theme-tokens'
 import { buildAnnualLeaveSchema, type AnnualLeaveFormValues } from '../../lib/validation/leave'
+import ChildLeavePicker from './ChildLeavePicker'
 import type { AnnualLeave, CreateAnnualLeaveRequest, EditAnnualLeaveRequest, LeaveStatusHistory } from '../../lib/types'
 
 function getErrorMessage(error: unknown) {
@@ -49,12 +50,36 @@ function AnnualLeaveForm({ open, onClose, leave, isAdmin = false, readOnly = fal
 
     const [evidenceUrl, setEvidenceUrl] = useState(leave?.evidenceUrl ?? '')
     const [evidenceFile, setEvidenceFile] = useState<File | null>(null)
+    // Whether the child picker currently has no real choice to offer (query
+    // failed, no children on file, or none eligible). Reset below whenever it
+    // isn't the thing actually shown, so it never lingers from a prior type or
+    // employee and blocks a submit it has nothing to do with.
+    const [childPickerBlocked, setChildPickerBlocked] = useState(false)
 
     const requireEmployee = isAdmin && !isEdit
-    const schema = useMemo(() => buildAnnualLeaveSchema(requireEmployee), [requireEmployee])
+
+    const { data: leaveTypes, isLoading: isLoadingLeaveTypes } = useQuery({
+        queryKey: ['leaveTypes'],
+        queryFn: getLeaveTypes,
+    })
+
+    /* Which leave types measure their entitlement per child — paternity leave, in
+       practice. The schema needs them to know when childId is required, and the
+       schema has to exist before useForm does, so this is derived from the type
+       list rather than from the form's own selected value. */
+    const perChildLeaveTypeIds = useMemo(
+        () => (leaveTypes ?? []).filter((leaveType) => leaveType.perChildEntitlement).map((leaveType) => leaveType.id),
+        [leaveTypes],
+    )
+
+    const schema = useMemo(
+        () => buildAnnualLeaveSchema(requireEmployee, perChildLeaveTypeIds),
+        [requireEmployee, perChildLeaveTypeIds],
+    )
 
     const buildDefaults = (): AnnualLeaveFormValues => ({
         employeeId: '',
+        childId: leave?.childId ?? '',
         startDate: leave ? toInputDate(leave.startDate) : '',
         endDate: leave ? toInputDate(leave.endDate) : '',
         leaveTypeId: leave?.leaveTypeId ?? 0,
@@ -66,10 +91,50 @@ function AnnualLeaveForm({ open, onClose, leave, isAdmin = false, readOnly = fal
         defaultValues: buildDefaults(),
     })
 
-    const { data: leaveTypes, isLoading: isLoadingLeaveTypes } = useQuery({
-        queryKey: ['leaveTypes'],
-        queryFn: getLeaveTypes,
-    })
+    const watchedLeaveTypeId = watch('leaveTypeId')
+    const watchedEmployeeId = watch('employeeId')
+    const watchedStartDate = watch('startDate')
+    const watchedEndDate = watch('endDate')
+
+    const requiresChild = perChildLeaveTypeIds.includes(watchedLeaveTypeId)
+    // The configured cut-off age for the selected type, so the picker never quotes
+    // an invented one. 0 while the type list is still loading, which is also what
+    // the server reports when nothing carries a per-child entitlement.
+    const childEligibleUntilAge = (leaveTypes ?? []).find((lt) => lt.id === watchedLeaveTypeId)?.childEligibleUntilAge ?? 0
+    // On the admin create path, no employee is chosen yet means no ledger to
+    // load — showing the picker anyway would fetch the signed-in admin's own
+    // children instead of placeholder text explaining why there's nothing yet.
+    const awaitingEmployeeSelection = requireEmployee && !watchedEmployeeId
+
+    // The blocked flag only describes the picker that is actually on screen.
+    // Whenever it isn't shown (type doesn't need a child, or we're waiting on
+    // an employee pick), clear it so a stale "blocked" from a previous type or
+    // employee can't disable a submit it no longer applies to.
+    useEffect(() => {
+        if (!requiresChild || awaitingEmployeeSelection) {
+            setChildPickerBlocked(false)
+        }
+    }, [requiresChild, awaitingEmployeeSelection])
+
+    /**
+     * Weekday count for the caption under the child picker. Public holidays are
+     * NOT excluded — the client has no holiday list — so this can read one or two
+     * days high near a holiday. The server's figure is the one that counts, and it
+     * only ever comes out lower, so the caption never over-promises what is left.
+     */
+    const requestedDays = useMemo(() => {
+        if (!watchedStartDate || !watchedEndDate) return null
+        const start = new Date(watchedStartDate)
+        const end = new Date(watchedEndDate)
+        if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return null
+
+        let count = 0
+        for (const date = new Date(start); date <= end; date.setDate(date.getDate() + 1)) {
+            const day = date.getDay()
+            if (day !== 0 && day !== 6) count++
+        }
+        return count
+    }, [watchedStartDate, watchedEndDate])
 
     const { data: adminUsers, isLoading: isLoadingUsers } = useQuery({
         queryKey: ['adminUsers'],
@@ -77,11 +142,23 @@ function AnnualLeaveForm({ open, onClose, leave, isAdmin = false, readOnly = fal
         enabled: isAdmin && !isEdit,
     })
 
+    /* Whose request this is, when it isn't the signed-in user's own — an admin
+       filing or editing on someone else's behalf. Wording only: the picker's
+       "add your children" advice is nonsense to an admin, who has no screen for
+       another employee's children. Not derived from the picker's employeeId, which
+       is also set when a user opens their own request. */
+    const onBehalfOfName = leave
+        ? (leave.employeeId !== authStore.user?.id ? leave.employeeName : undefined)
+        : requireEmployee
+            ? (adminUsers ?? []).find((u) => u.id === watchedEmployeeId)?.displayName
+            : undefined
+
     // Sync form state on open (populate from leave) and on close (reset).
     useEffect(() => {
         reset(buildDefaults())
         setEvidenceUrl(leave?.evidenceUrl ?? '')
         setEvidenceFile(null)
+        setChildPickerBlocked(false)
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open, leave?.id])
 
@@ -134,8 +211,6 @@ function AnnualLeaveForm({ open, onClose, leave, isAdmin = false, readOnly = fal
         },
     }
 
-    const watchedStart = watch('startDate')
-
     // Validated submit (react-hook-form blocks this when the zod schema fails,
     // so the existing API calls only fire on valid input).
     const onValid = async (values: AnnualLeaveFormValues) => {
@@ -154,6 +229,10 @@ function AnnualLeaveForm({ open, onClose, leave, isAdmin = false, readOnly = fal
                     startDate: values.startDate,
                     endDate: values.endDate,
                     leaveTypeId: values.leaveTypeId,
+                    // Sent only for a per-child type. The server clears it for any
+                    // other type regardless, so there is no point handing it a
+                    // stale id to discard.
+                    childId: requiresChild ? values.childId : undefined,
                     reason: values.reason,
                     evidenceUrl: nextEvidenceUrl,
                     // This form doesn't edit coverage — carry the existing delegate
@@ -165,6 +244,7 @@ function AnnualLeaveForm({ open, onClose, leave, isAdmin = false, readOnly = fal
                     startDate: values.startDate,
                     endDate: values.endDate,
                     leaveTypeId: values.leaveTypeId,
+                    childId: requiresChild ? values.childId : undefined,
                     reason: values.reason,
                     evidenceUrl: nextEvidenceUrl,
                     employeeId: isAdmin ? values.employeeId : (authStore.user?.id ?? ''),
@@ -334,7 +414,7 @@ function AnnualLeaveForm({ open, onClose, leave, isAdmin = false, readOnly = fal
                                         required
                                         fullWidth
                                         InputLabelProps={{ shrink: true }}
-                                        inputProps={{ min: watchedStart }}
+                                        inputProps={{ min: watchedStartDate }}
                                         error={!!fieldState.error}
                                         helperText={fieldState.error?.message ?? 'Select end of leave'}
                                         InputProps={{
@@ -387,6 +467,50 @@ function AnnualLeaveForm({ open, onClose, leave, isAdmin = false, readOnly = fal
                                     ))}
                                 </TextField>
                             )}
+                        />
+                    )}
+
+                    {/* Only for a type whose budget is per child. The server clears
+                        childId for every other type, so a stale selection cannot
+                        survive a change of leave type. */}
+                    {requiresChild && !readOnly && (
+                        awaitingEmployeeSelection ? (
+                            <Alert severity="info">
+                                Select an employee first to choose the child this leave is for.
+                            </Alert>
+                        ) : (
+                            <Controller
+                                name="childId"
+                                control={control}
+                                render={({ field, fieldState }) => (
+                                    <ChildLeavePicker
+                                        value={field.value}
+                                        onChange={field.onChange}
+                                        // Editing someone else's request: the ledger to load is
+                                        // theirs, not the signed-in admin/manager's own — see
+                                        // Fix 1. On create, it follows whichever employee the
+                                        // admin has picked so far.
+                                        employeeId={leave?.employeeId ?? (requireEmployee ? (watchedEmployeeId || undefined) : undefined)}
+                                        childEligibleUntilAge={childEligibleUntilAge}
+                                        onBehalfOfName={onBehalfOfName}
+                                        requestedDays={requestedDays}
+                                        error={fieldState.error?.message}
+                                        disabled={isPending}
+                                        onBlockedChange={setChildPickerBlocked}
+                                    />
+                                )}
+                            />
+                        )
+                    )}
+
+                    {readOnly && !!leave?.childName && (
+                        <TextField
+                            label="Child"
+                            value={leave.childName}
+                            fullWidth
+                            disabled
+                            InputProps={{ readOnly: true }}
+                            helperText=" "
                         />
                     )}
                     {(() => {
@@ -488,7 +612,7 @@ function AnnualLeaveForm({ open, onClose, leave, isAdmin = false, readOnly = fal
                         form="leave-form"
                         variant="contained"
                         sx={saveBtnSx}
-                        disabled={isPending || isLoadingLeaveTypes}
+                        disabled={isPending || isLoadingLeaveTypes || childPickerBlocked}
                         startIcon={isPending ? <CircularProgress size={16} color="inherit" /> : null}
                     >
                         {submitLabel}

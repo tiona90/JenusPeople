@@ -18,6 +18,10 @@ public class LeaveTypeDto
     public int DefaultAllowance { get; set; }
     public string AllowanceUnit { get; set; } = "days/year";
     public int MaxCarryoverDays { get; set; }
+    public bool PerChildEntitlement { get; set; }
+    public int PerChildTotalWeeks { get; set; }
+    public int PerChildWeeksPerYear { get; set; }
+    public int ChildEligibleUntilAge { get; set; }
     public string AccrualNotes { get; set; } = string.Empty;
     public int MinNoticeDays { get; set; }
     public int MaxConsecutiveDays { get; set; }

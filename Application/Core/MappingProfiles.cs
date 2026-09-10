@@ -22,7 +22,8 @@ public class MappingProfiles : Profile
             .ForMember(d => d.Status, opt => opt.MapFrom(s => s.Status.ToString()))
             .ForMember(d => d.EmployeeName, opt => opt.MapFrom(s => s.Employee != null ? s.Employee.DisplayName : string.Empty))
             .ForMember(d => d.DepartmentName, opt => opt.MapFrom(s => s.Department != null ? s.Department.Name : string.Empty))
-            .ForMember(d => d.DelegateName, opt => opt.MapFrom(s => s.Delegate != null ? s.Delegate.DisplayName : string.Empty));
+            .ForMember(d => d.DelegateName, opt => opt.MapFrom(s => s.Delegate != null ? s.Delegate.DisplayName : string.Empty))
+            .ForMember(d => d.ChildName, opt => opt.MapFrom(s => s.Child != null ? s.Child.Name : string.Empty));
         CreateMap<CreateAnnualLeaveRequest, AnnualLeave>()
             .ForMember(d => d.Status, opt => opt.MapFrom(s => AnnualLeaveStatus.Pending))
             .ForMember(d => d.CreatedAt, opt => opt.MapFrom(s => DateTime.UtcNow))

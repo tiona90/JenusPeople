@@ -12,6 +12,7 @@ export interface AnnualLeaveBase {
     evidenceUrl?: string | null
     /** User id of the colleague nominated to cover while the employee is away. */
     delegateId?: string | null
+    childId?: string | null
 }
 
 export interface AnnualLeave {
@@ -30,6 +31,8 @@ export interface AnnualLeave {
     totalDays: number
     employeeName: string
     departmentName: string
+    childId: string | null
+    childName: string
 }
 
 export interface CreateAnnualLeaveRequest extends AnnualLeaveBase {

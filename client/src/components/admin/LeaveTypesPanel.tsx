@@ -5,6 +5,7 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import FormControlLabel from '@mui/material/FormControlLabel'
+import InputAdornment from '@mui/material/InputAdornment'
 import MenuItem from '@mui/material/MenuItem'
 import Stack from '@mui/material/Stack'
 import Switch from '@mui/material/Switch'
@@ -27,6 +28,7 @@ import {
     type UpsertLeaveTypeRequest,
 } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
+import { describeAllowance } from '../../lib/leave-allowance'
 import { softBg } from '../../lib/theme-tokens'
 import type {
     AttachmentPolicy,
@@ -195,6 +197,10 @@ function LeaveTypesPanel() {
             defaultAllowance: t.defaultAllowance,
             allowanceUnit: t.allowanceUnit,
             maxCarryoverDays: t.maxCarryoverDays,
+            perChildEntitlement: t.perChildEntitlement,
+            perChildTotalWeeks: t.perChildTotalWeeks,
+            perChildWeeksPerYear: t.perChildWeeksPerYear,
+            childEligibleUntilAge: t.childEligibleUntilAge,
             accrualNotes: t.accrualNotes,
             minNoticeDays: t.minNoticeDays,
             maxConsecutiveDays: t.maxConsecutiveDays,
@@ -465,10 +471,14 @@ function LeaveTypeCard({ derived, onEdit, onToggle, onDelete }: {
                         Default allowance
                     </Box>
                     <Box sx={{ fontSize: 28, fontWeight: 700, color: 'text.primary', lineHeight: 1 }}>
-                        {t.defaultAllowance}
-                        <Box component="span" sx={{ fontSize: 14, color: 'text.secondary', fontWeight: 500, ml: '4px' }}>
-                            {t.allowanceUnit}
-                        </Box>
+                        {t.perChildEntitlement ? describeAllowance(t) : (
+                            <>
+                                {t.defaultAllowance}
+                                <Box component="span" sx={{ fontSize: 14, color: 'text.secondary', fontWeight: 500, ml: '4px' }}>
+                                    {t.allowanceUnit}
+                                </Box>
+                            </>
+                        )}
                     </Box>
                     <Box sx={{ fontSize: 11, color: 'text.secondary', mt: '4px' }}>
                         {t.maxCarryoverDays > 0
@@ -745,6 +755,12 @@ function LeaveTypeFormDialog(props: {
     const [halfDayAllowed, setHalfDayAllowed] = useState(i?.halfDayAllowed ?? false)
     const [eligibilityNotes, setEligibilityNotes] = useState(i?.eligibilityNotes ?? 'All employees')
     const [eligibilityScope, setEligibilityScope] = useState<EligibilityScope>(i?.eligibilityScope ?? 'All')
+    // Defaults are the configured paternity policy, not zeros -- the server
+    // refuses a 0 total/cap/age for a per-child type anyway.
+    const [perChildEntitlement, setPerChildEntitlement] = useState(i?.perChildEntitlement ?? false)
+    const [perChildTotalWeeks, setPerChildTotalWeeks] = useState(i?.perChildTotalWeeks ?? 18)
+    const [perChildWeeksPerYear, setPerChildWeeksPerYear] = useState(i?.perChildWeeksPerYear ?? 5)
+    const [childEligibleUntilAge, setChildEligibleUntilAge] = useState(i?.childEligibleUntilAge ?? 15)
 
     const submit = () => {
         props.onSubmit({
@@ -760,6 +776,10 @@ function LeaveTypeFormDialog(props: {
             defaultAllowance: Number(defaultAllowance) || 0,
             allowanceUnit: allowanceUnit.trim() || 'days/year',
             maxCarryoverDays: Number(maxCarryoverDays) || 0,
+            perChildEntitlement,
+            perChildTotalWeeks: Number(perChildTotalWeeks) || 0,
+            perChildWeeksPerYear: Number(perChildWeeksPerYear) || 0,
+            childEligibleUntilAge: Number(childEligibleUntilAge) || 0,
             accrualNotes: accrualNotes.trim(),
             minNoticeDays: Number(minNoticeDays) || 0,
             maxConsecutiveDays: Number(maxConsecutiveDays) || 0,
@@ -844,6 +864,62 @@ function LeaveTypeFormDialog(props: {
                         sx={{ width: 220 }}
                         helperText="Unused days above this expire at year end. 0 = none carry over."
                     />
+
+                    {/* Per-child entitlement: a separate ledger, not a per-employee
+                        allowance. The three numbers only mean anything with the toggle
+                        on, so they stay hidden until then -- the dependent-toggle
+                        affordance the Leave Settings screen already established. */}
+                    <FormControlLabel
+                        control={
+                            <Switch
+                                checked={perChildEntitlement}
+                                onChange={(e) => {
+                                    const on = e.target.checked
+                                    setPerChildEntitlement(on)
+                                    // A per-child type keeps its own ledger and must not
+                                    // also be deducted from the pooled balance -- the
+                                    // server refuses that combination outright.
+                                    if (on) setAffectsBalance(false)
+                                }}
+                            />
+                        }
+                        label="Per-child entitlement"
+                    />
+
+                    {perChildEntitlement && (
+                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                            <TextField
+                                label="Total per child"
+                                type="number"
+                                value={perChildTotalWeeks}
+                                onChange={(e) => setPerChildTotalWeeks(Math.max(1, Number(e.target.value)))}
+                                inputProps={{ min: 1, max: 260 }}
+                                slotProps={{ input: { endAdornment: <InputAdornment position="end">weeks</InputAdornment> } }}
+                                helperText={`${perChildTotalWeeks * 5} business days`}
+                                fullWidth
+                            />
+                            <TextField
+                                label="Max per year, per child"
+                                type="number"
+                                value={perChildWeeksPerYear}
+                                onChange={(e) => setPerChildWeeksPerYear(Math.max(1, Number(e.target.value)))}
+                                inputProps={{ min: 1, max: Math.min(52, perChildTotalWeeks) }}
+                                slotProps={{ input: { endAdornment: <InputAdornment position="end">weeks</InputAdornment> } }}
+                                helperText={`${perChildWeeksPerYear * 5} business days`}
+                                fullWidth
+                            />
+                            <TextField
+                                label="Eligible until age"
+                                type="number"
+                                value={childEligibleUntilAge}
+                                onChange={(e) => setChildEligibleUntilAge(Math.max(1, Number(e.target.value)))}
+                                inputProps={{ min: 1, max: 30 }}
+                                slotProps={{ input: { endAdornment: <InputAdornment position="end">years</InputAdornment> } }}
+                                fullWidth
+                            />
+                        </Stack>
+                    )}
+
                     <TextField
                         label="Accrual notes"
                         value={accrualNotes}
@@ -896,10 +972,23 @@ function LeaveTypeFormDialog(props: {
                             control={<Switch checked={requiresApproval} onChange={(e) => setRequiresApproval(e.target.checked)} />}
                             label="Requires approval"
                         />
-                        <FormControlLabel
-                            control={<Switch checked={affectsBalance} onChange={(e) => setAffectsBalance(e.target.checked)} />}
-                            label="Affects leave balance"
-                        />
+                        <Box>
+                            <FormControlLabel
+                                control={
+                                    <Switch
+                                        checked={affectsBalance}
+                                        onChange={(e) => setAffectsBalance(e.target.checked)}
+                                        disabled={perChildEntitlement}
+                                    />
+                                }
+                                label="Affects leave balance"
+                            />
+                            {perChildEntitlement && (
+                                <Box sx={{ fontSize: 11, color: 'text.secondary', ml: '32px', mt: '-4px' }}>
+                                    A per-child type keeps its own ledger and can't also affect the pooled balance.
+                                </Box>
+                            )}
+                        </Box>
                         <FormControlLabel
                             control={<Switch checked={halfDayAllowed} onChange={(e) => setHalfDayAllowed(e.target.checked)} />}
                             label="Half-day allowed"

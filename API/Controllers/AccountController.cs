@@ -3,6 +3,7 @@ using API.Security;
 using API.Services;
 using Application.Accounts.DTOs;
 using AccountCommands = Application.Accounts.Commands;
+using Application.Children.Support;
 using Application.Files;
 using Application.Files.Commands;
 using Domain;
@@ -208,6 +209,7 @@ public class AccountController(
             user.DateOfBirth,
             DepartmentId = employeeProfile?.DepartmentId,
             DepartmentName = employeeProfile?.Department?.Name,
+            HasChildren = employeeProfile?.HasChildren,
             Roles = roles
         });
     }
@@ -245,6 +247,14 @@ public class AccountController(
         if (employeeProfile is null)
         {
             return BadRequest(new { message = "Employee profile could not be found." });
+        }
+
+        var declarationError = await HasChildrenDeclaration.ApplyAsync(
+            context, employeeProfile, request.HasChildren, HttpContext.RequestAborted);
+
+        if (declarationError is not null)
+        {
+            return BadRequest(new { message = declarationError });
         }
 
         // Department is assigned by an administrator (see AdminUsersController), not
@@ -289,6 +299,7 @@ public class AccountController(
             dateOfBirth = user.DateOfBirth,
             departmentId = employeeProfile.DepartmentId,
             departmentName = employeeProfile.Department?.Name,
+            hasChildren = employeeProfile.HasChildren,
             emailChangePending,
             pendingEmail = emailChangePending ? requestedEmail : null
         });

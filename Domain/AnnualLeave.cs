@@ -33,6 +33,19 @@ public class AnnualLeave : IAuditable
     public Department? Department { get; set; }
     public int? LeaveTypeId { get; set; }
     public LeaveType? LeaveType { get; set; }
+
+    /// <summary>
+    /// The child this leave was taken for, on a leave type with
+    /// <see cref="LeaveType.PerChildEntitlement"/> set. Required for those types
+    /// and refused for the rest.
+    ///
+    /// Nullable for one reason: paternity rows that predate the per-child
+    /// entitlement have no child and must stay approved and visible. They count
+    /// against no child's ledger — an admin can attach one later by editing.
+    /// </summary>
+    public string? ChildId { get; set; }
+    public Child? Child { get; set; }
+
     public DateTime StartDate { get; set; }
     public DateTime EndDate { get; set; }
     public string Reason { get; set; } = string.Empty;

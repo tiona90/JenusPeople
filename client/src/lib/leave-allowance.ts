@@ -13,6 +13,9 @@ import type { LeaveType } from './types'
  *     one budget quoted twice. It is also where a new joiner's entitlement comes from
  *     (see Application/AdminUsers/Commands/CreateAdminUser.cs, which reads the
  *     `affectsBalance` type). A type that sets none reads as 0, rendered "—".
+ *     **A type with `perChildEntitlement` has no per-employee allowance at all** — its
+ *     budget is per child and lives in `perChildTotalWeeks` / `perChildWeeksPerYear`,
+ *     read through `describeAllowance`.
  *  2. `EmployeeProfile.annualLeaveEntitlement` — the per-employee override of the
  *     annual-leave budget, and the pool the API enforces on approval. A non-zero
  *     value beats the leave type's figure *for that person only*, which is how
@@ -91,4 +94,20 @@ export function allowanceForRequest(
 ) {
     const typeAllowance = allowanceForLeaveType(type)
     return isAnnualLeaveType(type?.name) ? employeeAnnualEntitlement(profile, typeAllowance) : typeAllowance
+}
+
+/**
+ * How a leave type's budget reads on a card. A per-child type has no meaningful
+ * `defaultAllowance` — it is 0 by migration — so quoting the usual "N days/year"
+ * would render "— days/year" beside a type that grants 18 weeks per child.
+ */
+export function describeAllowance(type: LeaveType | undefined) {
+    if (!type) return '—'
+
+    if (type.perChildEntitlement) {
+        return `${type.perChildTotalWeeks} weeks per child · max ${type.perChildWeeksPerYear} weeks/year`
+    }
+
+    const allowance = allowanceForLeaveType(type)
+    return allowance > 0 ? `${allowance} ${type.allowanceUnit}` : '—'
 }

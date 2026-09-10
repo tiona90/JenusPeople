@@ -64,6 +64,7 @@ export async function updateProfile(request: UpdateProfileRequest) {
         dateOfBirth: string | null
         departmentId: number
         departmentName: string
+        hasChildren: boolean | null
     }>('/account/profile', request)
     return response.data
 }

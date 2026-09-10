@@ -39,6 +39,28 @@ public class CreateAnnualLeave
             if (leaveType is null)
                 return Result<string>.Failure("Selected leave type is not available.");
 
+            /* The child comes from the client, so trust the leave type instead: a
+               request on a type with no per-child entitlement carries no child, no
+               matter what was posted. Otherwise switching a request from Paternity
+               to Annual Leave would leave the ledger charging a child for it. */
+            annualLeave.ChildId = leaveType.PerChildEntitlement
+                ? request.AnnualLeave.ChildId
+                : null;
+
+            /* Checked here even when the type requires approval — unlike the pooled
+               balance, which is only checked at creation when the type auto-approves.
+               A per-child refusal is something the employee can act on (pick another
+               child, shorten the request); waiting for a manager to hit it days later
+               helps nobody. It is re-checked on approval in UpdateLeaveStatus. */
+            var perChildError = await PerChildLeaveBalanceCalculator.CheckPerChildEntitlementAsync(
+                context,
+                annualLeave,
+                employeeProfile,
+                excludeLeaveId: annualLeave.Id,
+                cancellationToken);
+            if (perChildError is not null)
+                return Result<string>.Failure(perChildError);
+
             if (leaveType.RequiresApproval)
             {
                 annualLeave.Status = AnnualLeaveStatus.Pending;

@@ -41,6 +41,7 @@ public class AppDbContext : IdentityDbContext<
     public DbSet<ProjectType> ProjectTypes { get; set; }
     public DbSet<ProjectTypeAssignment> ProjectTypeAssignments { get; set; }
     public DbSet<StoredFile> StoredFiles { get; set; }
+    public DbSet<Child> Children { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -249,6 +250,20 @@ public class AppDbContext : IdentityDbContext<
                 .HasForeignKey(al => al.DelegateId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            // Restrict, not Cascade: a child's row carries the ledger proving how
+            // much per-child leave was taken for them, so deleting the child must
+            // not erase it. DeleteChild refuses while any leave references the row.
+            entity.HasOne(al => al.Child)
+                .WithMany(c => c.LeaveRequests)
+                .HasForeignKey(al => al.ChildId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // The per-child ledger totals approved leave for one child, all time and
+            // per leave year, on every create, edit and approval — the same access
+            // pattern the EmployeeId index above serves for the pooled balance.
+            entity.HasIndex(al => new { al.ChildId, al.Status, al.StartDate, al.EndDate })
+                .HasDatabaseName("IX_AnnualLeaves_ChildId_Status_StartDate_EndDate");
+
             // AnnualLeaveBalanceCalculator totals an employee's approved leave over
             // a leave year on every create, edit and status change, and had only the
             // single-column EmployeeId FK index to work from — so it read every leave
@@ -299,6 +314,10 @@ public class AppDbContext : IdentityDbContext<
             entity.Property(lt => lt.HalfDayAllowed).HasDefaultValue(false);
             entity.Property(lt => lt.EligibilityNotes).HasMaxLength(250).HasDefaultValue("All employees");
             entity.Property(lt => lt.EligibilityScope).HasDefaultValue(EligibilityScope.All);
+            entity.Property(lt => lt.PerChildEntitlement).HasDefaultValue(false);
+            entity.Property(lt => lt.PerChildTotalWeeks).HasDefaultValue(0);
+            entity.Property(lt => lt.PerChildWeeksPerYear).HasDefaultValue(0);
+            entity.Property(lt => lt.ChildEligibleUntilAge).HasDefaultValue(0);
         });
 
         builder.Entity<ProjectActivityType>(entity =>
@@ -472,6 +491,21 @@ public class AppDbContext : IdentityDbContext<
                 .WithMany(d => d.EmployeeProfiles)
                 .HasForeignKey(e => e.DepartmentId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<Child>(entity =>
+        {
+            entity.Property(c => c.Id).HasMaxLength(450).IsRequired();
+            entity.Property(c => c.EmployeeProfileId).HasMaxLength(450).IsRequired();
+            entity.Property(c => c.Name).HasMaxLength(100).IsRequired();
+            entity.Property(c => c.DateOfBirth).IsRequired();
+
+            entity.HasIndex(c => c.EmployeeProfileId);
+
+            entity.HasOne(c => c.EmployeeProfile)
+                .WithMany(ep => ep.Children)
+                .HasForeignKey(c => c.EmployeeProfileId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         builder.Entity<AuditLog>(entity =>

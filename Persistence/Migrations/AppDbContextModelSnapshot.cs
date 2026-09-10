@@ -33,6 +33,9 @@ namespace Persistence.Migrations
                     b.Property<string>("ApprovedById")
                         .HasColumnType("nvarchar(450)");
 
+                    b.Property<string>("ChildId")
+                        .HasColumnType("nvarchar(450)");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
@@ -95,6 +98,9 @@ namespace Persistence.Migrations
 
                     b.HasIndex("UserId1");
 
+                    b.HasIndex("ChildId", "Status", "StartDate", "EndDate")
+                        .HasDatabaseName("IX_AnnualLeaves_ChildId_Status_StartDate_EndDate");
+
                     b.HasIndex("EmployeeId", "Status", "StartDate", "EndDate")
                         .HasDatabaseName("IX_AnnualLeaves_EmployeeId_Status_StartDate_EndDate");
 
@@ -144,9 +150,6 @@ namespace Persistence.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<bool>("SendYearEndWarningEmails")
-                        .HasColumnType("bit");
-
-                    b.Property<bool>("SlackEnabled")
                         .HasColumnType("bit");
 
                     b.Property<string>("TimeZoneId")
@@ -254,6 +257,35 @@ namespace Persistence.Migrations
                     b.ToTable("AuditLogs");
                 });
 
+            modelBuilder.Entity("Domain.Child", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateOnly>("DateOfBirth")
+                        .HasColumnType("date");
+
+                    b.Property<string>("EmployeeProfileId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EmployeeProfileId");
+
+                    b.ToTable("Children");
+                });
+
             modelBuilder.Entity("Domain.Department", b =>
                 {
                     b.Property<int>("Id")
@@ -294,6 +326,9 @@ namespace Persistence.Migrations
 
                     b.Property<int?>("DepartmentId")
                         .HasColumnType("int");
+
+                    b.Property<bool?>("HasChildren")
+                        .HasColumnType("bit");
 
                     b.Property<bool>("IsDeleted")
                         .ValueGeneratedOnAdd()
@@ -389,6 +424,11 @@ namespace Persistence.Migrations
                         .HasColumnType("int")
                         .HasDefaultValue(0);
 
+                    b.Property<int>("ChildEligibleUntilAge")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
                     b.Property<string>("ColorKey")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
@@ -457,6 +497,21 @@ namespace Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
                         .HasDefaultValue(true);
+
+                    b.Property<bool>("PerChildEntitlement")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<int>("PerChildTotalWeeks")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
+                    b.Property<int>("PerChildWeeksPerYear")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
 
                     b.Property<bool>("RequiresApproval")
                         .HasColumnType("bit");
@@ -1235,6 +1290,11 @@ namespace Persistence.Migrations
                         .HasForeignKey("ApprovedById")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("Domain.Child", "Child")
+                        .WithMany("LeaveRequests")
+                        .HasForeignKey("ChildId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Domain.User", "Delegate")
                         .WithMany()
                         .HasForeignKey("DelegateId")
@@ -1268,6 +1328,8 @@ namespace Persistence.Migrations
 
                     b.Navigation("ApprovedBy");
 
+                    b.Navigation("Child");
+
                     b.Navigation("Delegate");
 
                     b.Navigation("Department");
@@ -1298,6 +1360,17 @@ namespace Persistence.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Domain.Child", b =>
+                {
+                    b.HasOne("Domain.EmployeeProfile", "EmployeeProfile")
+                        .WithMany("Children")
+                        .HasForeignKey("EmployeeProfileId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("EmployeeProfile");
                 });
 
             modelBuilder.Entity("Domain.EmployeeProfile", b =>
@@ -1614,6 +1687,11 @@ namespace Persistence.Migrations
                     b.Navigation("StatusHistory");
                 });
 
+            modelBuilder.Entity("Domain.Child", b =>
+                {
+                    b.Navigation("LeaveRequests");
+                });
+
             modelBuilder.Entity("Domain.Department", b =>
                 {
                     b.Navigation("AnnualLeaves");
@@ -1630,6 +1708,8 @@ namespace Persistence.Migrations
             modelBuilder.Entity("Domain.EmployeeProfile", b =>
                 {
                     b.Navigation("AnnualLeaves");
+
+                    b.Navigation("Children");
 
                     b.Navigation("DirectReports");
 

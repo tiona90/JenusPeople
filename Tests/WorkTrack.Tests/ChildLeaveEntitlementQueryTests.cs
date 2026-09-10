@@ -1,0 +1,230 @@
+using Application.Children.Queries;
+using Application.Core;
+using Domain;
+using Xunit;
+
+namespace WorkTrack.Tests;
+
+/// <summary>
+/// The ledger the UI quotes. It must agree with the calculator that enforces the
+/// caps to the day — a screen promising 13 weeks while the API refuses at 8 is worse
+/// than no screen — so both read usage through the same helper.
+///
+/// The employee's totals cover eligible children only. That is requirement 10 with
+/// no code: a child aging out changes the projection, so the figures fall on the next
+/// read whether or not that child had used leave.
+/// </summary>
+public class ChildLeaveEntitlementQueryTests
+{
+    private static readonly DateOnly YoungChild = new(2019, 3, 4);
+
+    private static Task<Application.Core.Result<Application.Children.DTOs.ChildLeaveEntitlementSummaryDto>> Query(
+        Persistence.AppDbContext db) =>
+        new GetChildLeaveEntitlements.Handler(db).Handle(new GetChildLeaveEntitlements.Query
+        {
+            CallerUserId = PerChildLeaveWorld.UserId,
+        }, CancellationToken.None);
+
+    [Fact]
+    public async Task An_untouched_child_has_the_full_eighteen_weeks()
+    {
+        await using var db = await PerChildLeaveWorld.CreateAsync();
+        await PerChildLeaveWorld.AddChildAsync(db, "Andreas", YoungChild);
+
+        var result = await Query(db);
+
+        Assert.True(result.IsSuccess);
+        var child = Assert.Single(result.Value!.Children);
+        Assert.Equal(90, child.TotalDays);
+        Assert.Equal(18.0m, child.TotalWeeks);
+        Assert.Equal(0, child.UsedDays);
+        Assert.Equal(90, child.RemainingDays);
+        Assert.Equal(25, child.ThisYearCapDays);
+        Assert.Equal(25, child.ThisYearRemainingDays);
+    }
+
+    [Fact]
+    public async Task Used_days_come_off_both_the_total_and_the_year()
+    {
+        await using var db = await PerChildLeaveWorld.CreateAsync();
+        var child = await PerChildLeaveWorld.AddChildAsync(db, "Andreas", YoungChild);
+
+        // 5 business days in the current leave year. DateTime.UtcNow decides which
+        // year that is, so anchor to it rather than to a literal 2026.
+        var monday = ThisYearsMonday();
+        await PerChildLeaveWorld.ApproveLeaveAsync(db, child.Id, monday, monday.AddDays(4));
+
+        var result = await Query(db);
+
+        var row = Assert.Single(result.Value!.Children);
+        Assert.Equal(5, row.UsedDays);
+        Assert.Equal(85, row.RemainingDays);
+        Assert.Equal(5, row.ThisYearUsedDays);
+        Assert.Equal(20, row.ThisYearRemainingDays);
+    }
+
+    /// <summary>
+    /// Requirement 10. Three children, one of them 15: the totals describe two.
+    /// The aged-out child is still listed, with isEligible false, so the UI can say
+    /// why rather than silently dropping them.
+    /// </summary>
+    [Fact]
+    public async Task Totals_cover_eligible_children_only()
+    {
+        await using var db = await PerChildLeaveWorld.CreateAsync();
+        await PerChildLeaveWorld.AddChildAsync(db, "Andreas", YoungChild);
+        await PerChildLeaveWorld.AddChildAsync(db, "Maria", new DateOnly(2021, 6, 15));
+        // Born well over 15 years ago whenever this runs.
+        var agedOut = await PerChildLeaveWorld.AddChildAsync(
+            db, "Petros", DateOnly.FromDateTime(DateTime.UtcNow).AddYears(-16));
+
+        // The aged-out child used leave when they were eligible. It stays in
+        // history and must not resurrect their entitlement.
+        var monday = ThisYearsMonday();
+        await PerChildLeaveWorld.ApproveLeaveAsync(db, agedOut.Id, monday, monday.AddDays(4));
+
+        var result = await Query(db);
+        var summary = result.Value!;
+
+        Assert.Equal(3, summary.Children.Count);
+        Assert.Equal(2, summary.EligibleChildCount);
+        // Two eligible children, untouched: 2 x 90 days.
+        Assert.Equal(180, summary.TotalRemainingDays);
+        // 2 x 25 days this leave year.
+        Assert.Equal(50, summary.ThisYearCapDays);
+
+        var petros = summary.Children.Single(c => c.Name == "Petros");
+        Assert.False(petros.IsEligible);
+        // The configured entitlement is still reported -- zeroing it would misstate
+        // Petros's real 90-day entitlement rather than explain why it is now moot.
+        Assert.Equal(90, petros.TotalDays);
+        Assert.Equal(5, petros.UsedDays);
+        Assert.Equal(0, petros.RemainingDays);
+        Assert.Equal(0, petros.ThisYearRemainingDays);
+    }
+
+    /// <summary>
+    /// The brief's headline rule: <c>ThisYearRemainingDays</c> is the lesser of the
+    /// yearly remainder and the lifetime remainder. With 3 days of total entitlement
+    /// left, "25 days this year" would be a lie -- this is the case that sentence is
+    /// protecting: a fresh yearly cap sitting behind an almost-exhausted lifetime
+    /// total. Deleting the <c>Math.Min</c> and reporting only the yearly remainder
+    /// would pass every other test in this file but fail this one.
+    /// </summary>
+    [Fact]
+    public async Task This_years_remaining_is_capped_by_the_almost_exhausted_lifetime_total()
+    {
+        await using var db = await PerChildLeaveWorld.CreateAsync();
+        // Young enough to still be eligible when the earlier usage below happened,
+        // and to remain eligible today.
+        var dob = DateOnly.FromDateTime(DateTime.UtcNow).AddYears(-5);
+        var child = await PerChildLeaveWorld.AddChildAsync(db, "Andreas", dob);
+
+        // 85 of the 90 lifetime business days used two leave years ago: a clearly
+        // earlier year, so it cannot bleed into the current leave year's own count.
+        // 17 consecutive Mon-Fri weeks = 17 x 5 = 85 business days.
+        var earlierMonday = MondayInYear(DateTime.UtcNow.Year - 2);
+        await PerChildLeaveWorld.ApproveLeaveAsync(db, child.Id, earlierMonday, earlierMonday.AddDays(116));
+
+        var result = await Query(db);
+
+        var row = Assert.Single(result.Value!.Children);
+        Assert.Equal(85, row.UsedDays);
+        Assert.Equal(5, row.RemainingDays);
+        // Nothing used in the current leave year, so the yearly figure alone would
+        // read 25 -- but only 5 days of lifetime entitlement remain.
+        Assert.Equal(0, row.ThisYearUsedDays);
+        Assert.Equal(25, row.ThisYearCapDays);
+        Assert.Equal(5, row.ThisYearRemainingDays);
+    }
+
+    /// <summary>
+    /// The access check is the security boundary at this query's new call site.
+    /// Asserting on <c>ErrorKind</c> rather than just <c>!IsSuccess</c> is the point:
+    /// it is what would catch a future <c>Failure(access.Error)</c> silently
+    /// demoting a 403 into a 404.
+    /// </summary>
+    [Fact]
+    public async Task An_access_refusal_forwards_its_error_kind()
+    {
+        await using var db = await PerChildLeaveWorld.CreateAsync();
+        await PerChildLeaveWorld.AddChildAsync(db, "Andreas", YoungChild);
+
+        db.Users.Add(new User
+        {
+            Id = "employee-2",
+            UserName = "employee-2@example.com",
+            Email = "employee-2@example.com",
+            DisplayName = "Someone Else",
+        });
+        db.EmployeeProfiles.Add(new EmployeeProfile { Id = "profile-2", UserId = "employee-2" });
+        await db.SaveChangesAsync();
+
+        var result = await new GetChildLeaveEntitlements.Handler(db).Handle(new GetChildLeaveEntitlements.Query
+        {
+            CallerUserId = "employee-2",
+            EmployeeId = PerChildLeaveWorld.UserId,
+        }, CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ResultErrorKind.Forbidden, result.ErrorKind);
+    }
+
+    [Fact]
+    public async Task Without_a_per_child_leave_type_the_ledger_is_empty()
+    {
+        await using var db = await PerChildLeaveWorld.CreateAsync();
+        var paternity = await db.LeaveTypes.FindAsync(PerChildLeaveWorld.PaternityTypeId);
+        paternity!.PerChildEntitlement = false;
+        await db.SaveChangesAsync();
+
+        await PerChildLeaveWorld.AddChildAsync(db, "Andreas", YoungChild);
+
+        var result = await Query(db);
+
+        Assert.True(result.IsSuccess);
+        Assert.Null(result.Value!.LeaveTypeId);
+        Assert.Empty(result.Value.Children);
+    }
+
+    /// <summary>
+    /// Deactivating the per-child leave type must not empty the ledger, because it
+    /// does not stop enforcement: <c>PerChildLeaveBalanceCalculator</c> and
+    /// <c>EditAnnualLeave</c> look the type up by id with no <c>IsActive</c> filter.
+    /// When the ledger filtered and they did not, deactivating Paternity Leave left
+    /// the API demanding a child on an edit or an approval while every screen reported
+    /// no entitlement at all — the picker telling an employee with children to go and
+    /// add some. The ledger is now matched to enforcement; only
+    /// <c>PerChildEntitlement</c> being off empties it (see
+    /// <see cref="Without_a_per_child_leave_type_the_ledger_is_empty"/>).
+    /// </summary>
+    [Fact]
+    public async Task Deactivating_the_per_child_leave_type_still_reports_the_ledger()
+    {
+        await using var db = await PerChildLeaveWorld.CreateAsync();
+        var paternity = await db.LeaveTypes.FindAsync(PerChildLeaveWorld.PaternityTypeId);
+        paternity!.IsActive = false;
+        await db.SaveChangesAsync();
+
+        await PerChildLeaveWorld.AddChildAsync(db, "Andreas", YoungChild);
+
+        var result = await Query(db);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(PerChildLeaveWorld.PaternityTypeId, result.Value!.LeaveTypeId);
+        var child = Assert.Single(result.Value.Children);
+        Assert.True(child.IsEligible);
+        Assert.Equal(90, child.TotalDays);
+    }
+
+    /// <summary>The Monday of the first full week of the current calendar year.</summary>
+    private static DateTime ThisYearsMonday() => MondayInYear(DateTime.UtcNow.Year);
+
+    /// <summary>The Monday of the first full week of the given calendar year.</summary>
+    private static DateTime MondayInYear(int year)
+    {
+        var date = new DateTime(year, 1, 1);
+        while (date.DayOfWeek != DayOfWeek.Monday) date = date.AddDays(1);
+        return date;
+    }
+}

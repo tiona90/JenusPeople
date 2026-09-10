@@ -46,6 +46,7 @@ import Typography from '@mui/material/Typography'
 import { ThemeProvider } from '@mui/material/styles'
 import { buildTheme } from '../../lib/theme'
 import { AppDialog, AppDialogTitle, AppDialogContent, AppDialogActions, cancelBtnSx, saveBtnSx } from '../ui'
+import ChildrenSection from './ChildrenSection'
 import { updateProfile, uploadProfileImage } from '../../lib/api'
 import { resolveFileUrl } from '../../lib/api/file-url'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
@@ -103,6 +104,9 @@ const Sidebar = observer(function Sidebar() {
 
     // Edit profile dialog
     const [isEditOpen, setIsEditOpen] = useState(false)
+    // Not part of the react-hook-form schema: it's a checkbox seeded from and
+    // saved back to authStore.user, alongside the text fields but not driven by them.
+    const [hasChildren, setHasChildren] = useState<boolean | null>(null)
     const { register, handleSubmit, reset, formState: { errors } } = useForm<ProfileFormValues>({
         resolver: zodResolver(profileSchema),
         defaultValues: { displayName: '', email: '', phoneNumber: '', dateOfBirth: '' },
@@ -123,6 +127,7 @@ const Sidebar = observer(function Sidebar() {
                 dateOfBirth: result.dateOfBirth,
                 departmentId: result.departmentId,
                 departmentName: result.departmentName,
+                hasChildren: result.hasChildren,
             })
             await queryClient.invalidateQueries({ queryKey: ['employeeProfiles'] })
             setIsEditOpen(false)
@@ -136,6 +141,7 @@ const Sidebar = observer(function Sidebar() {
             phoneNumber: authStore.user?.phoneNumber ?? '',
             dateOfBirth: authStore.user?.dateOfBirth ?? '',
         })
+        setHasChildren(authStore.user?.hasChildren ?? null)
         updateProfileMutation.reset()
         setIsEditOpen(true)
         setProfileAnchorEl(null)
@@ -150,6 +156,7 @@ const Sidebar = observer(function Sidebar() {
             phoneNumber: authStore.user?.phoneNumber ?? '',
             dateOfBirth: authStore.user?.dateOfBirth ?? '',
         })
+        setHasChildren(authStore.user?.hasChildren ?? null)
         // We intentionally re-init only when the dialog opens — reset is stable.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isEditOpen])
@@ -160,6 +167,7 @@ const Sidebar = observer(function Sidebar() {
             email: values.email.trim(),
             phoneNumber: values.phoneNumber?.trim() || null,
             dateOfBirth: values.dateOfBirth || null,
+            hasChildren,
         })
     })
 
@@ -412,7 +420,7 @@ const Sidebar = observer(function Sidebar() {
             </ThemeProvider>
 
             {/* Edit profile dialog */}
-            <AppDialog open={isEditOpen} onClose={() => setIsEditOpen(false)} maxWidth="xs">
+            <AppDialog open={isEditOpen} onClose={() => setIsEditOpen(false)} maxWidth="sm">
                 <AppDialogTitle>Edit profile</AppDialogTitle>
                 <AppDialogContent>
                     <Stack spacing={2}>
@@ -469,6 +477,12 @@ const Sidebar = observer(function Sidebar() {
                             helperText={errors.dateOfBirth?.message ?? 'Used for birthday reminders.'}
                             slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: new Date().toISOString().slice(0, 10) } }}
                             fullWidth
+                        />
+
+                        <ChildrenSection
+                            hasChildren={hasChildren}
+                            onHasChildrenChange={setHasChildren}
+                            disabled={updateProfileMutation.isPending}
                         />
 
                         {shouldShowDepartment && (

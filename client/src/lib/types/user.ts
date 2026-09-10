@@ -11,4 +11,5 @@ export interface UserInfo {
     departmentId?: number | null
     departmentName?: string | null
     roles: UserRole[]
+    hasChildren?: boolean | null
 }

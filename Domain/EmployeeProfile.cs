@@ -27,6 +27,21 @@ public class EmployeeProfile : ISoftDeletable, IAuditable
     public int AnnualLeaveEntitlement { get; set; }
     public int LeaveBalance { get; set; }
 
+    /// <summary>
+    /// Whether this employee has declared having children — a genuine tri-state:
+    /// null means they have never been asked, false that they declared none, true
+    /// that they have some. Deriving it from <see cref="Children"/> cannot tell
+    /// "hasn't told us" from "has none", which is exactly the distinction the leave
+    /// request form needs in order to say something useful.
+    ///
+    /// Invariant, enforced in the handlers: it cannot be saved false while
+    /// <see cref="Children"/> is non-empty, and adding a child sets it true. The
+    /// flag and the list therefore cannot disagree.
+    /// </summary>
+    public bool? HasChildren { get; set; }
+
+    public ICollection<Child> Children { get; set; } = new List<Child>();
+
     public string? JobTitle { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

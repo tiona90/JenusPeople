@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useForm, useWatch } from 'react-hook-form'
+import { Controller, useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -11,26 +11,53 @@ import { getApiErrorMessage } from '../../lib/api/error-utils'
 import { useStore } from '../../lib/mobx'
 import { AppDialog, AppDialogActions, AppDialogContent, AppDialogTitle, cancelBtnSx } from '../ui'
 import Button from '@mui/material/Button'
+import ChildLeavePicker from './ChildLeavePicker'
 import { iconForLeaveType } from './leave-icons'
 import type { LeaveType, Teammate, UserInfo } from '../../lib/types'
 import { softBg, type SxColor } from '../../lib/theme-tokens'
 import type { Theme } from '@mui/material/styles'
 
-const applyLeaveSchema = z
-    .object({
-        leaveTypeId: z.number().int().positive('Choose a leave type to continue.'),
-        duration: z.enum(['full', 'half-am', 'half-pm']),
-        startDate: z.string().min(1, 'Pick a start date on the calendar.'),
-        endDate: z.string().min(1, 'Pick an end date on the calendar.'),
-        reason: z.string().max(500, 'Reason must be 500 characters or fewer.').optional(),
-        delegateId: z.string().optional(),
-    })
-    .refine((data) => !data.startDate || !data.endDate || data.endDate >= data.startDate, {
-        message: 'End date must be on or after the start date.',
-        path: ['endDate'],
-    })
+/**
+ * Built per render of the page rather than declared once, because `childId` is
+ * required only when the *selected* leave type carries a per-child entitlement —
+ * which is a fact about the leave-type list, loaded at runtime.
+ *
+ * The requirement is expressed in `superRefine` against the form's own
+ * `leaveTypeId`, exactly as `buildAnnualLeaveSchema` does, and deliberately not as
+ * a precomputed boolean: the schema has to exist before `useForm`, while such a
+ * flag could only come from the form's own watched value.
+ */
+function buildApplyLeaveSchema(perChildLeaveTypeIds: number[]) {
+    return z
+        .object({
+            leaveTypeId: z.number().int().positive('Choose a leave type to continue.'),
+            duration: z.enum(['full', 'half-am', 'half-pm']),
+            startDate: z.string().min(1, 'Pick a start date on the calendar.'),
+            endDate: z.string().min(1, 'Pick an end date on the calendar.'),
+            reason: z.string().max(500, 'Reason must be 500 characters or fewer.').optional(),
+            delegateId: z.string().optional(),
+            childId: z.string().optional(),
+        })
+        .superRefine((data, ctx) => {
+            if (perChildLeaveTypeIds.includes(data.leaveTypeId) && !data.childId) {
+                ctx.addIssue({
+                    code: 'custom',
+                    path: ['childId'],
+                    message: 'Please select the child this leave is for.',
+                })
+            }
 
-type ApplyLeaveFormValues = z.infer<typeof applyLeaveSchema>
+            if (data.startDate && data.endDate && data.endDate < data.startDate) {
+                ctx.addIssue({
+                    code: 'custom',
+                    path: ['endDate'],
+                    message: 'End date must be on or after the start date.',
+                })
+            }
+        })
+}
+
+type ApplyLeaveFormValues = z.infer<ReturnType<typeof buildApplyLeaveSchema>>
 type FileKind = 'pdf' | 'img' | 'doc' | 'other'
 
 interface StagedFile {
@@ -138,13 +165,24 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
     const queryClient = useQueryClient()
     const today = new Date()
 
+    /* Loaded before useForm because the schema depends on it: which leave types
+       measure their entitlement per child decides when childId is required, and the
+       schema has to exist by the time the form is created. */
+    const { data: leaveTypes = [] } = useQuery({ queryKey: ['leaveTypes'], queryFn: getLeaveTypes })
+    const activeLeaveTypes = useMemo(() => leaveTypes.filter((lt) => lt.isActive), [leaveTypes])
+    const perChildLeaveTypeIds = useMemo(
+        () => activeLeaveTypes.filter((lt) => lt.perChildEntitlement).map((lt) => lt.id),
+        [activeLeaveTypes],
+    )
+    const schema = useMemo(() => buildApplyLeaveSchema(perChildLeaveTypeIds), [perChildLeaveTypeIds])
+
     const {
         control,
         setValue,
         handleSubmit,
         formState: { errors },
     } = useForm<ApplyLeaveFormValues>({
-        resolver: zodResolver(applyLeaveSchema),
+        resolver: zodResolver(schema),
         mode: 'onChange',
         defaultValues: {
             leaveTypeId: 0,
@@ -153,6 +191,7 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
             endDate: '',
             reason: '',
             delegateId: '',
+            childId: '',
         },
     })
 
@@ -162,6 +201,7 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
     const endDate = useWatch({ control, name: 'endDate' })
     const reason = useWatch({ control, name: 'reason' }) ?? ''
     const delegateId = useWatch({ control, name: 'delegateId' }) ?? ''
+    const childId = useWatch({ control, name: 'childId' }) ?? ''
 
     const [calMonth, setCalMonth] = useState<number>(today.getMonth())
     const [calYear, setCalYear] = useState<number>(today.getFullYear())
@@ -170,9 +210,13 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
     const [isDragOver, setIsDragOver] = useState(false)
     const [delegatePickerOpen, setDelegatePickerOpen] = useState(false)
     const [delegateSearch, setDelegateSearch] = useState('')
+    /* Whether the child picker currently has no real choice to offer — the ledger
+       failed to load, no children are on file, or none are eligible. Submit is
+       disabled while it is set, so nobody is left pressing a button the server is
+       certain to refuse. Cleared whenever the picker isn't the thing on screen. */
+    const [childPickerBlocked, setChildPickerBlocked] = useState(false)
     const fileInputRef = useRef<HTMLInputElement>(null)
 
-    const { data: leaveTypes = [] } = useQuery({ queryKey: ['leaveTypes'], queryFn: getLeaveTypes })
     const { data: profiles = [] } = useQuery({ queryKey: ['employeeProfiles'], queryFn: getEmployeeProfiles })
     const { data: allLeaves = [] } = useQuery({ queryKey: ['annualLeaves'], queryFn: getAnnualLeaves })
     const { data: teammates = [] } = useQuery({ queryKey: ['teammates'], queryFn: getTeammates })
@@ -203,8 +247,6 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
     }, [holidaysCurrentYear, holidaysSelectionYear])
     const holidaySet = useMemo(() => new Set(holidayMap.keys()), [holidayMap])
 
-    const activeLeaveTypes = useMemo(() => leaveTypes.filter((lt) => lt.isActive), [leaveTypes])
-
     const myProfile = profiles.find((p) => p.userId === user.id)
     const entitlement = myProfile?.annualLeaveEntitlement ?? 0
 
@@ -225,6 +267,17 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
 
     const selectedType = activeLeaveTypes.find((lt) => lt.id === leaveTypeId)
     const selectedAffectsBalance = selectedType?.affectsBalance ?? true
+
+    /* Paternity leave, in practice: the request is measured against one child's own
+       entitlement, so the server refuses it outright without a child. */
+    const requiresChild = perChildLeaveTypeIds.includes(leaveTypeId)
+
+    /* Nothing resets childId or childPickerBlocked when the type is switched away,
+       deliberately: both are read only behind `requiresChild` — the payload sends a
+       child solely for a per-child type, and `canSubmit` consults the blocked flag
+       only for one — so a value left over from a previous type cannot escape. The
+       picker re-reports its own blocked state when it remounts. An effect clearing
+       them would be a setState-in-effect for no gain. */
 
     const currentBalance = Math.max(0, entitlement - usedDays)
     const workingDays = workingDaysBetween(startDate, endDate, holidaySet)
@@ -334,6 +387,9 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
     const attachmentRecommended = isSickLeave && !attachment
 
     const canSubmit = !!startDate && !!endDate && leaveTypeId > 0 && !isInsufficient
+        // A per-child type with no child, or a picker that has nothing to offer,
+        // is a request the server will certainly refuse.
+        && (!requiresChild || (!!childId && !childPickerBlocked))
 
     const uploadMutation = useMutation({
         mutationFn: (file: File) => uploadLeaveEvidence(file),
@@ -354,6 +410,11 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
                 reason: (values.reason ?? '').trim() || '—',
                 evidenceUrl,
                 delegateId: values.delegateId?.trim() || undefined,
+                /* Only for a type whose entitlement is per child. The server clears
+                   it for any other type regardless, so there is no point handing it
+                   a stale id to discard — and without it, a paternity request is
+                   refused with "Select the child this Paternity Leave is for." */
+                childId: perChildLeaveTypeIds.includes(values.leaveTypeId) ? values.childId : undefined,
             })
         },
         onSuccess: () => {
@@ -479,6 +540,32 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
                     </Box>
                     {errors.leaveTypeId && (
                         <FieldError id="leaveTypeId-error">{errors.leaveTypeId.message}</FieldError>
+                    )}
+
+                    {/* Which child, for a type whose entitlement is measured per
+                        child. Sits with the type it belongs to: the field only
+                        exists because of the choice made directly above it, and the
+                        server refuses the request outright without it. */}
+                    {requiresChild && (
+                        <Box sx={{ mt: '14px' }}>
+                            <Controller
+                                name="childId"
+                                control={control}
+                                render={({ field, fieldState }) => (
+                                    <ChildLeavePicker
+                                        value={field.value ?? ''}
+                                        onChange={field.onChange}
+                                        // Always the signed-in user's own ledger: this
+                                        // page only ever files a request for them.
+                                        childEligibleUntilAge={selectedType?.childEligibleUntilAge ?? 0}
+                                        requestedDays={workingDays > 0 ? workingDays : null}
+                                        error={fieldState.error?.message}
+                                        disabled={isPending}
+                                        onBlockedChange={setChildPickerBlocked}
+                                    />
+                                )}
+                            />
+                        </Box>
                     )}
                 </Box>
 
@@ -947,7 +1034,12 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
                                     ? 'Submitting…'
                                     : canSubmit
                                         ? '✓ Submit for approval'
-                                        : 'Pick dates to continue'}
+                                        // "Pick dates" is the wrong instruction once
+                                        // the dates are picked and it is the child
+                                        // that is missing.
+                                        : requiresChild && !!startDate && !!endDate && !childId
+                                            ? 'Select a child to continue'
+                                            : 'Pick dates to continue'}
                         </Box>
                         <Box
                             component="button"
