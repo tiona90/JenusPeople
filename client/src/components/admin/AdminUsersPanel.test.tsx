@@ -969,3 +969,123 @@ describe('AdminUsersPanel — managing an employee\'s children', () => {
         expect(api.getChildren).not.toHaveBeenCalled()
     })
 })
+
+/*
+ * Children on Create. A child needs a profile to belong to and the profile does
+ * not exist until the account does, so unlike the Edit dialog these rows cannot
+ * commit as they are entered: they are collected locally and written immediately
+ * after the account is made.
+ */
+describe('AdminUsersPanel — adding children while creating a user', () => {
+    const CREATED = {
+        id: 'u-new',
+        userName: 'newhire@example.test',
+        email: 'newhire@example.test',
+        displayName: 'New Hire',
+        imageUrl: '',
+        emailConfirmed: true,
+        isActive: true,
+        roles: ['Employee'],
+        inviteEmailSent: true,
+    }
+
+    async function fillCreateForm(dialog: HTMLElement) {
+        fireEvent.change(within(dialog).getByLabelText(/email/i), { target: { value: 'newhire@example.test' } })
+        fireEvent.change(within(dialog).getByLabelText(/display name/i), { target: { value: 'New Hire' } })
+        await selectDepartment(dialog)
+    }
+
+    async function addPendingChild(dialog: HTMLElement, name: string, dateOfBirth: string) {
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Add child' }))
+        fireEvent.change(within(dialog).getByLabelText(/Child's name/), { target: { value: name } })
+        fireEvent.change(within(dialog).getByLabelText(/Child's date of birth/), { target: { value: dateOfBirth } })
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Save child' }))
+        await waitFor(() => expect(within(dialog).getByText(name)).toBeInTheDocument())
+    }
+
+    // Nothing to write against yet, so collecting a row must not call the API --
+    // and must not read a list for an account that does not exist.
+    it('collects the rows locally, touching no endpoint until Create', async () => {
+        const dialog = await openCreateDialog()
+        await fillCreateForm(dialog)
+
+        await addPendingChild(dialog, 'Maria', '2021-06-01')
+
+        expect(api.createChild).not.toHaveBeenCalled()
+        expect(api.getChildren).not.toHaveBeenCalled()
+    })
+
+    it('writes each collected child against the new account', async () => {
+        api.createAdminUser.mockResolvedValue(CREATED as never)
+        api.createChild.mockResolvedValue({ id: 'c1', name: 'Maria', dateOfBirth: '2021-06-01', ageYears: 5, isEligible: true, lastEligibleDate: '2036-05-31' } as never)
+
+        const dialog = await openCreateDialog()
+        await fillCreateForm(dialog)
+        await addPendingChild(dialog, 'Maria', '2021-06-01')
+        await addPendingChild(dialog, 'Andreas', '2019-03-04')
+
+        fireEvent.click(within(dialog).getByRole('button', { name: /^create$/i }))
+
+        await waitFor(() => expect(api.createChild).toHaveBeenCalledTimes(2))
+        // Against the id the create returned, which is the whole reason this waits
+        // for the account instead of sending the children with it.
+        expect(api.createChild).toHaveBeenNthCalledWith(1, { name: 'Maria', dateOfBirth: '2021-06-01' }, CREATED.id)
+        expect(api.createChild).toHaveBeenNthCalledWith(2, { name: 'Andreas', dateOfBirth: '2019-03-04' }, CREATED.id)
+    })
+
+    it('lets a collected child be removed again before Create', async () => {
+        api.createAdminUser.mockResolvedValue(CREATED as never)
+
+        const dialog = await openCreateDialog()
+        await fillCreateForm(dialog)
+        await addPendingChild(dialog, 'Maria', '2021-06-01')
+
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Remove Maria' }))
+        await waitFor(() => expect(within(dialog).queryByText('Maria')).not.toBeInTheDocument())
+
+        fireEvent.click(within(dialog).getByRole('button', { name: /^create$/i }))
+
+        await waitFor(() => expect(api.createAdminUser).toHaveBeenCalled())
+        expect(api.createChild).not.toHaveBeenCalled()
+    })
+
+    /*
+     * The account is already made by the time a child write can fail, so the create
+     * must not read as having failed -- that would invite the admin to try again
+     * with an email that is now taken. It is reported instead, saying where to
+     * finish the job.
+     */
+    it('reports a child that could not be saved without failing the create', async () => {
+        api.createAdminUser.mockResolvedValue(CREATED as never)
+        api.createChild.mockRejectedValue(new Error('nope'))
+
+        const dialog = await openCreateDialog()
+        await fillCreateForm(dialog)
+        await addPendingChild(dialog, 'Maria', '2021-06-01')
+
+        fireEvent.click(within(dialog).getByRole('button', { name: /^create$/i }))
+
+        expect(await screen.findByText(/child Maria could not be saved/i)).toBeInTheDocument()
+        expect(screen.getByText(/add them from Edit User/i)).toBeInTheDocument()
+        // Not the generic create failure.
+        expect(screen.queryByText(/could not create user/i)).not.toBeInTheDocument()
+    })
+
+    // Admins get no Profile section, so anything collected before the role was
+    // switched must not be sent -- the same rule jobTitle already follows.
+    it('sends no children for an admin account', async () => {
+        api.createAdminUser.mockResolvedValue({ ...CREATED, roles: ['Admin'] } as never)
+
+        const dialog = await openCreateDialog()
+        await fillCreateForm(dialog)
+        await addPendingChild(dialog, 'Maria', '2021-06-01')
+
+        fireEvent.click(within(dialog).getByRole('radio', { name: 'Admin' }))
+        expect(within(dialog).queryByRole('button', { name: 'Add child' })).not.toBeInTheDocument()
+
+        fireEvent.click(within(dialog).getByRole('button', { name: /^create$/i }))
+
+        await waitFor(() => expect(api.createAdminUser).toHaveBeenCalled())
+        expect(api.createChild).not.toHaveBeenCalled()
+    })
+})

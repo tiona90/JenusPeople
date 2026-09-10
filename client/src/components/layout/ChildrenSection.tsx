@@ -16,6 +16,7 @@ import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import { createChild, deleteChild, getChildren } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
 import { softBg } from '../../lib/theme-tokens'
+import type { UpsertChildRequest } from '../../lib/types'
 
 interface ChildrenSectionProps {
     /**
@@ -39,6 +40,14 @@ interface ChildrenSectionProps {
     employeeId?: string
     /** That person's name, for wording that would be nonsense in the first person. */
     onBehalfOfName?: string
+    /**
+     * Create mode: there is no account yet, so there is no profile for a child to
+     * belong to and nothing to POST against. Supplying these makes the section
+     * entirely local — it queries nothing and writes nothing — and the caller
+     * writes the collected rows once the account exists.
+     */
+    pendingChildren?: UpsertChildRequest[]
+    onPendingChildrenChange?: (children: UpsertChildRequest[]) => void
     disabled?: boolean
 }
 
@@ -59,7 +68,8 @@ interface ChildrenSectionProps {
  * little gain. Rows therefore show their own pending state.
  */
 export default function ChildrenSection({
-    hasChildren, onHasChildrenChange, employeeId, onBehalfOfName, disabled,
+    hasChildren, onHasChildrenChange, employeeId, onBehalfOfName,
+    pendingChildren, onPendingChildrenChange, disabled,
 }: ChildrenSectionProps) {
     const queryClient = useQueryClient()
     const [isAdding, setIsAdding] = useState(false)
@@ -73,13 +83,18 @@ export default function ChildrenSection({
     const managesDeclaration = onHasChildrenChange !== undefined
     const declared = managesDeclaration ? hasChildren === true : true
 
+    /* Create mode: nothing to read and nothing to write yet. The rows live in the
+       caller's state until the account they belong to exists. */
+    const collectsLocally = onPendingChildrenChange !== undefined
+    const pending = pendingChildren ?? []
+
     const { data: children, isLoading, isError: isChildrenError, error: childrenError } = useQuery({
         // Keyed by whose list it is, so an admin moving between two employees does
         // not read the previous one's children out of the cache. The invalidations
         // below stay prefix-only, which clears every key under it.
         queryKey: ['children', employeeId ?? 'me'],
         queryFn: () => getChildren(employeeId),
-        enabled: declared,
+        enabled: declared && !collectsLocally,
     })
 
     const invalidate = () => {
@@ -121,10 +136,23 @@ export default function ChildrenSection({
     const error = addMutation.error ?? removeMutation.error ?? (isChildrenError ? childrenError : undefined)
     const canSaveNew = name.trim().length > 0 && dateOfBirth.length > 0
 
+    /** Saves the new row: to the caller's list in create mode, to the API otherwise. */
+    const saveNew = () => {
+        if (!collectsLocally) {
+            addMutation.mutate()
+            return
+        }
+
+        onPendingChildrenChange!([...pending, { name: name.trim(), dateOfBirth }])
+        setIsAdding(false)
+        setName('')
+        setDateOfBirth('')
+    }
+
     /* The server refuses "no children" while children are still on the profile
        (HasChildrenDeclaration), so No is disabled rather than left to fail on save
        — the employee can see what to do about it instead of being told afterwards. */
-    const childCount = children?.length ?? 0
+    const childCount = collectsLocally ? pending.length : (children?.length ?? 0)
     const cannotAnswerNo = declared && childCount > 0
     const unanswered = hasChildren !== true && hasChildren !== false
 
@@ -184,6 +212,40 @@ export default function ChildrenSection({
                             No children on file. Add them here so maternity or paternity leave can be requested.
                         </Typography>
                     )}
+
+                    {/* Create mode. No age or eligibility chip: both are the server's
+                        to compute, and guessing them here would be a second
+                        implementation of the rule that decides who may take this
+                        leave. They appear as soon as the account exists. */}
+                    {collectsLocally && pending.map((child, index) => (
+                        <Stack
+                            key={`${child.name}-${child.dateOfBirth}-${index}`}
+                            direction="row"
+                            spacing={1}
+                            alignItems="center"
+                            sx={{ py: 0.5 }}
+                        >
+                            <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                                <Typography variant="body2" fontWeight={600} noWrap>
+                                    {child.name}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                    {new Date(child.dateOfBirth).toLocaleDateString('en-GB', {
+                                        day: '2-digit', month: 'short', year: 'numeric',
+                                    })}
+                                </Typography>
+                            </Box>
+
+                            <IconButton
+                                size="small"
+                                aria-label={`Remove ${child.name}`}
+                                onClick={() => onPendingChildrenChange!(pending.filter((_, i) => i !== index))}
+                                disabled={disabled}
+                            >
+                                <DeleteOutlineRoundedIcon fontSize="small" />
+                            </IconButton>
+                        </Stack>
+                    ))}
 
                     {children?.map((child) => (
                         <Stack
@@ -250,8 +312,8 @@ export default function ChildrenSection({
                                 <Button
                                     variant="contained"
                                     size="small"
-                                    onClick={() => addMutation.mutate()}
-                                    disabled={!canSaveNew || addMutation.isPending}
+                                    onClick={saveNew}
+                                    disabled={!canSaveNew || addMutation.isPending || disabled}
                                     sx={{ textTransform: 'none' }}
                                 >
                                     Save child

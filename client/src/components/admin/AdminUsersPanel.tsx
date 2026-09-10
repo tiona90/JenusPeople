@@ -16,6 +16,7 @@ import Typography from '@mui/material/Typography'
 import {
     confirmAdminUserEmail,
     createAdminUser,
+    createChild,
     deleteAdminUser,
     getAdminUsers,
     getAnnualLeaves,
@@ -33,7 +34,8 @@ import { getApiErrorMessage } from '../../lib/api/error-utils'
 import ChildrenSection from '../layout/ChildrenSection'
 import { softBg, type SxColor } from '../../lib/theme-tokens'
 import type {
-    AdminUser, Department, EmployeeProfile, Gender, LeaveStatusHistory, PresenceStatus, TimesheetStatusHistory, UserRole,
+    AdminCreateUserRequest, AdminUser, Department, EmployeeProfile, Gender, LeaveStatusHistory, PresenceStatus,
+    TimesheetStatusHistory, UpsertChildRequest, UserRole,
 } from '../../lib/types'
 
 const PROTECTED_ADMIN_EMAIL = 'admin@annualleave.com'
@@ -264,18 +266,44 @@ function AdminUsersPanel() {
 
     /* Mutations */
     const createMutation = useMutation({
-        mutationFn: createAdminUser,
-        onSuccess: (created) => {
+        /* Two steps, because a child needs a profile to belong to and the profile
+           does not exist until the account does. The account is what matters, so a
+           child that fails to write is reported rather than allowed to fail the
+           whole create — by then the user exists, and throwing here would say
+           otherwise and invite the admin to try again with a taken email. */
+        mutationFn: async ({ children, ...request }: AdminCreateUserRequest & { children: UpsertChildRequest[] }) => {
+            const created = await createAdminUser(request)
+
+            const failed: string[] = []
+            for (const child of children) {
+                try {
+                    await createChild(child, created.id)
+                } catch {
+                    failed.push(child.name)
+                }
+            }
+
+            return { created, failedChildren: failed }
+        },
+        onSuccess: ({ created, failedChildren }) => {
             void queryClient.invalidateQueries({ queryKey: ['adminUsers'] })
             void queryClient.invalidateQueries({ queryKey: ['employeeProfiles'] })
+            void queryClient.invalidateQueries({ queryKey: ['children'] })
             setCreateOpen(false)
+
             // The account is created without a password, so whether the invite
             // email actually left matters: if it didn't, the new user has no way
             // in until someone tells them to use "Forgot password?".
-            setInviteNotice(created.inviteEmailSent === false
+            const childProblem = failedChildren.length > 0
+                ? ` Their ${failedChildren.length === 1 ? 'child' : 'children'} ${failedChildren.join(', ')} could not be saved — add them from Edit User.`
+                : ''
+
+            setInviteNotice(created.inviteEmailSent === false || childProblem
                 ? {
                     severity: 'warning',
-                    message: `${created.email} was created, but the welcome email could not be sent. Ask them to use “Forgot password?” on the sign-in page to set their password.`,
+                    message: created.inviteEmailSent === false
+                        ? `${created.email} was created, but the welcome email could not be sent. Ask them to use “Forgot password?” on the sign-in page to set their password.${childProblem}`
+                        : `${created.email} was created.${childProblem}`,
                 }
                 : {
                     severity: 'success',
@@ -1429,6 +1457,8 @@ function CreateUserDialog(props: {
         phoneNumber: string | null
         dateOfBirth: string | null
         gender: Gender | null
+        /** Written after the account exists — see the create mutation. */
+        children: UpsertChildRequest[]
     }) => void
     departments: Department[]
     profiles: EmployeeProfile[]
@@ -1443,6 +1473,7 @@ function CreateUserDialog(props: {
     const [phoneNumber, setPhoneNumber] = useState('')
     const [dateOfBirth, setDateOfBirth] = useState('')
     const [gender, setGender] = useState<Gender | null>(null)
+    const [pendingChildren, setPendingChildren] = useState<UpsertChildRequest[]>([])
 
     // Same rule as EditUserDialog: a new hire reports to whoever manages the
     // department they're placed in — not a free pick.
@@ -1473,6 +1504,7 @@ function CreateUserDialog(props: {
         setPhoneNumber('')
         setDateOfBirth('')
         setGender(null)
+        setPendingChildren([])
         props.onClose()
     }
 
@@ -1543,6 +1575,21 @@ function CreateUserDialog(props: {
                                 onChange={(e) => setJobTitle(e.target.value)}
                                 fullWidth
                             />
+
+                            {/* Collected here and written straight after the account
+                                exists — there is no profile for a child to belong to
+                                until then, so unlike the Edit dialog these rows cannot
+                                commit as they are entered. The panel's create mutation
+                                writes them and reports any that fail; the account is
+                                already made by then, so a failure here must not read
+                                as the create having failed. */}
+                            <Divider />
+                            <ChildrenSection
+                                pendingChildren={pendingChildren}
+                                onPendingChildrenChange={setPendingChildren}
+                                onBehalfOfName={displayName.trim() || 'This person'}
+                                disabled={props.isPending}
+                            />
                         </>
                     )}
 
@@ -1564,6 +1611,10 @@ function CreateUserDialog(props: {
                         phoneNumber: phoneNumber.trim() || null,
                         dateOfBirth: dateOfBirth || null,
                         gender,
+                        // Never for an Admin: the Profile section is hidden for them,
+                        // so anything collected before the role was switched must not
+                        // be sent — same rule as jobTitle above.
+                        children: isAdmin ? [] : pendingChildren,
                     })}
                     sx={saveBtnSx}
                 >
