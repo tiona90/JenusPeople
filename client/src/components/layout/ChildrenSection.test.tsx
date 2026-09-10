@@ -77,8 +77,10 @@ describe('ChildrenSection', () => {
         fireEvent.change(screen.getByLabelText(/date of birth/i), { target: { value: '2022-09-12' } })
         fireEvent.click(screen.getByRole('button', { name: /^save child$/i }))
 
+        // Second argument spelled out: undefined is what says "the signed-in user's
+        // own", as against the employee id an admin passes on their behalf.
         await waitFor(() =>
-            expect(createChild).toHaveBeenCalledWith({ name: 'Maria', dateOfBirth: '2022-09-12' }),
+            expect(createChild).toHaveBeenCalledWith({ name: 'Maria', dateOfBirth: '2022-09-12' }, undefined),
         )
     })
 
@@ -140,5 +142,73 @@ describe('ChildrenSection', () => {
 
         expect(screen.getByRole('radio', { name: 'No' })).toBeDisabled()
         expect(screen.getByText(/Remove the 2 children below before answering No\./)).toBeInTheDocument()
+    })
+})
+
+/*
+ * On behalf of somebody else — an admin managing an employee's children from the
+ * Users panel. Maternity and Paternity Leave are granted per child, so a request
+ * against either has to name one; until a child is on file the employee cannot
+ * make that request, and previously only they could fix that.
+ *
+ * The declaration is deliberately not asked here: "do you have children" is the
+ * employee's own statement. The server records it anyway, because CreateChild
+ * sets HasChildren on the profile.
+ */
+describe('ChildrenSection on behalf of another employee', () => {
+    beforeEach(() => {
+        vi.clearAllMocks()
+        getChildren.mockResolvedValue(children)
+        createChild.mockResolvedValue(children[0])
+        deleteChild.mockResolvedValue(undefined)
+    })
+
+    function renderForEmployee() {
+        const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        render(
+            <QueryClientProvider client={client}>
+                <ChildrenSection employeeId="u-emp" onBehalfOfName="Theodoros Iona" />
+            </QueryClientProvider>,
+        )
+    }
+
+    it('asks no Yes/No question, and names whose children these are', async () => {
+        renderForEmployee()
+
+        expect(screen.queryByRole('radio', { name: 'Yes' })).not.toBeInTheDocument()
+        expect(screen.queryByRole('radio', { name: 'No' })).not.toBeInTheDocument()
+        expect(screen.getByText("Theodoros Iona's children")).toBeInTheDocument()
+    })
+
+    // Without the declaration to gate it, the list has to load on its own --
+    // otherwise an admin would open the dialog and see nothing on file.
+    it('loads that employee\'s children rather than the caller\'s own', async () => {
+        renderForEmployee()
+
+        await waitFor(() => expect(screen.getByText('Andreas')).toBeInTheDocument())
+        expect(getChildren).toHaveBeenCalledWith('u-emp')
+    })
+
+    it('adds a child against that employee, not the caller', async () => {
+        renderForEmployee()
+        await waitFor(() => expect(screen.getByText('Andreas')).toBeInTheDocument())
+
+        fireEvent.click(screen.getByRole('button', { name: 'Add child' }))
+        fireEvent.change(screen.getByLabelText(/Child's name/), { target: { value: 'Maria' } })
+        fireEvent.change(screen.getByLabelText(/Child's date of birth/), { target: { value: '2021-06-01' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Save child' }))
+
+        await waitFor(() => expect(createChild).toHaveBeenCalledWith(
+            { name: 'Maria', dateOfBirth: '2021-06-01' },
+            'u-emp',
+        ))
+    })
+
+    it('says so when the employee has no children on file', async () => {
+        getChildren.mockResolvedValue([])
+        renderForEmployee()
+
+        expect(await screen.findByText(/No children on file/)).toBeInTheDocument()
+        expect(screen.getByText(/maternity or paternity leave can be requested/)).toBeInTheDocument()
     })
 })

@@ -146,9 +146,10 @@ export default function ChildLeavePicker({
             <Stack spacing={0.5}>
                 <Alert severity="info">
                     {onBehalfOfName
-                        // There is deliberately no screen for editing another
-                        // employee's children, so an admin cannot fix this here.
-                        ? `${onBehalfOfName} has no children on file. The entitlement is per child, so they need to add them in Edit profile first.`
+                        // An admin can now fix this themselves, from the Profile
+                        // section of Edit User on the Users panel — so say where,
+                        // rather than only that somebody else has to do it.
+                        ? `${onBehalfOfName} has no children on file. The entitlement is per child, so add them under Users → Edit User → Profile, or ask them to add them in Edit profile.`
                         : 'Add your children in Edit profile to request this leave — the entitlement is per child.'}
                 </Alert>
                 {error && (

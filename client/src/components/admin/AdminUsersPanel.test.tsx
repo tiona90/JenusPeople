@@ -23,6 +23,10 @@ vi.mock('../../lib/api', () => ({
     setAdminUserActive: vi.fn(),
     deleteAdminUser: vi.fn(),
     updateEmployeeProfile: vi.fn(),
+    getChildren: vi.fn(),
+    createChild: vi.fn(),
+    updateChild: vi.fn(),
+    deleteChild: vi.fn(),
 }))
 
 // Only SweetAlert is stubbed: sweetalert2 renders a real modal and resolves on a
@@ -887,3 +891,81 @@ async function selectDepartment(dialog: HTMLElement) {
     const option = await screen.findByRole('option', { name: `${DEPARTMENT.name} (${DEPARTMENT.code})` })
     fireEvent.click(option)
 }
+
+/*
+ * Maternity and Paternity Leave are granted per child, so a request against either
+ * has to name one -- and until a child is on file the employee cannot make that
+ * request at all. Previously only they could fix that: the child picker on the
+ * leave form even said so ("... they need to add them in Edit profile first"),
+ * with nothing an admin could do about it. An admin can now put children on file
+ * from the Users panel.
+ */
+describe('AdminUsersPanel — managing an employee\'s children', () => {
+    const EMPLOYEE = { id: 'u-employee', userName: 'e@example.test', email: 'e@example.test', displayName: 'Theodoros Iona', imageUrl: '', emailConfirmed: true, isActive: true, roles: ['Employee'] }
+    const ADMIN = { id: 'u-admin', userName: 'a@example.test', email: 'a@example.test', displayName: 'Admin User', imageUrl: '', emailConfirmed: true, isActive: true, roles: ['Admin'] }
+
+    const EMPLOYEE_PROFILE = { id: 'p-employee', userId: 'u-employee', displayName: 'Theodoros Iona', departmentId: DEPARTMENT.id, managerId: null, annualLeaveEntitlement: 20, leaveBalance: 20, jobTitle: null, createdAt: '2026-01-01' }
+    // An admin sits outside the department structure and gets no Profile section.
+    const ADMIN_PROFILE = { id: 'p-admin', userId: 'u-admin', displayName: 'Admin User', departmentId: null, managerId: null, annualLeaveEntitlement: 20, leaveBalance: 20, jobTitle: null, createdAt: '2026-01-01' }
+
+    beforeEach(() => {
+        api.getAdminUsers.mockResolvedValue([EMPLOYEE, ADMIN] as never)
+        api.getEmployeeProfiles.mockResolvedValue([EMPLOYEE_PROFILE, ADMIN_PROFILE] as never)
+        api.getChildren.mockResolvedValue([])
+    })
+
+    async function openEditFor(displayName: string) {
+        renderPanel()
+        const nameEl = await screen.findByText(displayName)
+        const row = nameEl.parentElement!.parentElement!.parentElement!.parentElement!
+        fireEvent.click(within(row).getByTitle('Edit'))
+        return screen.getByRole('dialog')
+    }
+
+    it('reads that employee\'s children, not the signed-in admin\'s own', async () => {
+        const dialog = await openEditFor('Theodoros Iona')
+
+        expect(await within(dialog).findByText("Theodoros Iona's children")).toBeInTheDocument()
+        // The employee's user id, which is what the server resolves the owner by.
+        expect(api.getChildren).toHaveBeenCalledWith(EMPLOYEE.id)
+    })
+
+    // The declaration is the employee's own statement, so the admin is not asked to
+    // make it on their behalf -- the server records it when a child is added.
+    it('asks the admin no Yes/No declaration', async () => {
+        const dialog = await openEditFor('Theodoros Iona')
+
+        await within(dialog).findByText("Theodoros Iona's children")
+        expect(within(dialog).queryByRole('radio', { name: 'Yes' })).not.toBeInTheDocument()
+        expect(within(dialog).queryByRole('radio', { name: 'No' })).not.toBeInTheDocument()
+    })
+
+    it('adds a child against that employee', async () => {
+        api.createChild.mockResolvedValue({ id: 'c-new', name: 'Maria', dateOfBirth: '2021-06-01', ageYears: 5, isEligible: true, lastEligibleDate: '2036-05-31' } as never)
+        const dialog = await openEditFor('Theodoros Iona')
+        await within(dialog).findByText("Theodoros Iona's children")
+
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Add child' }))
+        fireEvent.change(within(dialog).getByLabelText(/Child's name/), { target: { value: 'Maria' } })
+        fireEvent.change(within(dialog).getByLabelText(/Child's date of birth/), { target: { value: '2021-06-01' } })
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Save child' }))
+
+        await waitFor(() => expect(api.createChild).toHaveBeenCalledWith(
+            { name: 'Maria', dateOfBirth: '2021-06-01' },
+            EMPLOYEE.id,
+        ))
+    })
+
+    // It rides with the Profile section, which an Admin does not get -- they sit
+    // outside the department structure and take no per-child leave through it.
+    it('offers no children section for an admin account', async () => {
+        const dialog = await openEditFor('Admin User')
+
+        await waitFor(() => expect(within(dialog).getByRole('radio', { name: 'Admin' })).toBeChecked())
+        // The Profile section is what carries it, and an Admin gets none of it.
+        expect(within(dialog).queryByText('Profile')).not.toBeInTheDocument()
+        expect(within(dialog).queryByText("Admin User's children")).not.toBeInTheDocument()
+        expect(within(dialog).queryByRole('button', { name: 'Add child' })).not.toBeInTheDocument()
+        expect(api.getChildren).not.toHaveBeenCalled()
+    })
+})

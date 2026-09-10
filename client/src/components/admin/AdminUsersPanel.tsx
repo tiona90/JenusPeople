@@ -30,6 +30,7 @@ import {
     updateEmployeeProfile,
 } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
+import ChildrenSection from '../layout/ChildrenSection'
 import { softBg, type SxColor } from '../../lib/theme-tokens'
 import type {
     AdminUser, Department, EmployeeProfile, Gender, LeaveStatusHistory, PresenceStatus, TimesheetStatusHistory, UserRole,
@@ -1256,9 +1257,17 @@ function EditUserDialog(props: {
     const [dateOfBirth, setDateOfBirth] = useState('')
     const [gender, setGender] = useState<Gender | null>(null)
 
+    /* Which user the fields below currently hold. The form hydrates in a microtask
+       rather than synchronously, so for one render `role` is still the default
+       'Employee' — long enough for the Profile section to mount for an Admin, who
+       must not have one, and fire off a request for children that are then thrown
+       away. Anything in here that does real work on mount waits for this. */
+    const [hydratedFor, setHydratedFor] = useState<string | null>(null)
+
     useEffect(() => {
         if (props.data) {
             Promise.resolve().then(() => {
+                setHydratedFor(props.data!.user.id)
                 setEmail(props.data!.user.email)
                 setDisplayName(props.data!.user.displayName ?? '')
                 // Collapses any legacy multi-role account to its highest role.
@@ -1356,6 +1365,29 @@ function EditUserDialog(props: {
                                 onChange={(e) => setJobTitle(e.target.value)}
                                 fullWidth
                             />
+
+                            {/* Maternity and Paternity Leave are granted per child, so a
+                                request against either has to name one — and until a child
+                                is on file the employee cannot make that request at all.
+                                An admin can now put them on file rather than only being
+                                able to tell the employee to do it themselves.
+
+                                The rows commit immediately, unlike the rest of this
+                                dialog, which saves on Save: each child is its own
+                                resource. The Yes/No declaration is deliberately not asked
+                                here — that is the employee's own statement — but the
+                                server records it anyway, since adding a child sets
+                                HasChildren on the profile. */}
+                            {hydratedFor === user!.id && (
+                                <>
+                                    <Divider />
+                                    <ChildrenSection
+                                        employeeId={user!.id}
+                                        onBehalfOfName={user!.displayName || user!.email}
+                                        disabled={props.isPending}
+                                    />
+                                </>
+                            )}
                         </>
                     )}
 

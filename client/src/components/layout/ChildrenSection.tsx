@@ -18,9 +18,27 @@ import { getApiErrorMessage } from '../../lib/api/error-utils'
 import { softBg } from '../../lib/theme-tokens'
 
 interface ChildrenSectionProps {
-    /** null means the employee has never answered. */
-    hasChildren: boolean | null | undefined
-    onHasChildrenChange: (value: boolean) => void
+    /**
+     * null means the employee has never answered. Omitted together with
+     * `onHasChildrenChange` when somebody else is managing the list — see below.
+     */
+    hasChildren?: boolean | null
+    /**
+     * Reports the answer to the parent form, which saves it with the rest of the
+     * profile. Omitting it puts the section in on-behalf mode: the list is managed
+     * but the declaration is not asked, because "do you have children" is the
+     * employee's own statement to make. The server records it anyway — adding a
+     * child sets `HasChildren` on the profile (see `CreateChild`).
+     */
+    onHasChildrenChange?: (value: boolean) => void
+    /**
+     * Whose children these are. Omitted for the signed-in user's own; an admin
+     * editing someone else passes that person's **user** id. The server authorizes
+     * it either way — passing an id is not permission to use it.
+     */
+    employeeId?: string
+    /** That person's name, for wording that would be nonsense in the first person. */
+    onBehalfOfName?: string
     disabled?: boolean
 }
 
@@ -40,17 +58,27 @@ interface ChildrenSectionProps {
  * them into the dialog's Save would mean building a diff-and-sync command for very
  * little gain. Rows therefore show their own pending state.
  */
-export default function ChildrenSection({ hasChildren, onHasChildrenChange, disabled }: ChildrenSectionProps) {
+export default function ChildrenSection({
+    hasChildren, onHasChildrenChange, employeeId, onBehalfOfName, disabled,
+}: ChildrenSectionProps) {
     const queryClient = useQueryClient()
     const [isAdding, setIsAdding] = useState(false)
     const [name, setName] = useState('')
     const [dateOfBirth, setDateOfBirth] = useState('')
 
-    const declared = hasChildren === true
+    /* Whoever manages the declaration also gates the list behind it. On behalf of
+       somebody else there is no declaration to ask, so the list always shows —
+       an admin opening the dialog needs to see what is on file, not be told to
+       answer a question about their own family first. */
+    const managesDeclaration = onHasChildrenChange !== undefined
+    const declared = managesDeclaration ? hasChildren === true : true
 
     const { data: children, isLoading, isError: isChildrenError, error: childrenError } = useQuery({
-        queryKey: ['children'],
-        queryFn: () => getChildren(),
+        // Keyed by whose list it is, so an admin moving between two employees does
+        // not read the previous one's children out of the cache. The invalidations
+        // below stay prefix-only, which clears every key under it.
+        queryKey: ['children', employeeId ?? 'me'],
+        queryFn: () => getChildren(employeeId),
         enabled: declared,
     })
 
@@ -61,7 +89,7 @@ export default function ChildrenSection({ hasChildren, onHasChildrenChange, disa
     }
 
     const addMutation = useMutation({
-        mutationFn: () => createChild({ name: name.trim(), dateOfBirth }),
+        mutationFn: () => createChild({ name: name.trim(), dateOfBirth }, employeeId),
         onSuccess: () => {
             invalidate()
             setIsAdding(false)
@@ -102,6 +130,13 @@ export default function ChildrenSection({ hasChildren, onHasChildrenChange, disa
 
     return (
         <Stack spacing={1}>
+            {!managesDeclaration && (
+                <Typography variant="subtitle2" color="text.secondary">
+                    {onBehalfOfName ? `${onBehalfOfName}'s children` : 'Children'}
+                </Typography>
+            )}
+
+            {managesDeclaration && (
             <Box>
                 <Typography variant="subtitle2" color="text.secondary">
                     Do you have children?
@@ -135,10 +170,20 @@ export default function ChildrenSection({ hasChildren, onHasChildrenChange, disa
                     </Typography>
                 )}
             </Box>
+            )}
 
             {declared && (
                 <Box sx={{ pl: 1 }}>
                     {isLoading && <CircularProgress size={18} />}
+
+                    {/* Only on behalf of somebody else: in the employee's own dialog
+                        an empty list follows a Yes they just gave, so it needs no
+                        explaining. An admin opening a stranger's record does. */}
+                    {!managesDeclaration && !isLoading && !isChildrenError && childCount === 0 && (
+                        <Typography variant="caption" color="text.secondary">
+                            No children on file. Add them here so maternity or paternity leave can be requested.
+                        </Typography>
+                    )}
 
                     {children?.map((child) => (
                         <Stack
@@ -187,8 +232,13 @@ export default function ChildrenSection({ hasChildren, onHasChildrenChange, disa
                                 size="small"
                                 fullWidth
                             />
+                            {/* "Child's date of birth", not "Date of birth": both dialogs
+                                this section appears in already have a Date of birth field
+                                for the person themselves, and two identically labelled
+                                date inputs are ambiguous — to a screen reader as much as
+                                to anyone reading quickly. Matches "Child's name" above. */}
                             <TextField
-                                label="Date of birth"
+                                label="Child's date of birth"
                                 type="date"
                                 value={dateOfBirth}
                                 onChange={(event) => setDateOfBirth(event.target.value)}
