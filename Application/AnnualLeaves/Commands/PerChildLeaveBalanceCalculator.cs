@@ -75,6 +75,102 @@ internal static class PerChildLeaveBalanceCalculator
                 $"{leaveType.Name} for this child must end on or before {lastEligibleDate:dd MMM yyyy}.";
         }
 
+        var startMonth = await LeaveYearQueries.GetLeaveYearStartMonthAsync(context, cancellationToken);
+        var requestHolidays = await LeaveYearQueries.GetHolidaySetAsync(
+            context, annualLeave.StartDate, annualLeave.EndDate, cancellationToken);
+
+        var requestedDays = LeaveCalculationService.CalculateBusinessDays(
+            annualLeave.StartDate, annualLeave.EndDate, requestHolidays);
+
+        // A range made entirely of weekends and holidays charges nothing, so there
+        // is no cap left to break.
+        if (requestedDays <= 0)
+            return null;
+
+        var approved = await ApprovedLeaveForChildAsync(context, childId, excludeLeaveId, cancellationToken);
+
+        // ── Lifetime cap ───────────────────────────────────────────────────────
+        var totalDays = PerChildLeaveCalculationService.WeeksToBusinessDays(leaveType.PerChildTotalWeeks);
+        var usedDays = await UsedBusinessDaysAsync(context, approved, cancellationToken);
+        var remainingDays = PerChildLeaveCalculationService.RemainingDays(totalDays, usedDays);
+
+        if (remainingDays < requestedDays)
+        {
+            return $"{child.Name} has {remainingDays} day(s) " +
+                $"({PerChildLeaveCalculationService.BusinessDaysToWeeks(remainingDays)} week(s)) of " +
+                $"{leaveType.Name} remaining in total. This request is {requestedDays} day(s).";
+        }
+
+        // ── Yearly cap, per leave year the request touches ─────────────────────
+        // Checked year by year rather than in total: that is what stops ten weeks
+        // arriving as one request straddling new year.
+        var yearCapDays = PerChildLeaveCalculationService.WeeksToBusinessDays(leaveType.PerChildWeeksPerYear);
+
+        foreach (var leaveYearKey in LeaveCalculationService.GetCoveredLeaveYears(
+                     annualLeave.StartDate, annualLeave.EndDate, startMonth))
+        {
+            var requestedInYear = LeaveCalculationService.CalculateBusinessDaysInLeaveYear(
+                annualLeave.StartDate, annualLeave.EndDate, leaveYearKey, startMonth, requestHolidays);
+            if (requestedInYear <= 0)
+                continue;
+
+            var (lyStart, lyEnd) = LeaveCalculationService.GetLeaveYearBounds(leaveYearKey, startMonth);
+            var yearHolidays = await LeaveYearQueries.GetHolidaySetAsync(context, lyStart, lyEnd, cancellationToken);
+
+            var usedInYear = approved.Sum(leave => LeaveCalculationService.CalculateBusinessDaysInLeaveYear(
+                leave.StartDate, leave.EndDate, leaveYearKey, startMonth, yearHolidays));
+
+            var remainingInYear = PerChildLeaveCalculationService.RemainingDays(yearCapDays, usedInYear);
+            if (remainingInYear < requestedInYear)
+            {
+                return $"{child.Name} has {remainingInYear} day(s) " +
+                    $"({PerChildLeaveCalculationService.BusinessDaysToWeeks(remainingInYear)} week(s)) of " +
+                    $"{leaveType.Name} left for the leave year {lyStart:dd MMM yyyy} – {lyEnd:dd MMM yyyy}. " +
+                    $"This request uses {requestedInYear} day(s) in that year.";
+            }
+        }
+
         return null;
+    }
+
+    // ── DB helpers ─────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Approved leave for one child. Only Approved counts — the same rule the pooled
+    /// balance applies — and rows with a null ChildId are excluded by construction,
+    /// since this is queried by child.
+    /// </summary>
+    private static Task<List<AnnualLeave>> ApprovedLeaveForChildAsync(
+        AppDbContext context,
+        string childId,
+        string? excludeLeaveId,
+        CancellationToken cancellationToken)
+        => context.AnnualLeaves
+            .AsNoTracking()
+            .Where(leave =>
+                leave.ChildId == childId
+                && leave.Status == AnnualLeaveStatus.Approved
+                && (excludeLeaveId == null || leave.Id != excludeLeaveId))
+            .ToListAsync(cancellationToken);
+
+    /// <summary>
+    /// Business days across every approved leave, holiday-aware. One holiday query
+    /// spanning the whole set rather than one per row: the set is small and the
+    /// dates are sparse, so the range read costs less than N round trips.
+    /// </summary>
+    private static async Task<int> UsedBusinessDaysAsync(
+        AppDbContext context,
+        List<AnnualLeave> approved,
+        CancellationToken cancellationToken)
+    {
+        if (approved.Count == 0)
+            return 0;
+
+        var rangeStart = approved.Min(leave => leave.StartDate);
+        var rangeEnd = approved.Max(leave => leave.EndDate);
+        var holidays = await LeaveYearQueries.GetHolidaySetAsync(context, rangeStart, rangeEnd, cancellationToken);
+
+        return approved.Sum(leave => LeaveCalculationService.CalculateBusinessDays(
+            leave.StartDate, leave.EndDate, holidays));
     }
 }
