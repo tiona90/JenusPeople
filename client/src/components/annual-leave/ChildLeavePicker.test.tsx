@@ -110,10 +110,68 @@ describe('ChildLeavePicker', () => {
         expect(await screen.findByText(/no eligible children/i)).toBeInTheDocument()
     })
 
-    it('shows what the chosen dates would leave', async () => {
+    it('shows what the chosen dates would leave, capped by the tighter of the two remainders', async () => {
+        // c1 has 65 lifetime days left but only 25 this year; the request must
+        // be weighed against 25, not 65, or the caption over-promises what the
+        // yearly cap will actually allow.
         renderPicker({ value: 'c1', requestedDays: 6 })
 
         expect(await screen.findByText(/6 business days \(1\.2 weeks\)/)).toBeInTheDocument()
-        expect(screen.getByText(/59 days left/)).toBeInTheDocument()
+        expect(screen.getByText(/19 days left/)).toBeInTheDocument()
+    })
+
+    /**
+     * Fix 1: the picker must be asked for the *right* person's ledger. This is
+     * the test that would have caught the picker silently loading the caller's
+     * own children while an admin edited someone else's request — it asserts on
+     * the argument passed to the query function, not just on what renders.
+     */
+    it('requests the given employee\'s entitlements, not the caller\'s own', async () => {
+        renderPicker({ employeeId: 'emp-42' })
+
+        await waitFor(() => expect(getChildLeaveEntitlements).toHaveBeenCalledWith('emp-42'))
+    })
+
+    it('requests the caller\'s own entitlements when no employeeId is given', async () => {
+        renderPicker()
+
+        await waitFor(() => expect(getChildLeaveEntitlements).toHaveBeenCalledWith(undefined))
+    })
+
+    /**
+     * Fix 2: once the ledger for the *current* employeeId has loaded and the
+     * held value matches none of its children (e.g. an admin switched employee
+     * after picking a child for the previous one), the stale id must be cleared
+     * rather than silently submitted while the select displays blank.
+     */
+    it('clears a value that matches no loaded child once the query settles', async () => {
+        const onChange = vi.fn()
+        renderPicker({ value: 'stale-child-id', onChange })
+
+        await waitFor(() => expect(onChange).toHaveBeenCalledWith(''))
+    })
+
+    it('does not clear a value that still matches a loaded child', async () => {
+        const onChange = vi.fn()
+        renderPicker({ value: 'c1', onChange })
+
+        await screen.findByText(/Andreas/)
+        expect(onChange).not.toHaveBeenCalled()
+    })
+
+    /**
+     * Fix 4: a failed query must not be indistinguishable from "no children
+     * declared" — the latter tells an employee to add their own children, which
+     * is nonsense (and, for an admin acting on someone else's request, actively
+     * misleading) when the real problem is that the request failed.
+     */
+    it('shows a failure message, not the add-your-children one, when the query errors', async () => {
+        getChildLeaveEntitlements.mockReset()
+        getChildLeaveEntitlements.mockRejectedValue(new Error('network down'))
+
+        renderPicker()
+
+        expect(await screen.findByText(/network down/i)).toBeInTheDocument()
+        expect(screen.queryByText(/add your children in edit profile/i)).not.toBeInTheDocument()
     })
 })

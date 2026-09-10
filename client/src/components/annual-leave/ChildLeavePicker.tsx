@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import Alert from '@mui/material/Alert'
 import MenuItem from '@mui/material/MenuItem'
@@ -5,6 +6,7 @@ import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { getChildLeaveEntitlements } from '../../lib/api'
+import { getApiErrorMessage } from '../../lib/api/error-utils'
 import type { ChildLeaveEntitlement } from '../../lib/types'
 
 interface ChildLeavePickerProps {
@@ -16,6 +18,13 @@ interface ChildLeavePickerProps {
     requestedDays: number | null
     error?: string
     disabled?: boolean
+    /**
+     * Fires whenever the picker cannot currently offer a real choice — the query
+     * failed, the employee has no children on file, or none are eligible — so the
+     * form can disable submit and explain the blocked state without re-running
+     * this query itself.
+     */
+    onBlockedChange?: (blocked: boolean) => void
 }
 
 const BUSINESS_DAYS_PER_WEEK = 5
@@ -46,9 +55,9 @@ function optionLabel(child: ChildLeaveEntitlement) {
  * on approval, and its message is the one that counts.
  */
 export default function ChildLeavePicker({
-    value, onChange, employeeId, requestedDays, error, disabled,
+    value, onChange, employeeId, requestedDays, error, disabled, onBlockedChange,
 }: ChildLeavePickerProps) {
-    const { data, isLoading } = useQuery({
+    const { data, isLoading, isError, error: queryError } = useQuery({
         queryKey: ['childLeaveEntitlements', employeeId ?? 'me'],
         queryFn: () => getChildLeaveEntitlements(employeeId),
     })
@@ -57,21 +66,71 @@ export default function ChildLeavePicker({
     const hasEligible = children.some((child) => child.isEligible)
     const selected = children.find((child) => child.childId === value)
 
+    // A failed query lands here too (data undefined -> no children), which is
+    // exactly the state a blocked submit needs to guard against as well.
+    const blocked = !isLoading && (children.length === 0 || !hasEligible)
+
+    useEffect(() => {
+        onBlockedChange?.(blocked)
+    }, [blocked, onBlockedChange])
+
+    // A value that matches nothing once the ledger has *successfully* loaded is
+    // stale — most often an admin who switched the employee after picking a
+    // child for the previous one. The select below already hides it to avoid a
+    // MUI out-of-range warning; this re-couples the stored value to the
+    // displayed one so the mismatch cannot be silently submitted. Deliberately
+    // excludes a failed query: a transient error should not wipe a value that
+    // may still be valid once the request succeeds.
+    useEffect(() => {
+        if (!isLoading && !isError && value && !selected) {
+            onChange('')
+        }
+    }, [isLoading, isError, value, selected, onChange])
+
+    if (isError) {
+        return (
+            <Stack spacing={0.5}>
+                <Alert severity="error">
+                    {getApiErrorMessage(queryError, 'Unable to load children right now. Please try again.')}
+                </Alert>
+                {error && (
+                    <Typography variant="caption" color="error">
+                        {error}
+                    </Typography>
+                )}
+            </Stack>
+        )
+    }
+
     if (!isLoading && children.length === 0) {
         return (
-            <Alert severity="info">
-                Add your children in Edit profile to request this leave — the entitlement
-                is per child.
-            </Alert>
+            <Stack spacing={0.5}>
+                <Alert severity="info">
+                    Add your children in Edit profile to request this leave — the entitlement
+                    is per child.
+                </Alert>
+                {error && (
+                    <Typography variant="caption" color="error">
+                        {error}
+                    </Typography>
+                )}
+            </Stack>
         )
     }
 
     if (!isLoading && !hasEligible) {
         return (
-            <Alert severity="warning">
-                No eligible children. This leave is available only while a child is under
-                15.
-            </Alert>
+            <Stack spacing={0.5}>
+                <Alert severity="warning">
+                    No eligible children. This leave is available only while a child is under
+                    15.
+                </Alert>
+                {error && (
+                    <Typography variant="caption" color="error">
+                        {error}
+                    </Typography>
+                )}
+            </Stack>
         )
     }
 
@@ -98,12 +157,18 @@ export default function ChildLeavePicker({
                 ))}
             </TextField>
 
-            {selected && requestedDays !== null && requestedDays > 0 && (
-                <Typography variant="caption" color="text.secondary">
-                    {`This request: ${requestedDays} business days (${weeks(requestedDays)} weeks) · `}
-                    {`${selected.name}: ${Math.max(0, selected.remainingDays - requestedDays)} days left`}
-                </Typography>
-            )}
+            {selected && requestedDays !== null && requestedDays > 0 && (() => {
+                // Neither cap alone tells the whole story: a request can clear the
+                // lifetime remainder yet still bust the yearly one (or vice versa).
+                // Quote whichever is tighter so the figure never over-promises.
+                const cappedRemaining = Math.min(selected.remainingDays, selected.thisYearRemainingDays)
+                return (
+                    <Typography variant="caption" color="text.secondary">
+                        {`This request: ${requestedDays} business days (${weeks(requestedDays)} weeks) · `}
+                        {`${selected.name}: ${Math.max(0, cappedRemaining - requestedDays)} days left`}
+                    </Typography>
+                )
+            })()}
         </Stack>
     )
 }

@@ -50,6 +50,11 @@ function AnnualLeaveForm({ open, onClose, leave, isAdmin = false, readOnly = fal
 
     const [evidenceUrl, setEvidenceUrl] = useState(leave?.evidenceUrl ?? '')
     const [evidenceFile, setEvidenceFile] = useState<File | null>(null)
+    // Whether the child picker currently has no real choice to offer (query
+    // failed, no children on file, or none eligible). Reset below whenever it
+    // isn't the thing actually shown, so it never lingers from a prior type or
+    // employee and blocks a submit it has nothing to do with.
+    const [childPickerBlocked, setChildPickerBlocked] = useState(false)
 
     const requireEmployee = isAdmin && !isEdit
 
@@ -92,6 +97,20 @@ function AnnualLeaveForm({ open, onClose, leave, isAdmin = false, readOnly = fal
     const watchedEndDate = watch('endDate')
 
     const requiresChild = perChildLeaveTypeIds.includes(watchedLeaveTypeId)
+    // On the admin create path, no employee is chosen yet means no ledger to
+    // load — showing the picker anyway would fetch the signed-in admin's own
+    // children instead of placeholder text explaining why there's nothing yet.
+    const awaitingEmployeeSelection = requireEmployee && !watchedEmployeeId
+
+    // The blocked flag only describes the picker that is actually on screen.
+    // Whenever it isn't shown (type doesn't need a child, or we're waiting on
+    // an employee pick), clear it so a stale "blocked" from a previous type or
+    // employee can't disable a submit it no longer applies to.
+    useEffect(() => {
+        if (!requiresChild || awaitingEmployeeSelection) {
+            setChildPickerBlocked(false)
+        }
+    }, [requiresChild, awaitingEmployeeSelection])
 
     /**
      * Weekday count for the caption under the child picker. Public holidays are
@@ -124,6 +143,7 @@ function AnnualLeaveForm({ open, onClose, leave, isAdmin = false, readOnly = fal
         reset(buildDefaults())
         setEvidenceUrl(leave?.evidenceUrl ?? '')
         setEvidenceFile(null)
+        setChildPickerBlocked(false)
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open, leave?.id])
 
@@ -175,8 +195,6 @@ function AnnualLeaveForm({ open, onClose, leave, isAdmin = false, readOnly = fal
             filter: 'saturate(1.2)',
         },
     }
-
-    const watchedStart = watch('startDate')
 
     // Validated submit (react-hook-form blocks this when the zod schema fails,
     // so the existing API calls only fire on valid input).
@@ -381,7 +399,7 @@ function AnnualLeaveForm({ open, onClose, leave, isAdmin = false, readOnly = fal
                                         required
                                         fullWidth
                                         InputLabelProps={{ shrink: true }}
-                                        inputProps={{ min: watchedStart }}
+                                        inputProps={{ min: watchedStartDate }}
                                         error={!!fieldState.error}
                                         helperText={fieldState.error?.message ?? 'Select end of leave'}
                                         InputProps={{
@@ -441,20 +459,31 @@ function AnnualLeaveForm({ open, onClose, leave, isAdmin = false, readOnly = fal
                         childId for every other type, so a stale selection cannot
                         survive a change of leave type. */}
                     {requiresChild && !readOnly && (
-                        <Controller
-                            name="childId"
-                            control={control}
-                            render={({ field, fieldState }) => (
-                                <ChildLeavePicker
-                                    value={field.value}
-                                    onChange={field.onChange}
-                                    employeeId={requireEmployee ? (watchedEmployeeId || undefined) : undefined}
-                                    requestedDays={requestedDays}
-                                    error={fieldState.error?.message}
-                                    disabled={isPending}
-                                />
-                            )}
-                        />
+                        awaitingEmployeeSelection ? (
+                            <Alert severity="info">
+                                Select an employee first to choose the child this leave is for.
+                            </Alert>
+                        ) : (
+                            <Controller
+                                name="childId"
+                                control={control}
+                                render={({ field, fieldState }) => (
+                                    <ChildLeavePicker
+                                        value={field.value}
+                                        onChange={field.onChange}
+                                        // Editing someone else's request: the ledger to load is
+                                        // theirs, not the signed-in admin/manager's own — see
+                                        // Fix 1. On create, it follows whichever employee the
+                                        // admin has picked so far.
+                                        employeeId={leave?.employeeId ?? (requireEmployee ? (watchedEmployeeId || undefined) : undefined)}
+                                        requestedDays={requestedDays}
+                                        error={fieldState.error?.message}
+                                        disabled={isPending}
+                                        onBlockedChange={setChildPickerBlocked}
+                                    />
+                                )}
+                            />
+                        )
                     )}
 
                     {readOnly && !!leave?.childName && (
@@ -566,7 +595,7 @@ function AnnualLeaveForm({ open, onClose, leave, isAdmin = false, readOnly = fal
                         form="leave-form"
                         variant="contained"
                         sx={saveBtnSx}
-                        disabled={isPending || isLoadingLeaveTypes}
+                        disabled={isPending || isLoadingLeaveTypes || childPickerBlocked}
                         startIcon={isPending ? <CircularProgress size={16} color="inherit" /> : null}
                     >
                         {submitLabel}
