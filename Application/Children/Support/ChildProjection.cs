@@ -1,6 +1,8 @@
 using Application.Children.DTOs;
 using Domain;
 using Domain.Services;
+using Microsoft.EntityFrameworkCore;
+using Persistence;
 
 namespace Application.Children.Support;
 
@@ -12,23 +14,42 @@ namespace Application.Children.Support;
 internal static class ChildProjection
 {
     /// <summary>
-    /// Used when no per-child leave type is in play (a plain child list). The real
-    /// figure comes from <c>LeaveType.ChildEligibleUntilAge</c>; this is only the
-    /// fallback for rendering a list when no type has been chosen yet.
+    /// The age at which a child stops being eligible, per the active per-child
+    /// leave type (there is at most meant to be one — see
+    /// <c>LeaveType.PerChildEntitlement</c>). No invented fallback: when no such
+    /// type exists, 0 is returned, which reads every child as ineligible. That is
+    /// the truth — nothing grants per-child leave — where a made-up number like 15
+    /// would tell a caller "eligible" only to have the leave request refused later
+    /// against the real, unconfigured figure.
     /// </summary>
-    public const int DefaultEligibilityAge = 15;
-
-    public static ChildDto ToDto(Child child, int eligibleUntilAge)
+    public static async Task<int> ResolveEligibleUntilAgeAsync(AppDbContext context, CancellationToken cancellationToken)
     {
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var leaveType = await context.LeaveTypes
+            .AsNoTracking()
+            .Where(lt => lt.PerChildEntitlement && lt.IsActive)
+            .OrderBy(lt => lt.Id)
+            .FirstOrDefaultAsync(cancellationToken);
 
+        return leaveType?.ChildEligibleUntilAge ?? 0;
+    }
+
+    /// <summary>
+    /// <paramref name="onDate"/> is a parameter rather than read from
+    /// <see cref="DateTime.UtcNow"/> internally so a test can pin it and assert a
+    /// deterministic age — otherwise an assertion on <c>AgeYears</c> quietly breaks
+    /// on whatever date the birthday next falls on, reading as a bug in
+    /// <see cref="PerChildLeaveCalculationService.AgeOn"/> rather than as the
+    /// passage of time it actually is.
+    /// </summary>
+    public static ChildDto ToDto(Child child, int eligibleUntilAge, DateOnly onDate)
+    {
         return new ChildDto
         {
             Id = child.Id,
             Name = child.Name,
             DateOfBirth = child.DateOfBirth,
-            AgeYears = PerChildLeaveCalculationService.AgeOn(child.DateOfBirth, today),
-            IsEligible = PerChildLeaveCalculationService.IsEligibleOn(child.DateOfBirth, today, eligibleUntilAge),
+            AgeYears = PerChildLeaveCalculationService.AgeOn(child.DateOfBirth, onDate),
+            IsEligible = PerChildLeaveCalculationService.IsEligibleOn(child.DateOfBirth, onDate, eligibleUntilAge),
             LastEligibleDate = PerChildLeaveCalculationService.LastEligibleDate(child.DateOfBirth, eligibleUntilAge),
         };
     }

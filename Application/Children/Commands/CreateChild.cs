@@ -2,7 +2,6 @@ using Application.Children.DTOs;
 using Application.Children.Support;
 using Application.Core;
 using Domain;
-using Domain.Services;
 using MediatR;
 using Persistence;
 
@@ -48,7 +47,9 @@ public class CreateChild
 
             await context.SaveChangesAsync(cancellationToken);
 
-            return Result<ChildDto>.Success(ChildProjection.ToDto(child, ChildProjection.DefaultEligibilityAge));
+            var eligibleUntilAge = await ChildProjection.ResolveEligibleUntilAgeAsync(context, cancellationToken);
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            return Result<ChildDto>.Success(ChildProjection.ToDto(child, eligibleUntilAge, today));
         }
     }
 }

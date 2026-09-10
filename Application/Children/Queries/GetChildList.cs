@@ -37,10 +37,13 @@ public class GetChildList
                 .OrderBy(c => c.DateOfBirth)
                 .ToListAsync(cancellationToken);
 
+            var eligibleUntilAge = await ChildProjection.ResolveEligibleUntilAgeAsync(context, cancellationToken);
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
             // Oldest first: it is the order a parent lists their children in, and it
             // puts the child closest to aging out at the top.
             var dtos = children
-                .Select(c => ChildProjection.ToDto(c, ChildProjection.DefaultEligibilityAge))
+                .Select(c => ChildProjection.ToDto(c, eligibleUntilAge, today))
                 .ToList();
 
             return Result<List<ChildDto>>.Success(dtos);
