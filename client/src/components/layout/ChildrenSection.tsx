@@ -40,7 +40,7 @@ export default function ChildrenSection({ hasChildren, onHasChildrenChange, disa
 
     const declared = hasChildren === true
 
-    const { data: children, isLoading } = useQuery({
+    const { data: children, isLoading, isError: isChildrenError, error: childrenError } = useQuery({
         queryKey: ['children'],
         queryFn: () => getChildren(),
         enabled: declared,
@@ -67,8 +67,22 @@ export default function ChildrenSection({ hasChildren, onHasChildrenChange, disa
         onSuccess: invalidate,
     })
 
+    // Reopening the form after a failed attempt, or backing out of one, should not
+    // leave the previous failure's Alert on screen with no form left to explain it.
+    const openAdd = () => {
+        addMutation.reset()
+        removeMutation.reset()
+        setIsAdding(true)
+    }
+
+    const cancelAdd = () => {
+        addMutation.reset()
+        removeMutation.reset()
+        setIsAdding(false)
+    }
+
     const today = new Date().toISOString().slice(0, 10)
-    const error = addMutation.error ?? removeMutation.error
+    const error = addMutation.error ?? removeMutation.error ?? (isChildrenError ? childrenError : undefined)
     const canSaveNew = name.trim().length > 0 && dateOfBirth.length > 0
 
     return (
@@ -157,7 +171,7 @@ export default function ChildrenSection({ hasChildren, onHasChildrenChange, disa
                                 <Button
                                     variant="outlined"
                                     size="small"
-                                    onClick={() => setIsAdding(false)}
+                                    onClick={cancelAdd}
                                     disabled={addMutation.isPending}
                                     sx={{ textTransform: 'none' }}
                                 >
@@ -168,7 +182,7 @@ export default function ChildrenSection({ hasChildren, onHasChildrenChange, disa
                     ) : (
                         <Button
                             size="small"
-                            onClick={() => setIsAdding(true)}
+                            onClick={openAdd}
                             disabled={disabled}
                             sx={{ textTransform: 'none', mt: 0.5 }}
                         >
@@ -178,7 +192,12 @@ export default function ChildrenSection({ hasChildren, onHasChildrenChange, disa
 
                     {error && (
                         <Alert severity="error" sx={{ mt: 1 }}>
-                            {getApiErrorMessage(error, 'Unable to update children.')}
+                            {getApiErrorMessage(
+                                error,
+                                isChildrenError && !addMutation.error && !removeMutation.error
+                                    ? 'Unable to load children.'
+                                    : 'Unable to update children.',
+                            )}
                         </Alert>
                     )}
                 </Box>

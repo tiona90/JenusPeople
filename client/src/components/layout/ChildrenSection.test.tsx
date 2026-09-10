@@ -1,5 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ChildrenSection from './ChildrenSection'
@@ -63,17 +62,20 @@ describe('ChildrenSection', () => {
         renderSection(false)
 
         await waitFor(() => expect(screen.queryByText('Andreas')).not.toBeInTheDocument())
+        // The absence of the row alone doesn't prove the fetch was skipped — the whole
+        // list sits behind `{declared && (...)}`, so it would be hidden either way.
+        // This is the assertion that actually pins `enabled: declared` on the query.
+        expect(getChildren).not.toHaveBeenCalled()
     })
 
     it('adds a child', async () => {
-        const user = userEvent.setup()
         renderSection()
         await screen.findByText('Andreas')
 
-        await user.click(screen.getByRole('button', { name: /add child/i }))
-        await user.type(screen.getByLabelText(/child's name/i), 'Maria')
-        await user.type(screen.getByLabelText(/date of birth/i), '2022-09-12')
-        await user.click(screen.getByRole('button', { name: /^save child$/i }))
+        fireEvent.click(screen.getByRole('button', { name: /add child/i }))
+        fireEvent.change(screen.getByLabelText(/child's name/i), { target: { value: 'Maria' } })
+        fireEvent.change(screen.getByLabelText(/date of birth/i), { target: { value: '2022-09-12' } })
+        fireEvent.click(screen.getByRole('button', { name: /^save child$/i }))
 
         await waitFor(() =>
             expect(createChild).toHaveBeenCalledWith({ name: 'Maria', dateOfBirth: '2022-09-12' }),
@@ -85,10 +87,9 @@ describe('ChildrenSection', () => {
      * section only reports the change upward.
      */
     it('reports a change to the declaration rather than saving it', async () => {
-        const user = userEvent.setup()
         const { onHasChildrenChange } = renderSection(false)
 
-        await user.click(screen.getByRole('checkbox', { name: /i have children/i }))
+        fireEvent.click(screen.getByRole('checkbox', { name: /i have children/i }))
 
         expect(onHasChildrenChange).toHaveBeenCalledWith(true)
     })
