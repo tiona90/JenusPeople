@@ -38,4 +38,12 @@ export interface LeaveType {
      * which controls to lock. Optional because test fixtures predate it.
      */
     isSystem?: boolean
+    /**
+     * Whether this type's entitlement is per child — Maternity and Paternity Leave
+     * only. Not a setting an admin toggles: it is what those two types are, so the
+     * edit dialog shows their three per-child numbers with no switch and hides the
+     * section entirely for every other type. Server-derived from the name, like
+     * `isSystem`.
+     */
+    supportsPerChildEntitlement?: boolean
 }

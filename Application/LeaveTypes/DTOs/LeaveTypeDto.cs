@@ -39,4 +39,16 @@ public class LeaveTypeDto
     /// tells the UI which controls to lock.
     /// </summary>
     public bool IsSystem => SystemLeaveTypes.IsSystem(Name);
+
+    /// <summary>
+    /// Whether this type's entitlement is per child — true for Maternity and
+    /// Paternity Leave and nothing else. Not a setting the admin toggles: the edit
+    /// dialog shows the three per-child numbers for these two and hides the section
+    /// entirely for everything else, so this is what tells it which.
+    ///
+    /// Derived from the name for the same reason as <see cref="IsSystem"/>: the
+    /// client needs no copy of the list, and the flag cannot disagree with the name
+    /// beside it.
+    /// </summary>
+    public bool SupportsPerChildEntitlement => SystemLeaveTypes.SupportsPerChildEntitlement(Name);
 }

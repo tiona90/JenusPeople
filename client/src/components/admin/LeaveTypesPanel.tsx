@@ -771,12 +771,21 @@ function LeaveTypeFormDialog(props: {
     const [halfDayAllowed, setHalfDayAllowed] = useState(i?.halfDayAllowed ?? false)
     const [eligibilityNotes, setEligibilityNotes] = useState(i?.eligibilityNotes ?? 'All employees')
     const [eligibilityScope, setEligibilityScope] = useState<EligibilityScope>(i?.eligibilityScope ?? 'All')
-    // Defaults are the configured paternity policy, not zeros -- the server
-    // refuses a 0 total/cap/age for a per-child type anyway.
-    const [perChildEntitlement, setPerChildEntitlement] = useState(i?.perChildEntitlement ?? false)
-    const [perChildTotalWeeks, setPerChildTotalWeeks] = useState(i?.perChildTotalWeeks ?? 18)
-    const [perChildWeeksPerYear, setPerChildWeeksPerYear] = useState(i?.perChildWeeksPerYear ?? 5)
-    const [childEligibleUntilAge, setChildEligibleUntilAge] = useState(i?.childEligibleUntilAge ?? 15)
+    /* Not a setting an admin chooses — Maternity and Paternity Leave keep a per-child
+       ledger and no other type may. Taken from the server's derived flag rather than
+       the stored `perChildEntitlement` column, so one of those two still shows its
+       section on a database that predates the rule and has the column at 0. */
+    const perChildEntitlement = !!i?.supportsPerChildEntitlement
+
+    /* `||` rather than `??`: a stored 0 has to fall back too, not just a missing
+       value. The server refuses a 0 total/cap/age on a per-child type, so leaving a
+       0 in the field would open the dialog already invalid with no way to tell why —
+       reachable on any database configured before this section became unconditional.
+       The paternity policy is the default; maternity's real numbers are an admin's
+       to set. */
+    const [perChildTotalWeeks, setPerChildTotalWeeks] = useState(i?.perChildTotalWeeks || 18)
+    const [perChildWeeksPerYear, setPerChildWeeksPerYear] = useState(i?.perChildWeeksPerYear || 5)
+    const [childEligibleUntilAge, setChildEligibleUntilAge] = useState(i?.childEligibleUntilAge || 15)
 
     const submit = () => {
         props.onSubmit({
@@ -786,7 +795,12 @@ function LeaveTypeFormDialog(props: {
             description: description.trim(),
             requiresApproval,
             isActive,
-            affectsBalance,
+            // A per-child type keeps its own ledger and must never also be deducted
+            // from the pooled balance — the server refuses that combination, and one
+            // day of leave counted in both would be charged twice. The switch below
+            // is disabled for these types; this makes sure a stale value cannot be
+            // submitted either.
+            affectsBalance: perChildEntitlement ? false : affectsBalance,
             paid,
             attachmentPolicy,
             defaultAllowance: Number(defaultAllowance) || 0,
@@ -889,25 +903,17 @@ function LeaveTypeFormDialog(props: {
                     />
 
                     {/* Per-child entitlement: a separate ledger, not a per-employee
-                        allowance. The three numbers only mean anything with the toggle
-                        on, so they stay hidden until then -- the dependent-toggle
-                        affordance the Leave Settings screen already established. */}
-                    <FormControlLabel
-                        control={
-                            <Switch
-                                checked={perChildEntitlement}
-                                onChange={(e) => {
-                                    const on = e.target.checked
-                                    setPerChildEntitlement(on)
-                                    // A per-child type keeps its own ledger and must not
-                                    // also be deducted from the pooled balance -- the
-                                    // server refuses that combination outright.
-                                    if (on) setAffectsBalance(false)
-                                }}
-                            />
-                        }
-                        label="Per-child entitlement"
-                    />
+                        allowance. There is no toggle, because this is not a setting —
+                        it is what Maternity and Paternity Leave are. Every other type
+                        gets no section at all rather than a switch it must never turn
+                        on: the ledger is keyed by the child a request names, which
+                        only means anything for the leave a birth grants. The server
+                        refuses a per-child entitlement on any other type. */}
+                    {perChildEntitlement && (
+                        <Box sx={{ fontSize: 13, fontWeight: 600, color: 'text.secondary' }}>
+                            Per-child entitlement
+                        </Box>
+                    )}
 
                     {perChildEntitlement && (
                         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>

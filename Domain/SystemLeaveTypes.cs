@@ -34,4 +34,24 @@ public static class SystemLeaveTypes
     public static bool IsSystem(string? name) =>
         !string.IsNullOrWhiteSpace(name)
         && All.Contains(name.Trim(), StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The two types whose entitlement is per child rather than one pool per
+    /// employee. Nothing else may carry a per-child entitlement: the ledger is
+    /// keyed by <c>AnnualLeave.ChildId</c>, and a request against a per-child type
+    /// has to name a child, which only makes sense for the leave a birth grants.
+    ///
+    /// It is not a setting on these two either — it is what they are. The edit
+    /// dialog shows the three numbers for them with no toggle, so
+    /// <c>PerChildEntitlement</c> follows the name.
+    /// </summary>
+    public static readonly string[] PerChildEntitlementTypes = [MaternityLeave, PaternityLeave];
+
+    /// <summary>
+    /// Whether a type of this name keeps a per-child ledger. Trimmed and
+    /// case-insensitive, like <see cref="IsSystem"/>.
+    /// </summary>
+    public static bool SupportsPerChildEntitlement(string? name) =>
+        !string.IsNullOrWhiteSpace(name)
+        && PerChildEntitlementTypes.Contains(name.Trim(), StringComparer.OrdinalIgnoreCase);
 }

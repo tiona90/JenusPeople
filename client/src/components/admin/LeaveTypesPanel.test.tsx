@@ -47,8 +47,19 @@ function leaveType(overrides: Partial<LeaveType> = {}): LeaveType {
         eligibilityNotes: 'All employees',
         eligibilityScope: 'All',
         ...overrides,
+        // Both flags are server-derived from the name (Domain/SystemLeaveTypes.cs),
+        // so a fixture must not be free to disagree with its own name — that is how
+        // a test ends up asserting against a shape the API never sends. An explicit
+        // override still wins, for the cases that want an impossible combination.
+        isSystem: overrides.isSystem
+            ?? SYSTEM_NAMES.includes(overrides.name ?? 'Paternity Leave'),
+        supportsPerChildEntitlement: overrides.supportsPerChildEntitlement
+            ?? PER_CHILD_NAMES.includes(overrides.name ?? 'Paternity Leave'),
     }
 }
+
+const SYSTEM_NAMES = ['Annual Leave', 'Maternity Leave', 'Paternity Leave']
+const PER_CHILD_NAMES = ['Maternity Leave', 'Paternity Leave']
 
 const PATERNITY = leaveType()
 
@@ -79,41 +90,90 @@ it('quotes the per-child policy on the card instead of the meaningless 0 allowan
     expect(screen.getByText('18 weeks per child · max 5 weeks/year')).toBeInTheDocument()
 })
 
-it('reveals the three per-child fields only while the toggle is on', async () => {
+/*
+ * Per-child entitlement is not a setting an admin chooses -- it is what Maternity
+ * and Paternity Leave are. So the three numbers are always visible for those two
+ * and there is no switch to reveal them, and every other type gets no section at
+ * all rather than a switch it must never turn on. It used to be a toggle on every
+ * type, which let an admin put a per-child ledger on, say, Sick Leave -- where a
+ * request would then have to name a child.
+ */
+it.each(['Maternity Leave', 'Paternity Leave'])('always shows the three per-child fields for %s, with no toggle', async (name) => {
+    api.getLeaveTypes.mockResolvedValue([leaveType({ name })])
     await renderPanel()
 
     fireEvent.click(screen.getByTitle('Edit'))
 
-    // PATERNITY already has the toggle on, so the fields show straight away.
     expect(screen.getByLabelText(/Total per child/)).toBeInTheDocument()
     expect(screen.getByLabelText(/Max per year, per child/)).toBeInTheDocument()
     expect(screen.getByLabelText(/Eligible until age/)).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('switch', { name: 'Per-child entitlement' }))
+    // The section is labelled, but there is nothing to switch.
+    expect(screen.getByText('Per-child entitlement')).toBeInTheDocument()
+    expect(screen.queryByRole('switch', { name: 'Per-child entitlement' })).not.toBeInTheDocument()
+})
+
+it('shows no per-child section at all for any other leave type', async () => {
+    api.getLeaveTypes.mockResolvedValue([leaveType({ name: 'Sick Leave', perChildEntitlement: false })])
+    await renderPanel()
+
+    fireEvent.click(screen.getByTitle('Edit'))
 
     expect(screen.queryByLabelText(/Total per child/)).not.toBeInTheDocument()
     expect(screen.queryByLabelText(/Max per year, per child/)).not.toBeInTheDocument()
     expect(screen.queryByLabelText(/Eligible until age/)).not.toBeInTheDocument()
+    expect(screen.queryByText('Per-child entitlement')).not.toBeInTheDocument()
+    expect(screen.queryByRole('switch', { name: 'Per-child entitlement' })).not.toBeInTheDocument()
 })
 
-it('clears and disables "Affects leave balance" the moment per-child entitlement is turned on', async () => {
-    // Start from a type that both affects the balance and has the per-child toggle
-    // off -- turning the toggle on must flip and lock the other switch, since the
-    // server refuses a per-child type that also affects the pooled balance.
+// A per-child type keeps its own ledger and must never also be deducted from the
+// pooled balance -- the server refuses that combination, and one day counted in
+// both would be charged twice.
+it('locks "Affects leave balance" off for a per-child type', async () => {
+    await renderPanel()
+
+    fireEvent.click(screen.getByTitle('Edit'))
+
+    const balanceSwitch = screen.getByRole('switch', { name: 'Affects leave balance' })
+    expect(balanceSwitch).not.toBeChecked()
+    expect(balanceSwitch).toBeDisabled()
+})
+
+it('leaves "Affects leave balance" editable on an ordinary type', async () => {
     api.getLeaveTypes.mockResolvedValue([
-        leaveType({ perChildEntitlement: false, affectsBalance: true, defaultAllowance: 25 }),
+        leaveType({ name: 'Sick Leave', perChildEntitlement: false, affectsBalance: true, defaultAllowance: 25 }),
     ])
     await renderPanel()
 
     fireEvent.click(screen.getByTitle('Edit'))
+
     const balanceSwitch = screen.getByRole('switch', { name: 'Affects leave balance' })
     expect(balanceSwitch).toBeChecked()
     expect(balanceSwitch).toBeEnabled()
+})
 
-    fireEvent.click(screen.getByRole('switch', { name: 'Per-child entitlement' }))
+/*
+ * The server refuses a 0 total, cap or age on a per-child type, so a stored 0 must
+ * not reach the field -- the dialog would open already invalid, with the reason
+ * shown only after a save. Reachable on any database configured before this
+ * section became unconditional: Maternity Leave is seeded with the column at 0.
+ */
+it('falls back to a valid default rather than opening on a stored 0', async () => {
+    api.getLeaveTypes.mockResolvedValue([
+        leaveType({
+            name: 'Maternity Leave',
+            perChildTotalWeeks: 0,
+            perChildWeeksPerYear: 0,
+            childEligibleUntilAge: 0,
+        }),
+    ])
+    await renderPanel()
 
-    expect(balanceSwitch).not.toBeChecked()
-    expect(balanceSwitch).toBeDisabled()
+    fireEvent.click(screen.getByTitle('Edit'))
+
+    expect(screen.getByLabelText(/Total per child/)).toHaveValue(18)
+    expect(screen.getByLabelText(/Max per year, per child/)).toHaveValue(5)
+    expect(screen.getByLabelText(/Eligible until age/)).toHaveValue(15)
 })
 
 it('sends the per-child fields in the update payload', async () => {

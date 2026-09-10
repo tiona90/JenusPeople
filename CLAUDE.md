@@ -163,6 +163,20 @@ days and weekends and public holidays inside a request consume nothing.
 `UpsertLeaveTypeRequestValidator` refuses a type that sets both flags: counted in
 both, one day of leave would be charged twice.
 
+**`PerChildEntitlement` is not a free-standing setting — only Maternity and
+Paternity Leave may carry it** (`SystemLeaveTypes.PerChildEntitlementTypes`, also
+enforced by `UpsertLeaveTypeRequestValidator`). The ledger is keyed by
+`AnnualLeave.ChildId` and a request against a per-child type must name a child,
+which only means anything for the leave a birth grants; it was previously a switch
+on every type, so a per-child ledger could be put on sick leave. The edit dialog
+therefore has **no toggle**: it shows the three numbers unconditionally for those
+two types, driven by the server-derived `LeaveTypeDto.SupportsPerChildEntitlement`,
+and shows no section at all for anything else. Note the dialog falls back to
+18/5/15 when a stored number is 0 (`||`, not `??`) — a per-child type with a 0 in
+any of the three is refused by the validator, so a 0 reaching the field would open
+the form already invalid. Maternity Leave is seeded with those columns at 0, so
+that fallback is reachable, not theoretical.
+
 The per-child ledger is **stored nowhere** — it is a projection over approved leave
 rows, grouped by `AnnualLeave.ChildId`. That is why a child turning 15 needs no job
 and no recalculation: their usage stays in history, their remaining entitlement is
