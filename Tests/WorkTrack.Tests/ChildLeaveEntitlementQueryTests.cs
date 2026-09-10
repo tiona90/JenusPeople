@@ -1,4 +1,6 @@
 using Application.Children.Queries;
+using Application.Core;
+using Domain;
 using Xunit;
 
 namespace WorkTrack.Tests;
@@ -93,9 +95,79 @@ public class ChildLeaveEntitlementQueryTests
 
         var petros = summary.Children.Single(c => c.Name == "Petros");
         Assert.False(petros.IsEligible);
+        // The configured entitlement is still reported -- zeroing it would misstate
+        // Petros's real 90-day entitlement rather than explain why it is now moot.
+        Assert.Equal(90, petros.TotalDays);
         Assert.Equal(5, petros.UsedDays);
         Assert.Equal(0, petros.RemainingDays);
         Assert.Equal(0, petros.ThisYearRemainingDays);
+    }
+
+    /// <summary>
+    /// The brief's headline rule: <c>ThisYearRemainingDays</c> is the lesser of the
+    /// yearly remainder and the lifetime remainder. With 3 days of total entitlement
+    /// left, "25 days this year" would be a lie -- this is the case that sentence is
+    /// protecting: a fresh yearly cap sitting behind an almost-exhausted lifetime
+    /// total. Deleting the <c>Math.Min</c> and reporting only the yearly remainder
+    /// would pass every other test in this file but fail this one.
+    /// </summary>
+    [Fact]
+    public async Task This_years_remaining_is_capped_by_the_almost_exhausted_lifetime_total()
+    {
+        await using var db = await PerChildLeaveWorld.CreateAsync();
+        // Young enough to still be eligible when the earlier usage below happened,
+        // and to remain eligible today.
+        var dob = DateOnly.FromDateTime(DateTime.UtcNow).AddYears(-5);
+        var child = await PerChildLeaveWorld.AddChildAsync(db, "Andreas", dob);
+
+        // 85 of the 90 lifetime business days used two leave years ago: a clearly
+        // earlier year, so it cannot bleed into the current leave year's own count.
+        // 17 consecutive Mon-Fri weeks = 17 x 5 = 85 business days.
+        var earlierMonday = MondayInYear(DateTime.UtcNow.Year - 2);
+        await PerChildLeaveWorld.ApproveLeaveAsync(db, child.Id, earlierMonday, earlierMonday.AddDays(116));
+
+        var result = await Query(db);
+
+        var row = Assert.Single(result.Value!.Children);
+        Assert.Equal(85, row.UsedDays);
+        Assert.Equal(5, row.RemainingDays);
+        // Nothing used in the current leave year, so the yearly figure alone would
+        // read 25 -- but only 5 days of lifetime entitlement remain.
+        Assert.Equal(0, row.ThisYearUsedDays);
+        Assert.Equal(25, row.ThisYearCapDays);
+        Assert.Equal(5, row.ThisYearRemainingDays);
+    }
+
+    /// <summary>
+    /// The access check is the security boundary at this query's new call site.
+    /// Asserting on <c>ErrorKind</c> rather than just <c>!IsSuccess</c> is the point:
+    /// it is what would catch a future <c>Failure(access.Error)</c> silently
+    /// demoting a 403 into a 404.
+    /// </summary>
+    [Fact]
+    public async Task An_access_refusal_forwards_its_error_kind()
+    {
+        await using var db = await PerChildLeaveWorld.CreateAsync();
+        await PerChildLeaveWorld.AddChildAsync(db, "Andreas", YoungChild);
+
+        db.Users.Add(new User
+        {
+            Id = "employee-2",
+            UserName = "employee-2@example.com",
+            Email = "employee-2@example.com",
+            DisplayName = "Someone Else",
+        });
+        db.EmployeeProfiles.Add(new EmployeeProfile { Id = "profile-2", UserId = "employee-2" });
+        await db.SaveChangesAsync();
+
+        var result = await new GetChildLeaveEntitlements.Handler(db).Handle(new GetChildLeaveEntitlements.Query
+        {
+            CallerUserId = "employee-2",
+            EmployeeId = PerChildLeaveWorld.UserId,
+        }, CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ResultErrorKind.Forbidden, result.ErrorKind);
     }
 
     [Fact]
@@ -116,9 +188,12 @@ public class ChildLeaveEntitlementQueryTests
     }
 
     /// <summary>The Monday of the first full week of the current calendar year.</summary>
-    private static DateTime ThisYearsMonday()
+    private static DateTime ThisYearsMonday() => MondayInYear(DateTime.UtcNow.Year);
+
+    /// <summary>The Monday of the first full week of the given calendar year.</summary>
+    private static DateTime MondayInYear(int year)
     {
-        var date = new DateTime(DateTime.UtcNow.Year, 1, 1);
+        var date = new DateTime(year, 1, 1);
         while (date.DayOfWeek != DayOfWeek.Monday) date = date.AddDays(1);
         return date;
     }

@@ -79,10 +79,17 @@ public class GetChildLeaveEntitlements
 
                 /* An ineligible child has no remaining entitlement, whatever the
                    arithmetic would say — the rule applies regardless of how much
-                   they had used. Their used figure stays, because it happened. */
+                   they had used. Their used figure stays, because it happened.
+                   The configured entitlement (TotalDays/TotalWeeks/ThisYearCapDays)
+                   is reported regardless of eligibility -- zeroing it would misstate
+                   the child's real entitlement rather than explain why it is now
+                   moot. Only the two *remaining* figures are forced to zero. */
                 var remainingDays = isEligible
                     ? PerChildLeaveCalculationService.RemainingDays(totalDays, usedDays)
                     : 0;
+                // The lesser of the yearly remainder and the lifetime remainder:
+                // with 3 days of total entitlement left, "25 days this year" would
+                // be a lie.
                 var remainingThisYear = isEligible
                     ? Math.Min(
                         PerChildLeaveCalculationService.RemainingDays(yearCapDays, usedThisYear),
@@ -98,13 +105,11 @@ public class GetChildLeaveEntitlements
                     IsEligible = isEligible,
                     LastEligibleDate = PerChildLeaveCalculationService.LastEligibleDate(
                         child.DateOfBirth, leaveType.ChildEligibleUntilAge),
-                    TotalDays = isEligible ? totalDays : 0,
-                    TotalWeeks = isEligible
-                        ? PerChildLeaveCalculationService.BusinessDaysToWeeks(totalDays)
-                        : 0m,
+                    TotalDays = totalDays,
+                    TotalWeeks = PerChildLeaveCalculationService.BusinessDaysToWeeks(totalDays),
                     UsedDays = usedDays,
                     RemainingDays = remainingDays,
-                    ThisYearCapDays = isEligible ? yearCapDays : 0,
+                    ThisYearCapDays = yearCapDays,
                     ThisYearUsedDays = usedThisYear,
                     ThisYearRemainingDays = remainingThisYear,
                     LeaveYearStart = leaveYearStart,
