@@ -89,8 +89,56 @@ describe('ChildrenSection', () => {
     it('reports a change to the declaration rather than saving it', async () => {
         const { onHasChildrenChange } = renderSection(false)
 
-        fireEvent.click(screen.getByRole('checkbox', { name: /i have children/i }))
+        fireEvent.click(screen.getByRole('radio', { name: 'Yes' }))
 
         expect(onHasChildrenChange).toHaveBeenCalledWith(true)
+    })
+
+    /*
+     * Asked as Yes / No with neither preselected, because the stored answer is a
+     * tri-state: null means never answered, false means declared none. It was a
+     * single "I have children" checkbox, which rendered those two identically and
+     * sent a "no children" declaration nobody had made the moment it was cleared.
+     */
+    it('preselects neither answer for an employee who has never been asked', async () => {
+        renderSection(null)
+
+        expect(screen.getByRole('radio', { name: 'Yes' })).not.toBeChecked()
+        expect(screen.getByRole('radio', { name: 'No' })).not.toBeChecked()
+        expect(screen.getByText(/granted per child/i)).toBeInTheDocument()
+    })
+
+    it('shows the stored answer when there is one', async () => {
+        renderSection(false)
+
+        expect(screen.getByRole('radio', { name: 'No' })).toBeChecked()
+        expect(screen.getByRole('radio', { name: 'Yes' })).not.toBeChecked()
+        // The prompt is only for the unanswered case.
+        expect(screen.queryByText(/granted per child/i)).not.toBeInTheDocument()
+    })
+
+    it('reports No when the employee has no children on file', async () => {
+        getChildren.mockResolvedValue([])
+        const { onHasChildrenChange } = renderSection(true)
+        await waitFor(() => expect(getChildren).toHaveBeenCalled())
+
+        const no = screen.getByRole('radio', { name: 'No' })
+        expect(no).toBeEnabled()
+        fireEvent.click(no)
+
+        expect(onHasChildrenChange).toHaveBeenCalledWith(false)
+    })
+
+    /*
+     * The server refuses "no children" while children are still on the profile
+     * (HasChildrenDeclaration), so No is disabled with the reason shown, rather
+     * than left to fail on save with nothing pointing at what to do about it.
+     */
+    it('will not let the employee answer No while children are on file', async () => {
+        renderSection(true)
+        await waitFor(() => expect(screen.getByText('Andreas')).toBeInTheDocument())
+
+        expect(screen.getByRole('radio', { name: 'No' })).toBeDisabled()
+        expect(screen.getByText(/Remove the 2 children below before answering No\./)).toBeInTheDocument()
     })
 })

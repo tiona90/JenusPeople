@@ -3,11 +3,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
-import Checkbox from '@mui/material/Checkbox'
 import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import IconButton from '@mui/material/IconButton'
+import Radio from '@mui/material/Radio'
+import RadioGroup from '@mui/material/RadioGroup'
 import Stack from '@mui/material/Stack'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
@@ -24,13 +25,20 @@ interface ChildrenSectionProps {
 }
 
 /**
- * Children on the employee's own profile. What paternity leave is measured
- * against: 18 weeks per child, until that child turns 15.
+ * Children on the employee's own profile. What the per-child leave types are
+ * measured against — Maternity and Paternity Leave, each granting an entitlement
+ * per child until that child reaches the configured age.
  *
- * The rows commit immediately, while the "I have children" checkbox saves with the
- * rest of the profile. That split is deliberate — each child is its own resource,
- * and batching them into the dialog's Save would mean building a diff-and-sync
- * command for very little gain. Rows therefore show their own pending state.
+ * The question is **Yes / No with neither preselected**, not a checkbox, because
+ * the stored answer is a tri-state: null means never answered, false means
+ * declared none. A checkbox has nowhere to put that difference — it renders
+ * someone who has never been asked identically to someone who answered No, and
+ * unchecking it sends a "no children" declaration the employee never made.
+ *
+ * The rows commit immediately, while the Yes/No answer saves with the rest of the
+ * profile. That split is deliberate — each child is its own resource, and batching
+ * them into the dialog's Save would mean building a diff-and-sync command for very
+ * little gain. Rows therefore show their own pending state.
  */
 export default function ChildrenSection({ hasChildren, onHasChildrenChange, disabled }: ChildrenSectionProps) {
     const queryClient = useQueryClient()
@@ -85,18 +93,48 @@ export default function ChildrenSection({ hasChildren, onHasChildrenChange, disa
     const error = addMutation.error ?? removeMutation.error ?? (isChildrenError ? childrenError : undefined)
     const canSaveNew = name.trim().length > 0 && dateOfBirth.length > 0
 
+    /* The server refuses "no children" while children are still on the profile
+       (HasChildrenDeclaration), so No is disabled rather than left to fail on save
+       — the employee can see what to do about it instead of being told afterwards. */
+    const childCount = children?.length ?? 0
+    const cannotAnswerNo = declared && childCount > 0
+    const unanswered = hasChildren !== true && hasChildren !== false
+
     return (
         <Stack spacing={1}>
-            <FormControlLabel
-                control={
-                    <Checkbox
-                        checked={declared}
-                        onChange={(event) => onHasChildrenChange(event.target.checked)}
-                        disabled={disabled}
+            <Box>
+                <Typography variant="subtitle2" color="text.secondary">
+                    Do you have children?
+                </Typography>
+                <RadioGroup
+                    row
+                    name="has-children"
+                    /* Empty string when unanswered, so neither option is selected —
+                       the whole point of asking rather than defaulting. */
+                    value={hasChildren === true ? 'yes' : hasChildren === false ? 'no' : ''}
+                    onChange={(event) => onHasChildrenChange(event.target.value === 'yes')}
+                >
+                    <FormControlLabel value="yes" control={<Radio />} label="Yes" disabled={disabled} />
+                    <FormControlLabel
+                        value="no"
+                        control={<Radio />}
+                        label="No"
+                        disabled={disabled || cannotAnswerNo}
                     />
-                }
-                label="I have children"
-            />
+                </RadioGroup>
+
+                {cannotAnswerNo && (
+                    <Typography variant="caption" color="text.secondary">
+                        {`Remove the ${childCount} ${childCount === 1 ? 'child' : 'children'} below before answering No.`}
+                    </Typography>
+                )}
+
+                {unanswered && (
+                    <Typography variant="caption" color="text.secondary">
+                        Needed for maternity and paternity leave, which are granted per child.
+                    </Typography>
+                )}
+            </Box>
 
             {declared && (
                 <Box sx={{ pl: 1 }}>
