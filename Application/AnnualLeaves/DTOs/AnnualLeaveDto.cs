@@ -13,6 +13,11 @@ public class AnnualLeaveDto
 
     public int? LeaveTypeId { get; set; }
 
+    public string? ChildId { get; set; }
+
+    /// <summary>Empty when the request is not for a child.</summary>
+    public string ChildName { get; set; } = string.Empty;
+
 
     public DateTime StartDate { get; set; }
 

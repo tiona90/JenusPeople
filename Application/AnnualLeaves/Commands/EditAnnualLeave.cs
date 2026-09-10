@@ -66,6 +66,16 @@ public class EditAnnualLeave
             annualLeave.StartDate = request.AnnualLeave.StartDate;
             annualLeave.EndDate = request.AnnualLeave.EndDate;
             annualLeave.LeaveTypeId = request.AnnualLeave.LeaveTypeId;
+
+            var editedLeaveType = await context.LeaveTypes
+                .AsNoTracking()
+                .FirstOrDefaultAsync(type => type.Id == request.AnnualLeave.LeaveTypeId, cancellationToken);
+
+            // Same rule as on create: the type decides whether a child is carried.
+            annualLeave.ChildId = editedLeaveType?.PerChildEntitlement == true
+                ? request.AnnualLeave.ChildId
+                : null;
+
             annualLeave.Reason = request.AnnualLeave.Reason;
             annualLeave.EvidenceUrl = request.AnnualLeave.EvidenceUrl;
             annualLeave.DelegateId = string.IsNullOrWhiteSpace(request.AnnualLeave.DelegateId)
@@ -74,6 +84,18 @@ public class EditAnnualLeave
 
             var employeeProfile = await context.EmployeeProfiles
                 .FirstOrDefaultAsync(ep => ep.Id == annualLeave.EmployeeProfileId, cancellationToken);
+
+            if (employeeProfile is not null)
+            {
+                var perChildError = await PerChildLeaveBalanceCalculator.CheckPerChildEntitlementAsync(
+                    context,
+                    annualLeave,
+                    employeeProfile,
+                    excludeLeaveId: annualLeave.Id,
+                    cancellationToken);
+                if (perChildError is not null)
+                    return Result<Unit>.Failure(perChildError);
+            }
 
             var canChangeStatus = request.IsAdmin || isInManagedDepartment || isDirectReport;
             if (request.AnnualLeave.Status.HasValue && !canChangeStatus)

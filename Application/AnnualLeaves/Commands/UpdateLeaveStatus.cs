@@ -73,6 +73,15 @@ public class UpdateLeaveStatus
                     cancellationToken);
                 if (balanceError is not null)
                     return Result<Unit>.Failure(balanceError);
+
+                var perChildError = await PerChildLeaveBalanceCalculator.CheckPerChildEntitlementAsync(
+                    context,
+                    annualLeave,
+                    employeeProfile,
+                    excludeLeaveId: annualLeave.Id,
+                    cancellationToken);
+                if (perChildError is not null)
+                    return Result<Unit>.Failure(perChildError);
             }
 
             if (newStatus == AnnualLeaveStatus.Approved)

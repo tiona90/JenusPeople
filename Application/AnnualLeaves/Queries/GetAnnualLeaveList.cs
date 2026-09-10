@@ -30,6 +30,7 @@ public class GetAnnualLeaveList
                 .Include(al => al.Employee)
                 .Include(al => al.Department)
                 .Include(al => al.Delegate)
+                .Include(al => al.Child)
                 .AsNoTracking();
 
             if (request.IsAdmin)
