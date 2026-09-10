@@ -20,4 +20,5 @@ export interface UpdateProfileRequest {
     email: string
     phoneNumber?: string | null
     dateOfBirth?: string | null // ISO date "yyyy-MM-dd" or null to clear
+    hasChildren?: boolean | null
 }
