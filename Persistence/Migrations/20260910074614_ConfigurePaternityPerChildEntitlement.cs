@@ -30,7 +30,8 @@ namespace Persistence.Migrations
                     -- Display-only, but 14 contradicted the 5-week annual cap.
                     [MaxConsecutiveDays]    = 25,
                     [AccrualNotes]          = '18 weeks per child · Max 5 weeks per child per year · Until the child turns 15',
-                    [EligibilityNotes]      = 'Employees with children under 15'
+                    [EligibilityNotes]      = 'Employees with children under 15',
+                    [Description]           = 'Time off for a father around the birth of a child, and while that child is young.'
                 WHERE [Name] = 'Paternity Leave';
                 """);
         }
@@ -48,7 +49,8 @@ namespace Persistence.Migrations
                     [DefaultAllowance]      = 14,
                     [MaxConsecutiveDays]    = 14,
                     [AccrualNotes]          = 'Granted per event · Once per child',
-                    [EligibilityNotes]      = 'Male employees'
+                    [EligibilityNotes]      = 'Male employees',
+                    [Description]           = 'Time off for new fathers around the birth of a child.'
                 WHERE [Name] = 'Paternity Leave';
                 """);
         }
