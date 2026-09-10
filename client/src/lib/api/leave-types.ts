@@ -14,6 +14,10 @@ export interface UpsertLeaveTypeRequest {
     defaultAllowance: number
     allowanceUnit: string
     maxCarryoverDays: number
+    perChildEntitlement: boolean
+    perChildTotalWeeks: number
+    perChildWeeksPerYear: number
+    childEligibleUntilAge: number
     accrualNotes: string
     minNoticeDays: number
     maxConsecutiveDays: number
