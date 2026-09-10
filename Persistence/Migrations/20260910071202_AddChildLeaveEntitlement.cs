@@ -11,6 +11,12 @@ namespace Persistence.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            // Pre-existing drift, not per-child leave: commit 930160f (Remove Slack
+            // notification integration) dropped this column from the model but never
+            // got its own migration. `dotnet ef migrations add` diffs the whole model
+            // against the last snapshot, so the first migration generated after that
+            // commit was always going to sweep this in alongside whatever it was
+            // actually written for.
             migrationBuilder.DropColumn(
                 name: "SlackEnabled",
                 table: "AppSettings");
@@ -133,6 +139,8 @@ namespace Persistence.Migrations
                 name: "ChildId",
                 table: "AnnualLeaves");
 
+            // Reverses the incidental drop above by recreating a column no code reads
+            // any more — kept only so Down mirrors Up exactly.
             migrationBuilder.AddColumn<bool>(
                 name: "SlackEnabled",
                 table: "AppSettings",
