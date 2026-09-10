@@ -20,6 +20,25 @@ public class GlobalExceptionMiddleware(
         }
         catch (Exception ex)
         {
+            // A caller that gave up is not a server fault. Kestrel signals it by
+            // cancelling RequestAborted, which surfaces as OperationCanceledException
+            // from whatever was mid-flight — most often the response writer itself.
+            // There is nobody left to send a status to, and reporting it as an
+            // unhandled 500 buries real errors in the log: it was a readiness probe
+            // with a shorter timeout than a cold mail-provider check that first
+            // showed this up.
+            //
+            // Deliberately conditional on RequestAborted. A cancellation the client
+            // did not cause — an HttpClient timeout inside a handler, say — is a
+            // genuine server-side failure and keeps its 500.
+            if (IsClientDisconnect(ex, context))
+            {
+                logger.LogInformation(
+                    "Request {Path} was abandoned by the caller before it completed.",
+                    context.Request.Path);
+                return;
+            }
+
             if (IsOAuthCallback(context.Request.Path))
             {
                 await HandleOAuthFailureAsync(context, ex);
@@ -29,6 +48,14 @@ public class GlobalExceptionMiddleware(
             await HandleAsync(context, ex);
         }
     }
+
+    /// <summary>
+    /// Whether this exception is the caller hanging up rather than a failure to
+    /// report. <see cref="TaskCanceledException"/> derives from
+    /// <see cref="OperationCanceledException"/>, so both are covered.
+    /// </summary>
+    private static bool IsClientDisconnect(Exception ex, HttpContext context) =>
+        ex is OperationCanceledException && context.RequestAborted.IsCancellationRequested;
 
     private async Task HandleAsync(HttpContext context, Exception ex)
     {

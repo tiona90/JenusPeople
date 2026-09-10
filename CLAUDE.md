@@ -245,6 +245,12 @@ Two more traps worth knowing, both found the hard way:
   the database (Unhealthy → 503) and the configured mail provider (Degraded → still
   200, result cached 5 minutes). Both anonymous and exempt from rate limiting. See
   `API/Extensions/HealthCheckExtensions.cs`.
+  **Give a readiness probe more than 10 seconds.** The mail check is allowed 10s and
+  is only cached for 5 minutes, so roughly every 5 minutes one probe pays the full
+  cost of reaching the provider — 8s when it is unreachable. A probe that gives up
+  sooner disconnects mid-response, and `GlobalExceptionMiddleware` now reports that
+  as the caller hanging up (logged at Information) rather than as an unhandled 500;
+  it used to be the latter, which is how it was found.
 - **OAuth:** None. No external providers are registered — social sign-in was
   removed along with public self-registration (its callback provisioned an
   account for any unrecognised email). `AccountController.Login` is the only
