@@ -92,7 +92,7 @@ class AuthStore {
         }
     }
 
-    setUserProfile(profile: { displayName: string; email: string; phoneNumber?: string | null; dateOfBirth?: string | null; departmentId?: number | null; departmentName?: string | null }) {
+    setUserProfile(profile: { displayName: string; email: string; phoneNumber?: string | null; dateOfBirth?: string | null; departmentId?: number | null; departmentName?: string | null; hasChildren?: boolean | null }) {
         if (!this.user) {
             return
         }
@@ -106,6 +106,7 @@ class AuthStore {
             dateOfBirth: profile.dateOfBirth ?? null,
             departmentId: profile.departmentId ?? this.user.departmentId ?? null,
             departmentName: profile.departmentName ?? this.user.departmentName ?? null,
+            hasChildren: profile.hasChildren ?? null,
         }
     }
 }
