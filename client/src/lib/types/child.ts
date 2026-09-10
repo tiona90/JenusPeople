@@ -21,8 +21,11 @@ export interface UpsertChildRequest {
 
 /**
  * One child's per-child leave ledger, in business days with a weeks figure for
- * display. An ineligible child is present with `isEligible: false` and zeroed
- * entitlement — `usedDays` still shows what they used while eligible.
+ * display. An ineligible child is present with `isEligible: false` and keeps the
+ * configured entitlement (`totalDays`, `totalWeeks`, `thisYearCapDays`) — zeroing
+ * those would misstate the policy rather than explain why it is now moot. Only the
+ * two *remaining* figures (`remainingDays`, `thisYearRemainingDays`) are forced to
+ * zero, and `usedDays` still shows what they used while eligible.
  */
 export interface ChildLeaveEntitlement {
     childId: string

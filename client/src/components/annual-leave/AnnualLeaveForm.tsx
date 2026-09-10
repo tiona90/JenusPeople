@@ -97,6 +97,10 @@ function AnnualLeaveForm({ open, onClose, leave, isAdmin = false, readOnly = fal
     const watchedEndDate = watch('endDate')
 
     const requiresChild = perChildLeaveTypeIds.includes(watchedLeaveTypeId)
+    // The configured cut-off age for the selected type, so the picker never quotes
+    // an invented one. 0 while the type list is still loading, which is also what
+    // the server reports when nothing carries a per-child entitlement.
+    const childEligibleUntilAge = (leaveTypes ?? []).find((lt) => lt.id === watchedLeaveTypeId)?.childEligibleUntilAge ?? 0
     // On the admin create path, no employee is chosen yet means no ledger to
     // load — showing the picker anyway would fetch the signed-in admin's own
     // children instead of placeholder text explaining why there's nothing yet.
@@ -137,6 +141,17 @@ function AnnualLeaveForm({ open, onClose, leave, isAdmin = false, readOnly = fal
         queryFn: getAdminUsers,
         enabled: isAdmin && !isEdit,
     })
+
+    /* Whose request this is, when it isn't the signed-in user's own — an admin
+       filing or editing on someone else's behalf. Wording only: the picker's
+       "add your children" advice is nonsense to an admin, who has no screen for
+       another employee's children. Not derived from the picker's employeeId, which
+       is also set when a user opens their own request. */
+    const onBehalfOfName = leave
+        ? (leave.employeeId !== authStore.user?.id ? leave.employeeName : undefined)
+        : requireEmployee
+            ? (adminUsers ?? []).find((u) => u.id === watchedEmployeeId)?.displayName
+            : undefined
 
     // Sync form state on open (populate from leave) and on close (reset).
     useEffect(() => {
@@ -476,6 +491,8 @@ function AnnualLeaveForm({ open, onClose, leave, isAdmin = false, readOnly = fal
                                         // Fix 1. On create, it follows whichever employee the
                                         // admin has picked so far.
                                         employeeId={leave?.employeeId ?? (requireEmployee ? (watchedEmployeeId || undefined) : undefined)}
+                                        childEligibleUntilAge={childEligibleUntilAge}
+                                        onBehalfOfName={onBehalfOfName}
                                         requestedDays={requestedDays}
                                         error={fieldState.error?.message}
                                         disabled={isPending}

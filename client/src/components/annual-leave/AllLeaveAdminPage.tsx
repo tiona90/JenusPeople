@@ -1017,6 +1017,16 @@ function LeaveRow({
                     gap: '14px',
                 }}>
                     <ExpandBlock title="Reason given">
+                        {/* Which child a per-child request is for — the fact the cap
+                            is measured against, and the one thing an approving
+                            manager could not see anywhere. Only per-child rows carry
+                            a childName, so every other row renders as before. */}
+                        {!!leave.childName && (
+                            <Box sx={{ fontSize: 12, color: 'text.primary', mb: '8px' }}>
+                                <Box component="span" sx={{ color: 'text.secondary' }}>Child: </Box>
+                                <Box component="strong">{leave.childName}</Box>
+                            </Box>
+                        )}
                         {leave.reason ? (
                             <Box sx={{ fontSize: 12, fontStyle: 'italic', color: 'text.primary', lineHeight: 1.5 }}>"{leave.reason}"</Box>
                         ) : (

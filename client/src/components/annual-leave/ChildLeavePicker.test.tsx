@@ -39,7 +39,13 @@ function renderPicker(overrides: Partial<React.ComponentProps<typeof ChildLeaveP
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
         <QueryClientProvider client={client}>
-            <ChildLeavePicker value="" onChange={vi.fn()} requestedDays={null} {...overrides} />
+            <ChildLeavePicker
+                value=""
+                onChange={vi.fn()}
+                childEligibleUntilAge={15}
+                requestedDays={null}
+                {...overrides}
+            />
         </QueryClientProvider>,
     )
 }
@@ -90,12 +96,42 @@ describe('ChildLeavePicker', () => {
         expect(agedOut.closest('li')).toHaveAttribute('aria-disabled', 'true')
     })
 
+    /**
+     * Fix 5: the label used to quote the child's *current* age against the day
+     * *before* the qualifying birthday — two errors in one phrase. Petros was born
+     * 20 Jan 2005 and is 21 now; with a cut-off of 15 he turned 15 on 20 Jan 2020,
+     * the day after his last eligible date. The old label read "turned 21 on
+     * 19 Jan 2020". The server's own refusal message states it the new way.
+     */
+    it('names the cut-off age and the birthday it was reached on, not today\'s age', async () => {
+        renderPicker()
+        await openPicker()
+
+        expect(screen.getByText(/turned 15 on 20 Jan 2020/)).toBeInTheDocument()
+        expect(screen.queryByText(/turned 21/)).not.toBeInTheDocument()
+        expect(screen.queryByText(/19 Jan 2020/)).not.toBeInTheDocument()
+    })
+
     it('says where to add children when none are declared', async () => {
         getChildLeaveEntitlements.mockResolvedValue({ ...summary, eligibleChildCount: 0, children: [] })
 
         renderPicker()
 
         expect(await screen.findByText(/add your children in edit profile/i)).toBeInTheDocument()
+    })
+
+    /**
+     * Fix 7: an admin filing on someone else's behalf was told to "add your
+     * children in Edit profile" — nonsense, since there is deliberately no screen
+     * for editing another employee's children.
+     */
+    it('names the employee instead of saying "your children" when filing for someone else', async () => {
+        getChildLeaveEntitlements.mockResolvedValue({ ...summary, eligibleChildCount: 0, children: [] })
+
+        renderPicker({ employeeId: 'emp-42', onBehalfOfName: 'Maria Ioannou' })
+
+        expect(await screen.findByText(/Maria Ioannou has no children on file/i)).toBeInTheDocument()
+        expect(screen.queryByText(/add your children/i)).not.toBeInTheDocument()
     })
 
     it('explains when children exist but none are eligible', async () => {
@@ -108,6 +144,22 @@ describe('ChildLeavePicker', () => {
         renderPicker()
 
         expect(await screen.findByText(/no eligible children/i)).toBeInTheDocument()
+    })
+
+    /**
+     * Fix 6: the message hard-coded "under 15" in a feature whose entire premise is
+     * that the age is configurable on the leave type.
+     */
+    it('quotes the configured cut-off age, not a hard-coded 15', async () => {
+        getChildLeaveEntitlements.mockResolvedValue({
+            ...summary,
+            eligibleChildCount: 0,
+            children: [summary.children[1]],
+        })
+
+        renderPicker({ childEligibleUntilAge: 18 })
+
+        expect(await screen.findByText(/only while a child is under 18/i)).toBeInTheDocument()
     })
 
     it('shows what the chosen dates would leave, capped by the tighter of the two remainders', async () => {

@@ -998,6 +998,10 @@ function LeaveDetailsDialog({ leave, leaveTypeName, feedback, onClose }: {
                         </Box>
                     )}
                     <LeaveDetailRow label="Leave Type" value={leaveTypeName ?? 'Annual Leave'} />
+                    {/* Per-child leave only — every other row has no child and
+                        renders exactly as before. This is the fact the per-child
+                        cap turns on, so it belongs beside the type it qualifies. */}
+                    {!!leave.childName && <LeaveDetailRow label="Child" value={leave.childName} />}
                     <Divider sx={{ my: 0.5 }} />
                     <LeaveDetailRow label="Start Date" value={formatDate(leave.startDate)} />
                     <LeaveDetailRow label="End Date" value={formatDate(leave.endDate)} />
