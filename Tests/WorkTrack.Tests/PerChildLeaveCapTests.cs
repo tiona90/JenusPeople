@@ -137,6 +137,36 @@ public class PerChildLeaveCapTests
 
         Assert.NotNull(error);
         Assert.Contains("left for the leave year", error);
+        // Pins which year broke the cap: the 2027 share (26 days, over the 25-day
+        // cap), not the 2026 share (24 days, within it). Without this, an
+        // implementation that charged the whole 50-day request against a single
+        // leave year would compute 25 < 50, refuse with this same message, and
+        // pass just as well — this is what tells the two apart.
+        Assert.Contains("01 Jan 2027", error);
+    }
+
+    /// <summary>
+    /// The complement of the test above: a request that touches two leave years
+    /// legitimately fits when each year's own share is within its 25-day cap, even
+    /// though the request's total (45 days) exceeds a single year's cap on its own.
+    /// Mon 30 Nov 2026 - Fri 29 Jan 2027 splits into 24 business days in the 2026
+    /// leave year (30 Nov - 31 Dec, 32 calendar days less 8 weekend days) and 21 in
+    /// 2027 (1 - 29 Jan, 29 calendar days less 8 weekend days) — 24 and 21, each
+    /// under 25, 45 in total, well under the 90-day lifetime cap with no prior
+    /// usage. An implementation that charged the whole request against one leave
+    /// year (e.g. by key of the start date) would compute 45 > 25 and wrongly
+    /// refuse it — over-refusing a legal request, the more expensive failure
+    /// direction than under-refusing.
+    /// </summary>
+    [Fact]
+    public async Task A_legal_straddling_request_is_not_over_refused()
+    {
+        await using var db = await PerChildLeaveWorld.CreateAsync();
+        var child = await PerChildLeaveWorld.AddChildAsync(db, "Andreas", YoungChild);
+
+        var straddling = PerChildLeaveWorld.Request(child.Id, new DateTime(2026, 11, 30), new DateTime(2027, 1, 29));
+
+        Assert.Null(await PerChildLeaveWorld.CheckAsync(db, straddling));
     }
 
     [Fact]
@@ -267,6 +297,12 @@ public class PerChildLeaveCapTests
     /// Paternity rows that predate the per-child entitlement have no child, so they
     /// belong to no ledger. They stay approved and visible, and an admin can attach
     /// a child later by editing them.
+    ///
+    /// The legacy row and the request are deliberately placed in the SAME leave
+    /// year (2026) and each is exactly 25 business days: if the usage query were
+    /// not scoped by <c>ChildId</c>, the legacy row's days would count toward the
+    /// new child's 2026 yearly cap and this request would be wrongly refused.
+    /// Correct code returns null because the legacy row belongs to no child.
     /// </summary>
     [Fact]
     public async Task Legacy_leave_with_no_child_charges_nobody()
@@ -280,14 +316,14 @@ public class PerChildLeaveCapTests
             EmployeeProfileId = PerChildLeaveWorld.ProfileId,
             ChildId = null,
             LeaveTypeId = PerChildLeaveWorld.PaternityTypeId,
-            StartDate = new DateTime(2025, 1, 6),
-            EndDate = new DateTime(2025, 2, 7),
+            StartDate = new DateTime(2026, 1, 5),
+            EndDate = new DateTime(2026, 2, 6),
             Reason = "Paternity (before children were declared)",
             Status = AnnualLeaveStatus.Approved,
         });
         await db.SaveChangesAsync();
 
-        var request = PerChildLeaveWorld.Request(child.Id, new DateTime(2026, 1, 5), new DateTime(2026, 2, 6));
+        var request = PerChildLeaveWorld.Request(child.Id, new DateTime(2026, 3, 2), new DateTime(2026, 4, 3));
 
         Assert.Null(await PerChildLeaveWorld.CheckAsync(db, request));
     }
