@@ -94,12 +94,13 @@ that means when adding code:
 | Entity | Key Fields |
 |--------|-----------|
 | `User` | Extends `IdentityUser`; has `DisplayName`, `ImageUrl`, `IsActive` (may this account sign in — a leaver is switched off rather than deleted, since `DeleteAdminUser` nulls out every approval they gave) |
-| `AnnualLeave` | `EmployeeId`, `StartDate/EndDate`, `Status` (enum), `TotalDays` (computed, no weekends) |
-| `LeaveType` | `Name`, `IsActive`, `AffectsBalance` (is it deducted from the enforced pool), `DefaultAllowance` and `MaxCarryoverDays` — the allowance and the year-end cap that bounds it, both per type and both edited **only** on Leave Types. See [Leave is configured once](#domain-model-summary) |
+| `AnnualLeave` | `EmployeeId`, `StartDate/EndDate`, `Status` (enum), `TotalDays` (computed, no weekends). `ChildId` is nullable — required on a request against a `PerChildEntitlement` type, `null` on every row predating the feature (and on any request against a type that isn't per-child), and a `null` `ChildId` counts against no per-child ledger |
+| `LeaveType` | `Name`, `IsActive`, `AffectsBalance` (is it deducted from the enforced pool), `DefaultAllowance` and `MaxCarryoverDays` — the allowance and the year-end cap that bounds it, both per type and both edited **only** on Leave Types. See [Leave is configured once](#domain-model-summary). `PerChildEntitlement` plus its three numbers (`PerChildTotalWeeks`, `PerChildWeeksPerYear`, `ChildEligibleUntilAge`) configure the second, per-child ledger — see [the two leave ledgers](#domain-model-summary) below the table |
 | `Timesheet` | `EmployeeId`, `PeriodStart/End`, `TotalHours`, `Status` (Draft→Submitted→Approved/Rejected), `DepartmentId` (nullable — the department it was filed under, kept for history so it outlives its author's move; null when the author has none, i.e. an Admin, matching `AnnualLeave.DepartmentId`) |
 | `TimesheetEntry` | `TimesheetId`, `ProjectId`, `Date`, `HoursWorked` (decimal 4,2), optional `ActivityTypeId`, `ProjectTypeId` and `ProjectComponentId`. One entry per project **+ type + component** per date |
 | `Project` | `Name` (unique), `Code` (unique), `IsActive`; belongs to many `Department` via `ProjectDepartment` (which departments can see it), narrows activities via `ProjectActivityAssignment`, components via `ProjectComponentAssignment`, and its kinds of engagement via `ProjectTypeAssignment` |
-| `EmployeeProfile` | Links `User` to `Department`, tracks leave entitlement. `DepartmentId` is **nullable, and null is what an Admin gets** — the role sees every department, so belonging to one grants nothing, and an invented assignment counted for real (headcount, attendance warnings, `DeleteDepartment` blockers). The validators enforce it both ways: required for Employee/Manager, refused for Admin. Anything grouping profiles by department must skip the nulls. `AnnualLeaveEntitlement` and `LeaveBalance` are the pool the API enforces on approval, but are **derived from the annual-leave allowance, never edited per person** — see [Leave is configured once](#domain-model-summary) below the table. **A stored 0 switches the balance check off entirely** (`AnnualLeaveBalanceCalculator.CheckSufficientBalanceAsync`), so never write one |
+| `EmployeeProfile` | Links `User` to `Department`, tracks leave entitlement. `DepartmentId` is **nullable, and null is what an Admin gets** — the role sees every department, so belonging to one grants nothing, and an invented assignment counted for real (headcount, attendance warnings, `DeleteDepartment` blockers). The validators enforce it both ways: required for Employee/Manager, refused for Admin. Anything grouping profiles by department must skip the nulls. `AnnualLeaveEntitlement` and `LeaveBalance` are the pool the API enforces on approval, but are **derived from the annual-leave allowance, never edited per person** — see [Leave is configured once](#domain-model-summary) below the table. **A stored 0 switches the balance check off entirely** (`AnnualLeaveBalanceCalculator.CheckSufficientBalanceAsync`), so never write one. `HasChildren` is a tri-state (`null` = never asked, `false` = declared none, `true` = has some) — `HasChildrenDeclaration` refuses `false` while any `Child` row still points at the profile |
+| `Child` | One declared child of an `EmployeeProfile`: `Name`, `DateOfBirth`. **Age and eligibility are never stored** — both are computed on every read (`PerChildLeaveCalculationService`), which is what makes a child aging out of paternity leave automatic. Deleting a child with leave against them is refused (`DeleteChild`, and the FK is `Restrict`): the row is what the per-child ledger is queried by, so removing it would erase the record of leave actually taken. An aged-out child is kept and reads as ineligible |
 | `ProjectComponent` | Org-wide catalogue of deliverables (DM, Lasernet, jDocs): `Name` (unique), `Icon`, `ColorKey`, `IsActive`. Projects declare theirs via `ProjectComponentAssignment`, and a `TimesheetEntry` logs against one — narrowed by its project the same way the activity is |
 | `ProjectType` | Org-wide catalogue of engagement kinds (Task, Issue, Inquiry, Support): `Name` (unique), `Icon`, `ColorKey`, `IsActive`. Projects carry any number via `ProjectTypeAssignment`, or none; a type projects still carry cannot be deleted. A `TimesheetEntry` also logs against one — narrowed to the types its project carries, and the field that narrows its project picker |
 | `StoredFile` | An uploaded file's bytes in the database: `Content` (varbinary(max)), `FileName`, `ContentType` (**detected**, never the caller's claim), `Sha256` (also the HTTP ETag), `SizeBytes`, `UploadedById`. `Purpose` (`ProfileImage`, `LeaveEvidence`) drives both what the upload accepts and who may read it back |
@@ -146,6 +147,58 @@ Two rules that follow, both learned the hard way:
 
 The client mirrors this in `client/src/lib/leave-allowance.ts`; a type that sets no
 allowance reads as 0 and renders "—".
+
+**There are two leave ledgers, and they are disjoint.** The pooled one is
+`EmployeeProfile.LeaveBalance`, kept by `AnnualLeaveBalanceCalculator` for the type
+flagged `AffectsBalance`. The other is per child, enforced by
+`PerChildLeaveBalanceCalculator` for a type flagged `PerChildEntitlement` — paternity
+leave, which is not one budget per employee but one per child:
+`PerChildTotalWeeks` (18) weeks per child, `PerChildWeeksPerYear` (5) per leave year,
+until the child reaches `ChildEligibleUntilAge` (15). A week is **5 business days**
+(`PerChildLeaveCalculationService.BusinessDaysPerWeek`), so 18 weeks is 90 business
+days and weekends and public holidays inside a request consume nothing.
+
+`UpsertLeaveTypeRequestValidator` refuses a type that sets both flags: counted in
+both, one day of leave would be charged twice.
+
+The per-child ledger is **stored nowhere** — it is a projection over approved leave
+rows, grouped by `AnnualLeave.ChildId`. That is why a child turning 15 needs no job
+and no recalculation: their usage stays in history, their remaining entitlement is
+simply gone, and the employee's totals (which cover eligible children only) fall on
+the next read. `GetChildLeaveEntitlements` reads usage through the same
+`PerChildLeaveBalanceCalculator` helpers that enforce it, so a screen cannot promise
+more than the API will approve.
+
+Two differences from the pooled balance worth knowing:
+
+- **A 0 refuses everything here, rather than switching the check off.** The opposite
+  of `AnnualLeaveEntitlement`, where `CheckSufficientBalanceAsync` returns early on
+  `<= 0`. `UpsertLeaveTypeRequestValidator` refuses saving a 0 in any of the three
+  fields once `PerChildEntitlement` is on, but the runtime arithmetic agrees even if
+  a 0 ever got in some other way: `RemainingDays` floors at zero, so a 0 total leaves
+  nothing to approve rather than nothing to check.
+- **The per-child check runs at creation even when the type requires approval**
+  (`CreateAnnualLeave`), unlike the pooled check, which only runs at creation for an
+  auto-approving type. A per-child refusal is something the employee can act on;
+  waiting days for a manager to hit it helps nobody. It is re-checked on the
+  transition into `Approved` in `UpdateLeaveStatus` — so, as with the pooled balance,
+  several *pending* requests can each pass creation and the second *approval* is what
+  fails.
+
+Two more traps worth knowing, both found the hard way:
+
+- **`Child` has no soft-delete query filter, and `EmployeeProfile`'s does not
+  propagate to it.** A child row outlives a soft-deleted profile. Handlers must
+  resolve a child's owner through the filtered `EmployeeProfiles` set (by
+  `Child.EmployeeProfileId`) rather than through the `Child.EmployeeProfile`
+  navigation, which EF Core nulls out for a soft-deleted owner — and `null` is
+  `ChildAccessResolver`'s sentinel for "the caller themselves". Reading the
+  navigation instead would let any authenticated employee pass as the owner of an
+  orphaned child; see the comment in `Application/Children/Commands/DeleteChild.cs`.
+- **The leave-type card's Enabled/Disabled toggle resubmits the whole leave type**
+  (`toggleActive` in `client/src/components/admin/LeaveTypesPanel.tsx`), not just
+  `isActive`. Any new `LeaveType` column has to be added to that payload as well as
+  the edit dialog's, or flipping the switch silently zeroes it.
 
 ## Key Configuration
 
