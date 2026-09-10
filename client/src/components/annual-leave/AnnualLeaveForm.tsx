@@ -19,6 +19,7 @@ import { getApiErrorMessage } from '../../lib/api/error-utils'
 import { useStore } from '../../lib/mobx'
 import { softBg } from '../../lib/theme-tokens'
 import { buildAnnualLeaveSchema, type AnnualLeaveFormValues } from '../../lib/validation/leave'
+import ChildLeavePicker from './ChildLeavePicker'
 import type { AnnualLeave, CreateAnnualLeaveRequest, EditAnnualLeaveRequest, LeaveStatusHistory } from '../../lib/types'
 
 function getErrorMessage(error: unknown) {
@@ -51,10 +52,29 @@ function AnnualLeaveForm({ open, onClose, leave, isAdmin = false, readOnly = fal
     const [evidenceFile, setEvidenceFile] = useState<File | null>(null)
 
     const requireEmployee = isAdmin && !isEdit
-    const schema = useMemo(() => buildAnnualLeaveSchema(requireEmployee), [requireEmployee])
+
+    const { data: leaveTypes, isLoading: isLoadingLeaveTypes } = useQuery({
+        queryKey: ['leaveTypes'],
+        queryFn: getLeaveTypes,
+    })
+
+    /* Which leave types measure their entitlement per child — paternity leave, in
+       practice. The schema needs them to know when childId is required, and the
+       schema has to exist before useForm does, so this is derived from the type
+       list rather than from the form's own selected value. */
+    const perChildLeaveTypeIds = useMemo(
+        () => (leaveTypes ?? []).filter((leaveType) => leaveType.perChildEntitlement).map((leaveType) => leaveType.id),
+        [leaveTypes],
+    )
+
+    const schema = useMemo(
+        () => buildAnnualLeaveSchema(requireEmployee, perChildLeaveTypeIds),
+        [requireEmployee, perChildLeaveTypeIds],
+    )
 
     const buildDefaults = (): AnnualLeaveFormValues => ({
         employeeId: '',
+        childId: leave?.childId ?? '',
         startDate: leave ? toInputDate(leave.startDate) : '',
         endDate: leave ? toInputDate(leave.endDate) : '',
         leaveTypeId: leave?.leaveTypeId ?? 0,
@@ -66,10 +86,32 @@ function AnnualLeaveForm({ open, onClose, leave, isAdmin = false, readOnly = fal
         defaultValues: buildDefaults(),
     })
 
-    const { data: leaveTypes, isLoading: isLoadingLeaveTypes } = useQuery({
-        queryKey: ['leaveTypes'],
-        queryFn: getLeaveTypes,
-    })
+    const watchedLeaveTypeId = watch('leaveTypeId')
+    const watchedEmployeeId = watch('employeeId')
+    const watchedStartDate = watch('startDate')
+    const watchedEndDate = watch('endDate')
+
+    const requiresChild = perChildLeaveTypeIds.includes(watchedLeaveTypeId)
+
+    /**
+     * Weekday count for the caption under the child picker. Public holidays are
+     * NOT excluded — the client has no holiday list — so this can read one or two
+     * days high near a holiday. The server's figure is the one that counts, and it
+     * only ever comes out lower, so the caption never over-promises what is left.
+     */
+    const requestedDays = useMemo(() => {
+        if (!watchedStartDate || !watchedEndDate) return null
+        const start = new Date(watchedStartDate)
+        const end = new Date(watchedEndDate)
+        if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return null
+
+        let count = 0
+        for (const date = new Date(start); date <= end; date.setDate(date.getDate() + 1)) {
+            const day = date.getDay()
+            if (day !== 0 && day !== 6) count++
+        }
+        return count
+    }, [watchedStartDate, watchedEndDate])
 
     const { data: adminUsers, isLoading: isLoadingUsers } = useQuery({
         queryKey: ['adminUsers'],
@@ -154,6 +196,10 @@ function AnnualLeaveForm({ open, onClose, leave, isAdmin = false, readOnly = fal
                     startDate: values.startDate,
                     endDate: values.endDate,
                     leaveTypeId: values.leaveTypeId,
+                    // Sent only for a per-child type. The server clears it for any
+                    // other type regardless, so there is no point handing it a
+                    // stale id to discard.
+                    childId: requiresChild ? values.childId : undefined,
                     reason: values.reason,
                     evidenceUrl: nextEvidenceUrl,
                     // This form doesn't edit coverage — carry the existing delegate
@@ -165,6 +211,7 @@ function AnnualLeaveForm({ open, onClose, leave, isAdmin = false, readOnly = fal
                     startDate: values.startDate,
                     endDate: values.endDate,
                     leaveTypeId: values.leaveTypeId,
+                    childId: requiresChild ? values.childId : undefined,
                     reason: values.reason,
                     evidenceUrl: nextEvidenceUrl,
                     employeeId: isAdmin ? values.employeeId : (authStore.user?.id ?? ''),
@@ -387,6 +434,37 @@ function AnnualLeaveForm({ open, onClose, leave, isAdmin = false, readOnly = fal
                                     ))}
                                 </TextField>
                             )}
+                        />
+                    )}
+
+                    {/* Only for a type whose budget is per child. The server clears
+                        childId for every other type, so a stale selection cannot
+                        survive a change of leave type. */}
+                    {requiresChild && !readOnly && (
+                        <Controller
+                            name="childId"
+                            control={control}
+                            render={({ field, fieldState }) => (
+                                <ChildLeavePicker
+                                    value={field.value}
+                                    onChange={field.onChange}
+                                    employeeId={requireEmployee ? (watchedEmployeeId || undefined) : undefined}
+                                    requestedDays={requestedDays}
+                                    error={fieldState.error?.message}
+                                    disabled={isPending}
+                                />
+                            )}
+                        />
+                    )}
+
+                    {readOnly && !!leave?.childName && (
+                        <TextField
+                            label="Child"
+                            value={leave.childName}
+                            fullWidth
+                            disabled
+                            InputProps={{ readOnly: true }}
+                            helperText=" "
                         />
                     )}
                     {(() => {
