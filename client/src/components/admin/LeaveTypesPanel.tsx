@@ -39,7 +39,17 @@ import type {
 /* ─── tokens ─────────────────────────────────────────────────────────────── */
 
 
-const PROTECTED_NAME = 'annual leave'
+/**
+ * Annual leave alone cannot be *disabled*, because it is the type the enforced
+ * balance is a budget for — switching it off leaves every employee with an
+ * entitlement and nothing to spend it on.
+ *
+ * Deliberately narrower than `leaveType.isSystem`, which covers Maternity and
+ * Paternity too. Those two are protected from renaming and deletion but may be
+ * switched off like any other type: an organisation that does not offer them
+ * should be able to hide them.
+ */
+const CANNOT_DISABLE_NAME = 'annual leave'
 
 const HEADER_GRADIENTS: Record<string, string> = {
     annual:      'linear-gradient(135deg, #DBEAFE 0%, #BFDBFE 100%)',
@@ -334,11 +344,13 @@ function LeaveTypesPanel() {
                             onEdit={() => setEditType(d.type)}
                             onToggle={() => toggleActive(d.type)}
                             onDelete={async () => {
-                                const isProtected = d.type.name.trim().toLowerCase() === PROTECTED_NAME
-                                if (isProtected) {
+                                // The card hides the delete button for these, so this
+                                // is a backstop rather than the usual path. The server
+                                // refuses it regardless (DeleteLeaveType).
+                                if (d.type.isSystem) {
                                     await SweetAlert.fire({
-                                        title: 'Protected leave type',
-                                        text: 'Annual Leave cannot be deleted.',
+                                        title: 'Built-in leave type',
+                                        text: `${d.type.name} is built in and cannot be deleted. You can disable it instead if you don't offer it.`,
                                         icon: 'info',
                                     })
                                     return
@@ -396,7 +408,8 @@ function LeaveTypeCard({ derived, onEdit, onToggle, onDelete }: {
     onDelete: () => void
 }) {
     const { type: t, requestsYTD, daysTakenYTD, avgRequest, isMostUsed } = derived
-    const isProtected = t.name.trim().toLowerCase() === PROTECTED_NAME
+    const isSystem = !!t.isSystem
+    const cannotDisable = t.name.trim().toLowerCase() === CANNOT_DISABLE_NAME
 
     return (
         <Box sx={{
@@ -431,7 +444,7 @@ function LeaveTypeCard({ derived, onEdit, onToggle, onDelete }: {
                     </Box>
                     <Box sx={{ display: 'flex', gap: '4px' }}>
                         <HeaderIconBtn title="Edit" onClick={onEdit}>✏️</HeaderIconBtn>
-                        {!isProtected && (
+                        {!isSystem && (
                             <HeaderIconBtn title="Delete" onClick={onDelete}>🗑</HeaderIconBtn>
                         )}
                     </Box>
@@ -447,7 +460,7 @@ function LeaveTypeCard({ derived, onEdit, onToggle, onDelete }: {
                     size="small"
                     checked={t.isActive}
                     onChange={onToggle}
-                    disabled={isProtected && t.isActive}
+                    disabled={cannotDisable && t.isActive}
                     sx={{
                         '& .MuiSwitch-switchBase.Mui-checked': { color: 'success.main' },
                         '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { backgroundColor: 'success.main' },
@@ -737,6 +750,9 @@ function LeaveTypeFormDialog(props: {
     onSubmit: (payload: UpsertLeaveTypeRequest) => void
 }) {
     const i = props.initial
+    // False on the create dialog, which has no `initial` — a new type is never
+    // built in, and the server would refuse the name anyway as already taken.
+    const isSystem = !!i?.isSystem
     const [name, setName] = useState(i?.name ?? '')
     const [icon, setIcon] = useState(i?.icon ?? '🏷️')
     const [colorKey, setColorKey] = useState<string>(i?.colorKey ?? 'default')
@@ -804,13 +820,20 @@ function LeaveTypeFormDialog(props: {
                             inputProps={{ maxLength: 8 }}
                             helperText="emoji"
                         />
+                        {/* Built-in types keep their name — other code finds them by
+                            it. Read-only rather than disabled, so the name still
+                            reads as a filled-in value instead of greyed-out
+                            placeholder text, and so it is still submitted back
+                            unchanged. maxLength is restated because slotProps.htmlInput
+                            replaces inputProps rather than merging with it. */}
                         <TextField
                             label="Name"
                             value={name}
                             onChange={(e) => setName(e.target.value)}
                             fullWidth
                             required
-                            inputProps={{ maxLength: 100 }}
+                            slotProps={{ htmlInput: { maxLength: 100, readOnly: isSystem } }}
+                            helperText={isSystem ? 'Built-in leave type — the name cannot be changed.' : undefined}
                         />
                     </Stack>
 

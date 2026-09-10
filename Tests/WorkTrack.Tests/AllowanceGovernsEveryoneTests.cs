@@ -197,9 +197,18 @@ public class AllowanceGovernsEveryoneTests
         Assert.Equal(25, profile.AnnualLeaveEntitlement);
     }
 
-    /// <summary>An edit that leaves the allowance alone must not rewrite anything.</summary>
+    /// <summary>
+    /// An edit that leaves the allowance alone must not rewrite anything.
+    ///
+    /// This used to make its edit a rename, to "Holiday". Annual Leave is one of the
+    /// built-in types now and cannot be renamed (<see cref="Domain.SystemLeaveTypes"/>),
+    /// so the edit is instead the one the helper already makes incidentally: it sends
+    /// no Description, clearing the seeded one. Either way the allowance is unmoved,
+    /// which is the whole point — the sweep keys on <c>AffectsBalance</c> and a
+    /// changed allowance, never on the name.
+    /// </summary>
     [Fact]
-    public async Task Renaming_the_type_without_moving_the_allowance_leaves_entitlements_alone()
+    public async Task An_edit_that_leaves_the_allowance_alone_leaves_entitlements_alone()
     {
         using var db = TestDb.Create();
         SeedTypes(db);
@@ -209,7 +218,7 @@ public class AllowanceGovernsEveryoneTests
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
 
-        var result = await Handle(db, SetAllowance(AnnualLeaveTypeId, "Holiday", affectsBalance: true, days: 25));
+        var result = await Handle(db, SetAllowance(AnnualLeaveTypeId, "Annual Leave", affectsBalance: true, days: 25));
 
         Assert.True(result.IsSuccess, result.Error);
         var profile = await db.EmployeeProfiles.AsNoTracking().SingleAsync();

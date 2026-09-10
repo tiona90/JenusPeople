@@ -156,3 +156,76 @@ it('sends a per-child type\'s policy unchanged when toggling it off from the car
         childEligibleUntilAge: 15,
     })))
 })
+
+/*
+ * Annual, Maternity and Paternity Leave are seeded and found by name elsewhere, so
+ * they cannot be renamed or deleted. The panel follows the server's `isSystem`
+ * flag rather than matching names itself -- it used to hard-code 'annual leave',
+ * which protected only that one type and only in the UI.
+ */
+it('makes a built-in leave type\'s name read-only, and says why', async () => {
+    api.getLeaveTypes.mockResolvedValue([leaveType({ isSystem: true })])
+    await renderPanel()
+
+    fireEvent.click(screen.getByTitle('Edit'))
+
+    // Read-only rather than disabled, so the name still reads as a real value and
+    // is still submitted back unchanged.
+    const nameField = screen.getByLabelText(/^Name/)
+    expect(nameField).toHaveAttribute('readonly')
+    expect(nameField).not.toBeDisabled()
+    expect(screen.getByText('Built-in leave type — the name cannot be changed.')).toBeInTheDocument()
+})
+
+it('leaves a custom leave type\'s name editable', async () => {
+    api.getLeaveTypes.mockResolvedValue([leaveType({ name: 'Study Leave', isSystem: false })])
+    await renderPanel()
+
+    fireEvent.click(screen.getByTitle('Edit'))
+
+    const nameField = screen.getByLabelText(/^Name/)
+    expect(nameField).not.toHaveAttribute('readonly')
+    fireEvent.change(nameField, { target: { value: 'Training Leave' } })
+    expect(nameField).toHaveValue('Training Leave')
+})
+
+it('offers no delete button for a built-in leave type', async () => {
+    api.getLeaveTypes.mockResolvedValue([leaveType({ isSystem: true })])
+    await renderPanel()
+
+    expect(screen.queryByTitle('Delete')).not.toBeInTheDocument()
+    // Editing it is still offered -- only the name and deletion are off limits.
+    expect(screen.getByTitle('Edit')).toBeInTheDocument()
+})
+
+it('still offers delete for a custom leave type', async () => {
+    api.getLeaveTypes.mockResolvedValue([leaveType({ name: 'Study Leave', isSystem: false })])
+    await renderPanel()
+
+    expect(screen.getByTitle('Delete')).toBeInTheDocument()
+})
+
+/*
+ * Being built in is not the same as being undisableable. Annual leave alone cannot
+ * be switched off, because it is the type the enforced balance is a budget for.
+ * Maternity and Paternity are protected from renaming and deletion but an
+ * organisation that does not offer them must still be able to hide them.
+ */
+it('keeps annual leave from being switched off', async () => {
+    api.getLeaveTypes.mockResolvedValue([
+        leaveType({ name: 'Annual Leave', isSystem: true, affectsBalance: true, perChildEntitlement: false, defaultAllowance: 25 }),
+    ])
+    await renderPanel()
+
+    expect(screen.getAllByRole('switch')[0]).toBeDisabled()
+})
+
+it('lets the other built-in types be switched off', async () => {
+    for (const name of ['Maternity Leave', 'Paternity Leave']) {
+        api.getLeaveTypes.mockResolvedValue([leaveType({ name, isSystem: true })])
+        const view = await renderPanel()
+
+        expect(screen.getAllByRole('switch')[0]).toBeEnabled()
+        view.unmount()
+    }
+})

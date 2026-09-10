@@ -28,6 +28,19 @@ public class UpdateLeaveType
             var wasRequiringApproval = leaveType.RequiresApproval;
             var previousAllowance = leaveType.DefaultAllowance;
 
+            /* A seeded type cannot be renamed — other code finds these by name, so a
+               rename breaks it silently. Refused rather than quietly ignored: the edit
+               dialog makes the field read-only, so anything reaching here with a
+               different name is a caller going around the UI, and it should be told.
+               Checked before the map, which would otherwise have already overwritten
+               the stored name. Everything else about the type stays editable. */
+            if (SystemLeaveTypes.IsSystem(leaveType.Name)
+                && !string.Equals(leaveType.Name.Trim(), request.LeaveType.Name?.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                return Result<LeaveTypeDto>.Conflict(
+                    $"{leaveType.Name} is a built-in leave type and cannot be renamed.");
+            }
+
             mapper.Map(request.LeaveType, leaveType);
 
             var affectedProfiles = new Dictionary<string, EmployeeProfile>();

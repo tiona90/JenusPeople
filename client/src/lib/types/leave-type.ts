@@ -30,4 +30,12 @@ export interface LeaveType {
     halfDayAllowed: boolean
     eligibilityNotes: string
     eligibilityScope: EligibilityScope
+    /**
+     * One of the seeded types the app depends on by name (Annual, Maternity,
+     * Paternity): it cannot be renamed or deleted, though every other setting on
+     * it stays editable. Server-derived from the name, so there is no list to keep
+     * in step here — and the server enforces it either way, so this only decides
+     * which controls to lock. Optional because test fixtures predate it.
+     */
+    isSystem?: boolean
 }

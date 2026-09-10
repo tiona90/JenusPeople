@@ -28,4 +28,15 @@ public class LeaveTypeDto
     public bool HalfDayAllowed { get; set; }
     public string EligibilityNotes { get; set; } = "All employees";
     public EligibilityScope EligibilityScope { get; set; }
+
+    /// <summary>
+    /// Whether this is one of the seeded types that cannot be renamed or deleted
+    /// (<see cref="SystemLeaveTypes"/>). Everything else about it stays editable.
+    ///
+    /// Derived from the name rather than mapped or stored, so the flag a screen
+    /// reads can never disagree with the name beside it, and the client needs no
+    /// copy of the list. The server is still the one that enforces it — this only
+    /// tells the UI which controls to lock.
+    /// </summary>
+    public bool IsSystem => SystemLeaveTypes.IsSystem(Name);
 }
