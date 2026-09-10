@@ -42,6 +42,14 @@ const SICK_LEAVE_TYPE = {
     affectsBalance: false,
 } as const
 
+/** Per-child budget: `defaultAllowance` is 0 by migration on purpose — the real
+ *  budget lives in `perChildTotalWeeks`/`perChildWeeksPerYear` instead. */
+const PATERNITY_LEAVE_TYPE = {
+    ...ANNUAL_LEAVE_TYPE, id: 3, name: 'Paternity Leave', colorKey: 'paternity',
+    defaultAllowance: 0, affectsBalance: false,
+    perChildEntitlement: true, perChildTotalWeeks: 18, perChildWeeksPerYear: 5, childEligibleUntilAge: 15,
+} as const
+
 /** Leave Settings no longer carries an entitlement; only the carryover cap and year. */
 const APP_SETTINGS = { leaveYearStartMonth: 1 }
 
@@ -404,5 +412,29 @@ describe('AllLeaveAdminPage — a request is measured against its own leave type
         expect(cell.getAttribute('title')).toBe(
             'Sick Leave: 0 of 10 days/year used this year · '
             + 'Tracked separately — not deducted from the annual balance')
+    })
+
+    /* Regression: a per-child type's `defaultAllowance` is 0 by migration on purpose,
+       which used to read as "has no allowance on record" with a bar pinned at empty —
+       wrong for a type that grants 18 weeks per child. */
+    it('quotes the per-child policy instead of "no allowance on record"', async () => {
+        api.getLeaveTypes.mockResolvedValue([ANNUAL_LEAVE_TYPE, SICK_LEAVE_TYPE, PATERNITY_LEAVE_TYPE] as never)
+        api.getAnnualLeaves.mockResolvedValue([
+            leave({
+                id: 'pt1', employeeId: 'emp-2a', employeeName: 'Employee 2A',
+                leaveTypeId: PATERNITY_LEAVE_TYPE.id,
+                startDate: sameYear(11, 3), endDate: sameYear(11, 5), totalDays: 3,
+            }),
+        ])
+        await renderPage()
+
+        expect(screen.queryByText(/has no allowance on record/)).not.toBeInTheDocument()
+        expect(screen.queryByText(/left after/)).not.toBeInTheDocument()
+
+        const policyText = screen.getByText('18 weeks per child · max 5 weeks/year')
+        expect(policyText).toBeInTheDocument()
+        const cell = policyText.parentElement!
+        expect(cell.getAttribute('title')).toBe(
+            'Paternity Leave: 18 weeks per child · max 5 weeks/year — tracked per child, not a per-employee balance')
     })
 })

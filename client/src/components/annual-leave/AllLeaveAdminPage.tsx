@@ -11,7 +11,7 @@ import {
 import { resolveFileUrl } from '../../lib/api/file-url'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
 import {
-    allowanceForLeaveType, allowanceForRequest, annualLeaveAllowance, employeeAnnualEntitlement,
+    allowanceForLeaveType, allowanceForRequest, annualLeaveAllowance, describeAllowance, employeeAnnualEntitlement,
 } from '../../lib/leave-allowance'
 import { softBg, type SxColor } from '../../lib/theme-tokens'
 import type {
@@ -833,17 +833,28 @@ function LeaveRow({
        a type that is not deducted from the pooled balance the API enforces. */
     const typeAllowance = allowanceForLeaveType(leaveType)
     const allowanceUnit = leaveType?.allowanceUnit?.trim() || 'days/year'
-    const balanceTitle = entitlement <= 0
-        ? `${typeName ?? 'This leave type'} has no allowance on record`
-        : [
-            `${typeName ?? 'Leave'}: ${usedThisYear} of ${entitlement} ${allowanceUnit} used this year`,
-            entitlement !== typeAllowance
-                ? `Leave Types says ${typeAllowance} ${allowanceUnit} — overridden for this employee`
-                : null,
-            leaveType && !leaveType.affectsBalance
-                ? 'Tracked separately — not deducted from the annual balance'
-                : null,
-        ].filter(Boolean).join(' · ')
+
+    /* A per-child type (paternity leave in practice) has no per-employee-per-year
+       allowance at all — `defaultAllowance` is 0 on purpose, since the real budget is
+       per child ("18 weeks per child, capped at 5 per child per year"). `entitlement`
+       above is therefore 0 for these rows, which would otherwise read as "has no
+       allowance on record" and drive a used-of-entitlement bar pinned at empty. One bar
+       cannot express a per-child budget, so this path quotes the per-child policy
+       instead and the render below skips the bar entirely for it. */
+    const isPerChildLeaveType = !!leaveType?.perChildEntitlement
+    const balanceTitle = isPerChildLeaveType
+        ? `${typeName ?? 'Leave'}: ${describeAllowance(leaveType)} — tracked per child, not a per-employee balance`
+        : entitlement <= 0
+            ? `${typeName ?? 'This leave type'} has no allowance on record`
+            : [
+                `${typeName ?? 'Leave'}: ${usedThisYear} of ${entitlement} ${allowanceUnit} used this year`,
+                entitlement !== typeAllowance
+                    ? `Leave Types says ${typeAllowance} ${allowanceUnit} — overridden for this employee`
+                    : null,
+                leaveType && !leaveType.affectsBalance
+                    ? 'Tracked separately — not deducted from the annual balance'
+                    : null,
+            ].filter(Boolean).join(' · ')
 
     const daysUntil = daysFromToday(leave.startDate)
     const noticeText = daysUntil < 0 ? 'Past' : daysUntil === 0 ? 'Today' : daysUntil === 1 ? 'Tomorrow' : `${daysUntil} days notice`
@@ -939,7 +950,16 @@ function LeaveRow({
 
                 {/* Balance — for this request's leave type, not a pooled annual figure */}
                 <Box sx={{ display: { xs: 'none', md: 'block' } }} title={balanceTitle}>
-                    {entitlement > 0 ? (
+                    {isPerChildLeaveType ? (
+                        // Per-child budget: no used-of-entitlement bar, no "no allowance on
+                        // record" — quote the per-child policy instead (see comment above).
+                        <>
+                            <Box sx={{ fontSize: 11, color: 'text.secondary' }}>{describeAllowance(leaveType)}</Box>
+                            <Box sx={{ fontSize: 10, color: 'text.disabled', mt: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                per child, not per employee
+                            </Box>
+                        </>
+                    ) : entitlement > 0 ? (
                         <>
                             <Box sx={{ fontSize: 11, color: 'text.secondary' }}>{usedThisYear}/{entitlement} used</Box>
                             <Box sx={{ height: 4, bgcolor: 'action.hover', borderRadius: '2px', overflow: 'hidden', mt: '4px' }}>
