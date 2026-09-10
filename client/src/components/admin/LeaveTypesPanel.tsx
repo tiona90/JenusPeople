@@ -471,7 +471,14 @@ function LeaveTypeCard({ derived, onEdit, onToggle, onDelete }: {
                         Default allowance
                     </Box>
                     <Box sx={{ fontSize: 28, fontWeight: 700, color: 'text.primary', lineHeight: 1 }}>
-                        {describeAllowance(t)}
+                        {t.perChildEntitlement ? describeAllowance(t) : (
+                            <>
+                                {t.defaultAllowance}
+                                <Box component="span" sx={{ fontSize: 14, color: 'text.secondary', fontWeight: 500, ml: '4px' }}>
+                                    {t.allowanceUnit}
+                                </Box>
+                            </>
+                        )}
                     </Box>
                     <Box sx={{ fontSize: 11, color: 'text.secondary', mt: '4px' }}>
                         {t.maxCarryoverDays > 0
@@ -885,7 +892,7 @@ function LeaveTypeFormDialog(props: {
                                 label="Total per child"
                                 type="number"
                                 value={perChildTotalWeeks}
-                                onChange={(e) => setPerChildTotalWeeks(Number(e.target.value))}
+                                onChange={(e) => setPerChildTotalWeeks(Math.max(1, Number(e.target.value)))}
                                 inputProps={{ min: 1, max: 260 }}
                                 slotProps={{ input: { endAdornment: <InputAdornment position="end">weeks</InputAdornment> } }}
                                 helperText={`${perChildTotalWeeks * 5} business days`}
@@ -895,8 +902,8 @@ function LeaveTypeFormDialog(props: {
                                 label="Max per year, per child"
                                 type="number"
                                 value={perChildWeeksPerYear}
-                                onChange={(e) => setPerChildWeeksPerYear(Number(e.target.value))}
-                                inputProps={{ min: 1, max: 52 }}
+                                onChange={(e) => setPerChildWeeksPerYear(Math.max(1, Number(e.target.value)))}
+                                inputProps={{ min: 1, max: Math.min(52, perChildTotalWeeks) }}
                                 slotProps={{ input: { endAdornment: <InputAdornment position="end">weeks</InputAdornment> } }}
                                 helperText={`${perChildWeeksPerYear * 5} business days`}
                                 fullWidth
@@ -905,7 +912,7 @@ function LeaveTypeFormDialog(props: {
                                 label="Eligible until age"
                                 type="number"
                                 value={childEligibleUntilAge}
-                                onChange={(e) => setChildEligibleUntilAge(Number(e.target.value))}
+                                onChange={(e) => setChildEligibleUntilAge(Math.max(1, Number(e.target.value)))}
                                 inputProps={{ min: 1, max: 30 }}
                                 slotProps={{ input: { endAdornment: <InputAdornment position="end">years</InputAdornment> } }}
                                 fullWidth

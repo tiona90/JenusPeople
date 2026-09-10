@@ -130,3 +130,29 @@ it('sends the per-child fields in the update payload', async () => {
         affectsBalance: false,
     })))
 })
+
+/**
+ * The card's Enabled/Disabled switch is a shortcut for an edit, and the endpoint
+ * replaces the leave type rather than patching it (see `toggleActive` in
+ * LeaveTypesPanel.tsx) -- so a per-child type's 18/5/15 configuration has to be
+ * sent back unchanged, or flipping the switch would silently zero it. A zeroed
+ * `perChildTotalWeeks` refuses every request for that type (the server's
+ * per-child balance calculator has nothing to grant), so this would read as
+ * paternity leave quietly breaking with no error anywhere -- not as a crash this
+ * suite would otherwise catch.
+ */
+it('sends a per-child type\'s policy unchanged when toggling it off from the card', async () => {
+    await renderPanel()
+
+    // The panel starts with no dialog open, so the card's own switch is the only
+    // one on screen.
+    fireEvent.click(screen.getAllByRole('switch')[0])
+
+    await waitFor(() => expect(api.updateLeaveType).toHaveBeenCalledWith(PATERNITY.id, expect.objectContaining({
+        isActive: false,
+        perChildEntitlement: true,
+        perChildTotalWeeks: 18,
+        perChildWeeksPerYear: 5,
+        childEligibleUntilAge: 15,
+    })))
+})
