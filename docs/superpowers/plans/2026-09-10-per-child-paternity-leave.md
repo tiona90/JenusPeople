@@ -853,10 +853,10 @@ Append to `Tests/WorkTrack.Tests/PaternityLeaveTypeConfigTests.cs` (add `using D
     [Fact]
     public async Task The_seeded_paternity_type_carries_the_per_child_policy()
     {
-        await using var db = TestDb.Create();
-        await DbInitializer.SeedLeaveTypesAsync(db);
+        await DbInitializer.SeedData(Db, Users, Roles,
+            SeedPolicy.For("Development", demoData: false, allowInProduction: false));
 
-        var paternity = await db.LeaveTypes.SingleAsync(lt => lt.Name == "Paternity Leave");
+        var paternity = await Db.LeaveTypes.SingleAsync(lt => lt.Name == "Paternity Leave");
 
         Assert.True(paternity.PerChildEntitlement);
         Assert.Equal(18, paternity.PerChildTotalWeeks);
@@ -872,7 +872,7 @@ Append to `Tests/WorkTrack.Tests/PaternityLeaveTypeConfigTests.cs` (add `using D
     }
 ```
 
-If the leave-type seeding method in `DbInitializer` is private or named differently, make the smallest change that lets the test call it: mark it `internal static` and keep its name, adding `[assembly: InternalsVisibleTo("WorkTrack.Tests")]` only if the project does not already expose internals (check `Persistence/Persistence.csproj` and existing tests such as `SeedPolicyTests` for how they reach it — follow whatever they do rather than inventing a second mechanism).
+`SeedLeaveTypes` is **private**, so the test goes through the public `DbInitializer.SeedData` — do not widen a production method's visibility for testability. `Db`, `Users` and `Roles` come from a harness copied from `Tests/WorkTrack.Tests/SeedPolicyTests.cs`: a `ServiceCollection` with `AddLogging`, `AddDbContext<AppDbContext>` on a GUID-named in-memory database with `ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))`, and `AddIdentityCore<User>(...).AddRoles<Role>().AddEntityFrameworkStores<AppDbContext>()`, with the class implementing `IDisposable` to dispose the provider. `demoData: false` seeds leave types without dragging in demo users and their leave; `SeedLeaveTypes` and `BackfillLeaveTypeDesignFields` both run unconditionally, ahead of the demo-data branch.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
@@ -954,6 +954,7 @@ The generated `Up`/`Body` will be empty (no schema change). Replace the class bo
                     [DefaultAllowance]      = 0,
                     -- Display-only, but 14 contradicted the 5-week annual cap.
                     [MaxConsecutiveDays]    = 25,
+                    [Description]           = 'Time off for a father around the birth of a child, and while that child is young.',
                     [AccrualNotes]          = '18 weeks per child · Max 5 weeks per child per year · Until the child turns 15',
                     [EligibilityNotes]      = 'Employees with children under 15'
                 WHERE [Name] = 'Paternity Leave';
@@ -971,6 +972,7 @@ The generated `Up`/`Body` will be empty (no schema change). Replace the class bo
                     [AllowanceUnit]         = 'days/event',
                     [DefaultAllowance]      = 14,
                     [MaxConsecutiveDays]    = 14,
+                    [Description]           = 'Time off for new fathers around the birth of a child.',
                     [AccrualNotes]          = 'Granted per event · Once per child',
                     [EligibilityNotes]      = 'Male employees'
                 WHERE [Name] = 'Paternity Leave';
@@ -1637,9 +1639,10 @@ public class PerChildLeaveCapTests
         await using var db = await PerChildLeaveWorld.CreateAsync();
         var child = await PerChildLeaveWorld.AddChildAsync(db, "Andreas", YoungChild);
 
-        // 30 Nov 2026 - 05 Feb 2027: about 5 weeks in 2026 and 5 in 2027, which is
-        // 10 weeks and inside the 18-week total, but the yearly cap applies to each
-        // year separately and 2026's share alone exceeds it.
+        // 30 Nov 2026 - 05 Feb 2027 is 50 business days: 24 of them fall in the 2026
+        // leave year and 26 in 2027. That is 10 weeks in total, well inside the
+        // 18-week lifetime cap — but the yearly cap applies to each leave year
+        // separately, and the 2027 share of 26 days exceeds its 25-day cap.
         var straddling = PerChildLeaveWorld.Request(child.Id, new DateTime(2026, 11, 30), new DateTime(2027, 2, 5));
 
         var error = await PerChildLeaveWorld.CheckAsync(db, straddling);
@@ -1654,8 +1657,8 @@ public class PerChildLeaveCapTests
         await using var db = await PerChildLeaveWorld.CreateAsync();
         var child = await PerChildLeaveWorld.AddChildAsync(db, "Andreas", YoungChild);
 
-        // 25 business days ending 31 Dec 2026, then 25 starting 04 Jan 2027.
-        await PerChildLeaveWorld.ApproveLeaveAsync(db, child.Id, new DateTime(2026, 11, 26), new DateTime(2026, 12, 31));
+        // Exactly 25 business days ending 31 Dec 2026, then 25 starting 04 Jan 2027.
+        await PerChildLeaveWorld.ApproveLeaveAsync(db, child.Id, new DateTime(2026, 11, 27), new DateTime(2026, 12, 31));
 
         var newYear = PerChildLeaveWorld.Request(child.Id, new DateTime(2027, 1, 4), new DateTime(2027, 2, 5));
 
@@ -1672,7 +1675,9 @@ public class PerChildLeaveCapTests
         await using var db = await PerChildLeaveWorld.CreateAsync(leaveYearStartMonth: 4);
         var child = await PerChildLeaveWorld.AddChildAsync(db, "Andreas", YoungChild);
 
-        await PerChildLeaveWorld.ApproveLeaveAsync(db, child.Id, new DateTime(2026, 11, 26), new DateTime(2026, 12, 31));
+        // 25 business days — the same range the calendar-year test above allows a
+        // second 25 alongside, because there the two fall in different leave years.
+        await PerChildLeaveWorld.ApproveLeaveAsync(db, child.Id, new DateTime(2026, 11, 27), new DateTime(2026, 12, 31));
 
         // Both sit inside the Apr 2026 - Mar 2027 leave year, so the second breaks
         // the 5-week cap where under a calendar year it would not.
