@@ -50,6 +50,9 @@ const TD = {
     borderBottom: '1px solid #F3F4F6',
 }
 
+const TH_NUM = { ...TH, textAlign: 'right' as const }
+const TD_NUM = { ...TD, textAlign: 'right' as const }
+
 function StatCard({
     accent,
     icon,
@@ -311,13 +314,13 @@ export default function CompanyAttendancePage() {
                         <TableHead>
                             <TableRow>
                                 <TableCell sx={TH}>Department</TableCell>
-                                <TableCell sx={TH}>Status</TableCell>
-                                <TableCell sx={TH}>Working</TableCell>
-                                <TableCell sx={TH}>Break</TableCell>
-                                <TableCell sx={TH}>Off</TableCell>
-                                <TableCell sx={TH}>Leave</TableCell>
-                                <TableCell sx={TH}>Hrs Today</TableCell>
-                                <TableCell sx={TH}>Avg/Person</TableCell>
+                                <TableCell sx={TH}>Attendance</TableCell>
+                                <TableCell sx={TH_NUM}>Working</TableCell>
+                                <TableCell sx={TH_NUM}>Break</TableCell>
+                                <TableCell sx={TH_NUM}>Off</TableCell>
+                                <TableCell sx={TH_NUM}>Leave</TableCell>
+                                <TableCell sx={TH_NUM}>Hrs Today</TableCell>
+                                <TableCell sx={TH_NUM}>Avg/Person</TableCell>
                             </TableRow>
                         </TableHead>
                         <TableBody>
@@ -337,52 +340,52 @@ export default function CompanyAttendancePage() {
                                                 {Math.round(pct)}% in
                                             </Typography>
                                         </TableCell>
-                                        <TableCell sx={TD}>
+                                        <TableCell sx={TD_NUM}>
                                             <Box component="strong" sx={{ color: GREEN }}>{d.in}</Box>
                                         </TableCell>
-                                        <TableCell sx={TD}>
+                                        <TableCell sx={TD_NUM}>
                                             {d.break > 0
                                                 ? <Box component="strong" sx={{ color: AMBER }}>{d.break}</Box>
                                                 : <Box component="span" sx={{ color: 'text.disabled' }}>0</Box>}
                                         </TableCell>
-                                        <TableCell sx={TD}>
+                                        <TableCell sx={TD_NUM}>
                                             {d.out > 0
                                                 ? <Box component="strong" sx={{ color: 'text.primary' }}>{d.out}</Box>
                                                 : <Box component="span" sx={{ color: 'text.disabled' }}>0</Box>}
                                         </TableCell>
-                                        <TableCell sx={TD}>
+                                        <TableCell sx={TD_NUM}>
                                             {d.leave > 0
                                                 ? <Box component="strong" sx={{ color: BLUE }}>{d.leave}</Box>
                                                 : <Box component="span" sx={{ color: 'text.disabled' }}>0</Box>}
                                         </TableCell>
-                                        <TableCell sx={TD}>
+                                        <TableCell sx={TD_NUM}>
                                             <Box component="strong">{minutesToHours(d.totalMinutes)}</Box>
                                         </TableCell>
-                                        <TableCell sx={TD}>{minutesToHours(d.avgMinutes)} h</TableCell>
+                                        <TableCell sx={TD_NUM}>{minutesToHours(d.avgMinutes)} h</TableCell>
                                     </TableRow>
                                 )
                             })}
-                            <TableRow sx={{ bgcolor: 'action.hover' }}>
+                            <TableRow sx={{ bgcolor: 'action.hover', '& td': { borderTop: '2px solid', borderTopColor: 'divider' } }}>
                                 <TableCell sx={{ ...TD, fontWeight: 600 }}>
                                     <Box component="strong">All departments</Box>
                                 </TableCell>
                                 <TableCell sx={TD}></TableCell>
-                                <TableCell sx={TD}>
+                                <TableCell sx={TD_NUM}>
                                     <Box component="strong" sx={{ color: GREEN }}>{data.in}</Box>
                                 </TableCell>
-                                <TableCell sx={TD}>
+                                <TableCell sx={TD_NUM}>
                                     <Box component="strong">{data.break}</Box>
                                 </TableCell>
-                                <TableCell sx={TD}>
+                                <TableCell sx={TD_NUM}>
                                     <Box component="strong">{data.out}</Box>
                                 </TableCell>
-                                <TableCell sx={TD}>
+                                <TableCell sx={TD_NUM}>
                                     <Box component="strong">{data.leave}</Box>
                                 </TableCell>
-                                <TableCell sx={TD}>
+                                <TableCell sx={TD_NUM}>
                                     <Box component="strong">{minutesToHours(data.totalMinutesToday)}</Box>
                                 </TableCell>
-                                <TableCell sx={TD}>
+                                <TableCell sx={TD_NUM}>
                                     <Box component="strong">{minutesToHours(data.avgMinutesToday)} h</Box>
                                 </TableCell>
                             </TableRow>
@@ -479,6 +482,26 @@ export default function CompanyAttendancePage() {
                             <MenuItem key={w.value} value={w.value}>{w.label}</MenuItem>
                         ))}
                     </Select>
+                    {filtersActive && (
+                        <Button
+                            size="small"
+                            onClick={() => {
+                                setSearch('')
+                                setDeptFilter('all')
+                                setActionFilter('all')
+                                setWindowFilter('all')
+                            }}
+                            sx={{
+                                fontSize: 12,
+                                textTransform: 'none',
+                                color: 'text.secondary',
+                                px: 1,
+                                '&:hover': { bgcolor: 'action.hover', color: 'text.primary' },
+                            }}
+                        >
+                            Clear filters
+                        </Button>
+                    )}
                 </Stack>
 
                 <Box sx={{ p: 2.25 }}>
