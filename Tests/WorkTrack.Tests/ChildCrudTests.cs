@@ -515,4 +515,66 @@ public class ChildCrudTests
 
         Assert.NotEmpty(ex.Errors);
     }
+
+    /// <summary>
+    /// The declaration and the list must not be able to disagree. Saying "no
+    /// children" while children are on the profile is refused rather than silently
+    /// ignored — a flag that contradicts the rows beside it is the failure mode
+    /// CLAUDE.md documents for every duplicated leave figure.
+    /// </summary>
+    [Fact]
+    public async Task Declaring_no_children_while_children_exist_is_refused()
+    {
+        await using var db = TestDb.Create();
+        var profile = await SeedProfileAsync(db);
+        await Create(db, profile.UserId, Andreas());
+
+        var error = await HasChildrenDeclaration.ValidateAsync(
+            db, profile, requested: false, CancellationToken.None);
+
+        Assert.Equal("Remove the 1 child(ren) on your profile before saying you have none.", error);
+    }
+
+    [Fact]
+    public async Task Declaring_no_children_is_fine_when_there_are_none()
+    {
+        await using var db = TestDb.Create();
+        var profile = await SeedProfileAsync(db);
+
+        Assert.Null(await HasChildrenDeclaration.ValidateAsync(
+            db, profile, requested: false, CancellationToken.None));
+    }
+
+    /// <summary>
+    /// A client that does not send the field must not silently retract a
+    /// declaration, so null means "leave it alone" rather than "false".
+    /// </summary>
+    [Fact]
+    public async Task An_absent_declaration_changes_nothing()
+    {
+        await using var db = TestDb.Create();
+        var profile = await SeedProfileAsync(db);
+        await Create(db, profile.UserId, Andreas());
+
+        Assert.Null(await HasChildrenDeclaration.ValidateAsync(
+            db, profile, requested: null, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Removing_the_last_child_leaves_the_declaration_alone()
+    {
+        await using var db = TestDb.Create();
+        var profile = await SeedProfileAsync(db);
+        var created = await Create(db, profile.UserId, Andreas());
+
+        await new DeleteChild.Handler(db).Handle(new DeleteChild.Command
+        {
+            Id = created.Value!.Id,
+            CallerUserId = profile.UserId,
+        }, CancellationToken.None);
+
+        // Still true: they told us they have children, and removing a row is not a
+        // retraction. They can uncheck the box themselves.
+        Assert.True((await db.EmployeeProfiles.SingleAsync(ep => ep.Id == profile.Id)).HasChildren);
+    }
 }

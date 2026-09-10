@@ -18,4 +18,14 @@ public class UpdateProfileDto
 
     // Date only (no time). Null clears it.
     public DateOnly? DateOfBirth { get; set; }
+
+    /// <summary>
+    /// Whether this employee has children — requirement 1 of the per-child leave
+    /// entitlement. Null leaves the stored answer alone (an older client that does
+    /// not send the field must not silently retract a declaration).
+    ///
+    /// Refused as false while children are on the profile: the flag and the list
+    /// cannot be allowed to disagree.
+    /// </summary>
+    public bool? HasChildren { get; set; }
 }
