@@ -31,5 +31,30 @@ public class UpsertLeaveTypeRequestValidator : AbstractValidator<UpsertLeaveType
             .WithMessage("Max carryover days must be between 0 and 365.");
         RuleFor(x => x.MinNoticeDays).InclusiveBetween(0, 365);
         RuleFor(x => x.MaxConsecutiveDays).InclusiveBetween(0, 365);
+
+        /* Only when the toggle is on: with it off these three describe nothing, and
+           every leave type already in the database has them at 0. */
+        When(x => x.PerChildEntitlement, () =>
+        {
+            RuleFor(x => x.PerChildTotalWeeks)
+                .InclusiveBetween(1, 260)
+                .WithMessage("Total per child must be between 1 and 260 weeks.");
+
+            RuleFor(x => x.PerChildWeeksPerYear)
+                .InclusiveBetween(1, 52)
+                .WithMessage("The yearly cap must be between 1 and 52 weeks.")
+                .LessThanOrEqualTo(x => x.PerChildTotalWeeks)
+                .WithMessage("The yearly cap cannot exceed the total per child.");
+
+            RuleFor(x => x.ChildEligibleUntilAge)
+                .InclusiveBetween(1, 30)
+                .WithMessage("Children must stop being eligible between ages 1 and 30.");
+
+            // A per-child type keeps its own ledger. Counted in the pooled balance
+            // as well, one day of leave would be charged twice.
+            RuleFor(x => x.AffectsBalance)
+                .Equal(false)
+                .WithMessage("A per-child leave type keeps its own ledger and must not also affect the pooled balance.");
+        });
     }
 }

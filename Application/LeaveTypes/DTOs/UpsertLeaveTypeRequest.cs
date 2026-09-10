@@ -35,6 +35,21 @@ public class UpsertLeaveTypeRequest
     [Range(0, 365)]
     public int MaxCarryoverDays { get; set; }
 
+    /// <summary>
+    /// Turns the per-child entitlement engine on. The three numbers below are
+    /// validated only when this is true — every other leave type leaves them at 0.
+    /// </summary>
+    public bool PerChildEntitlement { get; set; }
+
+    [Range(0, 260)]
+    public int PerChildTotalWeeks { get; set; }
+
+    [Range(0, 52)]
+    public int PerChildWeeksPerYear { get; set; }
+
+    [Range(0, 30)]
+    public int ChildEligibleUntilAge { get; set; }
+
     [StringLength(250)]
     public string AccrualNotes { get; set; } = string.Empty;
 
