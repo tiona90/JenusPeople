@@ -66,6 +66,7 @@ const ANNUAL_LEAVE_TYPE = {
     icon: '🌴', colorKey: 'annual', description: 'Vacation days.', paid: true,
     attachmentPolicy: 'None', defaultAllowance: 25, allowanceUnit: 'days/year',
     maxCarryoverDays: 5,
+    perChildEntitlement: false, perChildTotalWeeks: 0, perChildWeeksPerYear: 0, childEligibleUntilAge: 0,
     accrualNotes: 'Resets 1 Jan', minNoticeDays: 7, maxConsecutiveDays: 15,
     halfDayAllowed: true, eligibilityNotes: 'All employees', eligibilityScope: 'All',
 } as const

@@ -38,7 +38,9 @@ export interface ChildLeaveEntitlement {
     thisYearCapDays: number
     thisYearUsedDays: number
     thisYearRemainingDays: number
+    /** Full ISO timestamp (DateTime), not date-only. */
     leaveYearStart: string
+    /** Full ISO timestamp (DateTime), not date-only. */
     leaveYearEnd: string
 }
 

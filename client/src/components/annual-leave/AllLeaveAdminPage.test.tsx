@@ -28,7 +28,9 @@ const FINANCE = { id: 2, name: 'Finance', code: 'FIN', isActive: true, createdAt
 const ANNUAL_LEAVE_TYPE = {
     id: 1, name: 'Annual Leave', requiresApproval: true, isActive: true, affectsBalance: true,
     icon: '', colorKey: 'primary', description: '', paid: true, attachmentPolicy: 'None',
-    defaultAllowance: 25, allowanceUnit: 'days/year', accrualNotes: '', minNoticeDays: 0,
+    defaultAllowance: 25, allowanceUnit: 'days/year', maxCarryoverDays: 0,
+    perChildEntitlement: false, perChildTotalWeeks: 0, perChildWeeksPerYear: 0, childEligibleUntilAge: 0,
+    accrualNotes: '', minNoticeDays: 0,
     maxConsecutiveDays: 0, halfDayAllowed: false, eligibilityNotes: '', eligibilityScope: 'All',
 } as const
 
@@ -70,6 +72,8 @@ function leave(over: Partial<AnnualLeave> & Pick<AnnualLeave, 'id' | 'employeeId
         approvedAt: null,
         totalDays: 3,
         departmentName: 'Finance',
+        childId: null,
+        childName: '',
         ...over,
     }
 }
