@@ -92,4 +92,20 @@ public class Result<T>
         Error = error,
         ValidationErrors = validationErrors
     };
+
+    /// <summary>
+    /// Re-wraps a failure from a nested call — typically an authorization refusal
+    /// resolved by a helper — keeping the reason so the API layer still picks the
+    /// right status code. Without this, forwarding a Forbidden through
+    /// <see cref="Failure"/> silently demotes it to a 404, which tells a legitimate
+    /// caller who mistyped an id the same thing it tells someone reaching for a
+    /// record that isn't theirs.
+    /// </summary>
+    public static Result<T> FailureFrom<TOther>(Result<TOther> other) => new()
+    {
+        IsSuccess = false,
+        Error = other.Error,
+        ErrorKind = other.ErrorKind,
+        ValidationErrors = other.ValidationErrors,
+    };
 }
