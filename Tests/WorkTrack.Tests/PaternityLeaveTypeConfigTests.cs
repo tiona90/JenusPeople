@@ -1,5 +1,12 @@
 using Application.LeaveTypes.DTOs;
 using Application.LeaveTypes.Validators;
+using Domain;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Persistence;
 using Xunit;
 
 namespace WorkTrack.Tests;
@@ -15,8 +22,57 @@ namespace WorkTrack.Tests;
 /// balance: it keeps its own ledger, and being counted in both would charge one
 /// day of leave twice.
 /// </summary>
-public class PaternityLeaveTypeConfigTests
+public class PaternityLeaveTypeConfigTests : IDisposable
 {
+    private readonly ServiceProvider _services;
+
+    public PaternityLeaveTypeConfigTests()
+    {
+        var collection = new ServiceCollection();
+
+        collection.AddLogging(b => b.SetMinimumLevel(LogLevel.Warning));
+        collection.AddDbContext<AppDbContext>(options => options
+            .UseInMemoryDatabase($"paternity-leave-type-{Guid.NewGuid()}")
+            .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
+
+        collection.AddIdentityCore<User>(options => options.User.RequireUniqueEmail = true)
+            .AddRoles<Role>()
+            .AddEntityFrameworkStores<AppDbContext>();
+
+        _services = collection.BuildServiceProvider();
+    }
+
+    public void Dispose() => _services.Dispose();
+
+    private AppDbContext Db => _services.GetRequiredService<AppDbContext>();
+    private UserManager<User> Users => _services.GetRequiredService<UserManager<User>>();
+    private RoleManager<Role> Roles => _services.GetRequiredService<RoleManager<Role>>();
+
+    /// <summary>
+    /// A fresh database and a migrated one must agree. The migration corrects the
+    /// deployed row; this holds the seeder's copy of the same figures, so a fresh
+    /// clone does not come up with the old flat 14 days.
+    /// </summary>
+    [Fact]
+    public async Task The_seeded_paternity_type_carries_the_per_child_policy()
+    {
+        await DbInitializer.SeedData(Db, Users, Roles, SeedPolicy.For("Development", demoData: false, allowInProduction: false));
+
+        var paternity = await Db.LeaveTypes.SingleAsync(lt => lt.Name == "Paternity Leave");
+
+        Assert.True(paternity.PerChildEntitlement);
+        Assert.Equal(18, paternity.PerChildTotalWeeks);
+        Assert.Equal(5, paternity.PerChildWeeksPerYear);
+        Assert.Equal(15, paternity.ChildEligibleUntilAge);
+        Assert.Equal("weeks/child", paternity.AllowanceUnit);
+        // 0 so nothing quotes the dead flat allowance; the per-child figures are
+        // the only ones that describe this type now.
+        Assert.Equal(0, paternity.DefaultAllowance);
+        // Display-only, but it contradicted the 5-week annual cap at 14.
+        Assert.Equal(25, paternity.MaxConsecutiveDays);
+        Assert.False(paternity.AffectsBalance);
+    }
+
     private static UpsertLeaveTypeRequest Paternity(
         int totalWeeks = 18,
         int weeksPerYear = 5,
