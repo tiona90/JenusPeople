@@ -54,4 +54,20 @@ public static class SystemLeaveTypes
     public static bool SupportsPerChildEntitlement(string? name) =>
         !string.IsNullOrWhiteSpace(name)
         && PerChildEntitlementTypes.Contains(name.Trim(), StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Whether a type of this name is Maternity Leave. Separate from
+    /// <see cref="SupportsPerChildEntitlement"/>, which the two parental types
+    /// answer to together: eligibility tells them apart, because each is offered
+    /// to one gender. See <c>Application.AnnualLeaves.Commands.ParentalLeaveEligibility</c>.
+    /// </summary>
+    public static bool IsMaternity(string? name) => NameIs(name, MaternityLeave);
+
+    /// <summary>Whether a type of this name is Paternity Leave.</summary>
+    public static bool IsPaternity(string? name) => NameIs(name, PaternityLeave);
+
+    /// <summary>Trimmed and case-insensitive, matching how the rest of this class compares.</summary>
+    private static bool NameIs(string? name, string systemName) =>
+        !string.IsNullOrWhiteSpace(name)
+        && string.Equals(name.Trim(), systemName, StringComparison.OrdinalIgnoreCase);
 }

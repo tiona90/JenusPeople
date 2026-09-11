@@ -198,20 +198,7 @@ public class AccountController(
             .Include(profile => profile.Department)
             .FirstOrDefaultAsync(profile => profile.UserId == user.Id);
 
-        return Ok(new
-        {
-            user.Id,
-            user.UserName,
-            user.Email,
-            user.DisplayName,
-            user.ImageUrl,
-            user.PhoneNumber,
-            user.DateOfBirth,
-            DepartmentId = employeeProfile?.DepartmentId,
-            DepartmentName = employeeProfile?.Department?.Name,
-            HasChildren = employeeProfile?.HasChildren,
-            Roles = roles
-        });
+        return Ok(CurrentUserPayload.From(user, employeeProfile, roles));
     }
 
     [Authorize]

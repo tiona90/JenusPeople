@@ -1,12 +1,11 @@
-import type { UserRole } from './user'
+import type { Gender, UserRole } from './user'
 
 /**
- * Recorded HR data an admin maintains. Nothing consults it — it does not gate
- * maternity or paternity leave. A string union rather than a number because the
- * API serialises enums by name (`JsonStringEnumConverter`), same as
- * `AttachmentPolicy`. Absent or null means not specified.
+ * Re-exported from `./user`, where it moved once it stopped being admin-only
+ * data: `UserInfo` carries it too, because the leave picker reads it. Kept
+ * exported from here so the admin panels' imports did not all have to move.
  */
-export type Gender = 'Male' | 'Female'
+export type { Gender }
 
 export interface AdminUser {
     id: string

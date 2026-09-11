@@ -13,7 +13,8 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { AttachFile as AttachFileIcon, CalendarMonth as CalendarMonthIcon, OpenInNew as OpenInNewIcon } from '@mui/icons-material'
 import Box from '@mui/material/Box'
-import { createAnnualLeave, editAnnualLeave, getLeaveTypes, getAdminUsers, uploadLeaveEvidence } from '../../lib/api'
+import { createAnnualLeave, editAnnualLeave, getChildLeaveEntitlements, getLeaveTypes, getAdminUsers, uploadLeaveEvidence } from '../../lib/api'
+import { isLeaveTypeOffered } from '../../lib/parental-leave'
 import { resolveFileUrl } from '../../lib/api/file-url'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
 import { useStore } from '../../lib/mobx'
@@ -141,6 +142,41 @@ function AnnualLeaveForm({ open, onClose, leave, isAdmin = false, readOnly = fal
         queryFn: getAdminUsers,
         enabled: isAdmin && !isEdit,
     })
+
+    /* Whether this dialog is filing the signed-in user's own request, which is the
+       only case the gender + eligible-child rule applies to. An admin creating on
+       behalf of someone, or editing someone else's request, sees every type: their
+       own gender and children say nothing about the employee the request is for,
+       and filtering on them would hide the very type they were asked to file. The
+       server still has the last word either way. */
+    const filesOwnRequest = leave
+        ? leave.employeeId === authStore.user?.id
+        : !isAdmin
+
+    /* Same query key the child picker uses for the signed-in user, so the two
+       share one request. Skipped entirely when the rule does not apply. */
+    const { data: ownEntitlements } = useQuery({
+        queryKey: ['childLeaveEntitlements', 'me'],
+        queryFn: () => getChildLeaveEntitlements(),
+        enabled: filesOwnRequest,
+    })
+    const hasEligibleChild = (ownEntitlements?.eligibleChildCount ?? 0) > 0
+
+    const offeredLeaveTypes = useMemo(() => {
+        const all = leaveTypes ?? []
+        if (!filesOwnRequest) return all
+
+        const offered = all.filter(
+            (leaveType) => isLeaveTypeOffered(leaveType, authStore.user?.gender, hasEligibleChild),
+        )
+
+        /* An existing request keeps its own type on the list even when the rule
+           would no longer offer it — a child who has since aged out, say. Dropping
+           it would leave the select showing nothing at all, and re-filing under a
+           type the employee did not choose is not this dialog's decision to make. */
+        const current = leave && all.find((leaveType) => leaveType.id === leave.leaveTypeId)
+        return current && !offered.includes(current) ? [...offered, current] : offered
+    }, [leaveTypes, filesOwnRequest, authStore.user?.gender, hasEligibleChild, leave])
 
     /* Whose request this is, when it isn't the signed-in user's own — an admin
        filing or editing on someone else's behalf. Wording only: the picker's
@@ -460,7 +496,7 @@ function AnnualLeaveForm({ open, onClose, leave, isAdmin = false, readOnly = fal
                                     <MenuItem value={0} disabled>
                                         Select leave type
                                     </MenuItem>
-                                    {(leaveTypes ?? []).map((leaveType) => (
+                                    {offeredLeaveTypes.map((leaveType) => (
                                         <MenuItem key={leaveType.id} value={leaveType.id}>
                                             {leaveType.name}
                                         </MenuItem>
@@ -492,10 +528,10 @@ function AnnualLeaveForm({ open, onClose, leave, isAdmin = false, readOnly = fal
                                         // admin has picked so far.
                                         employeeId={leave?.employeeId ?? (requireEmployee ? (watchedEmployeeId || undefined) : undefined)}
                                         childEligibleUntilAge={childEligibleUntilAge}
+                                leaveTypeId={perChildLeaveTypeIds.includes(watchedLeaveTypeId) ? watchedLeaveTypeId : undefined}
                                         onBehalfOfName={onBehalfOfName}
                                         requestedDays={requestedDays}
                                         error={fieldState.error?.message}
-                                        disabled={isPending}
                                         onBlockedChange={setChildPickerBlocked}
                                     />
                                 )}

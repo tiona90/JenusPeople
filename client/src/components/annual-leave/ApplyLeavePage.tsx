@@ -2,11 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Controller, useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import CircularProgress from '@mui/material/CircularProgress'
-import { createAnnualLeave, getAnnualLeaves, getEmployeeProfiles, getHolidays, getLeaveTypes, getTeammates, uploadLeaveEvidence } from '../../lib/api'
+import { createAnnualLeave, getAnnualLeaves, getChildLeaveEntitlements, getEmployeeProfiles, getHolidays, getLeaveTypes, getTeammates, uploadLeaveEvidence } from '../../lib/api'
+import { isLeaveTypeOffered, isParentalLeaveType } from '../../lib/parental-leave'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
 import { useStore } from '../../lib/mobx'
 import { AppDialog, AppDialogActions, AppDialogContent, AppDialogTitle, cancelBtnSx } from '../ui'
@@ -176,6 +177,53 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
     )
     const schema = useMemo(() => buildApplyLeaveSchema(perChildLeaveTypeIds), [perChildLeaveTypeIds])
 
+    /* Maternity and Paternity Leave are offered on the employee's recorded gender
+       and on their having a child young enough to qualify, so the ledger is read
+       here and not only inside the child picker.
+
+       One query per parental type, because the two do not share a ledger: each
+       configures its own weeks and its own cut-off age, so a 12-year-old can be
+       eligible for paternity leave (under 15) and not for maternity leave (under
+       4). Asking without naming a type gets whichever the server resolves first,
+       which quoted one type's policy for the other.
+
+       A parental type that carries no per-child entitlement of its own asks
+       without a type id, matching the fallback `ParentalLeaveEligibility` makes on
+       the server — otherwise the client would hide a type the API would accept.
+
+       Keys match `ChildLeavePicker`'s, so the picker shares these requests rather
+       than issuing its own. While one is in flight `eligibleChildCount` reads 0
+       and that card stays hidden: hiding until known beats showing a card that
+       vanishes a moment later, and the default selection — Annual Leave — is
+       never one of the two. */
+    const parentalLeaveTypes = useMemo(
+        () => activeLeaveTypes.filter((lt) => isParentalLeaveType(lt.name)),
+        [activeLeaveTypes],
+    )
+    const entitlementQueries = useQueries({
+        queries: parentalLeaveTypes.map((lt) => {
+            const ledgerTypeId = lt.perChildEntitlement ? lt.id : undefined
+            return {
+                queryKey: ['childLeaveEntitlements', 'me', ledgerTypeId ?? null],
+                queryFn: () => getChildLeaveEntitlements(undefined, ledgerTypeId),
+            }
+        }),
+    })
+    const entitlementsByTypeId = useMemo(
+        () => new Map(parentalLeaveTypes.map((lt, index) => [lt.id, entitlementQueries[index]?.data])),
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- useQueries returns a new array each render; the data identities are what matter
+        [parentalLeaveTypes, ...entitlementQueries.map((query) => query.data)],
+    )
+
+    const offeredLeaveTypes = useMemo(
+        () => activeLeaveTypes.filter((lt) => isLeaveTypeOffered(
+            lt,
+            user.gender,
+            (entitlementsByTypeId.get(lt.id)?.eligibleChildCount ?? 0) > 0,
+        )),
+        [activeLeaveTypes, user.gender, entitlementsByTypeId],
+    )
+
     const {
         control,
         setValue,
@@ -257,13 +305,14 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
             .reduce((sum, l) => sum + l.totalDays, 0)
     }, [allLeaves, user.id])
 
-    // Pick a sensible default leave type once data loads
+    // Pick a sensible default leave type once data loads. From the offered list,
+    // so the page never opens on a type it is about to stop showing.
     useEffect(() => {
-        if (leaveTypeId === 0 && activeLeaveTypes.length > 0) {
-            const annual = activeLeaveTypes.find((lt) => lt.name.toLowerCase().includes('annual')) ?? activeLeaveTypes[0]
+        if (leaveTypeId === 0 && offeredLeaveTypes.length > 0) {
+            const annual = offeredLeaveTypes.find((lt) => lt.name.toLowerCase().includes('annual')) ?? offeredLeaveTypes[0]
             setValue('leaveTypeId', annual.id, { shouldValidate: true })
         }
-    }, [activeLeaveTypes, leaveTypeId, setValue])
+    }, [offeredLeaveTypes, leaveTypeId, setValue])
 
     const selectedType = activeLeaveTypes.find((lt) => lt.id === leaveTypeId)
     const selectedAffectsBalance = selectedType?.affectsBalance ?? true
@@ -287,6 +336,54 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
     const notice = daysNotice(startDate)
     const isShortNotice = !!startDate && notice >= 0 && notice < 7
     const isInsufficient = selectedAffectsBalance && balanceAfter < 0
+
+    /* The second ledger. Everything above describes the pooled balance, and
+       `isInsufficient` is gated on `affectsBalance` — false for a per-child type,
+       which is budgeted per child rather than out of the pool. So without this the
+       page had no quantity check at all for paternity leave: a request for more
+       days than the child had left passed submit, and the summary called it "all
+       clear — plenty of balance", describing a ledger the request never touched.
+
+       Neither cap alone is the answer: a request can clear the lifetime remainder
+       and still bust the yearly one. The tighter of the two is what the server
+       enforces (`PerChildLeaveBalanceCalculator`), so it is what gets quoted —
+       the same figure `ChildLeavePicker` puts in its caption. */
+    /* Guarded on `requiresChild` rather than on `childId` alone: nothing clears the
+       chosen child when the type is switched away, so a leftover id would otherwise
+       label the summary with a child the request has nothing to do with. */
+    const childEntitlements = entitlementsByTypeId.get(leaveTypeId)
+    const selectedChild = requiresChild
+        ? childEntitlements?.children.find((child) => child.childId === childId)
+        : undefined
+    const perChildRemaining = selectedChild
+        ? Math.min(selectedChild.remainingDays, selectedChild.thisYearRemainingDays)
+        : null
+    const isOverPerChildCap = perChildRemaining !== null && workingDays > perChildRemaining
+
+    /* What the summary's balance row quotes for a per-child request: the ledger
+       totalled over every *eligible* child, which is what the employee has to
+       spend on this type. Deliberately not the selected child's own figures — the
+       total does not change depending on which child is highlighted, and it has
+       something true to say before one is picked at all, where the row used to
+       fall through to the annual pool ("23 / 23" beside a request drawing on none
+       of it). Which child a given request is charged to is the over-cap warning's
+       business, not this row's.
+
+       An ineligible child contributes nothing: the server already forces their
+       remaining figures to 0, and they are left out of the total as well. */
+    const eligibleChildren = requiresChild
+        ? (childEntitlements?.children ?? []).filter((child) => child.isEligible)
+        : []
+    const perChildTotalDays = eligibleChildren.reduce((sum, child) => sum + child.totalDays, 0)
+    const perChildRemainingAll = eligibleChildren.reduce((sum, child) => sum + child.remainingDays, 0)
+    const perChildBalanceAfter = requiresChild
+        ? `${Math.max(0, perChildRemainingAll - workingDays)} / ${perChildTotalDays}`
+        : null
+    const perChildPct = requiresChild
+        ? (perChildTotalDays > 0
+            ? Math.min(100, ((perChildTotalDays - perChildRemainingAll + workingDays) / perChildTotalDays) * 100)
+            : 0)
+        : null
 
     // Conflicts: teammates in same department with overlapping approved/pending leave
     const conflictNames = useMemo(() => {
@@ -387,9 +484,11 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
     const attachmentRecommended = isSickLeave && !attachment
 
     const canSubmit = !!startDate && !!endDate && leaveTypeId > 0 && !isInsufficient
-        // A per-child type with no child, or a picker that has nothing to offer,
-        // is a request the server will certainly refuse.
+        // A per-child type with no child, a picker that has nothing to offer, or
+        // more days than the chosen child has left: all requests the server will
+        // certainly refuse.
         && (!requiresChild || (!!childId && !childPickerBlocked))
+        && !isOverPerChildCap
 
     const uploadMutation = useMutation({
         mutationFn: (file: File) => uploadLeaveEvidence(file),
@@ -527,7 +626,7 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
                         gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(3, 1fr)' },
                         gap: '10px',
                     }}>
-                        {activeLeaveTypes.map((lt) => (
+                        {offeredLeaveTypes.map((lt) => (
                             <LeaveTypeCard
                                 key={lt.id}
                                 type={lt}
@@ -558,9 +657,9 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
                                         // Always the signed-in user's own ledger: this
                                         // page only ever files a request for them.
                                         childEligibleUntilAge={selectedType?.childEligibleUntilAge ?? 0}
+                                        leaveTypeId={selectedType?.perChildEntitlement ? selectedType.id : undefined}
                                         requestedDays={workingDays > 0 ? workingDays : null}
                                         error={fieldState.error?.message}
-                                        disabled={isPending}
                                         onBlockedChange={setChildPickerBlocked}
                                     />
                                 )}
@@ -960,19 +1059,29 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
                         <SummaryRow l="Coverage" r={selectedDelegate ? selectedDelegate.displayName : 'None'} muted={!selectedDelegate} />
                         <SummaryRow l="Attachments" r={attachment ? `📎 1 file` : 'None'} muted={!attachment} />
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', py: '8px', fontSize: 12, mt: '6px', pt: '12px', borderTop: '2px solid', borderTopColor: 'divider' }}>
-                            <Box sx={{ fontWeight: 600, color: 'text.primary' }}>Balance after</Box>
+                            <Box sx={{ fontWeight: 600, color: 'text.primary' }}>
+                                {/* Not named after the selected child: the figure covers
+                                    every eligible child, picked or not. */}
+                                {requiresChild ? 'Balance after (all children)' : 'Balance after'}
+                            </Box>
                             <Box sx={{
                                 fontWeight: 600,
-                                color: isInsufficient ? 'error.main' : balanceAfter <= 3 && selectedAffectsBalance ? 'warning.main' : 'text.primary',
+                                color: isInsufficient || isOverPerChildCap
+                                    ? 'error.main'
+                                    : balanceAfter <= 3 && selectedAffectsBalance ? 'warning.main' : 'text.primary',
                             }}>
-                                {selectedAffectsBalance ? `${balanceAfter} / ${entitlement}` : `${currentBalance} / ${entitlement}`}
+                                {perChildBalanceAfter ?? (selectedAffectsBalance
+                                    ? `${balanceAfter} / ${entitlement}`
+                                    : `${currentBalance} / ${entitlement}`)}
                             </Box>
                         </Box>
                         <Box sx={{ height: 6, bgcolor: 'divider', borderRadius: '3px', overflow: 'hidden', mt: '6px' }}>
                             <Box sx={{
                                 height: '100%', borderRadius: '3px',
-                                width: `${balancePct}%`,
-                                bgcolor: balancePct >= 100 ? 'error.main' : balancePct >= 80 ? 'warning.main' : 'success.main',
+                                width: `${perChildPct ?? balancePct}%`,
+                                bgcolor: (perChildPct ?? balancePct) >= 100
+                                    ? 'error.main'
+                                    : (perChildPct ?? balancePct) >= 80 ? 'warning.main' : 'success.main',
                             }} />
                         </Box>
                     </Box>
@@ -981,6 +1090,14 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
                         <Warning tone="error">
                             <strong>Not enough balance.</strong>{' '}
                             You'd be {Math.abs(balanceAfter)} day{Math.abs(balanceAfter) === 1 ? '' : 's'} over. Consider unpaid leave or a shorter request.
+                        </Warning>
+                    )}
+                    {isOverPerChildCap && selectedChild && (
+                        <Warning tone="error">
+                            <strong>Not enough {selectedType?.name} left.</strong>{' '}
+                            {selectedChild.name} has {perChildRemaining} day{perChildRemaining === 1 ? '' : 's'} left;
+                            {' '}this request is {workingDays} business day{workingDays === 1 ? '' : 's'}.
+                            Shorten it, or pick another child.
                         </Warning>
                     )}
                     {!isInsufficient && selectedAffectsBalance && balanceAfter <= 3 && workingDays > 0 && (
@@ -1001,7 +1118,7 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
                             {notice === 0 ? 'Today' : notice === 1 ? 'Tomorrow' : `${notice} days from now`} — approval may take longer than usual.
                         </Warning>
                     )}
-                    {workingDays > 0 && conflictNames.length === 0 && !isInsufficient && !isShortNotice && (
+                    {workingDays > 0 && conflictNames.length === 0 && !isInsufficient && !isOverPerChildCap && !isShortNotice && (
                         <Warning tone="good">All clear — no conflicts, good notice, plenty of balance.</Warning>
                     )}
 
@@ -1037,9 +1154,11 @@ function ApplyLeavePage({ user }: { user: UserInfo }) {
                                         // "Pick dates" is the wrong instruction once
                                         // the dates are picked and it is the child
                                         // that is missing.
-                                        : requiresChild && !!startDate && !!endDate && !childId
-                                            ? 'Select a child to continue'
-                                            : 'Pick dates to continue'}
+                                        : isOverPerChildCap
+                                            ? 'Shorten the request to continue'
+                                            : requiresChild && !!startDate && !!endDate && !childId
+                                                ? 'Select a child to continue'
+                                                : 'Pick dates to continue'}
                         </Box>
                         <Box
                             component="button"

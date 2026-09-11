@@ -37,7 +37,11 @@ public class AdminCreateUserDto
 
     public DateOnly? DateOfBirth { get; set; }
 
-    /// <summary>Optional. Null means not specified, and nothing consults it.</summary>
+    /// <summary>
+    /// Optional. Decides which parental leave types this person is offered — see
+    /// <c>Application.AnnualLeaves.Commands.ParentalLeaveEligibility</c>. Null
+    /// means not specified, which is offered both rather than neither.
+    /// </summary>
     public Gender? Gender { get; set; }
 
     /// <summary>

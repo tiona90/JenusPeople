@@ -46,6 +46,15 @@ const PATERNITY_LEAVE_TYPE = {
     perChildEntitlement: true, perChildTotalWeeks: 18, perChildWeeksPerYear: 5, childEligibleUntilAge: 15,
 } as const
 
+/**
+ * As seeded: a flat 90-day allowance and no per-child ledger of its own, which is
+ * why nothing else in the request path checks a child for it.
+ */
+const MATERNITY_LEAVE_TYPE = {
+    ...ANNUAL_LEAVE_TYPE, id: 4, name: 'Maternity Leave', colorKey: 'maternity',
+    defaultAllowance: 90, allowanceUnit: 'days/event', affectsBalance: false,
+} as const
+
 const USER: UserInfo = {
     id: 'emp-1', userName: 'employee@worktrack.com', email: 'employee@worktrack.com',
     displayName: 'Andreas Georgiou', imageUrl: '', roles: ['Employee'], departmentId: 2,
@@ -126,12 +135,31 @@ function pickDates() {
     fireEvent.click(within(calendar).getByText(end))
 }
 
-/** A MUI Select opens on mouseDown and renders its options into a portal. */
-async function chooseChild(optionText: RegExp) {
-    const combobox = await screen.findByRole('combobox', { name: /child/i })
-    await waitFor(() => expect(combobox).not.toHaveAttribute('aria-disabled', 'true'))
-    fireEvent.mouseDown(combobox)
-    fireEvent.click(await screen.findByText(optionText))
+/**
+ * The children are a grid of cards, not a dropdown. When more than one child
+ * qualifies the cards are buttons and this clicks one; when only one does, the
+ * picker has already chosen them and the card is read-only — so awaiting it is
+ * just waiting for that to have happened.
+ */
+async function chooseChild(name: RegExp) {
+    // The child's name also turns up in the picker caption and the over-cap
+    // warning, so prefer the match that sits inside a card.
+    const matches = await screen.findAllByText(name)
+    const button = matches.map((match) => match.closest('button')).find(Boolean)
+    if (button) fireEvent.click(button)
+}
+
+/** Two children young enough to qualify, so there is a choice to be made. */
+function twoEligibleChildren(): ChildLeaveEntitlementSummary {
+    return {
+        ...ENTITLEMENTS,
+        eligibleChildCount: 2,
+        totalRemainingDays: 180,
+        children: [
+            ENTITLEMENTS.children[0],
+            { ...ENTITLEMENTS.children[0], childId: 'child-2', name: 'Sofia' },
+        ],
+    }
 }
 
 describe('ApplyLeavePage — per-child leave', () => {
@@ -162,7 +190,7 @@ describe('ApplyLeavePage — per-child leave', () => {
         // Annual Leave is the page's default selection.
         pickDates()
 
-        expect(screen.queryByRole('combobox', { name: /child/i })).not.toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: /Andreas Jr/ })).not.toBeInTheDocument()
 
         fireEvent.click(await screen.findByRole('button', { name: /submit for approval/i }))
 
@@ -178,43 +206,71 @@ describe('ApplyLeavePage — per-child leave', () => {
      * "Pick dates to continue" once they were picked — the one instruction that could
      * not help.
      */
-    it('keeps submit disabled until a child is chosen', async () => {
+    /**
+     * Even with two children qualifying the form never asks. The cards are read
+     * only, so the picker charges the request to one of them — see
+     * `ChildLeavePicker`, which takes whichever entitlement expires soonest — and
+     * submit unlocks on the dates alone.
+     */
+    it('never asks for a child, even when several qualify', async () => {
+        api.getChildLeaveEntitlements.mockResolvedValue(twoEligibleChildren())
         await renderPage()
 
         fireEvent.click(screen.getByRole('button', { name: /paternity leave/i }))
         pickDates()
-
-        const blocked = await screen.findByRole('button', { name: /select a child to continue/i })
-        expect(blocked).toBeDisabled()
-
-        await chooseChild(/Andreas Jr/)
 
         await waitFor(() =>
             expect(screen.getByRole('button', { name: /submit for approval/i })).not.toBeDisabled(),
         )
+        expect(screen.queryByRole('button', { name: /select a child to continue/i })).not.toBeInTheDocument()
     })
 
     /**
-     * The picker reports back when it has no real choice to offer — here, no children
-     * on file. Leaving submit enabled would hand the user a button that only ever
-     * produces a server refusal they cannot act on from this screen.
+     * With only one child qualifying there is nothing to decide, so the picker
+     * decides it and the form never asks. The step was previously a click that
+     * could only be made one way.
      */
-    it('disables submit when the employee has no children on file', async () => {
-        api.getChildLeaveEntitlements.mockResolvedValue({
-            ...ENTITLEMENTS, eligibleChildCount: 0, totalRemainingDays: 0, children: [],
-        })
-
+    it('never asks for a child when only one qualifies', async () => {
         await renderPage()
 
         fireEvent.click(screen.getByRole('button', { name: /paternity leave/i }))
         pickDates()
 
-        expect(await screen.findByText(/add your children in edit profile/i)).toBeInTheDocument()
-        await waitFor(() => {
-            const submit = screen.getByRole('button', { name: /submit for approval|to continue/i })
-            expect(submit).toBeDisabled()
+        await waitFor(() =>
+            expect(screen.getByRole('button', { name: /submit for approval/i })).not.toBeDisabled(),
+        )
+        expect(screen.queryByRole('button', { name: /select a child to continue/i })).not.toBeInTheDocument()
+    })
+
+    /**
+     * This used to assert that the picker reported itself blocked and submit went
+     * grey — an employee with no children could select Paternity Leave and be
+     * stopped at the child field. They can no longer select it at all: the type is
+     * not offered without an eligible child (see the eligibility tests below), so
+     * the stronger guarantee replaces the weaker one.
+     *
+     * The blocked-picker path itself is still live and still tested, in
+     * `ChildLeavePicker.test.tsx` — `AnnualLeaveForm` renders the picker on the
+     * admin on-behalf path, where the type list is deliberately not filtered.
+     */
+    it('does not offer a per-child type at all when no children are on file', async () => {
+        api.getChildLeaveEntitlements.mockResolvedValue({
+            ...ENTITLEMENTS, eligibleChildCount: 0, totalRemainingDays: 0, children: [],
         })
-        expect(api.createAnnualLeave).not.toHaveBeenCalled()
+
+        const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        render(
+            <StoreProvider>
+                <QueryClientProvider client={queryClient}>
+                    <ApplyLeavePage user={USER} />
+                </QueryClientProvider>
+            </StoreProvider>,
+        )
+        await screen.findByRole('button', { name: /annual leave/i })
+
+        await waitFor(() => expect(api.getChildLeaveEntitlements).toHaveBeenCalled())
+        expect(screen.queryByRole('button', { name: /paternity leave/i })).not.toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: /Andreas Jr/ })).not.toBeInTheDocument()
     })
 
     /**
@@ -231,7 +287,7 @@ describe('ApplyLeavePage — per-child leave', () => {
 
         fireEvent.click(screen.getByRole('button', { name: /annual leave/i }))
         await waitFor(() =>
-            expect(screen.queryByRole('combobox', { name: /child/i })).not.toBeInTheDocument(),
+            expect(screen.queryByRole('button', { name: /Andreas Jr/ })).not.toBeInTheDocument(),
         )
 
         fireEvent.click(await screen.findByRole('button', { name: /submit for approval/i }))
@@ -241,5 +297,291 @@ describe('ApplyLeavePage — per-child leave', () => {
             expect.objectContaining({ leaveTypeId: ANNUAL_LEAVE_TYPE.id }),
         )
         expect(api.createAnnualLeave.mock.calls[0][0].childId).toBeUndefined()
+    })
+})
+
+/**
+ * Maternity and Paternity Leave are offered on two facts about the employee:
+ * their recorded gender, and whether they have a child young enough to qualify.
+ *
+ * The server refuses a mismatched request either way
+ * (`ParentalLeaveEligibility`), so these tests are about not offering a card that
+ * can only end in a refusal — and, just as much, about not withholding one from
+ * somebody entitled to it. The last case is the one that matters most: gender is
+ * null on every account predating the field, and reading that as "neither" would
+ * quietly strip parental leave from the whole company.
+ */
+describe('ApplyLeavePage — who is offered parental leave', () => {
+    const maternityCard = () => screen.queryByRole('button', { name: /maternity leave/i })
+    const paternityCard = () => screen.queryByRole('button', { name: /paternity leave/i })
+
+    /**
+     * Waits on Annual Leave rather than a parental card, since which of those
+     * render is the thing under test. It is always offered and is the page's
+     * default selection, so its presence means the type list has settled.
+     */
+    async function renderFor(gender: UserInfo['gender'], eligibleChildren = 1) {
+        api.getLeaveTypes.mockResolvedValue(
+            [ANNUAL_LEAVE_TYPE, MATERNITY_LEAVE_TYPE, PATERNITY_LEAVE_TYPE] as never,
+        )
+        api.getChildLeaveEntitlements.mockResolvedValue({
+            ...ENTITLEMENTS,
+            eligibleChildCount: eligibleChildren,
+            children: eligibleChildren > 0
+                ? ENTITLEMENTS.children
+                : ENTITLEMENTS.children.map((child) => ({ ...child, isEligible: false, remainingDays: 0 })),
+        })
+
+        const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        render(
+            <StoreProvider>
+                <QueryClientProvider client={queryClient}>
+                    <ApplyLeavePage user={{ ...USER, gender }} />
+                </QueryClientProvider>
+            </StoreProvider>,
+        )
+        await screen.findByRole('button', { name: /annual leave/i })
+        // The parental cards depend on the entitlements query too, so let it settle
+        // before asserting on their absence.
+        await waitFor(() => expect(api.getChildLeaveEntitlements).toHaveBeenCalled())
+    }
+
+    it('offers a female employee maternity leave and not paternity leave', async () => {
+        await renderFor('Female')
+
+        expect(maternityCard()).toBeInTheDocument()
+        await waitFor(() => expect(paternityCard()).not.toBeInTheDocument())
+    })
+
+    it('offers a male employee paternity leave and not maternity leave', async () => {
+        await renderFor('Male')
+
+        expect(paternityCard()).toBeInTheDocument()
+        await waitFor(() => expect(maternityCard()).not.toBeInTheDocument())
+    })
+
+    it('offers neither type to an employee with no eligible children', async () => {
+        await renderFor('Female', 0)
+
+        await waitFor(() => expect(maternityCard()).not.toBeInTheDocument())
+        expect(paternityCard()).not.toBeInTheDocument()
+    })
+
+    it('offers both types when the gender was never recorded', async () => {
+        await renderFor(null)
+
+        expect(maternityCard()).toBeInTheDocument()
+        expect(paternityCard()).toBeInTheDocument()
+    })
+
+    /**
+     * The filter must not break the type it leaves standing. Maternity Leave keeps
+     * no per-child ledger, so it asks for no child — the request is the ordinary
+     * one, against a card that is only on screen because of the rule above.
+     */
+    it('lets a female employee file the maternity leave she is offered', async () => {
+        await renderFor('Female')
+
+        fireEvent.click(maternityCard()!)
+        pickDates()
+
+        fireEvent.click(await screen.findByRole('button', { name: /submit for approval/i }))
+
+        await waitFor(() => expect(api.createAnnualLeave).toHaveBeenCalledTimes(1))
+        expect(api.createAnnualLeave).toHaveBeenCalledWith(
+            expect.objectContaining({ leaveTypeId: MATERNITY_LEAVE_TYPE.id }),
+        )
+    })
+})
+
+/**
+ * The page has two ledgers to answer to and used to know only one. `isInsufficient`
+ * is gated on `affectsBalance`, which is false for a per-child type — so a paternity
+ * request for more days than the child has left sailed past submit and the summary
+ * announced "All clear — plenty of balance", meaning the pooled annual balance it
+ * had not touched.
+ *
+ * The server refuses these (`CheckPerChildEntitlementAsync` enforces both the
+ * lifetime and the yearly cap at creation), so the only question was whether the
+ * user found out here or after pressing a button.
+ */
+describe('ApplyLeavePage — the per-child cap gates submit', () => {
+    /** The ledger with `remaining` business days left for the one child, both caps. */
+    function withRemaining(remaining: number) {
+        api.getChildLeaveEntitlements.mockResolvedValue({
+            ...ENTITLEMENTS,
+            totalRemainingDays: remaining,
+            thisYearRemainingDays: remaining,
+            children: [{
+                ...ENTITLEMENTS.children[0],
+                usedDays: 90 - remaining,
+                remainingDays: remaining,
+                thisYearRemainingDays: remaining,
+            }],
+        })
+    }
+
+    /** Selects paternity leave and picks two consecutive weekdays — two business days. */
+    async function requestTwoDaysOfPaternityLeave() {
+        await renderPage()
+        fireEvent.click(screen.getByRole('button', { name: /paternity leave/i }))
+        pickDates()
+        await chooseChild(/Andreas Jr/)
+    }
+
+    it('disables submit when the request is longer than the child has left', async () => {
+        withRemaining(1)
+
+        await requestTwoDaysOfPaternityLeave()
+
+        await waitFor(() => {
+            const submit = screen.getByRole('button', { name: /submit for approval|to continue/i })
+            expect(submit).toBeDisabled()
+        })
+        expect(api.createAnnualLeave).not.toHaveBeenCalled()
+    })
+
+    it('says whose entitlement is short, and by how much', async () => {
+        withRemaining(1)
+
+        await requestTwoDaysOfPaternityLeave()
+
+        const warning = await screen.findByText(/not enough paternity leave/i)
+        expect(warning.parentElement?.textContent).toMatch(/Andreas Jr/)
+        expect(warning.parentElement?.textContent).toMatch(/1 day left/)
+    })
+
+    /** The reassurance was the worst part: it described a ledger the request never touched. */
+    it('does not call a request the server will refuse "all clear"', async () => {
+        withRemaining(1)
+
+        await requestTwoDaysOfPaternityLeave()
+
+        await waitFor(() => expect(screen.getByText(/not enough paternity leave/i)).toBeInTheDocument())
+        expect(screen.queryByText(/all clear/i)).not.toBeInTheDocument()
+    })
+
+    it('still allows a request that fits inside what is left', async () => {
+        withRemaining(5)
+
+        await requestTwoDaysOfPaternityLeave()
+
+        await waitFor(() =>
+            expect(screen.getByRole('button', { name: /submit for approval/i })).not.toBeDisabled(),
+        )
+        expect(screen.queryByText(/not enough paternity leave/i)).not.toBeInTheDocument()
+    })
+
+    /**
+     * The yearly cap is the tighter of the two here. Quoting the lifetime remainder
+     * while the year's is exhausted would promise days the server refuses.
+     */
+    it('measures against the yearly cap when it is the tighter one', async () => {
+        api.getChildLeaveEntitlements.mockResolvedValue({
+            ...ENTITLEMENTS,
+            children: [{
+                ...ENTITLEMENTS.children[0],
+                remainingDays: 90,
+                thisYearUsedDays: 24,
+                thisYearRemainingDays: 1,
+            }],
+        })
+
+        await requestTwoDaysOfPaternityLeave()
+
+        await waitFor(() => {
+            const submit = screen.getByRole('button', { name: /submit for approval|to continue/i })
+            expect(submit).toBeDisabled()
+        })
+    })
+})
+
+/**
+ * The summary panel quotes one balance, and for a per-child type it quoted the
+ * wrong one: "Balance after 23 / 23", the pooled annual balance, beside a paternity
+ * request that does not touch it.
+ *
+ * What belongs there is the per-child ledger, totalled over **every eligible
+ * child** — that is what the employee has to spend on this type. It does not
+ * depend on which child is selected: two children under 15 are worth two lots of
+ * the entitlement whether or not one of them has been picked yet. Which child a
+ * particular request is charged to is the over-cap warning's business, not this
+ * row's.
+ */
+describe('ApplyLeavePage — the summary quotes the ledger the request draws on', () => {
+    /** Two eligible children, 90 days each — 180 between them. */
+    const TWO_CHILDREN: ChildLeaveEntitlementSummary = {
+        ...ENTITLEMENTS,
+        eligibleChildCount: 2,
+        totalRemainingDays: 180,
+        children: [
+            ENTITLEMENTS.children[0],
+            {
+                ...ENTITLEMENTS.children[0],
+                childId: 'child-2',
+                name: 'Maria',
+                dateOfBirth: '2014-02-11',
+                ageYears: 12,
+            },
+        ],
+    }
+
+    it('totals every eligible child, not just the one picked', async () => {
+        api.getChildLeaveEntitlements.mockResolvedValue(TWO_CHILDREN)
+        await renderPage()
+
+        fireEvent.click(screen.getByRole('button', { name: /paternity leave/i }))
+        pickDates()
+        await chooseChild(/Andreas Jr/)
+
+        // 2 children x 90 days = 180, less the 2 business days requested.
+        const row = await screen.findByText(/balance after/i)
+        await waitFor(() => expect(row.nextElementSibling?.textContent).toBe('178 / 180'))
+    })
+
+    /**
+     * The reason this row is not per-child: before a child is picked it still has
+     * something true to say. It used to fall through to the annual pool here, and
+     * then briefly to a bare 0 — both of which understate what the employee has.
+     */
+    it('quotes the same total before any child has been picked', async () => {
+        api.getChildLeaveEntitlements.mockResolvedValue(TWO_CHILDREN)
+        await renderPage()
+
+        fireEvent.click(screen.getByRole('button', { name: /paternity leave/i }))
+        pickDates()
+
+        const row = await screen.findByText(/balance after/i)
+        await waitFor(() => expect(row.nextElementSibling?.textContent).toBe('178 / 180'))
+    })
+
+    /** An aged-out child is worth nothing, so they must not inflate the total. */
+    it('leaves an ineligible child out of the total', async () => {
+        api.getChildLeaveEntitlements.mockResolvedValue({
+            ...TWO_CHILDREN,
+            eligibleChildCount: 1,
+            totalRemainingDays: 90,
+            children: [
+                TWO_CHILDREN.children[0],
+                { ...TWO_CHILDREN.children[1], isEligible: false, remainingDays: 0, thisYearRemainingDays: 0 },
+            ],
+        })
+        await renderPage()
+
+        fireEvent.click(screen.getByRole('button', { name: /paternity leave/i }))
+        pickDates()
+
+        const row = await screen.findByText(/balance after/i)
+        await waitFor(() => expect(row.nextElementSibling?.textContent).toBe('88 / 90'))
+    })
+
+    it('still quotes the annual pool for an ordinary type', async () => {
+        await renderPage()
+
+        // Annual Leave is the default selection: 25 entitlement, 2 days requested.
+        pickDates()
+
+        const row = await screen.findByText('Balance after')
+        await waitFor(() => expect(row.nextElementSibling?.textContent).toBe('23 / 25'))
     })
 })

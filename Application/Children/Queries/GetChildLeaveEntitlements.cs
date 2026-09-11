@@ -15,6 +15,19 @@ public class GetChildLeaveEntitlements
     {
         /// <summary>The employee's user id. Null means the caller themselves.</summary>
         public string? EmployeeId { get; set; }
+
+        /// <summary>
+        /// The leave type the ledger is being asked about. Both Maternity and
+        /// Paternity Leave may carry a per-child entitlement, with different weeks
+        /// and different cut-off ages, so "the per-child type" is no longer a
+        /// single thing — asking without naming one quoted whichever had the lower
+        /// id (Maternity, which is seeded first) for every request, while
+        /// enforcement went on using the request's own type.
+        ///
+        /// Null keeps that older behaviour, for callers with no type in hand: the
+        /// plain children list just needs an age to render.
+        /// </summary>
+        public int? LeaveTypeId { get; set; }
         public string CallerUserId { get; set; } = string.Empty;
         public bool IsAdmin { get; set; }
         public bool IsManager { get; set; }
@@ -34,11 +47,20 @@ public class GetChildLeaveEntitlements
 
             var profile = access.Value!;
 
-            // Whichever leave type carries a per-child entitlement — paternity in
-            // practice. No type, no ledger: there is nothing to be entitled to.
-            // Not filtered on IsActive, deliberately: see ResolvePerChildLeaveTypeAsync.
-            // The ledger has to describe the same rows enforcement will measure.
-            var leaveType = await ChildProjection.ResolvePerChildLeaveTypeAsync(context, cancellationToken);
+            /* The type the caller named, or — for a caller with none in hand — the
+               single resolved one. A named type that keeps no per-child ledger
+               reports nothing rather than falling back: quoting paternity figures
+               against an annual-leave request would be worse than an empty answer.
+
+               Not filtered on IsActive, deliberately: see ResolvePerChildLeaveTypeAsync.
+               The ledger has to describe the same rows enforcement will measure. */
+            var leaveType = request.LeaveTypeId.HasValue
+                ? await context.LeaveTypes
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(
+                        lt => lt.Id == request.LeaveTypeId.Value && lt.PerChildEntitlement,
+                        cancellationToken)
+                : await ChildProjection.ResolvePerChildLeaveTypeAsync(context, cancellationToken);
 
             var summary = new ChildLeaveEntitlementSummaryDto();
 

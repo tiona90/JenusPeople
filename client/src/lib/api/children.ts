@@ -29,9 +29,19 @@ export async function deleteChild(id: string) {
     await apiClient.delete(`/children/${id}`)
 }
 
-export async function getChildLeaveEntitlements(employeeId?: string) {
+/**
+ * `leaveTypeId` names which per-child ledger to report. Both Maternity and
+ * Paternity Leave can carry one, with different weeks and different cut-off ages,
+ * so asking without naming a type gets whichever the server resolves first — which
+ * is how a paternity request came to be quoted maternity's four weeks. Omit it
+ * only where there is genuinely no type in hand.
+ */
+export async function getChildLeaveEntitlements(employeeId?: string, leaveTypeId?: number) {
     const response = await apiClient.get<ChildLeaveEntitlementSummary>('/children/entitlements', {
-        params: employeeId ? { employeeId } : undefined,
+        params: {
+            ...(employeeId ? { employeeId } : {}),
+            ...(leaveTypeId ? { leaveTypeId } : {}),
+        },
     })
     return response.data
 }

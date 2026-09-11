@@ -289,3 +289,56 @@ it('lets the other built-in types be switched off', async () => {
         view.unmount()
     }
 })
+
+/*
+ * A flat "default allowance" is meaningless on Maternity and Paternity Leave: their
+ * budget is per child, expressed by the three numbers above, and the card has always
+ * quoted those instead. Leaving the input on screen invited an admin to set a number
+ * nothing reads — and Maternity Leave ships with a stored 90 doing exactly that.
+ *
+ * So the field is gone for those two and the payload carries 0, including from the
+ * Enabled toggle, which resubmits the whole type and would otherwise write the stale
+ * 90 straight back.
+ */
+it.each(['Maternity Leave', 'Paternity Leave'])('offers no flat allowance field for %s', async (name) => {
+    api.getLeaveTypes.mockResolvedValue([leaveType({ name, defaultAllowance: 90 })])
+    await renderPanel()
+
+    fireEvent.click(screen.getByTitle('Edit'))
+
+    expect(screen.queryByLabelText('Default allowance')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Unit')).not.toBeInTheDocument()
+})
+
+it('still offers the allowance field for a type whose budget really is a flat one', async () => {
+    api.getLeaveTypes.mockResolvedValue([leaveType({ name: 'Sick Leave', perChildEntitlement: false, defaultAllowance: 10 })])
+    await renderPanel()
+
+    fireEvent.click(screen.getByTitle('Edit'))
+
+    expect(screen.getByLabelText('Default allowance')).toBeInTheDocument()
+})
+
+it('clears the stored allowance when a parental type is saved', async () => {
+    api.getLeaveTypes.mockResolvedValue([leaveType({ name: 'Maternity Leave', defaultAllowance: 90 })])
+    await renderPanel()
+
+    fireEvent.click(screen.getByTitle('Edit'))
+    fireEvent.click(screen.getByRole('button', { name: /save/i }))
+
+    await waitFor(() => expect(api.updateLeaveType).toHaveBeenCalledTimes(1))
+    expect(api.updateLeaveType.mock.calls[0][1]).toMatchObject({ defaultAllowance: 0 })
+})
+
+/* The trap CLAUDE.md warns about: this toggle resubmits the whole leave type. */
+it('does not write the stale allowance back when a parental type is toggled', async () => {
+    api.getLeaveTypes.mockResolvedValue([leaveType({ name: 'Maternity Leave', defaultAllowance: 90 })])
+    await renderPanel()
+
+    // The card's Enabled switch carries no accessible name, and it is the only
+    // switch on screen while no dialog is open.
+    fireEvent.click(screen.getByRole('switch'))
+
+    await waitFor(() => expect(api.updateLeaveType).toHaveBeenCalledTimes(1))
+    expect(api.updateLeaveType.mock.calls[0][1]).toMatchObject({ defaultAllowance: 0 })
+})

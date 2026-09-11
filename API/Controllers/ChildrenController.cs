@@ -85,11 +85,13 @@ public class ChildrenController : BaseApiController
     /// </summary>
     [HttpGet("entitlements")]
     public async Task<ActionResult<ChildLeaveEntitlementSummaryDto>> GetEntitlements(
-        [FromQuery] string? employeeId)
+        [FromQuery] string? employeeId,
+        [FromQuery] int? leaveTypeId)
     {
         var result = await Mediator.Send(new GetChildLeaveEntitlements.Query
         {
             EmployeeId = employeeId,
+            LeaveTypeId = leaveTypeId,
             CallerUserId = CallerUserId,
             IsAdmin = IsAdmin,
             IsManager = IsManager,

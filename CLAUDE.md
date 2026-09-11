@@ -95,7 +95,7 @@ that means when adding code:
 
 | Entity | Key Fields |
 |--------|-----------|
-| `User` | Extends `IdentityUser`; has `DisplayName`, `ImageUrl`, `IsActive` (may this account sign in — a leaver is switched off rather than deleted, since `DeleteAdminUser` nulls out every approval they gave). `DateOfBirth` and `Gender` are recorded HR data an admin maintains on the Users panel; **nothing consults `Gender`** — in particular it does not gate maternity or paternity leave, and the eligibility notes on those leave types stay decorative. The per-child paternity entitlement below is deliberately gender-neutral. It is nullable and `null` means "not specified", which the dialog offers explicitly so a value set by mistake can be taken back — see **Full-replace update DTOs** under [Backend Patterns](#backend-patterns) |
+| `User` | Extends `IdentityUser`; has `DisplayName`, `ImageUrl`, `IsActive` (may this account sign in — a leaver is switched off rather than deleted, since `DeleteAdminUser` nulls out every approval they gave). `DateOfBirth` and `Gender` are recorded HR data an admin maintains on the Users panel. **`Gender` decides who is offered Maternity and Paternity Leave** — see [Who is offered parental leave](#domain-model-summary) below the table. It is nullable and `null` means "not specified", which the dialog offers explicitly so a value set by mistake can be taken back — see **Full-replace update DTOs** under [Backend Patterns](#backend-patterns) — and a `null` is offered **both** parental types rather than neither |
 | `AnnualLeave` | `EmployeeId`, `StartDate/EndDate`, `Status` (enum), `TotalDays` (computed, no weekends). `ChildId` is nullable — required on a request against a `PerChildEntitlement` type, `null` on every row predating the feature (and on any request against a type that isn't per-child), and a `null` `ChildId` counts against no per-child ledger |
 | `LeaveType` | `Name`, `IsActive`, `AffectsBalance` (is it deducted from the enforced pool), `DefaultAllowance` and `MaxCarryoverDays` — the allowance and the year-end cap that bounds it, both per type and both edited **only** on Leave Types. See [Leave is configured once](#domain-model-summary). `PerChildEntitlement` plus its three numbers (`PerChildTotalWeeks`, `PerChildWeeksPerYear`, `ChildEligibleUntilAge`) configure the second, per-child ledger — see [the two leave ledgers](#domain-model-summary) below the table. Annual, Maternity and Paternity Leave are **built-in** (`Domain/SystemLeaveTypes.cs`): they cannot be renamed or deleted, though every other setting on them stays editable. Keyed by name, which is sound only because the name is frozen and already unique case-insensitively; `LeaveTypeDto.IsSystem` derives the flag so the client keeps no copy of the list. Annual leave additionally cannot be **disabled** — it is the type the enforced pool is a budget for — but Maternity and Paternity can be, for an organisation that does not offer them |
 | `Timesheet` | `EmployeeId`, `PeriodStart/End`, `TotalHours`, `Status` (Draft→Submitted→Approved/Rejected), `DepartmentId` (nullable — the department it was filed under, kept for history so it outlives its author's move; null when the author has none, i.e. an Admin, matching `AnnualLeave.DepartmentId`) |
@@ -200,6 +200,40 @@ Two differences from the pooled balance worth knowing:
   transition into `Approved` in `UpdateLeaveStatus` — so, as with the pooled balance,
   several *pending* requests can each pass creation and the second *approval* is what
   fails.
+
+**Who is offered parental leave.** Maternity and Paternity Leave are shown to an
+employee only when two things hold: their recorded `User.Gender` matches the type
+(Maternity → Female, Paternity → Male), and they have at least one child young
+enough to qualify. Everything else is offered to everybody.
+
+`Application/AnnualLeaves/Commands/ParentalLeaveEligibility.cs` is the rule, called
+from `CreateAnnualLeave` and `EditAnnualLeave`; `client/src/lib/parental-leave.ts`
+mirrors it so the leave forms never show a card the API would refuse. Keep the two
+in step — a disagreement shows up as a card that only fails when pressed. Three
+things about it that are deliberate:
+
+- **A `null` gender passes.** It means "nobody entered it", which is every account
+  predating the column — not "neither". Failing closed would have stripped parental
+  leave from the whole company until an admin filled the field in one person at a
+  time. The eligible-child half still applies.
+- **The eligible-child rule is skipped for a type with its own per-child ledger.**
+  Paternity Leave already refuses a request naming no child, a child that is not
+  the employee's, or one who has aged out, each with a message naming the child and
+  the date. A blunter pre-check in front of it would only make those messages
+  worse. So in practice the new child rule bites on Maternity Leave, which keeps no
+  per-child ledger.
+- **Maternity Leave has all three per-child columns at 0**, so it has no cut-off age
+  of its own and falls back to the per-child type's (Paternity's 15). Note the
+  consequence: an employee expecting their first child cannot file maternity leave
+  until the child is on file. That is the rule as specified, not an oversight.
+
+On the client the filter applies to the employee's **own** request only —
+`ApplyLeavePage`, and `AnnualLeaveForm` when it is not an admin filing or editing
+on somebody else's behalf. An admin's own gender says nothing about the employee
+they are filing for, so that path keeps the whole list and lets the server answer.
+`AnnualLeaveForm` also keeps an existing request's own type on the list even when
+the rule would no longer offer it, so editing an old request does not open on a
+blank select.
 
 Two more traps worth knowing, both found the hard way:
 

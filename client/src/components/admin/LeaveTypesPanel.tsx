@@ -204,7 +204,10 @@ function LeaveTypesPanel() {
             description: t.description,
             paid: t.paid,
             attachmentPolicy: t.attachmentPolicy,
-            defaultAllowance: t.defaultAllowance,
+            /* This toggle resubmits the whole leave type, so it has to agree with the
+               edit dialog: a per-child type carries no flat allowance, and sending
+               the stored one back would restore a figure the dialog had cleared. */
+            defaultAllowance: t.supportsPerChildEntitlement ? 0 : t.defaultAllowance,
             allowanceUnit: t.allowanceUnit,
             maxCarryoverDays: t.maxCarryoverDays,
             perChildEntitlement: t.perChildEntitlement,
@@ -803,7 +806,8 @@ function LeaveTypeFormDialog(props: {
             affectsBalance: perChildEntitlement ? false : affectsBalance,
             paid,
             attachmentPolicy,
-            defaultAllowance: Number(defaultAllowance) || 0,
+            // A per-child type has no flat allowance — see the hidden field below.
+            defaultAllowance: perChildEntitlement ? 0 : Number(defaultAllowance) || 0,
             allowanceUnit: allowanceUnit.trim() || 'days/year',
             maxCarryoverDays: Number(maxCarryoverDays) || 0,
             perChildEntitlement,
@@ -871,24 +875,31 @@ function LeaveTypeFormDialog(props: {
                         {COLOR_KEYS.map((c) => <MenuItem key={c} value={c}>{c}</MenuItem>)}
                     </TextField>
 
-                    {/* Allowance */}
-                    <Stack direction="row" spacing={2}>
-                        <TextField
-                            label="Default allowance"
-                            type="number"
-                            value={defaultAllowance}
-                            onChange={(e) => setDefaultAllowance(Number(e.target.value))}
-                            inputProps={{ min: 0, max: 365 }}
-                            sx={{ width: 180 }}
-                        />
-                        <TextField
-                            label="Unit"
-                            value={allowanceUnit}
-                            onChange={(e) => setAllowanceUnit(e.target.value)}
-                            fullWidth
-                            helperText="e.g. days/year, days/event"
-                        />
-                    </Stack>
+                    {/* Allowance. Hidden for a per-child type, whose budget is the three
+                        numbers below and not a flat figure per employee — the card has
+                        always quoted those instead, and an input nothing reads only
+                        invites an admin to set a number that does nothing. The payload
+                        sends 0 for these, so Maternity Leave's seeded 90 clears on the
+                        first save rather than lingering invisibly. */}
+                    {!perChildEntitlement && (
+                        <Stack direction="row" spacing={2}>
+                            <TextField
+                                label="Default allowance"
+                                type="number"
+                                value={defaultAllowance}
+                                onChange={(e) => setDefaultAllowance(Number(e.target.value))}
+                                inputProps={{ min: 0, max: 365 }}
+                                sx={{ width: 180 }}
+                            />
+                            <TextField
+                                label="Unit"
+                                value={allowanceUnit}
+                                onChange={(e) => setAllowanceUnit(e.target.value)}
+                                fullWidth
+                                helperText="e.g. days/year, days/event"
+                            />
+                        </Stack>
+                    )}
                     {/* The cap belongs beside the allowance it bounds. It used to be one
                         org-wide number on Leave Settings, which could not say that sick
                         leave carries nothing while annual leave carries five. */}

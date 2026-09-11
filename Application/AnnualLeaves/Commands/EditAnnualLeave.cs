@@ -87,6 +87,20 @@ public class EditAnnualLeave
 
             if (employeeProfile is not null)
             {
+                // Same gate as on create, because an edit can switch the type onto
+                // a parental one the employee was never offered.
+                if (editedLeaveType is not null)
+                {
+                    var eligibilityError = await ParentalLeaveEligibility.CheckAsync(
+                        context,
+                        editedLeaveType,
+                        annualLeave.EmployeeId,
+                        employeeProfile,
+                        cancellationToken);
+                    if (eligibilityError is not null)
+                        return Result<Unit>.Failure(eligibilityError);
+                }
+
                 var perChildError = await PerChildLeaveBalanceCalculator.CheckPerChildEntitlementAsync(
                     context,
                     annualLeave,

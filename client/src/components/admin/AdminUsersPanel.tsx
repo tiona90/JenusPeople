@@ -43,14 +43,15 @@ const ALL_ROLES: UserRole[] = ['Admin', 'Manager', 'Employee']
 
 /**
  * Male / Female / Not specified, styled as radios to match the Role row it sits
- * above. Recorded only — nothing in the app reads it, and in particular it does
- * not gate maternity or paternity leave (the per-child paternity entitlement is
- * deliberately gender-neutral).
+ * above. This field decides who is offered Maternity and Paternity Leave —
+ * see `lib/parental-leave.ts` and the server rule it mirrors — so the hint says
+ * so rather than, as it once did, saying the opposite.
  *
  * The explicit "Not specified" option is load-bearing rather than decorative:
  * both admin DTOs are full-replace, so a null genuinely clears the column, and
  * without a way to select it an admin who set a value by mistake could never
- * take it back.
+ * take it back. It is also a real answer here, not an absence — an employee whose
+ * gender is unspecified is offered both parental types, never neither.
  */
 function GenderRadioGroup(props: {
     name: string
@@ -59,7 +60,11 @@ function GenderRadioGroup(props: {
 }) {
     return (
         <Box>
-            <Typography variant="subtitle2" color="text.secondary">Gender</Typography>
+            {/* body2, not the subtitle2 the section headings use: this is one field's
+                label, and styling it like a heading made it read as a section of its
+                own sitting immediately above Role — which is exactly the reading the
+                hint below then has to undo. */}
+            <Typography variant="body2" color="text.secondary">Gender</Typography>
             <RadioGroup
                 row
                 name={props.name}
@@ -70,7 +75,51 @@ function GenderRadioGroup(props: {
                 <FormControlLabel value="Female" control={<Radio />} label="Female" />
                 <FormControlLabel value="" control={<Radio />} label="Not specified" />
             </RadioGroup>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                Decides who is offered Maternity and Paternity Leave. Not specified offers both.
+            </Typography>
         </Box>
+    )
+}
+
+/**
+ * What each role actually gets, shown under the Role radios for whichever is
+ * selected. Admin's line is the load-bearing one: picking it removes the entire
+ * Profile section, and until it said so that was a surprise rather than a rule.
+ */
+const ROLE_DESCRIPTIONS: Record<UserRole, string> = {
+    Admin: 'Full access to every department. An admin has no department or manager of their own.',
+    Manager: "Manages their department's people, leave and timesheets.",
+    Employee: "Files their own leave and timesheets; approvals go to their department's manager.",
+}
+
+/**
+ * One block of a user dialog: a rule, the block's name, and optionally a line
+ * saying what the block is for. Both dialogs render the same three in the same
+ * order, so an admin reads one form rather than two that drifted apart.
+ *
+ * `first` drops the leading rule — the dialog title already draws one, and a
+ * second immediately under it reads as an empty section.
+ */
+function DialogSection({ title, hint, first, children }: {
+    title: string
+    hint?: string
+    first?: boolean
+    children: React.ReactNode
+}) {
+    return (
+        <>
+            {first ? null : <Divider />}
+            <Box>
+                <Typography variant="subtitle2" color="text.secondary">{title}</Typography>
+                {hint ? (
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                        {hint}
+                    </Typography>
+                ) : null}
+            </Box>
+            {children}
+        </>
     )
 }
 
@@ -1285,6 +1334,15 @@ function EditUserDialog(props: {
     const [dateOfBirth, setDateOfBirth] = useState('')
     const [gender, setGender] = useState<Gender | null>(null)
 
+    /* Has the admin started editing? Nothing is marked red until they have, so
+       opening a record never greets them with errors — which matters twice over
+       here, because the fields hydrate a microtask late and are all blank for one
+       render, long enough to flash red on a record that is perfectly valid. Every
+       field below sets this; a new one has to as well. Save stays disabled on an
+       invalid form either way, so this only governs what is shown, never what
+       can be sent. */
+    const [dirty, setDirty] = useState(false)
+
     /* Which user the fields below currently hold. The form hydrates in a microtask
        rather than synchronously, so for one render `role` is still the default
        'Employee' — long enough for the Profile section to mount for an Admin, who
@@ -1296,6 +1354,8 @@ function EditUserDialog(props: {
         if (props.data) {
             Promise.resolve().then(() => {
                 setHydratedFor(props.data!.user.id)
+                // A freshly opened record has not been edited, whoever was in here before.
+                setDirty(false)
                 setEmail(props.data!.user.email)
                 setDisplayName(props.data!.user.displayName ?? '')
                 // Collapses any legacy multi-role account to its highest role.
@@ -1331,43 +1391,87 @@ function EditUserDialog(props: {
     // no leave routing.
     const departmentMissing = !isAdmin && !departmentId
 
+    /* Whether a gap is *shown* as an error, as opposed to whether it blocks Save.
+       The two differ only on a form the admin has not started. */
+    const flag = (missing: boolean) => dirty && missing
+
     // Only an employee reports to the department's manager. A manager *is* one, so
     // the field is meaningless for them and hidden — and, being hidden, it neither
     // sets nor clears anything: the stored managerId is submitted back untouched.
     const showManagerField = role === 'Employee'
 
+    // Edit used to accept a blank email or display name and save it; Create has
+    // always refused both. Same rule, same wording, in both places now.
+    const emailMissing = !email.trim()
+    const displayNameMissing = !displayName.trim()
+
+    /* Who is being edited, from the stored record rather than the live fields —
+       the header names the person you opened, and must not rewrite itself as you
+       type a correction into Display name. */
+    const identity = user ? [user.displayName, user.email].filter(Boolean).join(' · ') : ''
+
     return (
         <AppDialog open={open} onClose={props.onClose} maxWidth="sm">
-            <AppDialogTitle>Edit User</AppDialogTitle>
+            <AppDialogTitle>
+                <Box>
+                    Edit User
+                    {identity ? (
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 400 }}>
+                            {identity}
+                        </Typography>
+                    ) : null}
+                </Box>
+            </AppDialogTitle>
             <AppDialogContent>
                 <Stack spacing={2}>
-                    <TextField label="Email" value={email} onChange={(e) => setEmail(e.target.value)} fullWidth required />
-                    <TextField label="Display name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} fullWidth />
-                    <TextField label="Phone number" type="tel" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} fullWidth />
-                    <TextField label="Date of birth" type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} fullWidth slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: new Date().toISOString().slice(0, 10) } }} helperText="Used for birthday reminders." />
-                    <GenderRadioGroup name="edit-user-gender" value={gender} onChange={setGender} />
+                    <DialogSection title="Personal details" first>
+                        <TextField
+                            label="Email"
+                            value={email}
+                            onChange={(e) => { setDirty(true); setEmail(e.target.value) }}
+                            fullWidth
+                            required
+                            error={flag(emailMissing)}
+                            helperText={flag(emailMissing) ? 'Email is required' : 'Used to sign in and to receive notifications.'}
+                        />
+                        <TextField
+                            label="Display name"
+                            value={displayName}
+                            onChange={(e) => { setDirty(true); setDisplayName(e.target.value) }}
+                            fullWidth
+                            required
+                            error={flag(displayNameMissing)}
+                            helperText={flag(displayNameMissing) ? 'Display name is required' : 'Shown throughout the app and used to greet them in emails.'}
+                        />
+                        <TextField label="Phone number" type="tel" value={phoneNumber} onChange={(e) => { setDirty(true); setPhoneNumber(e.target.value) }} fullWidth helperText="Optional." />
+                        <TextField label="Date of birth" type="date" value={dateOfBirth} onChange={(e) => { setDirty(true); setDateOfBirth(e.target.value) }} fullWidth slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: new Date().toISOString().slice(0, 10) } }} helperText="Used for birthday reminders." />
+                        <GenderRadioGroup name="edit-user-gender" value={gender} onChange={(value) => { setDirty(true); setGender(value) }} />
+                    </DialogSection>
 
-                    <Divider />
-                    <Typography variant="subtitle2" color="text.secondary">Role</Typography>
-                    <RadioGroup row name="edit-user-role" value={role} onChange={(e) => setRole(e.target.value as UserRole)}>
-                        {ALL_ROLES.map((option) => (
-                            <FormControlLabel key={option} value={option} control={<Radio />} label={option} />
-                        ))}
-                    </RadioGroup>
+                    <DialogSection title="Role & access">
+                        <Box>
+                            <RadioGroup row name="edit-user-role" value={role} onChange={(e) => { setDirty(true); setRole(e.target.value as UserRole) }}>
+                                {ALL_ROLES.map((option) => (
+                                    <FormControlLabel key={option} value={option} control={<Radio />} label={option} />
+                                ))}
+                            </RadioGroup>
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                                {ROLE_DESCRIPTIONS[role]}
+                            </Typography>
+                        </Box>
+                    </DialogSection>
 
                     {profile && !isAdmin && (
-                        <>
-                            <Divider />
-                            <Typography variant="subtitle2" color="text.secondary">Profile</Typography>
+                        <DialogSection title="Profile" hint="Where this person sits in the organisation.">
                             <TextField
                                 select
                                 label="Department"
                                 value={departmentId}
-                                onChange={(e) => setDepartmentId(Number(e.target.value))}
+                                onChange={(e) => { setDirty(true); setDepartmentId(Number(e.target.value)) }}
                                 fullWidth
                                 required
-                                error={departmentId === 0}
-                                helperText={departmentId === 0 ? 'Department is required' : ''}
+                                error={flag(departmentId === 0)}
+                                helperText={flag(departmentId === 0) ? 'Department is required' : ''}
                             >
                                 <MenuItem value={0} disabled>Select department</MenuItem>
                                 {props.departments.map((dept) => (
@@ -1390,7 +1494,7 @@ function EditUserDialog(props: {
                             <TextField
                                 label="Job title"
                                 value={jobTitle}
-                                onChange={(e) => setJobTitle(e.target.value)}
+                                onChange={(e) => { setDirty(true); setJobTitle(e.target.value) }}
                                 fullWidth
                             />
 
@@ -1416,7 +1520,7 @@ function EditUserDialog(props: {
                                     />
                                 </>
                             )}
-                        </>
+                        </DialogSection>
                     )}
 
                     {props.error ? <Alert severity="error">{getApiErrorMessage(props.error, 'Failed.')}</Alert> : null}
@@ -1426,7 +1530,7 @@ function EditUserDialog(props: {
                 <Button variant="outlined" onClick={props.onClose} disabled={props.isPending} sx={cancelBtnSx}>Cancel</Button>
                 <Button
                     variant="contained"
-                    disabled={props.isPending || !user || departmentMissing}
+                    disabled={props.isPending || !user || departmentMissing || emailMissing || displayNameMissing}
                     onClick={() =>
                         /* No override means the leave type's own allowance, not 0: a stored 0
                            switches the approval-time balance check off outright (see
@@ -1475,6 +1579,13 @@ function CreateUserDialog(props: {
     const [gender, setGender] = useState<Gender | null>(null)
     const [pendingChildren, setPendingChildren] = useState<UpsertChildRequest[]>([])
 
+    /* Has the admin started? Nothing is marked red until they have — an empty form
+       on open is not a form full of mistakes. Every field below sets this; a new
+       one has to as well. Create stays disabled on an incomplete form either way,
+       so this governs only what is shown. Same flag as EditUserDialog. */
+    const [dirty, setDirty] = useState(false)
+    const flag = (missing: boolean) => dirty && missing
+
     // Same rule as EditUserDialog: a new hire reports to whoever manages the
     // department they're placed in — not a free pick.
     const departmentManager = useMemo(
@@ -1505,12 +1616,15 @@ function CreateUserDialog(props: {
         setDateOfBirth('')
         setGender(null)
         setPendingChildren([])
+        setDirty(false)
         props.onClose()
     }
 
     return (
         <AppDialog open={props.open} onClose={close} maxWidth="sm">
-            <AppDialogTitle>Create User</AppDialogTitle>
+            {/* Titled to match the "+ Add user" button that opens it — calling the
+                same thing two names made it read as a different screen. */}
+            <AppDialogTitle>Add User</AppDialogTitle>
             <AppDialogContent>
                 <Stack spacing={2}>
                     {/* No password field: the new user picks their own from the
@@ -1518,41 +1632,55 @@ function CreateUserDialog(props: {
                     <Alert severity="info" sx={{ fontSize: 12 }}>
                         No password needed — we'll email this person a secure link to set their own.
                     </Alert>
-                    <TextField label="Email" value={email} onChange={(e) => setEmail(e.target.value)} fullWidth required />
-                    <TextField
-                        label="Display name"
-                        value={displayName}
-                        onChange={(e) => setDisplayName(e.target.value)}
-                        fullWidth
-                        required
-                        error={!displayName.trim()}
-                        helperText={!displayName.trim() ? 'Display name is required' : 'Shown throughout the app and used to greet them in emails.'}
-                    />
-                    <TextField label="Phone number" type="tel" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} fullWidth />
-                    <TextField label="Date of birth" type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} fullWidth slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: new Date().toISOString().slice(0, 10) } }} helperText="Used for birthday reminders." />
-                    <GenderRadioGroup name="create-user-gender" value={gender} onChange={setGender} />
 
-                    <Divider />
-                    <Typography variant="subtitle2" color="text.secondary">Role</Typography>
-                    <RadioGroup row name="create-user-role" value={role} onChange={(e) => setRole(e.target.value as UserRole)}>
-                        {ALL_ROLES.map((option) => (
-                            <FormControlLabel key={option} value={option} control={<Radio />} label={option} />
-                        ))}
-                    </RadioGroup>
+                    <DialogSection title="Personal details" first>
+                        <TextField
+                            label="Email"
+                            value={email}
+                            onChange={(e) => { setDirty(true); setEmail(e.target.value) }}
+                            fullWidth
+                            required
+                            error={flag(!email.trim())}
+                            helperText={flag(!email.trim()) ? 'Email is required' : 'Where the welcome link and all notifications are sent.'}
+                        />
+                        <TextField
+                            label="Display name"
+                            value={displayName}
+                            onChange={(e) => { setDirty(true); setDisplayName(e.target.value) }}
+                            fullWidth
+                            required
+                            error={flag(!displayName.trim())}
+                            helperText={flag(!displayName.trim()) ? 'Display name is required' : 'Shown throughout the app and used to greet them in emails.'}
+                        />
+                        <TextField label="Phone number" type="tel" value={phoneNumber} onChange={(e) => { setDirty(true); setPhoneNumber(e.target.value) }} fullWidth helperText="Optional." />
+                        <TextField label="Date of birth" type="date" value={dateOfBirth} onChange={(e) => { setDirty(true); setDateOfBirth(e.target.value) }} fullWidth slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: new Date().toISOString().slice(0, 10) } }} helperText="Used for birthday reminders." />
+                        <GenderRadioGroup name="create-user-gender" value={gender} onChange={(value) => { setDirty(true); setGender(value) }} />
+                    </DialogSection>
+
+                    <DialogSection title="Role & access">
+                        <Box>
+                            <RadioGroup row name="create-user-role" value={role} onChange={(e) => { setDirty(true); setRole(e.target.value as UserRole) }}>
+                                {ALL_ROLES.map((option) => (
+                                    <FormControlLabel key={option} value={option} control={<Radio />} label={option} />
+                                ))}
+                            </RadioGroup>
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                                {ROLE_DESCRIPTIONS[role]}
+                            </Typography>
+                        </Box>
+                    </DialogSection>
 
                     {!isAdmin && (
-                        <>
-                            <Divider />
-                            <Typography variant="subtitle2" color="text.secondary">Profile</Typography>
+                        <DialogSection title="Profile" hint="Where this person sits in the organisation.">
                             <TextField
                                 select
                                 label="Department"
                                 value={departmentId}
-                                onChange={(e) => setDepartmentId(Number(e.target.value))}
+                                onChange={(e) => { setDirty(true); setDepartmentId(Number(e.target.value)) }}
                                 fullWidth
                                 required
-                                error={departmentId === 0}
-                                helperText={departmentId === 0 ? 'Department is required' : ''}
+                                error={flag(departmentId === 0)}
+                                helperText={flag(departmentId === 0) ? 'Department is required' : ''}
                             >
                                 <MenuItem value={0} disabled>Select department</MenuItem>
                                 {props.departments.map((dept) => (
@@ -1572,7 +1700,7 @@ function CreateUserDialog(props: {
                             <TextField
                                 label="Job title"
                                 value={jobTitle}
-                                onChange={(e) => setJobTitle(e.target.value)}
+                                onChange={(e) => { setDirty(true); setJobTitle(e.target.value) }}
                                 fullWidth
                             />
 
@@ -1590,7 +1718,7 @@ function CreateUserDialog(props: {
                                 onBehalfOfName={displayName.trim() || 'This person'}
                                 disabled={props.isPending}
                             />
-                        </>
+                        </DialogSection>
                     )}
 
                     {props.error ? <Alert severity="error">{getApiErrorMessage(props.error, 'Failed.')}</Alert> : null}

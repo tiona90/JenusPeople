@@ -1089,3 +1089,139 @@ describe('AdminUsersPanel — adding children while creating a user', () => {
         expect(api.createChild).not.toHaveBeenCalled()
     })
 })
+
+// The dialogs say what each field is for, rather than leaving an admin to infer
+// it from a label. Two things were genuinely misleading: Gender sits directly
+// above Role, and what it gates — which parental leave types the employee is
+// offered — is nowhere near this dialog; and picking Admin silently removes the
+// whole Profile section.
+describe('AdminUsersPanel — dialogs explain themselves', () => {
+    const EMPLOYEE_USER = { id: 'u-employee', userName: 'employee@example.test', email: 'employee@example.test', displayName: 'Theodoros Iona', imageUrl: '', emailConfirmed: true, roles: ['Employee'] }
+    const EMPLOYEE_PROFILE = { id: 'p-employee', userId: 'u-employee', displayName: 'Theodoros Iona', departmentId: DEPARTMENT.id, managerId: null, annualLeaveEntitlement: 20, leaveBalance: 20, jobTitle: null, createdAt: '2026-01-01' }
+
+    beforeEach(() => {
+        api.getAdminUsers.mockResolvedValue([EMPLOYEE_USER] as never)
+        api.getEmployeeProfiles.mockResolvedValue([EMPLOYEE_PROFILE] as never)
+    })
+
+    async function openEdit() {
+        renderPanel()
+        const nameEl = await screen.findByText('Theodoros Iona')
+        const row = nameEl.parentElement!.parentElement!.parentElement!.parentElement!
+        fireEvent.click(within(row).getByTitle('Edit'))
+        const dialog = screen.getByRole('dialog')
+        // The form hydrates in a microtask, so wait for it before asserting.
+        await within(dialog).findByDisplayValue('Theodoros Iona')
+        return dialog
+    }
+
+    it('names the person being edited in the dialog header', async () => {
+        const dialog = await openEdit()
+
+        expect(within(dialog).getByText('Theodoros Iona · employee@example.test')).toBeInTheDocument()
+    })
+
+    /**
+     * The hint used to say the opposite — "Recorded for HR only — it does not
+     * affect leave eligibility" — which was true until gender started deciding
+     * who is offered Maternity and Paternity Leave. An admin setting this field
+     * is now making a decision about somebody's leave, so the dialog has to say
+     * so, and has to say what leaving it unspecified does.
+     */
+    it('says Gender decides who is offered parental leave', async () => {
+        const dialog = await openEdit()
+
+        const hint = within(dialog).getByText(/maternity and paternity leave/i)
+        expect(hint).toBeInTheDocument()
+        expect(hint.textContent).toMatch(/not specified/i)
+    })
+
+    // The Profile section disappearing on Admin was the surprise this explains.
+    it('explains the selected role, and says an admin has no department', async () => {
+        const dialog = await openEdit()
+
+        expect(within(dialog).getByText(/approvals go to their department's manager/i)).toBeInTheDocument()
+
+        fireEvent.click(within(dialog).getByRole('radio', { name: 'Admin' }))
+
+        expect(within(dialog).getByText(/no department or manager/i)).toBeInTheDocument()
+        expect(within(dialog).queryByText(/approvals go to their department's manager/i)).not.toBeInTheDocument()
+    })
+
+    // Create already refused a blank display name; Edit happily saved one.
+    it('refuses to save an edit that blanks the display name', async () => {
+        const dialog = await openEdit()
+
+        fireEvent.change(within(dialog).getByLabelText(/display name/i), { target: { value: '  ' } })
+
+        expect(within(dialog).getByRole('button', { name: /^save$/i })).toBeDisabled()
+        expect(within(dialog).getByText('Display name is required')).toBeInTheDocument()
+    })
+
+    it('refuses to save an edit that blanks the email', async () => {
+        const dialog = await openEdit()
+
+        fireEvent.change(within(dialog).getByLabelText(/email/i), { target: { value: '' } })
+
+        expect(within(dialog).getByRole('button', { name: /^save$/i })).toBeDisabled()
+        expect(within(dialog).getByText('Email is required')).toBeInTheDocument()
+    })
+
+    it('titles the create dialog the same as the button that opens it', async () => {
+        const dialog = await openCreateDialog()
+
+        expect(within(dialog).getByText('Add User')).toBeInTheDocument()
+    })
+})
+
+// A dialog that paints every blank field red the moment it opens reads as a form
+// full of mistakes rather than a form waiting to be filled. Nothing is flagged
+// until the admin has actually started; from then on every remaining gap is.
+describe('AdminUsersPanel — a form nobody has touched is not wrong yet', () => {
+    const REQUIRED_MESSAGES = [/email is required/i, /display name is required/i, /department is required/i]
+
+    it('opens Add User with nothing flagged, but still cannot be submitted', async () => {
+        const dialog = await openCreateDialog()
+
+        for (const message of REQUIRED_MESSAGES) {
+            expect(within(dialog).queryByText(message)).not.toBeInTheDocument()
+        }
+        expect(dialog.querySelectorAll('input[aria-invalid="true"]')).toHaveLength(0)
+        expect(within(dialog).getByRole('button', { name: /^create$/i })).toBeDisabled()
+    })
+
+    it('flags what is still missing once the admin starts filling it in', async () => {
+        const dialog = await openCreateDialog()
+
+        fireEvent.change(within(dialog).getByLabelText(/email/i), { target: { value: 'newjoiner@example.test' } })
+
+        expect(within(dialog).getByText('Display name is required')).toBeInTheDocument()
+        expect(within(dialog).getByText('Department is required')).toBeInTheDocument()
+        // The field they did fill in is not flagged.
+        expect(within(dialog).queryByText('Email is required')).not.toBeInTheDocument()
+    })
+
+    // Edit hydrates its fields in a microtask, so for one render they are all
+    // blank -- long enough to flash red on a record that is perfectly valid.
+    it('opens Edit User with nothing flagged', async () => {
+        const EMPLOYEE_USER = { id: 'u-employee', userName: 'employee@example.test', email: 'employee@example.test', displayName: 'Theodoros Iona', imageUrl: '', emailConfirmed: true, roles: ['Employee'] }
+        const EMPLOYEE_PROFILE = { id: 'p-employee', userId: 'u-employee', displayName: 'Theodoros Iona', departmentId: DEPARTMENT.id, managerId: null, annualLeaveEntitlement: 20, leaveBalance: 20, jobTitle: null, createdAt: '2026-01-01' }
+        api.getAdminUsers.mockResolvedValue([EMPLOYEE_USER] as never)
+        api.getEmployeeProfiles.mockResolvedValue([EMPLOYEE_PROFILE] as never)
+
+        renderPanel()
+        const nameEl = await screen.findByText('Theodoros Iona')
+        const row = nameEl.parentElement!.parentElement!.parentElement!.parentElement!
+        fireEvent.click(within(row).getByTitle('Edit'))
+        const dialog = screen.getByRole('dialog')
+
+        for (const message of REQUIRED_MESSAGES) {
+            expect(within(dialog).queryByText(message)).not.toBeInTheDocument()
+        }
+        expect(dialog.querySelectorAll('input[aria-invalid="true"]')).toHaveLength(0)
+
+        // And still nothing flagged once the fields have hydrated.
+        await within(dialog).findByDisplayValue('Theodoros Iona')
+        expect(dialog.querySelectorAll('input[aria-invalid="true"]')).toHaveLength(0)
+    })
+})

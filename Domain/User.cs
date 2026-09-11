@@ -12,15 +12,25 @@ public class User : IdentityUser
     public DateOnly? DateOfBirth { get; set; }
 
     /// <summary>
-    /// Recorded HR data, maintained by an administrator. Nothing consults it: it
-    /// does not gate maternity or paternity leave, and the eligibility notes on
-    /// those leave types stay decorative. Deliberately so — the per-child
-    /// paternity entitlement is gender-neutral, and a rule here would narrow it.
+    /// Recorded HR data, maintained by an administrator, and the one thing that
+    /// decides who is offered Maternity and Paternity Leave: each is offered to
+    /// one gender, and only to an employee who also has a child young enough to
+    /// qualify. Enforced by
+    /// <c>Application.AnnualLeaves.Commands.ParentalLeaveEligibility</c> on both
+    /// create and edit, and mirrored on the client by <c>lib/parental-leave.ts</c>,
+    /// which hides the types it would refuse.
+    ///
+    /// It gated nothing until that rule — the per-child paternity entitlement was
+    /// deliberately gender-neutral and the eligibility notes on those types were
+    /// decorative. Both have changed; the notes now describe a rule that runs.
     ///
     /// Nullable because every account predating the column has no value, and a
     /// default would assert a fact about a real person that nobody entered.
     /// <c>null</c> means "not specified", which an admin can also choose
-    /// explicitly to clear a value set by mistake.
+    /// explicitly to clear a value set by mistake. **A null is offered both
+    /// parental types, not neither**: reading "nobody entered it" as a mismatch
+    /// would take parental leave away from every account created before the
+    /// column existed.
     /// </summary>
     public Gender? Gender { get; set; }
 

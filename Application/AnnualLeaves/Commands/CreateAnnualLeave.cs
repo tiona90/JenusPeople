@@ -39,6 +39,20 @@ public class CreateAnnualLeave
             if (leaveType is null)
                 return Result<string>.Failure("Selected leave type is not available.");
 
+            /* Maternity and Paternity Leave are offered on the employee's recorded
+               gender and their having a child young enough to qualify. The client
+               hides the cards; this is what makes hiding them mean something. Runs
+               before the per-child check and defers to it for a type that keeps its
+               own ledger, so Paternity Leave keeps its more specific messages. */
+            var eligibilityError = await ParentalLeaveEligibility.CheckAsync(
+                context,
+                leaveType,
+                request.AnnualLeave.EmployeeId,
+                employeeProfile,
+                cancellationToken);
+            if (eligibilityError is not null)
+                return Result<string>.Failure(eligibilityError);
+
             /* The child comes from the client, so trust the leave type instead: a
                request on a type with no per-child entitlement carries no child, no
                matter what was posted. Otherwise switching a request from Paternity
