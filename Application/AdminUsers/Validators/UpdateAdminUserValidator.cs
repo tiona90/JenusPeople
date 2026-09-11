@@ -1,4 +1,5 @@
 using Application.AdminUsers.Commands;
+using Application.Core;
 using FluentValidation;
 
 namespace Application.AdminUsers.Validators;
@@ -39,7 +40,8 @@ public class UpdateAdminUserValidator : AbstractValidator<UpdateAdminUser.Comman
                 .MaximumLength(100)
                 .WithMessage("Display name must not exceed 100 characters.");
 
-            RuleFor(x => x.User.PhoneNumber).MaximumLength(30);
+            RuleFor(x => x.User.PhoneNumber).MaximumLength(PersonFieldRules.PhoneNumberMaxLength).ValidPhoneNumber();
+            RuleFor(x => x.User.DateOfBirth).ValidDateOfBirth();
         });
     }
 }

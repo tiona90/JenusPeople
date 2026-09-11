@@ -19,7 +19,6 @@ import {
     createChild,
     deleteAdminUser,
     getAdminUsers,
-    getAnnualLeaves,
     getDepartments,
     getEmployeeProfiles,
     getLeaveStatusHistories,
@@ -31,6 +30,7 @@ import {
     updateEmployeeProfile,
 } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
+import { dateOfBirthError, emailError, latestAllowedDateOfBirth, phoneNumberError } from '../../lib/validation/person'
 import ChildrenSection from '../layout/ChildrenSection'
 import { softBg, type SxColor } from '../../lib/theme-tokens'
 import type {
@@ -123,6 +123,148 @@ function DialogSection({ title, hint, first, children }: {
     )
 }
 
+/**
+ * Two short fields sharing a row — the pairing the rest of the admin dialogs
+ * already use (see LeaveTypesPanel's Icon/Name row). Each of these fields used
+ * to take a full row of an `sm` dialog on its own, which is what made the user
+ * form a scroll rather than a form.
+ *
+ * Stacks below `sm`: the dialog is close to full screen width on a phone, and
+ * halving that squeezes the date input below the width its native picker needs.
+ */
+function FieldRow({ children }: { children: React.ReactNode }) {
+    return (
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="flex-start">
+            {children}
+        </Stack>
+    )
+}
+
+interface PersonalDetails {
+    email: string
+    displayName: string
+    phoneNumber: string
+    dateOfBirth: string
+    gender: Gender | null
+}
+
+/**
+ * The five identity fields, rendered by both user dialogs from one definition.
+ * Extracted for the same reason `DialogSection` was: the two forms are supposed
+ * to read as one, and the only way that stays true is for there to be a single
+ * copy of each field rather than two that drift.
+ *
+ * Order is display name → email → phone → date of birth → gender. The dialog is
+ * about a person, so it opens on who they are; Add User used to open on an
+ * address, which is the one thing about a new hire an admin is least sure of.
+ * Gender stays last in the group, immediately above Role — its hint is about
+ * what the employee is offered, so it belongs beside what else they are granted.
+ */
+function PersonalDetailsFields({ idPrefix, values, onChange, flag, emailHelperText, announceMissingDateOfBirth }: {
+    /** Namespaces the gender radios, which are two `name`d groups in one app. */
+    idPrefix: string
+    values: PersonalDetails
+    /** Patch-merged by the caller, which also marks its form dirty. */
+    onChange: (patch: Partial<PersonalDetails>) => void
+    /** Whether a gap is *shown* as an error — see the `dirty` flag in each dialog. */
+    flag: (missing: boolean) => boolean
+    /** The one line that genuinely differs: Create emails a welcome link, Edit does not. */
+    emailHelperText: string
+    /**
+     * Whether a *blank* date of birth says so on open, rather than waiting for
+     * `flag`. Edit passes true, Create false — see the note below.
+     */
+    announceMissingDateOfBirth: boolean
+}) {
+    const emailMissing = !values.email.trim()
+    const displayNameMissing = !values.displayName.trim()
+
+    /* The three content rules. A value that is *present and wrong* always says
+       so, `flag` or no `flag`: that gate keeps an untouched form from opening
+       painted red, and it is about fields left blank. Save is disabled for a bad
+       value either way, and a disabled button with no reason beside it is the
+       worse half of that pair.
+
+       Blankness is the part that differs per field. A blank phone number is
+       valid and says nothing. A blank email or date of birth is not, so each
+       reports itself — but only once the form has been started, or the dialog
+       would greet the admin with a list of what they have not typed yet.
+
+       Edit is the exception for the date of birth, hence the prop: every account
+       predating the field has a null one, and on those the dialog opens with
+       Save already disabled. There, "Date of birth is required." is the whole
+       explanation for why, so it is shown straight away rather than withheld
+       until the admin touches an unrelated field. */
+    const phoneError = phoneNumberError(values.phoneNumber)
+    const emailFormatError = values.email.trim() ? emailError(values.email) : undefined
+
+    const dobError = dateOfBirthError(values.dateOfBirth)
+    const dobMissing = !values.dateOfBirth
+    const showDobError = !!dobError
+        && (!dobMissing || announceMissingDateOfBirth || flag(dobMissing))
+
+    return (
+        <>
+            <FieldRow>
+                <TextField
+                    label="Display name"
+                    value={values.displayName}
+                    onChange={(e) => onChange({ displayName: e.target.value })}
+                    fullWidth
+                    required
+                    error={flag(displayNameMissing)}
+                    helperText={flag(displayNameMissing) ? 'Display name is required' : 'Shown throughout the app and used to greet them in emails.'}
+                />
+                <TextField
+                    label="Email"
+                    value={values.email}
+                    onChange={(e) => onChange({ email: e.target.value })}
+                    fullWidth
+                    required
+                    error={flag(emailMissing) || !!emailFormatError}
+                    helperText={
+                        flag(emailMissing) ? 'Email is required'
+                            : emailFormatError ?? emailHelperText
+                    }
+                />
+            </FieldRow>
+
+            <FieldRow>
+                <TextField
+                    label="Phone number"
+                    type="tel"
+                    value={values.phoneNumber}
+                    onChange={(e) => onChange({ phoneNumber: e.target.value })}
+                    fullWidth
+                    error={!!phoneError}
+                    helperText={phoneError ?? 'Optional.'}
+                />
+                <TextField
+                    label="Date of birth"
+                    type="date"
+                    value={values.dateOfBirth}
+                    onChange={(e) => onChange({ dateOfBirth: e.target.value })}
+                    fullWidth
+                    /* `max` is the youngest allowed date of birth, not today: the
+                       picker should not offer a date the form is about to refuse.
+                       It is an affordance only — a date input can still be typed
+                       into, and `dobError` is what actually holds the line. */
+                    slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: latestAllowedDateOfBirth() } }}
+                    required
+                    error={showDobError}
+                    helperText={showDobError ? dobError : 'Used for birthday reminders.'}
+                />
+            </FieldRow>
+
+            <GenderRadioGroup
+                name={`${idPrefix}-gender`}
+                value={values.gender}
+                onChange={(gender) => onChange({ gender })}
+            />
+        </>
+    )
+}
+
 type StatusTab = 'all' | 'admins' | 'managers' | 'employees' | 'deactivated' | 'online'
 
 type Presence = PresenceStatus
@@ -135,9 +277,6 @@ interface DerivedUser {
     presence: Presence
     isAutoBreak: boolean
     lastSeenLabel: string
-    leaveBalance: number
-    leaveTotal: number
-    leavePct: number
     isProtected: boolean
     isActive: boolean
 }
@@ -214,7 +353,6 @@ function AdminUsersPanel() {
     })
     const { data: leaveHistories = [] } = useQuery({ queryKey: ['leaveStatusHistories'], queryFn: getLeaveStatusHistories })
     const { data: timesheetHistories = [] } = useQuery({ queryKey: ['timesheetStatusHistories'], queryFn: getTimesheetStatusHistories })
-    const { data: leaves = [] } = useQuery({ queryKey: ['annualLeaves'], queryFn: getAnnualLeaves })
 
     const profilesByUserId = useMemo(() => new Map(profiles.map((p) => [p.userId, p])), [profiles])
     const deptById = useMemo(() => new Map(departments.map((d) => [d.id, d])), [departments])
@@ -243,7 +381,6 @@ function AdminUsersPanel() {
 
     /* Derive a unified user list */
     const derivedAll: DerivedUser[] = useMemo(() => {
-        const currentYear = new Date().getFullYear()
         return users.map((u) => {
             const profile = profilesByUserId.get(u.id)
             const departmentName = profile?.departmentId ? deptById.get(profile.departmentId)?.name ?? null : null
@@ -252,12 +389,6 @@ function AdminUsersPanel() {
             const lastSeenLabel = presence === 'online' ? 'Online now'
                 : presence === 'away' ? (isAutoBreak ? 'Idle' : 'On break')
                 : (lastSeenByUserId.get(u.id) ?? 'No activity')
-            const used = leaves
-                .filter((l) => l.employeeId === u.id && l.status === 'Approved' && new Date(l.startDate).getFullYear() === currentYear)
-                .reduce((s, l) => s + l.totalDays, 0)
-            const entitled = profile?.annualLeaveEntitlement ?? 0
-            const leaveBalance = Math.max(0, entitled - used)
-            const leavePct = entitled > 0 ? Math.min(100, (used / entitled) * 100) : 0
             return {
                 user: u,
                 profile,
@@ -266,16 +397,13 @@ function AdminUsersPanel() {
                 presence,
                 isAutoBreak,
                 lastSeenLabel,
-                leaveBalance,
-                leaveTotal: entitled,
-                leavePct,
                 isProtected: u.email.trim().toLowerCase() === PROTECTED_ADMIN_EMAIL,
                 // Rows written before the column existed come back without the
                 // field; those accounts are active, as the migration's default says.
                 isActive: u.isActive !== false,
             }
         })
-    }, [users, profilesByUserId, deptById, presenceByUserId, lastSeenByUserId, leaves])
+    }, [users, profilesByUserId, deptById, presenceByUserId, lastSeenByUserId])
 
     /* Stats */
     const counts = useMemo(() => {
@@ -843,7 +971,6 @@ function UserRow({
         return managerUser?.displayName || managerUser?.email || null
     }, [derived.profile, profiles, usersByName])
 
-    const roleStyle = roleStyles[role]
     const accentColor = role === 'Admin' ? 'secondary.main'
         : role === 'Manager' ? 'warning.main' : 'primary.main'
 
@@ -858,9 +985,12 @@ function UserRow({
                 onClick={onToggleExpand}
                 sx={{
                     display: 'grid',
+                    /* The user cell is the one that takes the slack: it is the only
+                       column whose content varies in length, and the rest are pills
+                       and short labels that a wider track only pushes apart. */
                     gridTemplateColumns: {
                         xs: '24px 1fr auto',
-                        md: '24px minmax(0, 240px) minmax(0, 110px) minmax(0, 140px) minmax(0, 130px) minmax(0, 150px) minmax(80px, 1fr) auto',
+                        md: '24px minmax(0, 1fr) minmax(0, 110px) minmax(0, 140px) minmax(0, 130px) minmax(0, 150px) auto',
                     },
                     gap: '12px', alignItems: 'center',
                     p: '14px 16px', cursor: 'pointer',
@@ -914,14 +1044,7 @@ function UserRow({
 
                 {/* Role pill */}
                 <Box sx={{ display: { xs: 'none', md: 'block' } }}>
-                    <Box component="span" sx={{
-                        display: 'inline-flex', alignItems: 'center', gap: '4px',
-                        bgcolor: roleStyle.bg, color: roleStyle.fg,
-                        fontSize: 11, fontWeight: 500, px: '8px', py: '3px',
-                        borderRadius: '12px',
-                    }}>
-                        {role === 'Admin' ? '👑' : role === 'Manager' ? '👥' : '👤'} {role}
-                    </Box>
+                    <RolePill role={role} />
                 </Box>
 
                 {/* Department — not applicable to admins, who sit outside the department structure */}
@@ -960,29 +1083,6 @@ function UserRow({
                         }}>
                             Deactivated
                         </Box>
-                    )}
-                </Box>
-
-                {/* Leave — admins don't carry an entitlement */}
-                <Box sx={{ display: { xs: 'none', md: 'block' } }}>
-                    {role !== 'Admin' && derived.leaveTotal > 0 ? (
-                        <>
-                            <Box sx={{ fontSize: 11, color: 'text.secondary' }}>
-                                <Box component="strong" sx={{
-                                    color: derived.leavePct >= 80 ? 'error.main' : derived.leavePct >= 60 ? 'warning.main' : 'text.primary',
-                                    fontSize: 13, fontWeight: 700,
-                                }}>{derived.leaveBalance}</Box> / {derived.leaveTotal} days
-                            </Box>
-                            <Box sx={{ height: 4, bgcolor: 'action.hover', borderRadius: '2px', overflow: 'hidden', mt: '4px' }}>
-                                <Box sx={{
-                                    height: '100%',
-                                    bgcolor: derived.leavePct >= 80 ? 'error.main' : derived.leavePct >= 60 ? 'warning.main' : 'success.main',
-                                    width: `${100 - derived.leavePct}%`,
-                                }} />
-                            </Box>
-                        </>
-                    ) : (
-                        <Box sx={{ fontSize: 11, color: 'text.disabled' }}>—</Box>
                     )}
                 </Box>
 
@@ -1030,8 +1130,8 @@ function UserRow({
                         <ExpandRow label="Phone" value={u.phoneNumber || '—'} />
                         <ExpandRow label="Date of birth" value={u.dateOfBirth ? new Date(u.dateOfBirth).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'} />
                         <ExpandRow label="Gender" value={u.gender ?? '—'} />
-                        {/* Admins sit outside the department structure and carry no
-                            entitlement, so none of these rows apply to them. */}
+                        {/* Admins sit outside the department structure, so none of
+                            these rows apply to them. */}
                         {role !== 'Admin' && (
                             <>
                                 <ExpandRow label="Department" value={derived.departmentName ?? '—'} />
@@ -1039,10 +1139,6 @@ function UserRow({
                                 {role === 'Employee' && (
                                     <ExpandRow label="Manager" value={managerName ?? '—'} />
                                 )}
-                                <ExpandRow label="Annual entitlement"
-                                           value={derived.leaveTotal > 0 ? `${derived.leaveTotal} days` : '—'} />
-                                <ExpandRow label="Balance"
-                                           value={derived.leaveTotal > 0 ? `${derived.leaveBalance} days` : '—'} />
                             </>
                         )}
                     </ExpandBlock>
@@ -1265,6 +1361,24 @@ const roleStyles: Record<'Admin' | 'Manager' | 'Employee', { bg: SxColor; fg: st
     Employee: { bg: softBg('info'), fg: 'info.dark' },
 }
 
+const roleIcons: Record<'Admin' | 'Manager' | 'Employee', string> = {
+    Admin: '👑', Manager: '👥', Employee: '👤',
+}
+
+/** The role badge, shared by the list row and the Edit dialog's header. */
+function RolePill({ role }: { role: 'Admin' | 'Manager' | 'Employee' }) {
+    return (
+        <Box component="span" sx={{
+            display: 'inline-flex', alignItems: 'center', gap: '4px',
+            bgcolor: roleStyles[role].bg, color: roleStyles[role].fg,
+            fontSize: 11, fontWeight: 500, px: '8px', py: '3px',
+            borderRadius: '12px', flexShrink: 0, whiteSpace: 'nowrap',
+        }}>
+            {roleIcons[role]} {role}
+        </Box>
+    )
+}
+
 const activityIconBg: Record<ActivityItem['color'], SxColor> = {
     green: softBg('success'), amber: softBg('warning'), blue: softBg('info'), red: softBg('error'), gray: 'action.hover',
 }
@@ -1275,6 +1389,45 @@ const activityIconFg: Record<ActivityItem['color'], string> = {
 /* ════════════════════════════════════════════════════════════════════════ */
 /* Dialogs                                                                  */
 /* ════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Both user dialogs' header: what the form is, and one line saying what it is
+ * about — who is being edited, or that creating somebody needs no password.
+ * Identical shape in both, so moving between them does not re-lay-out the top
+ * of the screen.
+ *
+ * The avatar and role badge are Edit's alone: while creating there is nobody to
+ * picture and no role that has been granted yet. The subtitle is one joined
+ * string rather than two lines, which is also what the header test reads.
+ */
+function UserDialogHeader({ title, subtitle, avatarSeed, role }: {
+    title: string
+    subtitle: string
+    avatarSeed?: string
+    role?: 'Admin' | 'Manager' | 'Employee'
+}) {
+    return (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {avatarSeed ? (
+                <Box sx={{
+                    width: 36, height: 36, borderRadius: '50%',
+                    bgcolor: avatarBg(avatarSeed), color: '#fff',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 12, fontWeight: 600, flexShrink: 0,
+                }}>{initials(avatarSeed)}</Box>
+            ) : null}
+            <Box sx={{ minWidth: 0, flex: 1 }}>
+                {title}
+                {subtitle ? (
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 400 }}>
+                        {subtitle}
+                    </Typography>
+                ) : null}
+            </Box>
+            {role ? <RolePill role={role} /> : null}
+        </Box>
+    )
+}
 
 // A user's manager is whoever manages their department — not a free pick.
 // Mirrors DepartmentsPanel's "Department manager" derivation (the department's
@@ -1395,57 +1548,96 @@ function EditUserDialog(props: {
        The two differ only on a form the admin has not started. */
     const flag = (missing: boolean) => dirty && missing
 
+    /* One setter for the shared identity block. It marks the form dirty for every
+       field in there, which the old per-field handlers each did by hand — a new
+       field added to PersonalDetailsFields therefore cannot forget to. */
+    const onPersonalDetailsChange = (patch: Partial<PersonalDetails>) => {
+        setDirty(true)
+        if (patch.email !== undefined) setEmail(patch.email)
+        if (patch.displayName !== undefined) setDisplayName(patch.displayName)
+        if (patch.phoneNumber !== undefined) setPhoneNumber(patch.phoneNumber)
+        if (patch.dateOfBirth !== undefined) setDateOfBirth(patch.dateOfBirth)
+        if ('gender' in patch) setGender(patch.gender ?? null)
+    }
+
     // Only an employee reports to the department's manager. A manager *is* one, so
     // the field is meaningless for them and hidden — and, being hidden, it neither
     // sets nor clears anything: the stored managerId is submitted back untouched.
     const showManagerField = role === 'Employee'
 
     // Edit used to accept a blank email or display name and save it; Create has
-    // always refused both. Same rule, same wording, in both places now.
-    const emailMissing = !email.trim()
+    // always refused both. Same rule, same wording, in both places now. A blank
+    // email is `emailError`'s own business, so Save gates on that rather than on
+    // a second check here.
     const displayNameMissing = !displayName.trim()
 
     /* Who is being edited, from the stored record rather than the live fields —
        the header names the person you opened, and must not rewrite itself as you
-       type a correction into Display name. */
+       type a correction into Display name. Same reason the avatar and role badge
+       below read the stored record: the header is a label for what you opened,
+       not a preview of what you are about to save. */
     const identity = user ? [user.displayName, user.email].filter(Boolean).join(' · ') : ''
+    const storedRole = user ? primaryRoleOf(user.roles) : undefined
 
     return (
         <AppDialog open={open} onClose={props.onClose} maxWidth="sm">
             <AppDialogTitle>
-                <Box>
-                    Edit User
-                    {identity ? (
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 400 }}>
-                            {identity}
-                        </Typography>
-                    ) : null}
-                </Box>
+                <UserDialogHeader
+                    title="Edit User"
+                    subtitle={identity}
+                    avatarSeed={user ? (user.displayName || user.email) : undefined}
+                    role={storedRole}
+                />
             </AppDialogTitle>
             <AppDialogContent>
                 <Stack spacing={2}>
                     <DialogSection title="Personal details" first>
-                        <TextField
-                            label="Email"
-                            value={email}
-                            onChange={(e) => { setDirty(true); setEmail(e.target.value) }}
-                            fullWidth
-                            required
-                            error={flag(emailMissing)}
-                            helperText={flag(emailMissing) ? 'Email is required' : 'Used to sign in and to receive notifications.'}
+                        <PersonalDetailsFields
+                            idPrefix="edit-user"
+                            values={{ email, displayName, phoneNumber, dateOfBirth, gender }}
+                            onChange={onPersonalDetailsChange}
+                            flag={flag}
+                            emailHelperText="Used to sign in and to receive notifications."
+                            /* Only once the record's own values are in the fields.
+                               They hydrate a microtask late, and until then the date
+                               is blank for a reason that has nothing to do with the
+                               record — announcing it there is the red flash on a
+                               perfectly valid record that `dirty` exists to prevent. */
+                            announceMissingDateOfBirth={!!user && hydratedFor === user.id}
                         />
-                        <TextField
-                            label="Display name"
-                            value={displayName}
-                            onChange={(e) => { setDirty(true); setDisplayName(e.target.value) }}
-                            fullWidth
-                            required
-                            error={flag(displayNameMissing)}
-                            helperText={flag(displayNameMissing) ? 'Display name is required' : 'Shown throughout the app and used to greet them in emails.'}
-                        />
-                        <TextField label="Phone number" type="tel" value={phoneNumber} onChange={(e) => { setDirty(true); setPhoneNumber(e.target.value) }} fullWidth helperText="Optional." />
-                        <TextField label="Date of birth" type="date" value={dateOfBirth} onChange={(e) => { setDirty(true); setDateOfBirth(e.target.value) }} fullWidth slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: new Date().toISOString().slice(0, 10) } }} helperText="Used for birthday reminders." />
-                        <GenderRadioGroup name="edit-user-gender" value={gender} onChange={(value) => { setDirty(true); setGender(value) }} />
+
+                        {/* Maternity and Paternity Leave are granted per child, so a
+                            request against either has to name one — and until a child
+                            is on file the employee cannot make that request at all.
+                            An admin can now put them on file rather than only being
+                            able to tell the employee to do it themselves.
+
+                            Who somebody's children are is a fact about them, not about
+                            where they sit in the organisation, so this belongs here
+                            rather than under Profile — beside Gender, which is the
+                            other half of the same rule: the two together decide which
+                            parental leave type the employee is offered.
+
+                            It still hides for an Admin. That used to fall out of living
+                            inside the Profile section, which an Admin has none of; out
+                            here it has to say so itself.
+
+                            The rows commit immediately, unlike the rest of this
+                            dialog, which saves on Save: each child is its own
+                            resource. The Yes/No declaration is deliberately not asked
+                            here — that is the employee's own statement — but the
+                            server records it anyway, since adding a child sets
+                            HasChildren on the profile. */}
+                        {profile && !isAdmin && hydratedFor === user!.id && (
+                            <>
+                                <Divider />
+                                <ChildrenSection
+                                    employeeId={user!.id}
+                                    onBehalfOfName={user!.displayName || user!.email}
+                                    disabled={props.isPending}
+                                />
+                            </>
+                        )}
                     </DialogSection>
 
                     <DialogSection title="Role & access">
@@ -1463,21 +1655,33 @@ function EditUserDialog(props: {
 
                     {profile && !isAdmin && (
                         <DialogSection title="Profile" hint="Where this person sits in the organisation.">
-                            <TextField
-                                select
-                                label="Department"
-                                value={departmentId}
-                                onChange={(e) => { setDirty(true); setDepartmentId(Number(e.target.value)) }}
-                                fullWidth
-                                required
-                                error={flag(departmentId === 0)}
-                                helperText={flag(departmentId === 0) ? 'Department is required' : ''}
-                            >
-                                <MenuItem value={0} disabled>Select department</MenuItem>
-                                {props.departments.map((dept) => (
-                                    <MenuItem key={dept.id} value={dept.id}>{dept.name} ({dept.code})</MenuItem>
-                                ))}
-                            </TextField>
+                            {/* Department and Job title pair up; Manager sits full width
+                                directly under the department that derives it, because both
+                                its value ("No manager assigned to this department") and its
+                                explanation need the room. */}
+                            <FieldRow>
+                                <TextField
+                                    select
+                                    label="Department"
+                                    value={departmentId}
+                                    onChange={(e) => { setDirty(true); setDepartmentId(Number(e.target.value)) }}
+                                    fullWidth
+                                    required
+                                    error={flag(departmentId === 0)}
+                                    helperText={flag(departmentId === 0) ? 'Department is required' : ''}
+                                >
+                                    <MenuItem value={0} disabled>Select department</MenuItem>
+                                    {props.departments.map((dept) => (
+                                        <MenuItem key={dept.id} value={dept.id}>{dept.name} ({dept.code})</MenuItem>
+                                    ))}
+                                </TextField>
+                                <TextField
+                                    label="Job title"
+                                    value={jobTitle}
+                                    onChange={(e) => { setDirty(true); setJobTitle(e.target.value) }}
+                                    fullWidth
+                                />
+                            </FieldRow>
                             {showManagerField && (
                                 <TextField
                                     label="Manager"
@@ -1491,35 +1695,6 @@ function EditUserDialog(props: {
                                     helperText="Set by the department's manager — change it by reassigning who manages this department."
                                 />
                             )}
-                            <TextField
-                                label="Job title"
-                                value={jobTitle}
-                                onChange={(e) => { setDirty(true); setJobTitle(e.target.value) }}
-                                fullWidth
-                            />
-
-                            {/* Maternity and Paternity Leave are granted per child, so a
-                                request against either has to name one — and until a child
-                                is on file the employee cannot make that request at all.
-                                An admin can now put them on file rather than only being
-                                able to tell the employee to do it themselves.
-
-                                The rows commit immediately, unlike the rest of this
-                                dialog, which saves on Save: each child is its own
-                                resource. The Yes/No declaration is deliberately not asked
-                                here — that is the employee's own statement — but the
-                                server records it anyway, since adding a child sets
-                                HasChildren on the profile. */}
-                            {hydratedFor === user!.id && (
-                                <>
-                                    <Divider />
-                                    <ChildrenSection
-                                        employeeId={user!.id}
-                                        onBehalfOfName={user!.displayName || user!.email}
-                                        disabled={props.isPending}
-                                    />
-                                </>
-                            )}
                         </DialogSection>
                     )}
 
@@ -1530,7 +1705,7 @@ function EditUserDialog(props: {
                 <Button variant="outlined" onClick={props.onClose} disabled={props.isPending} sx={cancelBtnSx}>Cancel</Button>
                 <Button
                     variant="contained"
-                    disabled={props.isPending || !user || departmentMissing || emailMissing || displayNameMissing}
+                    disabled={props.isPending || !user || departmentMissing || displayNameMissing || !!emailError(email) || !!phoneNumberError(phoneNumber) || !!dateOfBirthError(dateOfBirth)}
                     onClick={() =>
                         /* No override means the leave type's own allowance, not 0: a stored 0
                            switches the approval-time balance check off outright (see
@@ -1586,6 +1761,16 @@ function CreateUserDialog(props: {
     const [dirty, setDirty] = useState(false)
     const flag = (missing: boolean) => dirty && missing
 
+    /* One setter for the shared identity block — see EditUserDialog's copy. */
+    const onPersonalDetailsChange = (patch: Partial<PersonalDetails>) => {
+        setDirty(true)
+        if (patch.email !== undefined) setEmail(patch.email)
+        if (patch.displayName !== undefined) setDisplayName(patch.displayName)
+        if (patch.phoneNumber !== undefined) setPhoneNumber(patch.phoneNumber)
+        if (patch.dateOfBirth !== undefined) setDateOfBirth(patch.dateOfBirth)
+        if ('gender' in patch) setGender(patch.gender ?? null)
+    }
+
     // Same rule as EditUserDialog: a new hire reports to whoever manages the
     // department they're placed in — not a free pick.
     const departmentManager = useMemo(
@@ -1623,38 +1808,52 @@ function CreateUserDialog(props: {
     return (
         <AppDialog open={props.open} onClose={close} maxWidth="sm">
             {/* Titled to match the "+ Add user" button that opens it — calling the
-                same thing two names made it read as a different screen. */}
-            <AppDialogTitle>Add User</AppDialogTitle>
+                same thing two names made it read as a different screen.
+
+                The "no password needed" line is the subtitle rather than the info
+                Alert it used to be: the same sentence, in the slot where Edit says
+                who it is editing, so both dialogs open the same way and the form
+                starts at a field instead of a coloured block. */}
+            <AppDialogTitle>
+                <UserDialogHeader
+                    title="Add User"
+                    subtitle="No password needed — we'll email this person a secure link to set their own."
+                />
+            </AppDialogTitle>
             <AppDialogContent>
                 <Stack spacing={2}>
-                    {/* No password field: the new user picks their own from the
-                        emailed link, so an admin never sets or relays one. */}
-                    <Alert severity="info" sx={{ fontSize: 12 }}>
-                        No password needed — we'll email this person a secure link to set their own.
-                    </Alert>
-
                     <DialogSection title="Personal details" first>
-                        <TextField
-                            label="Email"
-                            value={email}
-                            onChange={(e) => { setDirty(true); setEmail(e.target.value) }}
-                            fullWidth
-                            required
-                            error={flag(!email.trim())}
-                            helperText={flag(!email.trim()) ? 'Email is required' : 'Where the welcome link and all notifications are sent.'}
+                        <PersonalDetailsFields
+                            idPrefix="create-user"
+                            values={{ email, displayName, phoneNumber, dateOfBirth, gender }}
+                            onChange={onPersonalDetailsChange}
+                            flag={flag}
+                            emailHelperText="Where the welcome link and all notifications are sent."
+                            announceMissingDateOfBirth={false}
                         />
-                        <TextField
-                            label="Display name"
-                            value={displayName}
-                            onChange={(e) => { setDirty(true); setDisplayName(e.target.value) }}
-                            fullWidth
-                            required
-                            error={flag(!displayName.trim())}
-                            helperText={flag(!displayName.trim()) ? 'Display name is required' : 'Shown throughout the app and used to greet them in emails.'}
-                        />
-                        <TextField label="Phone number" type="tel" value={phoneNumber} onChange={(e) => { setDirty(true); setPhoneNumber(e.target.value) }} fullWidth helperText="Optional." />
-                        <TextField label="Date of birth" type="date" value={dateOfBirth} onChange={(e) => { setDirty(true); setDateOfBirth(e.target.value) }} fullWidth slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: new Date().toISOString().slice(0, 10) } }} helperText="Used for birthday reminders." />
-                        <GenderRadioGroup name="create-user-gender" value={gender} onChange={(value) => { setDirty(true); setGender(value) }} />
+
+                        {/* Beside Gender rather than under Profile — see EditUserDialog
+                            for why, including why it still has to hide for an Admin now
+                            that it no longer sits inside a section that does.
+
+                            Collected here and written straight after the account
+                            exists — there is no profile for a child to belong to
+                            until then, so unlike the Edit dialog these rows cannot
+                            commit as they are entered. The panel's create mutation
+                            writes them and reports any that fail; the account is
+                            already made by then, so a failure here must not read
+                            as the create having failed. */}
+                        {!isAdmin && (
+                            <>
+                                <Divider />
+                                <ChildrenSection
+                                    pendingChildren={pendingChildren}
+                                    onPendingChildrenChange={setPendingChildren}
+                                    onBehalfOfName={displayName.trim() || 'This person'}
+                                    disabled={props.isPending}
+                                />
+                            </>
+                        )}
                     </DialogSection>
 
                     <DialogSection title="Role & access">
@@ -1672,21 +1871,30 @@ function CreateUserDialog(props: {
 
                     {!isAdmin && (
                         <DialogSection title="Profile" hint="Where this person sits in the organisation.">
-                            <TextField
-                                select
-                                label="Department"
-                                value={departmentId}
-                                onChange={(e) => { setDirty(true); setDepartmentId(Number(e.target.value)) }}
-                                fullWidth
-                                required
-                                error={flag(departmentId === 0)}
-                                helperText={flag(departmentId === 0) ? 'Department is required' : ''}
-                            >
-                                <MenuItem value={0} disabled>Select department</MenuItem>
-                                {props.departments.map((dept) => (
-                                    <MenuItem key={dept.id} value={dept.id}>{dept.name} ({dept.code})</MenuItem>
-                                ))}
-                            </TextField>
+                            {/* Same pairing as EditUserDialog — see the note there. */}
+                            <FieldRow>
+                                <TextField
+                                    select
+                                    label="Department"
+                                    value={departmentId}
+                                    onChange={(e) => { setDirty(true); setDepartmentId(Number(e.target.value)) }}
+                                    fullWidth
+                                    required
+                                    error={flag(departmentId === 0)}
+                                    helperText={flag(departmentId === 0) ? 'Department is required' : ''}
+                                >
+                                    <MenuItem value={0} disabled>Select department</MenuItem>
+                                    {props.departments.map((dept) => (
+                                        <MenuItem key={dept.id} value={dept.id}>{dept.name} ({dept.code})</MenuItem>
+                                    ))}
+                                </TextField>
+                                <TextField
+                                    label="Job title"
+                                    value={jobTitle}
+                                    onChange={(e) => { setDirty(true); setJobTitle(e.target.value) }}
+                                    fullWidth
+                                />
+                            </FieldRow>
                             {showManagerField && (
                                 <TextField
                                     label="Manager"
@@ -1697,27 +1905,6 @@ function CreateUserDialog(props: {
                                     helperText="Set by the department's manager — change it by reassigning who manages this department."
                                 />
                             )}
-                            <TextField
-                                label="Job title"
-                                value={jobTitle}
-                                onChange={(e) => { setDirty(true); setJobTitle(e.target.value) }}
-                                fullWidth
-                            />
-
-                            {/* Collected here and written straight after the account
-                                exists — there is no profile for a child to belong to
-                                until then, so unlike the Edit dialog these rows cannot
-                                commit as they are entered. The panel's create mutation
-                                writes them and reports any that fail; the account is
-                                already made by then, so a failure here must not read
-                                as the create having failed. */}
-                            <Divider />
-                            <ChildrenSection
-                                pendingChildren={pendingChildren}
-                                onPendingChildrenChange={setPendingChildren}
-                                onBehalfOfName={displayName.trim() || 'This person'}
-                                disabled={props.isPending}
-                            />
                         </DialogSection>
                     )}
 
@@ -1728,7 +1915,7 @@ function CreateUserDialog(props: {
                 <Button variant="outlined" onClick={close} disabled={props.isPending} sx={cancelBtnSx}>Cancel</Button>
                 <Button
                     variant="contained"
-                    disabled={props.isPending || !email.trim() || !displayName.trim() || effectiveDepartmentId === 0}
+                    disabled={props.isPending || !displayName.trim() || effectiveDepartmentId === 0 || !!emailError(email) || !!phoneNumberError(phoneNumber) || !!dateOfBirthError(dateOfBirth)}
                     onClick={() => props.onSubmit({
                         email: email.trim(),
                         displayName: displayName.trim(),

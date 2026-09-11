@@ -105,6 +105,7 @@ describe('AdminUsersPanel — Create User', () => {
 
         fireEvent.change(within(dialog).getByLabelText(/email/i), { target: { value: 'newjoiner@example.test' } })
         await selectDepartment(dialog)
+        setDateOfBirth(dialog)
 
         expect(within(dialog).getByText('Display name is required')).toBeInTheDocument()
         expect(within(dialog).getByRole('button', { name: /^create$/i })).toBeDisabled()
@@ -132,6 +133,7 @@ describe('AdminUsersPanel — Create User', () => {
         fireEvent.change(within(dialog).getByLabelText(/email/i), { target: { value: ' newjoiner@example.test ' } })
         fireEvent.change(within(dialog).getByLabelText(/display name/i), { target: { value: 'New Joiner' } })
         await selectDepartment(dialog)
+        setDateOfBirth(dialog)
 
         fireEvent.click(within(dialog).getByRole('button', { name: /^create$/i }))
 
@@ -150,7 +152,7 @@ describe('AdminUsersPanel — Create User', () => {
             // balance-affecting leave type (CreateAdminUser), so the client has no
             // figure to send and no chance to send a stale one.
             phoneNumber: null,
-            dateOfBirth: null,
+            dateOfBirth: '1990-03-04',
             // Untouched, and sent as null rather than omitted: the DTO is a full
             // replace, so null is the value that means "not specified".
             gender: null,
@@ -177,6 +179,7 @@ describe('AdminUsersPanel — Create User', () => {
         fireEvent.change(within(dialog).getByLabelText(/email/i), { target: { value: 'newjoiner@example.test' } })
         fireEvent.change(within(dialog).getByLabelText(/display name/i), { target: { value: 'New Joiner' } })
         await selectDepartment(dialog)
+        setDateOfBirth(dialog)
         fireEvent.click(within(dialog).getByRole('button', { name: /^create$/i }))
 
         expect(await screen.findByText(/the welcome email could not be sent/i)).toBeInTheDocument()
@@ -245,8 +248,8 @@ describe('AdminUsersPanel — presence', () => {
 // this user reports to, which drifted from what the Departments page showed as
 // that department's manager.
 describe('AdminUsersPanel — manager is derived from department', () => {
-    const MANAGER_USER = { id: 'u-manager', userName: 'manager@example.test', email: 'manager@example.test', displayName: 'Andreas Georgiou', imageUrl: '', emailConfirmed: true, roles: ['Manager'] }
-    const EMPLOYEE_USER = { id: 'u-employee', userName: 'employee@example.test', email: 'employee@example.test', displayName: 'Theodoros Iona', imageUrl: '', emailConfirmed: true, roles: ['Employee'] }
+    const MANAGER_USER = { id: 'u-manager', userName: 'manager@example.test', email: 'manager@example.test', displayName: 'Andreas Georgiou', imageUrl: '', emailConfirmed: true, roles: ['Manager'], dateOfBirth: '1990-03-04' }
+    const EMPLOYEE_USER = { id: 'u-employee', userName: 'employee@example.test', email: 'employee@example.test', displayName: 'Theodoros Iona', imageUrl: '', emailConfirmed: true, roles: ['Employee'], dateOfBirth: '1990-03-04' }
 
     const MANAGER_PROFILE = { id: 'p-manager', userId: 'u-manager', displayName: 'Andreas Georgiou', departmentId: DEPARTMENT.id, managerId: null, annualLeaveEntitlement: 20, leaveBalance: 20, jobTitle: null, createdAt: '2026-01-01' }
     const EMPLOYEE_PROFILE = { id: 'p-employee', userId: 'u-employee', displayName: 'Theodoros Iona', departmentId: DEPARTMENT.id, managerId: null, annualLeaveEntitlement: 20, leaveBalance: 20, jobTitle: null, createdAt: '2026-01-01' }
@@ -357,6 +360,7 @@ describe('AdminUsersPanel — manager is derived from department', () => {
         fireEvent.change(within(dialog).getByLabelText(/email/i), { target: { value: 'newhire@example.test' } })
         fireEvent.change(within(dialog).getByLabelText(/display name/i), { target: { value: 'New Hire' } })
         await selectDepartment(dialog)
+        setDateOfBirth(dialog)
 
         expect(await within(dialog).findByDisplayValue('Andreas Georgiou')).toBeInTheDocument()
 
@@ -387,6 +391,7 @@ describe('AdminUsersPanel — manager is derived from department', () => {
         fireEvent.change(within(dialog).getByLabelText(/display name/i), { target: { value: 'New Manager' } })
         fireEvent.click(within(dialog).getByRole('radio', { name: 'Manager' }))
         await selectDepartment(dialog)
+        setDateOfBirth(dialog)
 
         expect(within(dialog).queryByRole('textbox', { name: 'Manager' })).not.toBeInTheDocument()
         expect(within(dialog).queryByDisplayValue('Andreas Georgiou')).not.toBeInTheDocument()
@@ -456,6 +461,7 @@ describe('AdminUsersPanel — role selection', () => {
         fireEvent.change(within(dialog).getByLabelText(/display name/i), { target: { value: 'New Joiner' } })
         fireEvent.click(within(dialog).getByRole('radio', { name: 'Manager' }))
         await selectDepartment(dialog)
+        setDateOfBirth(dialog)
         fireEvent.click(within(dialog).getByRole('button', { name: /^create$/i }))
 
         await waitFor(() => expect(createAdminUser).toHaveBeenCalledTimes(1))
@@ -512,6 +518,7 @@ describe('AdminUsersPanel — Admin hides the Profile section', () => {
         fireEvent.change(within(dialog).getByLabelText(/email/i), { target: { value: 'newadmin@example.test' } })
         fireEvent.change(within(dialog).getByLabelText(/display name/i), { target: { value: 'New Admin' } })
         fireEvent.click(within(dialog).getByRole('radio', { name: 'Admin' }))
+        setDateOfBirth(dialog)
 
         // No department to select — Create is enabled all the same.
         const create = within(dialog).getByRole('button', { name: /^create$/i })
@@ -548,8 +555,8 @@ describe('AdminUsersPanel — Admin hides the Profile section', () => {
 // able to move a profile out of a department as well as into one — and must not
 // send back the department a promoted user is leaving behind.
 describe('AdminUsersPanel — editing across the Admin boundary', () => {
-    const EMPLOYEE_USER = { id: 'u-employee', userName: 'employee@example.test', email: 'employee@example.test', displayName: 'Theodoros Iona', imageUrl: '', emailConfirmed: true, isActive: true, roles: ['Employee'] }
-    const ADMIN_USER = { id: 'u-admin', userName: 'admin@example.test', email: 'admin@example.test', displayName: 'Admin User', imageUrl: '', emailConfirmed: true, isActive: true, roles: ['Admin'] }
+    const EMPLOYEE_USER = { id: 'u-employee', userName: 'employee@example.test', email: 'employee@example.test', displayName: 'Theodoros Iona', imageUrl: '', emailConfirmed: true, isActive: true, roles: ['Employee'], dateOfBirth: '1990-03-04' }
+    const ADMIN_USER = { id: 'u-admin', userName: 'admin@example.test', email: 'admin@example.test', displayName: 'Admin User', imageUrl: '', emailConfirmed: true, isActive: true, roles: ['Admin'], dateOfBirth: '1990-03-04' }
 
     const EMPLOYEE_PROFILE = { id: 'p-employee', userId: 'u-employee', displayName: 'Theodoros Iona', departmentId: DEPARTMENT.id, managerId: null, annualLeaveEntitlement: 20, leaveBalance: 20, jobTitle: null, createdAt: '2026-01-01' }
     // What the server now returns for an admin: a profile, and no department.
@@ -611,6 +618,7 @@ describe('AdminUsersPanel — editing across the Admin boundary', () => {
         expect(within(dialog).getByRole('button', { name: /^save$/i })).toBeDisabled()
 
         await selectDepartment(dialog)
+        setDateOfBirth(dialog)
 
         expect(within(dialog).getByRole('button', { name: /^save$/i })).toBeEnabled()
         fireEvent.click(within(dialog).getByRole('button', { name: /^save$/i }))
@@ -736,7 +744,7 @@ describe('AdminUsersPanel — activating and deactivating', () => {
  * would switch their balance check off entirely (AnnualLeaveBalanceCalculator).
  */
 describe('AdminUsersPanel — leave is not configured per user', () => {
-    const EMPLOYEE = { id: 'u-employee', userName: 'e@example.test', email: 'e@example.test', displayName: 'Some Employee', imageUrl: '', emailConfirmed: true, isActive: true, roles: ['Employee'] }
+    const EMPLOYEE = { id: 'u-employee', userName: 'e@example.test', email: 'e@example.test', displayName: 'Some Employee', imageUrl: '', emailConfirmed: true, isActive: true, roles: ['Employee'], dateOfBirth: '1990-03-04' }
     const PROFILE = { id: 'p-employee', userId: 'u-employee', displayName: 'Some Employee', departmentId: DEPARTMENT.id, managerId: null, annualLeaveEntitlement: 20, leaveBalance: 14, jobTitle: 'Engineer', createdAt: '2026-01-01' }
 
     beforeEach(() => {
@@ -789,8 +797,8 @@ describe('AdminUsersPanel — leave is not configured per user', () => {
  * field would be write-once in practice.
  */
 describe('AdminUsersPanel — recording gender', () => {
-    const MALE_USER = { id: 'u-male', userName: 'm@example.test', email: 'm@example.test', displayName: 'Stored Male', imageUrl: '', emailConfirmed: true, isActive: true, roles: ['Employee'], gender: 'Male' }
-    const UNSET_USER = { id: 'u-unset', userName: 'u@example.test', email: 'u@example.test', displayName: 'No Gender', imageUrl: '', emailConfirmed: true, isActive: true, roles: ['Employee'], gender: null }
+    const MALE_USER = { id: 'u-male', userName: 'm@example.test', email: 'm@example.test', displayName: 'Stored Male', imageUrl: '', emailConfirmed: true, isActive: true, roles: ['Employee'], gender: 'Male', dateOfBirth: '1990-03-04' }
+    const UNSET_USER = { id: 'u-unset', userName: 'u@example.test', email: 'u@example.test', displayName: 'No Gender', imageUrl: '', emailConfirmed: true, isActive: true, roles: ['Employee'], gender: null, dateOfBirth: '1990-03-04' }
 
     const MALE_PROFILE = { id: 'p-male', userId: 'u-male', displayName: 'Stored Male', departmentId: DEPARTMENT.id, managerId: null, annualLeaveEntitlement: 20, leaveBalance: 20, jobTitle: null, createdAt: '2026-01-01' }
     const UNSET_PROFILE = { id: 'p-unset', userId: 'u-unset', displayName: 'No Gender', departmentId: DEPARTMENT.id, managerId: null, annualLeaveEntitlement: 20, leaveBalance: 20, jobTitle: null, createdAt: '2026-01-01' }
@@ -885,6 +893,15 @@ describe('AdminUsersPanel — recording gender', () => {
 })
 
 /** MUI's select renders its options into a portal, hence the two steps. */
+/**
+ * Fills the date of birth, which is required on both dialogs. Paired with
+ * `selectDepartment` in every test that goes on to submit: between them they
+ * supply the two required fields a test is not otherwise about.
+ */
+function setDateOfBirth(dialog: HTMLElement, value = "1990-03-04") {
+    fireEvent.change(within(dialog).getByLabelText(/date of birth/i), { target: { value } })
+}
+
 async function selectDepartment(dialog: HTMLElement) {
     fireEvent.mouseDown(within(dialog).getByRole('combobox'))
 
@@ -993,6 +1010,7 @@ describe('AdminUsersPanel — adding children while creating a user', () => {
         fireEvent.change(within(dialog).getByLabelText(/email/i), { target: { value: 'newhire@example.test' } })
         fireEvent.change(within(dialog).getByLabelText(/display name/i), { target: { value: 'New Hire' } })
         await selectDepartment(dialog)
+        setDateOfBirth(dialog)
     }
 
     async function addPendingChild(dialog: HTMLElement, name: string, dateOfBirth: string) {
@@ -1096,7 +1114,7 @@ describe('AdminUsersPanel — adding children while creating a user', () => {
 // offered — is nowhere near this dialog; and picking Admin silently removes the
 // whole Profile section.
 describe('AdminUsersPanel — dialogs explain themselves', () => {
-    const EMPLOYEE_USER = { id: 'u-employee', userName: 'employee@example.test', email: 'employee@example.test', displayName: 'Theodoros Iona', imageUrl: '', emailConfirmed: true, roles: ['Employee'] }
+    const EMPLOYEE_USER = { id: 'u-employee', userName: 'employee@example.test', email: 'employee@example.test', displayName: 'Theodoros Iona', imageUrl: '', emailConfirmed: true, roles: ['Employee'], dateOfBirth: '1990-03-04' }
     const EMPLOYEE_PROFILE = { id: 'p-employee', userId: 'u-employee', displayName: 'Theodoros Iona', departmentId: DEPARTMENT.id, managerId: null, annualLeaveEntitlement: 20, leaveBalance: 20, jobTitle: null, createdAt: '2026-01-01' }
 
     beforeEach(() => {
@@ -1204,7 +1222,7 @@ describe('AdminUsersPanel — a form nobody has touched is not wrong yet', () =>
     // Edit hydrates its fields in a microtask, so for one render they are all
     // blank -- long enough to flash red on a record that is perfectly valid.
     it('opens Edit User with nothing flagged', async () => {
-        const EMPLOYEE_USER = { id: 'u-employee', userName: 'employee@example.test', email: 'employee@example.test', displayName: 'Theodoros Iona', imageUrl: '', emailConfirmed: true, roles: ['Employee'] }
+        const EMPLOYEE_USER = { id: 'u-employee', userName: 'employee@example.test', email: 'employee@example.test', displayName: 'Theodoros Iona', imageUrl: '', emailConfirmed: true, roles: ['Employee'], dateOfBirth: '1990-03-04' }
         const EMPLOYEE_PROFILE = { id: 'p-employee', userId: 'u-employee', displayName: 'Theodoros Iona', departmentId: DEPARTMENT.id, managerId: null, annualLeaveEntitlement: 20, leaveBalance: 20, jobTitle: null, createdAt: '2026-01-01' }
         api.getAdminUsers.mockResolvedValue([EMPLOYEE_USER] as never)
         api.getEmployeeProfiles.mockResolvedValue([EMPLOYEE_PROFILE] as never)
@@ -1223,5 +1241,180 @@ describe('AdminUsersPanel — a form nobody has touched is not wrong yet', () =>
         // And still nothing flagged once the fields have hydrated.
         await within(dialog).findByDisplayValue('Theodoros Iona')
         expect(dialog.querySelectorAll('input[aria-invalid="true"]')).toHaveLength(0)
+    })
+})
+
+/* Phone number was a free-text field on both admin dialogs: "cvbcvb" saved with
+   a 200. The employee's own Edit profile had refused letters all along, so this
+   is the same rule reaching the other two surfaces that collect the number. */
+describe('AdminUsersPanel — phone number takes only a number', () => {
+    const EMPLOYEE_USER = { id: 'u-employee', userName: 'employee@example.test', email: 'employee@example.test', displayName: 'Theodoros Iona', imageUrl: '', emailConfirmed: true, roles: ['Employee'], phoneNumber: '99123456', dateOfBirth: '1990-03-04' }
+    const EMPLOYEE_PROFILE = { id: 'p-employee', userId: 'u-employee', displayName: 'Theodoros Iona', departmentId: DEPARTMENT.id, managerId: null, annualLeaveEntitlement: 20, leaveBalance: 20, jobTitle: null, createdAt: '2026-01-01' }
+
+    it('refuses to create a user whose phone number contains letters', async () => {
+        const dialog = await openCreateDialog()
+
+        fireEvent.change(within(dialog).getByLabelText(/display name/i), { target: { value: 'New Joiner' } })
+        fireEvent.change(within(dialog).getByLabelText(/email/i), { target: { value: 'newjoiner@example.test' } })
+        await selectDepartment(dialog)
+        setDateOfBirth(dialog)
+        expect(within(dialog).getByRole('button', { name: /^create$/i })).toBeEnabled()
+
+        fireEvent.change(within(dialog).getByLabelText(/phone number/i), { target: { value: 'cvbcvb' } })
+
+        expect(within(dialog).getByText('Phone number can only contain numbers.')).toBeInTheDocument()
+        expect(within(dialog).getByRole('button', { name: /^create$/i })).toBeDisabled()
+    })
+
+    it('accepts a number written with a dialling code', async () => {
+        const dialog = await openCreateDialog()
+
+        fireEvent.change(within(dialog).getByLabelText(/display name/i), { target: { value: 'New Joiner' } })
+        fireEvent.change(within(dialog).getByLabelText(/email/i), { target: { value: 'newjoiner@example.test' } })
+        await selectDepartment(dialog)
+        setDateOfBirth(dialog)
+        fireEvent.change(within(dialog).getByLabelText(/phone number/i), { target: { value: '+357 99 123456' } })
+
+        expect(within(dialog).queryByText('Phone number can only contain numbers.')).not.toBeInTheDocument()
+        expect(within(dialog).getByRole('button', { name: /^create$/i })).toBeEnabled()
+    })
+
+    it('refuses to save an edit that puts letters in the phone number', async () => {
+        api.getAdminUsers.mockResolvedValue([EMPLOYEE_USER] as never)
+        api.getEmployeeProfiles.mockResolvedValue([EMPLOYEE_PROFILE] as never)
+
+        renderPanel()
+        const nameEl = await screen.findByText('Theodoros Iona')
+        const row = nameEl.parentElement!.parentElement!.parentElement!.parentElement!
+        fireEvent.click(within(row).getByTitle('Edit'))
+        const dialog = screen.getByRole('dialog')
+        await within(dialog).findByDisplayValue('Theodoros Iona')
+
+        fireEvent.change(within(dialog).getByLabelText(/phone number/i), { target: { value: 'cvbcvb' } })
+
+        expect(within(dialog).getByText('Phone number can only contain numbers.')).toBeInTheDocument()
+        expect(within(dialog).getByRole('button', { name: /^save$/i })).toBeDisabled()
+    })
+})
+
+/* Email and date of birth were free text too: "ZXzx" was an address, and the
+   date picker happily took today, making the new hire a newborn. Same treatment
+   as the phone number above — the rule lives in lib/validation/person. */
+describe('AdminUsersPanel — email and date of birth are checked as they are typed', () => {
+    /** A create form that is complete and valid apart from what each test breaks. */
+    async function openCompleteCreateDialog() {
+        const dialog = await openCreateDialog()
+        fireEvent.change(within(dialog).getByLabelText(/display name/i), { target: { value: 'New Joiner' } })
+        fireEvent.change(within(dialog).getByLabelText(/email/i), { target: { value: 'newjoiner@example.test' } })
+        await selectDepartment(dialog)
+        setDateOfBirth(dialog)
+        expect(within(dialog).getByRole('button', { name: /^create$/i })).toBeEnabled()
+        return dialog
+    }
+
+    it('refuses an email that is not an address', async () => {
+        const dialog = await openCompleteCreateDialog()
+
+        fireEvent.change(within(dialog).getByLabelText(/email/i), { target: { value: 'ZXzx' } })
+
+        expect(within(dialog).getByText('Enter a valid email address.')).toBeInTheDocument()
+        expect(within(dialog).getByRole('button', { name: /^create$/i })).toBeDisabled()
+    })
+
+    it('refuses a date of birth that makes the new user under 16', async () => {
+        const dialog = await openCompleteCreateDialog()
+        const lastYear = new Date()
+        lastYear.setFullYear(lastYear.getFullYear() - 1)
+
+        fireEvent.change(within(dialog).getByLabelText(/date of birth/i), {
+            target: { value: lastYear.toISOString().slice(0, 10) },
+        })
+
+        expect(within(dialog).getByText('Must be at least 16 years old.')).toBeInTheDocument()
+        expect(within(dialog).getByRole('button', { name: /^create$/i })).toBeDisabled()
+    })
+
+    it('accepts a date of birth for somebody over 16', async () => {
+        const dialog = await openCompleteCreateDialog()
+
+        fireEvent.change(within(dialog).getByLabelText(/date of birth/i), { target: { value: '1990-03-04' } })
+
+        expect(within(dialog).queryByText('Must be at least 16 years old.')).not.toBeInTheDocument()
+        expect(within(dialog).getByRole('button', { name: /^create$/i })).toBeEnabled()
+    })
+
+    it('stops the native picker offering an under-16 date in the first place', async () => {
+        const dialog = await openCompleteCreateDialog()
+        const sixteenYearsAgo = new Date()
+        sixteenYearsAgo.setFullYear(sixteenYearsAgo.getFullYear() - 16)
+
+        expect(within(dialog).getByLabelText(/date of birth/i))
+            .toHaveAttribute('max', sixteenYearsAgo.toISOString().slice(0, 10))
+    })
+})
+
+/* Date of birth is recorded HR data an admin maintains, and half the app that
+   uses it — birthday reminders, and the age check on a parental-leave request —
+   reads as "not recorded" rather than "none" when it is null. So it is now
+   asked for rather than offered: required on both admin dialogs and on the
+   employee's own Edit profile.
+
+   Every account predating this has a null one, so an Edit that is otherwise
+   untouched cannot be saved until the admin supplies it. That is the point —
+   it is how the backfill happens — but it means a stored null has to announce
+   itself rather than only disabling Save. */
+describe('AdminUsersPanel — date of birth is required', () => {
+    const EMPLOYEE_USER = { id: 'u-employee', userName: 'employee@example.test', email: 'employee@example.test', displayName: 'Theodoros Iona', imageUrl: '', emailConfirmed: true, roles: ['Employee'] }
+    const EMPLOYEE_PROFILE = { id: 'p-employee', userId: 'u-employee', displayName: 'Theodoros Iona', departmentId: DEPARTMENT.id, managerId: null, annualLeaveEntitlement: 20, leaveBalance: 20, jobTitle: null, createdAt: '2026-01-01' }
+
+    async function openEditFor(user: object) {
+        api.getAdminUsers.mockResolvedValue([user] as never)
+        api.getEmployeeProfiles.mockResolvedValue([EMPLOYEE_PROFILE] as never)
+
+        renderPanel()
+        const nameEl = await screen.findByText('Theodoros Iona')
+        const row = nameEl.parentElement!.parentElement!.parentElement!.parentElement!
+        fireEvent.click(within(row).getByTitle('Edit'))
+        const dialog = screen.getByRole('dialog')
+        await within(dialog).findByDisplayValue('Theodoros Iona')
+        return dialog
+    }
+
+    it('will not create a user without one', async () => {
+        const dialog = await openCreateDialog()
+
+        fireEvent.change(within(dialog).getByLabelText(/display name/i), { target: { value: 'New Joiner' } })
+        fireEvent.change(within(dialog).getByLabelText(/email/i), { target: { value: 'newjoiner@example.test' } })
+        await selectDepartment(dialog)
+
+        expect(within(dialog).getByText('Date of birth is required.')).toBeInTheDocument()
+        expect(within(dialog).getByRole('button', { name: /^create$/i })).toBeDisabled()
+
+        fireEvent.change(within(dialog).getByLabelText(/date of birth/i), { target: { value: '1990-03-04' } })
+
+        expect(within(dialog).queryByText('Date of birth is required.')).not.toBeInTheDocument()
+        expect(within(dialog).getByRole('button', { name: /^create$/i })).toBeEnabled()
+    })
+
+    it('says so on an existing record that has none, rather than only greying Save out', async () => {
+        const dialog = await openEditFor(EMPLOYEE_USER)
+
+        expect(within(dialog).getByText('Date of birth is required.')).toBeInTheDocument()
+        expect(within(dialog).getByRole('button', { name: /^save$/i })).toBeDisabled()
+    })
+
+    it('lets that record be saved once the admin supplies one', async () => {
+        const dialog = await openEditFor(EMPLOYEE_USER)
+
+        fireEvent.change(within(dialog).getByLabelText(/date of birth/i), { target: { value: '1990-03-04' } })
+
+        expect(within(dialog).getByRole('button', { name: /^save$/i })).toBeEnabled()
+    })
+
+    it('leaves a record that already has one alone', async () => {
+        const dialog = await openEditFor({ ...EMPLOYEE_USER, dateOfBirth: '1990-03-04' })
+
+        expect(within(dialog).queryByText('Date of birth is required.')).not.toBeInTheDocument()
+        expect(within(dialog).getByRole('button', { name: /^save$/i })).toBeEnabled()
     })
 })

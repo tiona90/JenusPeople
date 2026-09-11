@@ -1,4 +1,5 @@
 using Application.AdminUsers.Commands;
+using Application.Core;
 using Domain;
 using FluentValidation;
 using Microsoft.AspNetCore.Identity;
@@ -41,7 +42,8 @@ public class CreateAdminUserValidator : AbstractValidator<CreateAdminUser.Comman
                 .MaximumLength(100)
                 .WithMessage("Display name must not exceed 100 characters.");
 
-            RuleFor(x => x.User.PhoneNumber).MaximumLength(30);
+            RuleFor(x => x.User.PhoneNumber).MaximumLength(PersonFieldRules.PhoneNumberMaxLength).ValidPhoneNumber();
+            RuleFor(x => x.User.DateOfBirth).ValidDateOfBirth();
             RuleFor(x => x.User.JobTitle).MaximumLength(150);
 
             RuleFor(x => x.User.AnnualLeaveEntitlement)

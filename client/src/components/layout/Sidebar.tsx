@@ -51,14 +51,25 @@ import { updateProfile, uploadProfileImage } from '../../lib/api'
 import { resolveFileUrl } from '../../lib/api/file-url'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
 import { useStore } from '../../lib/mobx'
+import {
+    EMAIL_INVALID_MESSAGE, PHONE_INVALID_MESSAGE, PHONE_MAX_LENGTH,
+    PHONE_PATTERN, PHONE_TOO_LONG_MESSAGE, dateOfBirthError, latestAllowedDateOfBirth,
+} from '../../lib/validation/person'
 
 const profileSchema = z.object({
     displayName: z.string().trim().min(1, 'Display name is required.'),
-    email: z.string().trim().min(1, 'Email is required.').email('Enter a valid email address.'),
-    phoneNumber: z.string().trim().max(30, 'Phone number is too long.')
-        .regex(/^[0-9+\s()-]*$/, 'Phone number can only contain numbers.').optional(),
+    email: z.string().trim().min(1, 'Email is required.').email(EMAIL_INVALID_MESSAGE),
+    // These rules live in lib/validation/person so the admin's Add/Edit User
+    // dialogs enforce the same ones — they used to enforce nothing.
+    phoneNumber: z.string().trim().max(PHONE_MAX_LENGTH, PHONE_TOO_LONG_MESSAGE)
+        .regex(PHONE_PATTERN, PHONE_INVALID_MESSAGE).optional(),
+    // "In the past" is no longer enough on its own: the minimum age subsumes it,
+    // and dateOfBirthError reports whichever of the two the value breaks.
     dateOfBirth: z.string().optional() // "yyyy-MM-dd" from the date input, or ''
-        .refine((v) => !v || v <= new Date().toISOString().slice(0, 10), 'Date of birth must be in the past.'),
+        .superRefine((v, ctx) => {
+            const message = dateOfBirthError(v ?? '')
+            if (message) ctx.addIssue({ code: 'custom', message })
+        }),
 })
 type ProfileFormValues = z.infer<typeof profileSchema>
 
@@ -469,13 +480,17 @@ const Sidebar = observer(function Sidebar() {
                             fullWidth
                         />
 
+                        {/* `max` is the youngest allowed date of birth, not today — same
+                            as the admin dialogs. The picker should not offer a date the
+                            form is about to refuse. */}
                         <TextField
                             label="Date of birth"
                             type="date"
+                            required
                             {...register('dateOfBirth')}
                             error={!!errors.dateOfBirth}
                             helperText={errors.dateOfBirth?.message ?? 'Used for birthday reminders.'}
-                            slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: new Date().toISOString().slice(0, 10) } }}
+                            slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: latestAllowedDateOfBirth() } }}
                             fullWidth
                         />
 

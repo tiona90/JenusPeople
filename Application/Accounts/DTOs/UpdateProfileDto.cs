@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using Application.Core;
 
 namespace Application.Accounts.DTOs;
 
@@ -16,7 +17,9 @@ public class UpdateProfileDto
     [StringLength(30)]
     public string? PhoneNumber { get; set; }
 
-    // Date only (no time). Null clears it.
+    // Date only (no time). Null clears it. The age rule is the same one the admin
+    // dialogs enforce — see Application/Core/PersonFieldRules.cs.
+    [MinimumAge]
     public DateOnly? DateOfBirth { get; set; }
 
     /// <summary>
