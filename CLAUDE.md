@@ -1010,6 +1010,11 @@ Two more traps worth knowing, both found the hard way:
   `null`, so an older API says nothing. `WorkingDayScheduleBreakVarianceTests`,
   `AttendanceBreakAllowanceTests` and `DailyAttendanceReportTests` pin the server;
   `TeamAttendancePage.test.tsx` and `AttendancePage.test.tsx` the client.
+  **A running break shows a live clock on the topbar pill** (`AttendanceWidget`,
+  `breakClock` in `break-policy.ts`): the allowance left counting down to 00:00, then
+  the time past it counting up in red, or the running break counting up when no
+  break is configured. It counts what `BreakMinutesTaken` counts, idle included, so
+  it turns to "over" when the server's verdict does (`AttendanceWidget.test.tsx`).
 - **Reminders follow the Working Week, in one place.** `ReminderBackgroundService`
   ticks once a minute and asks `Application/Reminders/ReminderSchedule.cs` (pure,
   clock and calendar as inputs) whether each reminder on Notification Settings is

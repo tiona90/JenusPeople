@@ -1,9 +1,13 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import Typography from '@mui/material/Typography'
 import { softBg } from '../../lib/theme-tokens'
+import { getAppSettings } from '../../lib/api'
+import { breakAllowanceMinutes, breakClock, formatClock } from '../../lib/break-policy'
+import { queryKeys } from '../../lib/hooks/queryKeys'
 import {
     AppDialog,
     AppDialogActions,
@@ -63,11 +67,28 @@ const ghostBtnSx = {
     '&:hover': { bgcolor: 'background.paper', borderColor: 'divider', boxShadow: 'none' },
 }
 
+/** The wall clock, ticking every second while `active`, so the break clock moves. */
+function useSecondTicker(active: boolean): number {
+    const [now, setNow] = useState(() => Date.now())
+    useEffect(() => {
+        if (!active) return
+        const id = window.setInterval(() => setNow(Date.now()), 1000)
+        return () => window.clearInterval(id)
+    }, [active])
+    return now
+}
+
 export default function AttendanceWidget({ enabled }: { enabled: boolean }) {
     const { data: today, isLoading } = useAttendanceToday(enabled)
     const { checkIn, checkOut, startBreak, endBreak, anyPending } = useAttendanceActions()
     const elapsed = useLiveElapsedMinutes(today)
     const [showEarlyCheckOutWarning, setShowEarlyCheckOutWarning] = useState(false)
+    // Readable by every signed-in user (GET /api/settings): the break the day allows
+    // for, which the clock counts down while a break runs.
+    const { data: settings } = useQuery({ queryKey: queryKeys.appSettings, queryFn: getAppSettings, enabled })
+    const onBreak = enabled && today?.status === 'break'
+    const now = useSecondTicker(onBreak)
+    const clock = onBreak && today ? breakClock(today, breakAllowanceMinutes(settings), now) : null
 
     if (!enabled) return null
 
@@ -133,6 +154,31 @@ export default function AttendanceWidget({ enabled }: { enabled: boolean }) {
                 ) : status === 'break' ? (
                     <Typography sx={{ fontSize: 12, color: 'text.secondary', whiteSpace: 'nowrap' }}>
                         {today?.isAutoBreak ? 'Idle' : 'On break'}
+                        {clock && (
+                            <Box
+                                component="span"
+                                role="timer"
+                                aria-label={
+                                    clock.kind === 'remaining' ? `${formatClock(clock.seconds)} of break left`
+                                        : clock.kind === 'over' ? `${formatClock(clock.seconds)} over break allowance`
+                                            : `On break for ${formatClock(clock.seconds)}`
+                                }
+                                sx={{ ml: 0.75 }}
+                            >
+                                <Box component="span" sx={{
+                                    fontVariantNumeric: 'tabular-nums',
+                                    fontWeight: 700,
+                                    fontSize: 13,
+                                    color: clock.kind === 'over' ? RED : 'text.primary',
+                                }}>
+                                    {clock.kind === 'over' ? '+' : ''}{formatClock(clock.seconds)}
+                                </Box>
+                                {clock.kind === 'remaining' && ' left'}
+                                {clock.kind === 'over' && (
+                                    <Box component="span" sx={{ color: RED, fontWeight: 600 }}> over</Box>
+                                )}
+                            </Box>
+                        )}
                     </Typography>
                 ) : (
                     <Typography sx={{ fontSize: 12, color: 'text.secondary', whiteSpace: 'nowrap' }}>Done for today</Typography>

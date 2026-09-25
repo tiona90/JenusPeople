@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { breakAllowanceMinutes, describeBreakPolicy } from './break-policy'
+import { breakAllowanceMinutes, breakClock, describeBreakPolicy, formatClock } from './break-policy'
 import type { AppSettings } from './types'
 
 /*
@@ -66,5 +66,50 @@ describe('describeBreakPolicy', () => {
         expect(describeBreakPolicy(settings())).toBeNull()
         expect(describeBreakPolicy(undefined)).toBeNull()
         expect(describeBreakPolicy(settings({ breakMode: 'fixed', breakStart: '14:00', breakEnd: '13:00' }))).toBeNull()
+    })
+})
+
+describe('breakClock', () => {
+    const since = '2026-09-25T12:00:00.000Z'
+    const at = (seconds: number) => new Date(since).getTime() + seconds * 1000
+
+    it('counts the allowance down while the break runs', () => {
+        const clock = breakClock({ onBreakSince: since, totalBreakMinutes: 0 }, 60, at(61))
+        expect(clock).toEqual({ kind: 'remaining', seconds: 3539 })
+        expect(formatClock(clock!.seconds)).toBe('58:59')
+    })
+
+    it('takes the breaks already taken today off what is left', () => {
+        const clock = breakClock({ onBreakSince: since, totalBreakMinutes: 45 }, 60, at(0))
+        expect(clock).toEqual({ kind: 'remaining', seconds: 900 })
+    })
+
+    it('counts up the time over once the allowance is used', () => {
+        const clock = breakClock({ onBreakSince: since, totalBreakMinutes: 50 }, 60, at(12 * 60 + 5))
+        expect(clock).toEqual({ kind: 'over', seconds: 125 })
+    })
+
+    it('reads exactly on the allowance as nothing left, not over', () => {
+        expect(breakClock({ onBreakSince: since, totalBreakMinutes: 0 }, 60, at(3600)))
+            .toEqual({ kind: 'remaining', seconds: 0 })
+    })
+
+    it('counts the running break up when no allowance is configured', () => {
+        expect(breakClock({ onBreakSince: since, totalBreakMinutes: 30 }, 0, at(90)))
+            .toEqual({ kind: 'elapsed', seconds: 90 })
+    })
+
+    it('has nothing to show when not on a break', () => {
+        expect(breakClock({ onBreakSince: null, totalBreakMinutes: 10 }, 60, at(0))).toBeNull()
+    })
+
+    it('never counts a clock skewed ahead of the start as negative time', () => {
+        expect(breakClock({ onBreakSince: since, totalBreakMinutes: 0 }, 0, at(-5)))
+            .toEqual({ kind: 'elapsed', seconds: 0 })
+    })
+
+    it('formats an hour or more with the hour in front', () => {
+        expect(formatClock(0)).toBe('00:00')
+        expect(formatClock(3725)).toBe('1:02:05')
     })
 })

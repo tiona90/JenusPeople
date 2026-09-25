@@ -137,3 +137,37 @@ export function breakSettingsError(settings: BreakSettings): string | null {
     }
     return null
 }
+
+/**
+ * The live clock on a running break, in seconds. With an allowance configured it
+ * counts down what is left of it (`remaining`, reaching 0 exactly on it) and then
+ * counts up the time past it (`over`); with none it counts the running break up
+ * (`elapsed`), since there is nothing to count down to. Null when not on a break.
+ *
+ * "Taken" is what `WorkingDaySchedule.BreakMinutesTaken` counts: the day's closed
+ * breaks plus the open one, an idle break included, so the clock turns to "over"
+ * when the server's verdict does. `totalBreakMinutes` is whole minutes, so the
+ * clock can sit up to a minute off that verdict, never more.
+ */
+export type BreakClock = { kind: 'remaining' | 'over' | 'elapsed'; seconds: number }
+
+export function breakClock(
+    today: { onBreakSince: string | null; totalBreakMinutes: number },
+    allowanceMinutes: number,
+    nowMs: number,
+): BreakClock | null {
+    if (!today.onBreakSince) return null
+    const openSeconds = Math.max(0, Math.floor((nowMs - new Date(today.onBreakSince).getTime()) / 1000))
+    if (allowanceMinutes <= 0) return { kind: 'elapsed', seconds: openSeconds }
+    const left = allowanceMinutes * 60 - today.totalBreakMinutes * 60 - openSeconds
+    return left >= 0 ? { kind: 'remaining', seconds: left } : { kind: 'over', seconds: -left }
+}
+
+/** "58:59", or "1:02:05" from an hour up — the face of the break clock. */
+export function formatClock(totalSeconds: number): string {
+    const s = Math.max(0, Math.floor(totalSeconds))
+    const hours = Math.floor(s / 3600)
+    const mm = String(Math.floor((s % 3600) / 60)).padStart(2, '0')
+    const ss = String(s % 60).padStart(2, '0')
+    return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`
+}
