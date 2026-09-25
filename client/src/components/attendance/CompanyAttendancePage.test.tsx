@@ -47,7 +47,7 @@ const COMPANY: CompanyAttendance = {
     ],
     recent: [
         { employeeName: 'Employee 2A', departmentName: 'Finance', action: 'Late check-in', at: '2026-08-21T15:59:00Z', minutesAgo: 21 },
-        { employeeName: 'Employee 1A', departmentName: 'Engineering', action: 'Back from break', at: '2026-08-21T15:16:00Z', minutesAgo: 64 },
+        { employeeName: 'Employee 1A', departmentName: 'Engineering', action: 'Back from break', at: '2026-08-21T15:16:00Z', minutesAgo: 64, breakVarianceMinutes: 20 },
         // Synthetic rows carry no timestamp, which is the only thing separating
         // them from real events.
         { employeeName: 'Manager Two', departmentName: 'Finance', action: 'Not checked in', at: null, minutesAgo: null },
@@ -136,6 +136,27 @@ describe('not-checked-in reads the same on the dashboard and on Company Attendan
         // Was 🟢: 'Not checked in' contains 'checked in', so the old map badged
         // exactly the people who had not arrived as working.
         expect(row.textContent).not.toContain('\u{1F7E2}')
+    })
+
+    // The break-end row carries the server's verdict on the day's break, the way
+    // the check-in row carries "Late check-in": on Company Attendance it is the
+    // one place an HR Administrator reads a break at all (the issues card is on
+    // the dashboard, the team board is the Manager's). A row with no field — an
+    // older API — says nothing.
+    it('says how far over the allowance a break end went, on Company Attendance', async () => {
+        renderCompanyPage()
+        await screen.findByText(/Employee 1A/)
+
+        const row = feedRow('Employee 1A')
+        expect(row.textContent).toMatch(/Back from break at .*· 20 min over/)
+        expect(feedRow('Employee 2A').textContent).not.toMatch(/over/)
+    })
+
+    it('says the same on the admin dashboard', async () => {
+        renderAdminDashboard()
+        await screen.findByText(/Employee 1A/)
+
+        expect(feedRow('Employee 1A').textContent).toMatch(/Back from break.*· 20 min over/)
     })
 
     it('marks a late arrival as late on Company Attendance', async () => {

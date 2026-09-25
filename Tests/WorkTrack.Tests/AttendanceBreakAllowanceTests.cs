@@ -142,6 +142,74 @@ public class AttendanceBreakAllowanceTests
         Assert.DoesNotContain(result.Value!.Issues, i => i.Title.Contains("break allowance"));
     }
 
+    /// <summary>
+    /// The feed row for a break's end says how far over the allowance the day's
+    /// break stood at that moment, the way a check-in row says "Late check-in".
+    /// It is the one place an HR Administrator reads a break on Company
+    /// Attendance — the issues card is on the dashboard and the team board is
+    /// the Manager's — and a row reading "Back from break" for an hour and
+    /// twenty minutes told them nothing. Under is not news here either.
+    /// </summary>
+    [Fact]
+    public async Task Company_feed_marks_a_break_end_that_went_over_the_allowance()
+    {
+        using var db = SeedWorld();
+
+        var result = await new GetCompanyAttendance.Handler(db).Handle(
+            new GetCompanyAttendance.Query { NowUtc = Afternoon },
+            CancellationToken.None);
+
+        var recent = result.Value!.Recent;
+        var owen = Assert.Single(recent, r => r.EmployeeName == "Owen Over" && r.Action == "Back from break");
+        Assert.Equal(20, owen.BreakVarianceMinutes);
+
+        var una = Assert.Single(recent, r => r.EmployeeName == "Una Under" && r.Action == "Back from break");
+        Assert.Null(una.BreakVarianceMinutes);
+        var ivy = Assert.Single(recent, r => r.EmployeeName == "Ivy Inside" && r.Action == "Back from break");
+        Assert.Null(ivy.BreakVarianceMinutes);
+
+        // Only the break's end carries it: the start of one has nothing to judge yet.
+        Assert.All(recent.Where(r => r.Action != "Back from break"), r => Assert.Null(r.BreakVarianceMinutes));
+    }
+
+    /// <summary>
+    /// The verdict is as of the break's end, not as of now: a second break that
+    /// takes the day over marks its own row, and the earlier row stays clean.
+    /// </summary>
+    [Fact]
+    public async Task Company_feed_judges_each_break_end_as_of_that_moment()
+    {
+        using var db = SeedWorld();
+        // Ivy's 10 minutes were fine; a further 55 at lunch put the day 5 over.
+        Add(db, Ivy, Today.AddHours(12), AttendanceEventType.BreakStart);
+        Add(db, Ivy, Today.AddHours(12).AddMinutes(55), AttendanceEventType.BreakEnd);
+        db.SaveChanges();
+
+        var result = await new GetCompanyAttendance.Handler(db).Handle(
+            new GetCompanyAttendance.Query { NowUtc = Afternoon },
+            CancellationToken.None);
+
+        var ivyRows = result.Value!.Recent
+            .Where(r => r.EmployeeName == "Ivy Inside" && r.Action == "Back from break")
+            .OrderBy(r => r.At)
+            .ToList();
+        Assert.Equal(2, ivyRows.Count);
+        Assert.Null(ivyRows[0].BreakVarianceMinutes);
+        Assert.Equal(5, ivyRows[1].BreakVarianceMinutes);
+    }
+
+    [Fact]
+    public async Task Company_feed_says_nothing_about_breaks_when_none_is_configured()
+    {
+        using var db = SeedWorld(breakMode: "none", breakMinutes: 0);
+
+        var result = await new GetCompanyAttendance.Handler(db).Handle(
+            new GetCompanyAttendance.Query { NowUtc = Afternoon },
+            CancellationToken.None);
+
+        Assert.All(result.Value!.Recent, r => Assert.Null(r.BreakVarianceMinutes));
+    }
+
     // ── The employee's own surfaces ───────────────────────────────────────────
 
     [Fact]

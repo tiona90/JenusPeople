@@ -997,7 +997,13 @@ Two more traps worth knowing, both found the hard way:
   on the team board ("Break 1h 20m · 20 min over" under the member's row),
   `TodayStateDto`/`DayHistoryDto.BreakVarianceMinutes` on the employee's own page,
   a "N over break allowance" issue on the company dashboard (over only — the panel
-  flags what needs attention), and a "Break allowance" section in the daily
+  flags what needs attention), `RecentActivityDto.BreakVarianceMinutes` on a
+  break-end row of the activity feed (over only, judged **as of that event**, so a
+  later break that takes the day over marks its own row; the Company Attendance
+  page and the HR dashboard's feed render " · 20 min over" after "Back from
+  break", the way a check-in row reads "Late check-in" — for an HR Administrator
+  that row is the one break reading on the page, since the issues card is on the
+  dashboard and the team board is the Manager's), and a "Break allowance" section in the daily
   attendance report (over and under, checked-out days only, omitted entirely
   when no break is configured rather than saying "Nobody"). The client words it
   with `describeBreakVariance` in `break-policy.ts` and reads a missing field as

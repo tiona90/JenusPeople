@@ -116,6 +116,10 @@ export interface RecentActivity {
     action: string
     at: string | null
     minutesAgo: number | null
+    // On a break's end only: minutes over the break allowance the day's break stood
+    // at that moment. Missing or null (an older API, any other row, within the
+    // allowance, no break configured) says nothing.
+    breakVarianceMinutes?: number | null
 }
 
 // Presence for today, keyed by Identity user id. Online means "checked in and

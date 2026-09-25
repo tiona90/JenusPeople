@@ -209,7 +209,8 @@ public class GetCompanyAttendance
                     profile?.Department?.Name ?? "Unassigned",
                     ActionName(e.Type, AttendanceDay.AsUtc(e.At), schedule),
                     AttendanceDay.AsUtc(e.At),
-                    minutesAgo);
+                    minutesAgo,
+                    BreakOverAt(e, todayByEmployee, schedule));
             }).ToList();
 
             // Synthetic "Not checked in" rows, added only once the morning is late
@@ -231,6 +232,27 @@ public class GetCompanyAttendance
             }
 
             return feed;
+        }
+
+        /// <summary>
+        /// Minutes over the break allowance the day's break stood at, as of a
+        /// break's end — the way a check-in row is judged late. Judged at the event
+        /// rather than at now, so a later break that takes the day over marks its
+        /// own row and not the earlier one. Null on any other event, and null when
+        /// within the allowance or no break is configured (BreakVariance's own
+        /// reading): the feed, like the issues card, flags what needs attention.
+        /// </summary>
+        private static int? BreakOverAt(
+            AttendanceEvent e,
+            Dictionary<string, List<AttendanceEvent>> todayByEmployee,
+            WorkingDaySchedule schedule)
+        {
+            if (e.Type is not (AttendanceEventType.BreakEnd or AttendanceEventType.AutoBreakEnd)) return null;
+            if (!todayByEmployee.TryGetValue(e.EmployeeProfileId, out var dayEvents)) return null;
+
+            var at = AttendanceDay.AsUtc(e.At);
+            var stateAt = AttendanceDayStateCalculator.Calculate(dayEvents.Where(x => x.At <= e.At), at);
+            return schedule.BreakVariance(stateAt, at) is { } variance && variance > 0 ? variance : null;
         }
 
         private static string ActionName(AttendanceEventType type, DateTime atUtc, WorkingDaySchedule schedule) => type switch
