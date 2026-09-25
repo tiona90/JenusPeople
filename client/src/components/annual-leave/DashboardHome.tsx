@@ -26,6 +26,7 @@ import { currentYearEntitlement } from '../../lib/leave-allowance'
 import { isAwaitingDocument } from '../../lib/attachment-policy'
 import { isAdministrator, isSystemAdministrator } from '../../lib/roles'
 import { activityIcon } from '../../lib/hooks/useAttendance'
+import { describeBreakVariance } from '../../lib/break-policy'
 import { useOfferedLeaveTypes } from '../../lib/hooks'
 import { buildLeaveBalanceRows, type LeaveBalanceRow } from '../../lib/leave-balance-rows'
 import { useStore } from '../../lib/mobx'
@@ -2477,6 +2478,10 @@ function RecentActivityCard({ activity }: { activity: RecentActivity[] }) {
                             <Box sx={{ fontSize: 12, color: 'text.primary' }}>
                                 <Box component="strong" sx={{ color: 'text.primary', fontWeight: 600 }}>{a.employeeName}</Box>{' '}
                                 {a.action}
+                                {/* The server's verdict on a break's end (over only), as Company Attendance shows it. */}
+                                {(a.breakVarianceMinutes ?? 0) > 0 && (
+                                    <Box component="span" sx={{ color: 'warning.dark', fontWeight: 600 }}> · {describeBreakVariance(a.breakVarianceMinutes)}</Box>
+                                )}
                                 {a.departmentName && (
                                     <Box component="span" sx={{ color: 'text.disabled', ml: '4px', fontSize: 11 }}>· {a.departmentName}</Box>
                                 )}

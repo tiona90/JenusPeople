@@ -31,6 +31,7 @@ import { isHrAdministrator } from '../../lib/roles'
 import { softBg, type SxColor } from '../../lib/theme-tokens'
 import { ActionBtn, RejectReasonDialog } from '../ui'
 import { buildTimesheetsCsv } from './timesheet-csv'
+import TimesheetDailyBreakdown from './TimesheetDailyBreakdown'
 
 const BLUE = 'primary.main'
 const GREEN = 'success.main'
@@ -159,132 +160,6 @@ function ProjectChip({ p }: { p: TimesheetProjectSummary }) {
         }}>
             {(p.code || p.name)} · {Number(p.hours).toFixed(1)}h
         </Box>
-    )
-}
-
-function DailyBreakdown({ ts }: { ts: Timesheet }) {
-    const { data, isLoading } = useQuery({
-        queryKey: ['timesheet', ts.id],
-        queryFn: () => getTimesheet(ts.id),
-    })
-    const entries = (data?.entries as TimesheetEntry[] | undefined) ?? []
-
-    // Entries carry type and component ids, not their names. Same query keys the
-    // page uses, so these are cache reads rather than second fetches.
-    const { data: projectTypes = [] } = useQuery({
-        queryKey: ['projectTypes'],
-        queryFn: getProjectTypes,
-    })
-    const { data: components = [] } = useQuery({
-        queryKey: ['projectComponents'],
-        queryFn: getProjectComponents,
-    })
-    const typeById = useMemo(() => new Map(projectTypes.map((t) => [t.id, t])), [projectTypes])
-    const componentById = useMemo(() => new Map(components.map((c) => [c.id, c])), [components])
-
-    const days = useMemo(() => {
-        const periodStart = new Date(ts.periodStart)
-        periodStart.setHours(0, 0, 0, 0)
-        const out: { date: Date; name: string; total: number; tasks: { project: string; type: string; component: string; notes: string }[] }[] = []
-        for (let i = 0; i < 5; i++) {
-            const d = new Date(periodStart)
-            d.setDate(periodStart.getDate() + i)
-            const dayName = d.toLocaleDateString('en-GB', { weekday: 'short' })
-            const dayKey = d.toISOString().split('T')[0]
-            const dayEntries = entries.filter((e) => e.date.split('T')[0] === dayKey)
-            const total = dayEntries.reduce((s, e) => s + Number(e.hoursWorked), 0)
-            const tasks = dayEntries.map((e) => ({
-                project: e.project?.code ?? e.project?.name ?? `Project #${e.projectId}`,
-                // Blank when the entry has none, which the render then leaves out.
-                type: (e.projectTypeId != null ? typeById.get(e.projectTypeId)?.name : '') ?? '',
-                component: (e.projectComponentId != null ? componentById.get(e.projectComponentId)?.name : '') ?? '',
-                notes: e.notes ?? '—',
-            }))
-            out.push({ date: d, name: dayName, total, tasks })
-        }
-        return out
-    }, [entries, ts.periodStart, typeById, componentById])
-
-    if (isLoading && entries.length === 0) {
-        return (
-            <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
-                <CircularProgress size={20} />
-            </Box>
-        )
-    }
-
-    return (
-        <>
-            <Typography sx={{
-                fontSize: 11, color: 'text.secondary',
-                textTransform: 'uppercase', letterSpacing: '0.05em',
-                mb: 1,
-            }}>
-                Daily breakdown
-            </Typography>
-            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 1 }}>
-                {days.map((d) => {
-                    const isEmpty = d.total === 0
-                    return (
-                        <Box key={d.name} sx={{
-                            bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider',
-                            borderRadius: '6px', p: '10px 12px',
-                        }}>
-                            <Stack direction="row" justifyContent="space-between" alignItems="baseline" sx={{ mb: 0.75 }}>
-                                <Typography sx={{
-                                    fontSize: 11, fontWeight: 600, color: 'text.secondary',
-                                    textTransform: 'uppercase', letterSpacing: '0.05em',
-                                }}>
-                                    {d.name}
-                                </Typography>
-                                <Typography sx={{
-                                    fontSize: 13, fontWeight: 700,
-                                    color: isEmpty ? 'text.disabled' : 'text.primary',
-                                }}>
-                                    {d.total.toFixed(1)}h
-                                </Typography>
-                            </Stack>
-                            <Box sx={{
-                                fontSize: 11,
-                                color: isEmpty ? 'text.disabled' : 'text.primary',
-                                fontStyle: isEmpty ? 'italic' : 'normal',
-                                lineHeight: 1.4,
-                            }}>
-                                {isEmpty ? (
-                                    <span>Nothing logged</span>
-                                ) : (
-                                    d.tasks.map((t, idx) => (
-                                        <Box key={idx} sx={{ py: '2px' }}>
-                                            {t.type && (
-                                                <>
-                                                    <Box component="span" sx={{ color: 'text.secondary', fontSize: 10 }}>
-                                                        {t.type}
-                                                    </Box>
-                                                    {' · '}
-                                                </>
-                                            )}
-                                            <Box component="span" sx={{ color: BLUE, fontWeight: 500, fontSize: 10 }}>
-                                                {t.project}
-                                            </Box>
-                                            {t.component && (
-                                                <>
-                                                    {' · '}
-                                                    <Box component="span" sx={{ color: 'text.secondary', fontSize: 10 }}>
-                                                        {t.component}
-                                                    </Box>
-                                                </>
-                                            )}
-                                            {' · '}
-                                            {t.notes}
-                                        </Box>
-                                    ))
-                                )}
-                            </Box>
-                        </Box>
-                    )
-                })}
-            </Box>
-        </>
     )
 }
 
@@ -470,7 +345,7 @@ function ReviewRow({
                     borderTop: '1px solid', borderTopColor: 'divider',
                     borderBottom: '1px solid', borderBottomColor: 'divider',
                 }}>
-                    <DailyBreakdown ts={ts} />
+                    <TimesheetDailyBreakdown ts={ts} />
                 </Box>
             )}
         </>
@@ -719,13 +594,16 @@ export default function AllTimesheetsPage() {
     }, [timesheets])
 
     // Status options (the "Actions" column reflects status) — only those present in the data
+    /* Built from the rows this viewer can see, not from everything fetched: an HR
+       Administrator's list has no Drafts, so a "Draft" option there would only ever
+       empty the page. */
     const statusOptions = useMemo(() => {
-        const present = new Set<string>(timesheets.map((t) => t.status))
+        const present = new Set<string>(visibleTimesheets.map((t) => t.status))
         const order = ['Draft', 'Submitted', 'Resubmitted', 'Approved', 'Rejected']
         return order
             .filter((s) => present.has(s))
             .map((s) => ({ value: s, label: statusBadge(s).label }))
-    }, [timesheets])
+    }, [visibleTimesheets])
 
     // Counts for tabs
     const counts = useMemo(() => ({

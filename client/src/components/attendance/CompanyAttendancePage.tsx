@@ -16,6 +16,7 @@ import TableRow from '@mui/material/TableRow'
 import Typography from '@mui/material/Typography'
 import { getCompanyAttendance } from '../../lib/api'
 import { activityIcon, formatElapsed, formatTime } from '../../lib/hooks/useAttendance'
+import { describeBreakVariance } from '../../lib/break-policy'
 import type { RecentActivity } from '../../lib/types'
 import { softBg } from '../../lib/theme-tokens'
 
@@ -113,6 +114,7 @@ function ActivityRow({ r }: { r: RecentActivity }) {
                 </Typography>
                 <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>
                     {r.action}{r.at ? ` at ${formatTime(r.at)}` : ''}
+                    <BreakOverNote r={r} />
                 </Typography>
             </Box>
             <Typography sx={{ fontSize: 11, color: 'text.secondary', fontVariantNumeric: 'tabular-nums' }}>
@@ -125,6 +127,25 @@ function ActivityRow({ r }: { r: RecentActivity }) {
                             : formatElapsed(r.minutesAgo) + ' ago'}
             </Typography>
         </Box>
+    )
+}
+
+/**
+ * " · 20 min over" after a break-end row, the server's verdict on the day's break
+ * against the Organization settings' allowance as of that moment
+ * (`describeBreakVariance`). The row is the one place an HR Administrator reads
+ * a break on this page — the issues card is on the dashboard and the team board
+ * is the Manager's — and "Back from break" alone said nothing about an hour and
+ * twenty. Only over is sent, and a missing field (an older API) says nothing.
+ */
+function BreakOverNote({ r }: { r: RecentActivity }) {
+    const verdict = (r.breakVarianceMinutes ?? 0) > 0 ? describeBreakVariance(r.breakVarianceMinutes) : null
+    if (!verdict) return null
+    return (
+        <>
+            {' · '}
+            <Box component="span" sx={{ fontWeight: 600, color: 'warning.dark' }}>{verdict}</Box>
+        </>
     )
 }
 
@@ -144,13 +165,14 @@ function csvEscape(value: string): string {
 }
 
 function exportRecentToCsv(recent: RecentActivity[]) {
-    const header = ['Employee', 'Department', 'Action', 'Time', 'Minutes ago']
+    const header = ['Employee', 'Department', 'Action', 'Time', 'Minutes ago', 'Minutes over break allowance']
     const rows = recent.map((r) => [
         csvEscape(r.employeeName),
         csvEscape(r.departmentName),
         csvEscape(r.action),
         r.at ? csvEscape(new Date(r.at).toISOString()) : '',
         r.minutesAgo == null ? '' : String(r.minutesAgo),
+        (r.breakVarianceMinutes ?? 0) > 0 ? String(r.breakVarianceMinutes) : '',
     ].join(','))
     const csv = [header.join(','), ...rows].join('\r\n')
 

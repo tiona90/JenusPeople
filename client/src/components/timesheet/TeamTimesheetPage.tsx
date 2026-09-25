@@ -22,12 +22,13 @@ import TableRow from '@mui/material/TableRow'
 import Tabs from '@mui/material/Tabs'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import { approveTimesheet, getDepartments, getEmployeeProfiles, getProjects, getProjectActivityTypes, getProjectComponents, getProjectTypes, getTimesheet, getTimesheets, getTimesheetStatusHistories, rejectTimesheet } from '../../lib/api'
+import { approveTimesheet, getDepartments, getEmployeeProfiles, getTimesheet, getTimesheets, getTimesheetStatusHistories, rejectTimesheet } from '../../lib/api'
 import type { TimesheetEntry, TimesheetStatus, TimesheetStatusHistory, UserInfo } from '../../lib/types'
 import type { Timesheet } from '../../lib/types/timesheet'
 import { softBg, type SemanticPalette, type SxColor } from '../../lib/theme-tokens'
 import { isAdministrator } from '../../lib/roles'
 import { currentReviewNote, isCancelledApproval, latestCommentByTimesheet, reviewNoteLabel } from '../../lib/timesheet-review-note'
+import TimesheetDailyBreakdown from './TimesheetDailyBreakdown'
 
 
 const STATUS_COLORS: Record<string, { bg: SxColor; color: string }> = {
@@ -109,10 +110,6 @@ function formatPeriod(start: string, end: string) {
     return `${s} – ${e}`
 }
 
-function formatDate(iso: string) {
-    return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-}
-
 type StatusTab = 'all' | 'pending' | 'approved' | 'rejected'
 
 const TH = {
@@ -178,42 +175,14 @@ const TeamTimesheetPage = observer(function TeamTimesheetPage({ user }: { user: 
         enabled: isAdmin,
     })
 
-    const { data: projects = [] } = useQuery({
-        queryKey: ['projects'],
-        queryFn: getProjects,
-    })
-
-    // Entries carry type and component ids, not their names — these resolve them
-    // for the dialog.
-    const { data: projectTypes = [] } = useQuery({
-        queryKey: ['projectTypes'],
-        queryFn: getProjectTypes,
-    })
-
-    const { data: components = [] } = useQuery({
-        queryKey: ['projectComponents'],
-        queryFn: getProjectComponents,
-    })
-
-    const { data: activityTypes = [] } = useQuery({
-        queryKey: ['projectActivityTypes'],
-        queryFn: getProjectActivityTypes,
-    })
-
     const { data: tsDetail, isLoading: isDetailLoading } = useQuery({
         queryKey: ['timesheet', viewTs?.id],
         queryFn: () => getTimesheet(viewTs!.id),
         enabled: !!viewTs?.id,
     })
 
-    const activeProjects = projects.filter((p) => p.isActive)
-    const typeById = useMemo(() => new Map(projectTypes.map((t) => [t.id, t])), [projectTypes])
-    const componentById = useMemo(() => new Map(components.map((c) => [c.id, c])), [components])
-    const activityById = useMemo(() => new Map(activityTypes.map((a) => [a.id, a])), [activityTypes])
-    // Ascending by date: the dialog is read as a week under review, so Mon→Fri
-    // rather than the API's newest-first order.
-    const entries = [...((tsDetail?.entries as TimesheetEntry[] | undefined) ?? [])]
-        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    // Only the dialog's total is summed here; the day cards resolve names themselves.
+    const entries = (tsDetail?.entries as TimesheetEntry[] | undefined) ?? []
 
     const deptById = useMemo(
         () => new Map(departments.map((d) => [d.id, d.name])),
@@ -551,66 +520,9 @@ const TeamTimesheetPage = observer(function TeamTimesheetPage({ user }: { user: 
                             ) : (
                                 <Stack spacing={2}>
                                     {noteFor(viewTs) && <ReviewNote note={noteFor(viewTs)!} />}
-                                    <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: '8px', overflow: 'hidden' }}>
-                                        <Table sx={{ width: '100%', borderCollapse: 'collapse' }}>
-                                            <TableHead>
-                                                <TableRow>
-                                                    <TableCell sx={TH}>Type</TableCell>
-                                                    <TableCell sx={TH}>Project</TableCell>
-                                                    <TableCell sx={TH}>Component</TableCell>
-                                                    <TableCell sx={TH}>Activity</TableCell>
-                                                    <TableCell sx={TH}>Date</TableCell>
-                                                    <TableCell sx={TH}>Hours</TableCell>
-                                                    <TableCell sx={TH}>Notes</TableCell>
-                                                </TableRow>
-                                            </TableHead>
-                                            <TableBody>
-                                                {entries.length === 0 ? (
-                                                    <TableRow>
-                                                        <TableCell colSpan={7} sx={{ ...TD, textAlign: 'center', color: 'text.disabled', py: 3 }}>
-                                                            No entries.
-                                                        </TableCell>
-                                                    </TableRow>
-                                                ) : (
-                                                    entries.map((entry) => {
-                                                        const projectName = activeProjects.find((p) => p.id === entry.projectId)?.name
-                                                            ?? `Project #${entry.projectId}`
-                                                        // An untyped entry — anything predating the field, or logged
-                                                        // against an unclassified project — reads as a dash.
-                                                        const typeName = entry.projectTypeId != null
-                                                            ? typeById.get(entry.projectTypeId)?.name
-                                                            : undefined
-                                                        const componentName = entry.projectComponentId != null
-                                                            ? componentById.get(entry.projectComponentId)?.name
-                                                            : undefined
-                                                        const activityName = entry.activityTypeId != null
-                                                            ? activityById.get(entry.activityTypeId)?.name
-                                                            : undefined
-                                                        return (
-                                                            <TableRow
-                                                                key={entry.id}
-                                                                sx={{ '&:last-child td': { borderBottom: 'none' }, '&:hover td': { bgcolor: 'action.hover' } }}
-                                                            >
-                                                                <TableCell sx={{ ...TD, color: typeName ? 'text.primary' : 'text.disabled' }}>
-                                                                    {typeName ?? '—'}
-                                                                </TableCell>
-                                                                <TableCell sx={TD}>{projectName}</TableCell>
-                                                                <TableCell sx={{ ...TD, color: componentName ? 'text.primary' : 'text.disabled' }}>
-                                                                    {componentName ?? '—'}
-                                                                </TableCell>
-                                                                <TableCell sx={{ ...TD, color: activityName ? 'text.primary' : 'text.disabled' }}>
-                                                                    {activityName ?? '—'}
-                                                                </TableCell>
-                                                                <TableCell sx={TD}>{formatDate(entry.date)}</TableCell>
-                                                                <TableCell sx={TD}>{Number(entry.hoursWorked).toFixed(1)}</TableCell>
-                                                                <TableCell sx={{ ...TD, color: 'text.secondary' }}>{entry.notes ?? '—'}</TableCell>
-                                                            </TableRow>
-                                                        )
-                                                    })
-                                                )}
-                                            </TableBody>
-                                        </Table>
-                                    </Box>
+                                    {/* The same day cards the HR Administrator reads on All
+                                        Timesheets, so both reviewers see a week the same way. */}
+                                    <TimesheetDailyBreakdown ts={viewTs} title={null} />
 
                                     <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
                                         <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'text.primary' }}>

@@ -84,12 +84,21 @@ public record DeptAttendanceDto(
     int TotalMinutes,
     int AvgMinutes);
 
+/// <param name="BreakVarianceMinutes">
+/// On a break's end only: how many minutes over the configured allowance the
+/// day's break stood at that moment (<c>WorkingDaySchedule.BreakVariance</c>, as
+/// of the event, not as of now). Null on every other row, when no break is
+/// configured, and when the break was within the allowance — under is not news
+/// on a feed, as it is not on the issues card. Defaulted so positional callers
+/// keep compiling.
+/// </param>
 public record RecentActivityDto(
     string EmployeeName,
     string DepartmentName,
     string Action,
     DateTime? At,
-    int? MinutesAgo);
+    int? MinutesAgo,
+    int? BreakVarianceMinutes = null);
 
 public record IssueDto(
     string Severity,
