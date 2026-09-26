@@ -106,7 +106,7 @@ export interface TeamAttendance {
     week: TeamWeekRow[]
     /** The previous working day `shortDays` judges ("yyyy-MM-dd"). */
     shortDaysDate?: string | null
-    shortDays?: ShortDay[]
+    shortDays?: ShortDay[] | null
 }
 
 export interface MemberCheckInDay {
