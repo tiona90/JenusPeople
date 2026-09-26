@@ -16,6 +16,7 @@ import Typography from '@mui/material/Typography'
 import { getAppSettings, getAttendanceHistory } from '../../lib/api'
 import type { SxProps, Theme } from '@mui/material/styles'
 import { describeBreakPolicy, describeBreakVariance } from '../../lib/break-policy'
+import { describeShortDay } from '../../lib/daily-hours'
 import {
     formatElapsed,
     formatTime,
@@ -326,10 +327,13 @@ export default function AttendancePage() {
                             const dayName = new Date(day.date).toLocaleDateString('en-GB', { weekday: 'long' })
                             const isInProgress = day.status === 'in-progress'
                             const isToday = day.date === today?.date
-                            const pct = Math.min(100, (day.workedMinutes / (8 * 60)) * 100)
+                            // The day's own target from the server (net of the break,
+                            // halved for a half day of leave); 8h for an older API.
+                            const target = day.targetMinutes || 8 * 60
+                            const pct = Math.min(100, (day.workedMinutes / target) * 100)
                             const barColor = day.workedMinutes === 0
                                 ? 'divider'
-                                : isInProgress ? BLUE : GREEN
+                                : isInProgress ? BLUE : day.shortByMinutes != null ? AMBER : GREEN
                             return (
                                 <Box key={day.date}>
                                     <Stack direction="row" justifyContent="space-between" sx={{ mb: 0.5 }}>
@@ -426,7 +430,15 @@ export default function AttendancePage() {
                                                     ? <StatusPill kind="in">Complete</StatusPill>
                                                     : d.status === 'late'
                                                         ? <StatusPill kind="late">Late arrival</StatusPill>
-                                                        : <StatusPill kind="out">No record</StatusPill>}
+                                                        : d.status === 'short'
+                                                            ? <StatusPill kind="break">{describeShortDay(d.shortByMinutes) ?? 'Short day'}</StatusPill>
+                                                            : d.status === 'leave'
+                                                                ? <StatusPill kind="leave">On leave</StatusPill>
+                                                                : d.status === 'off'
+                                                                    ? <StatusPill kind="out">Day off</StatusPill>
+                                                                    : <StatusPill kind="out">
+                                                                        {describeShortDay(d.shortByMinutes) ? `No record · ${describeShortDay(d.shortByMinutes)}` : 'No record'}
+                                                                    </StatusPill>}
                                         </TableCell>
                                     </TableRow>
                                 ))
