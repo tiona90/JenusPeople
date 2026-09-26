@@ -125,4 +125,74 @@ public class ShortDayAttendanceTests
         Assert.Equal(60, days["2026-09-23"].ShortByMinutes);
         Assert.Equal("short", days["2026-09-23"].Status);
     }
+
+    // ── Team board ────────────────────────────────────────────────────────────
+
+    private static async Task<Application.Attendance.DTOs.TeamAttendanceDto> Team(AppDbContext db, DateTime? now = null)
+    {
+        var result = await new GetTeamAttendance.Handler(db).Handle(
+            new GetTeamAttendance.Query { RequestingUserId = "nobody", IsAdmin = true, NowUtc = now ?? Now },
+            CancellationToken.None);
+        Assert.True(result.IsSuccess, result.Error);
+        return result.Value!;
+    }
+
+    [Fact]
+    public async Task Week_grid_marks_short_days_and_leave()
+    {
+        using var db = SeedWorld();
+        var week = (await Team(db)).Week;
+
+        var sam = Assert.Single(week, r => r.EmployeeName == "Sam Short").Days;
+        Assert.Null(sam[0].ShortByMinutes);
+        Assert.Equal(90, sam[1].ShortByMinutes);
+        Assert.Null(sam[2].ShortByMinutes);   // within grace
+        Assert.Null(sam[3].ShortByMinutes);   // today, still in
+        Assert.Null(sam[4].ShortByMinutes);   // Friday, not yet
+
+        var lea = Assert.Single(week, r => r.EmployeeName == "Lea Leave").Days;
+        Assert.Equal(480, lea[0].ShortByMinutes);   // no attendance, no leave
+        Assert.Null(lea[0].WorkedMinutes);
+        Assert.True(lea[1].OnLeave);
+        Assert.Null(lea[1].ShortByMinutes);
+        Assert.Equal(60, lea[2].ShortByMinutes);    // 3h of a half-day 4h
+    }
+
+    [Fact]
+    public async Task Team_board_lists_who_was_short_on_the_previous_working_day()
+    {
+        using var db = SeedWorld();
+        var team = await Team(db, Mon.AddDays(2).AddHours(10)); // Wednesday morning → Tuesday
+
+        Assert.Equal("2026-09-22", team.ShortDaysDate);
+        var sam = Assert.Single(team.ShortDays!);   // Lea was on leave Tuesday
+        Assert.Equal("Sam Short", sam.EmployeeName);
+        Assert.Equal(90, sam.ShortByMinutes);
+        Assert.Equal(390, sam.WorkedMinutes);
+    }
+
+    [Fact]
+    public async Task On_a_Monday_the_digest_looks_back_to_Friday()
+    {
+        using var db = SeedWorld();
+        var team = await Team(db, Mon.AddDays(7).AddHours(10));
+
+        Assert.Equal("2026-09-25", team.ShortDaysDate);
+        // Nobody recorded Friday, and nobody was on leave: both are short by the whole day.
+        Assert.Equal(2, team.ShortDays!.Count);
+        Assert.All(team.ShortDays, s => Assert.Equal(480, s.ShortByMinutes));
+    }
+
+    [Fact]
+    public async Task A_past_day_left_checked_in_is_not_called_short()
+    {
+        using var db = SeedWorld();
+        // Friday: Sam checks in and never checks out. The calculator runs the day to now.
+        db.AttendanceEvents.Add(AttendanceDay.NewEvent("p-sam", Mon.AddDays(4).AddHours(8), AttendanceEventType.CheckIn));
+        db.SaveChanges();
+
+        var team = await Team(db, Mon.AddDays(7).AddHours(10));
+
+        Assert.DoesNotContain(team.ShortDays!, s => s.EmployeeName == "Sam Short");
+    }
 }

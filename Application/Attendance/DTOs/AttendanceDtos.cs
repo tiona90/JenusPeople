@@ -55,7 +55,12 @@ public record TeamMemberAttendanceDto(
     int BreakMinutes = 0,
     int? BreakVarianceMinutes = null);
 
-public record WeekDayHoursDto(string Date, int? WorkedMinutes, string? Note);
+public record WeekDayHoursDto(
+    string Date,
+    int? WorkedMinutes,
+    string? Note,
+    int? ShortByMinutes = null,
+    bool OnLeave = false);
 
 public record TeamWeekRowDto(
     string EmployeeId,
@@ -63,9 +68,22 @@ public record TeamWeekRowDto(
     List<WeekDayHoursDto> Days,
     int TotalMinutes);
 
+// One person short on the previous working day (ShortDayDigest), for the
+// dashboards' "short days" line.
+public record ShortDayDto(
+    string EmployeeId,
+    string EmployeeName,
+    string DepartmentName,
+    int WorkedMinutes,
+    int ShortByMinutes);
+
+// ShortDaysDate is the previous working day ShortDays judges ("yyyy-MM-dd"),
+// null when none was found in the look-back.
 public record TeamAttendanceDto(
     List<TeamMemberAttendanceDto> Members,
-    List<TeamWeekRowDto> Week);
+    List<TeamWeekRowDto> Week,
+    string? ShortDaysDate = null,
+    List<ShortDayDto>? ShortDays = null);
 
 // History endpoint: per-day earliest-check-in time per team member over the
 // last N days. The check-in is expressed as minutes-from-midnight in the org's

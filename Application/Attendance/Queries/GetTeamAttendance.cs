@@ -10,8 +10,9 @@ using Persistence;
 namespace Application.Attendance.Queries;
 
 /// <summary>
-/// The team board: today's status per member, plus a Mon–Fri minutes grid for the
-/// current ISO week.
+/// The team board: today's status per member, a Mon–Fri minutes grid for the
+/// current ISO week with short days and leave marked (DailyHoursRule), and who
+/// was short on the previous working day.
 ///
 /// A System Administrator sees everybody. A Manager sees their managed departments and their
 /// direct reports, and never themselves — the board is for the people they are
@@ -64,13 +65,22 @@ public class GetTeamAttendance
             var onLeave = await AttendanceDay.LoadOnLeaveProfileIdsAsync(
                 context, profileIds, now, cancellationToken);
 
+            var today = DateOnly.FromDateTime(AttendanceDay.UtcDayStart(now));
+            var hours = await DailyHoursContext.LoadAsync(
+                context, profileIds, today.AddDays(-ShortDayDigest.LookBackDays), today.AddDays(6), now, cancellationToken);
+
             var members = profiles
                 .Select(p => BuildMember(p, AttendanceDay.StateFor(todayByEmployee, p.Id, now), onLeave, schedule, now))
                 .ToList();
 
-            var week = await BuildWeekAsync(profiles, profileIds, now, cancellationToken);
+            var week = await BuildWeekAsync(profiles, profileIds, hours, now, cancellationToken);
+            var digest = await ShortDayDigest.BuildAsync(context, profiles, hours, now, cancellationToken);
 
-            return Result<TeamAttendanceDto>.Success(new TeamAttendanceDto(members, week));
+            return Result<TeamAttendanceDto>.Success(new TeamAttendanceDto(
+                members,
+                week,
+                digest?.Day.ToString("yyyy-MM-dd"),
+                digest?.People ?? []));
         }
 
         private static TeamMemberAttendanceDto BuildMember(
@@ -112,11 +122,13 @@ public class GetTeamAttendance
         /// <summary>
         /// Monday to Friday of the current ISO week. Days with no check-in report
         /// null minutes rather than zero, so the grid can distinguish "did not work"
-        /// from "worked no measurable time".
+        /// from "worked no measurable time". Each day also carries DailyHoursRule's
+        /// verdict: a short day's minutes and approved leave.
         /// </summary>
         private async Task<List<TeamWeekRowDto>> BuildWeekAsync(
             List<EmployeeProfile> profiles,
             List<string> profileIds,
+            DailyHoursContext hours,
             DateTime now,
             CancellationToken cancellationToken)
         {
@@ -156,7 +168,13 @@ public class GetTeamAttendance
                         _ => (string?)null,
                     };
 
-                    days.Add(new WeekDayHoursDto(dayStart.ToString("yyyy-MM-dd"), minutes, note));
+                    var verdict = hours.Judge(profile.Id, DateOnly.FromDateTime(dayStart), state);
+                    days.Add(new WeekDayHoursDto(
+                        dayStart.ToString("yyyy-MM-dd"),
+                        minutes,
+                        note,
+                        verdict.ShortByMinutes,
+                        verdict.Kind == DayKind.Leave));
                 }
 
                 rows.Add(new TeamWeekRowDto(profile.Id, AttendanceDay.DisplayNameOf(profile), days, total));
