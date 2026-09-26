@@ -58,25 +58,41 @@ public static class WorkingWeek
 
     /// <summary>
     /// Whether <paramref name="day"/> is a working day for the org: a configured
+    /// weekday that is not in <paramref name="holidays"/>. The pure reading every
+    /// range query uses, with the holidays loaded once by <see cref="LoadHolidaysAsync"/>.
+    /// </summary>
+    public static bool IsWorkingDay(AppSettings? settings, DateOnly day, IReadOnlySet<DateOnly> holidays) =>
+        IsConfiguredWorkingDay(settings, day.DayOfWeek) && !holidays.Contains(day);
+
+    /// <summary>
+    /// Public holidays for the configured holiday country between
+    /// <paramref name="from"/> and <paramref name="to"/>, inclusive. No holiday
+    /// country means no holidays.
+    /// </summary>
+    public static async Task<HashSet<DateOnly>> LoadHolidaysAsync(
+        AppDbContext context, AppSettings? settings, DateOnly from, DateOnly to, CancellationToken cancellationToken)
+    {
+        var country = settings?.HolidayCountryCode;
+        if (string.IsNullOrWhiteSpace(country)) return [];
+
+        var start = from.ToDateTime(TimeOnly.MinValue);
+        var end = to.ToDateTime(TimeOnly.MinValue).AddDays(1);
+        var dates = await context.PublicHolidays
+            .Where(h => h.CountryCode == country && h.Date >= start && h.Date < end)
+            .Select(h => h.Date)
+            .ToListAsync(cancellationToken);
+
+        return [.. dates.Select(DateOnly.FromDateTime)];
+    }
+
+    /// <summary>
+    /// Whether <paramref name="day"/> is a working day for the org: a configured
     /// weekday that is not a public holiday for the configured holiday country.
     /// No holiday country means no holidays.
     /// </summary>
-    public static async Task<bool> IsWorkingDayAsync(AppDbContext context, AppSettings? settings, DateOnly day, CancellationToken cancellationToken)
-    {
-        if (!IsConfiguredWorkingDay(settings, day.DayOfWeek))
-            return false;
-
-        var country = settings?.HolidayCountryCode;
-        if (!string.IsNullOrWhiteSpace(country))
-        {
-            var date = day.ToDateTime(TimeOnly.MinValue);
-            var isHoliday = await context.PublicHolidays
-                .AnyAsync(h => h.CountryCode == country && h.Date.Date == date, cancellationToken);
-            if (isHoliday) return false;
-        }
-
-        return true;
-    }
+    public static async Task<bool> IsWorkingDayAsync(AppDbContext context, AppSettings? settings, DateOnly day, CancellationToken cancellationToken) =>
+        IsConfiguredWorkingDay(settings, day.DayOfWeek)
+        && IsWorkingDay(settings, day, await LoadHolidaysAsync(context, settings, day, day, cancellationToken));
 
     /// <summary>
     /// The first working day of the week <paramref name="today"/> falls in, looking
