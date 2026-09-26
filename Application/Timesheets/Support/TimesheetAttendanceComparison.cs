@@ -77,10 +77,17 @@ public sealed class TimesheetAttendanceComparison
                 // Entry dates are calendar dates stored at midnight with no zone.
                 var logged = sheet.Entries.Where(e => e.Date.Date == dayStart.Date).Sum(e => e.HoursWorked);
 
-                attended.Add(state.WorkedMinutes);
+                // A day checked into and never checked out has no attended figure to
+                // compare: the calculator runs it up to now, so a forgotten check-out
+                // last Monday would read as days of attendance by Saturday.
+                var comparable = hours.IsClosed(day, state)
+                    && state.Status is not (AttendanceDayStatus.In or AttendanceDayStatus.Break);
+                var attendedMinutes = comparable ? state.WorkedMinutes : 0;
+
+                attended.Add(attendedMinutes);
                 onLeave.Add(verdict.Kind == DayKind.Leave);
-                mismatch.Add(hours.IsClosed(day, state)
-                    ? DailyHoursRule.MismatchMinutes(verdict.Kind, logged, state.WorkedMinutes)
+                mismatch.Add(comparable
+                    ? DailyHoursRule.MismatchMinutes(verdict.Kind, logged, attendedMinutes)
                     : null);
             }
 
