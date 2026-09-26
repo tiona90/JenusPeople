@@ -22,6 +22,9 @@ namespace Application.Timesheets.Queries
             public bool IsHrAdministrator { get; set; }
             public int? Page { get; set; }
             public int? PageSize { get; set; }
+
+            /// <summary>Test seam for the clock; the controller leaves it null.</summary>
+            public DateTime? NowUtc { get; init; }
         }
 
         public class Handler : IRequestHandler<Query, PagedResult<TimesheetDto>>
@@ -62,6 +65,12 @@ namespace Application.Timesheets.Queries
 
                 var timesheets = await pageQuery.ToListAsync(cancellationToken);
 
+                var now = request.NowUtc ?? DateTime.UtcNow;
+
+                // Each weekday against the time attendance recorded for it. Flag only:
+                // the reviewer sees the difference, nothing is blocked.
+                var comparison = await TimesheetAttendanceComparison.LoadAsync(_context, timesheets, now, cancellationToken);
+
                 // Which open timesheets a manager is available to review today. The HR
                 // pages leave those rows out: the manager stage is the manager's.
                 var openSubmitters = timesheets
@@ -69,7 +78,7 @@ namespace Application.Timesheets.Queries
                     .Select(t => t.Employee!)
                     .ToList();
                 var managerAvailable = openSubmitters.Count > 0
-                    ? await TimesheetReviewRule.ManagerAvailableAsync(_context, openSubmitters, DateTime.UtcNow, cancellationToken)
+                    ? await TimesheetReviewRule.ManagerAvailableAsync(_context, openSubmitters, now, cancellationToken)
                     : new Dictionary<string, bool>();
 
                 var items = timesheets.Select(t =>
@@ -82,6 +91,8 @@ namespace Application.Timesheets.Queries
                         if (idx >= 0 && idx < 5)
                             daily[idx] += entry.HoursWorked;
                     }
+
+                    var week = comparison.For(t.Id);
 
                     return new TimesheetDto
                     {
@@ -114,6 +125,10 @@ namespace Application.Timesheets.Queries
                         AwaitingManager = TimesheetReviewRule.IsOpen(t.Status)
                             && managerAvailable.TryGetValue(t.EmployeeProfileId, out var available)
                             && available,
+                        AttendanceMinutes = week?.AttendanceMinutes,
+                        DayMismatchMinutes = week?.MismatchMinutes,
+                        OnLeaveDays = week?.OnLeave,
+                        MismatchDayCount = week?.MismatchDayCount ?? 0,
                     };
                 }).ToList();
 
