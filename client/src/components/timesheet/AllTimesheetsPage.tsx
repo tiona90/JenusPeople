@@ -31,6 +31,7 @@ import { isHrAdministrator } from '../../lib/roles'
 import { softBg, type SxColor } from '../../lib/theme-tokens'
 import { ActionBtn, RejectReasonDialog } from '../ui'
 import { buildTimesheetsCsv } from './timesheet-csv'
+import MismatchChip from './MismatchChip'
 import TimesheetDailyBreakdown from './TimesheetDailyBreakdown'
 
 const BLUE = 'primary.main'
@@ -258,6 +259,9 @@ function ReviewRow({
                         }}>
                             {deptName}
                         </Box>
+                        {(ts.mismatchDayCount ?? 0) > 0 && (
+                            <Box sx={{ mt: '2px' }}><MismatchChip count={ts.mismatchDayCount} /></Box>
+                        )}
                     </Box>
                 </Stack>
 

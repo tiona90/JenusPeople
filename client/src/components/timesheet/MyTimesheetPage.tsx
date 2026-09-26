@@ -7,10 +7,12 @@ import { useState } from 'react'
 import { SweetAlert } from '../ui'
 import { deleteTimesheet, getMyTimesheets, getTimesheetStatusHistories } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
+import { describeMismatch } from '../../lib/daily-hours'
 import { useStore } from '../../lib/mobx'
 import type { Timesheet, TimesheetStatus, TimesheetStatusHistory, UserInfo } from '../../lib/types'
 import { softBg, type SxColor } from '../../lib/theme-tokens'
 import { isCancelledApproval, latestCommentByTimesheet } from '../../lib/timesheet-review-note'
+import MismatchChip from './MismatchChip'
 
 
 const WEEKLY_TARGET = 40
@@ -761,6 +763,7 @@ function TimesheetCard({ t, comment, onEdit, onView, onDelete }: {
                             </Box>
                         </Box>
                         <StatusBadge status={status} />
+                        <MismatchChip count={t.mismatchDayCount} />
                     </Box>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: '18px', mb: '10px', flexWrap: 'wrap' }}>
                         <SummaryItem label="Total" value={`${hours.toFixed(1)}h`} tone={isUnder ? 'amber' : undefined} />
@@ -772,11 +775,12 @@ function TimesheetCard({ t, comment, onEdit, onView, onDelete }: {
                         {DAY_LABELS.map((d, i) => {
                             const h = daily[i] ?? 0
                             const filled = h > 0
+                            const mismatch = describeMismatch(h, t.attendanceMinutes?.[i], t.dayMismatchMinutes?.[i])
                             return (
-                                <Box key={d} sx={{
+                                <Box key={d} title={mismatch ?? undefined} sx={{
                                     flex: 1, p: '6px 8px', borderRadius: '5px', textAlign: 'center',
                                     fontSize: 11, minWidth: 0,
-                                    bgcolor: filled ? softBg('success') : 'action.hover',
+                                    bgcolor: mismatch ? 'warning.light' : filled ? softBg('success') : 'action.hover',
                                 }}>
                                     <Box sx={{ fontSize: 9, color: 'text.disabled', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{d}</Box>
                                     <Box sx={{

@@ -28,6 +28,7 @@ import type { Timesheet } from '../../lib/types/timesheet'
 import { softBg, type SemanticPalette, type SxColor } from '../../lib/theme-tokens'
 import { isAdministrator } from '../../lib/roles'
 import { currentReviewNote, isCancelledApproval, latestCommentByTimesheet, reviewNoteLabel } from '../../lib/timesheet-review-note'
+import MismatchChip from './MismatchChip'
 import TimesheetDailyBreakdown from './TimesheetDailyBreakdown'
 
 
@@ -386,6 +387,9 @@ const TeamTimesheetPage = observer(function TeamTimesheetPage({ user }: { user: 
                                             <TableCell sx={TD}>
                                                 <strong>{ts.employeeName}</strong>
                                                 {noteFor(ts) && <ReviewNote note={noteFor(ts)!} compact />}
+                                                {(ts.mismatchDayCount ?? 0) > 0 && (
+                                                    <Box sx={{ mt: 0.5 }}><MismatchChip count={ts.mismatchDayCount} /></Box>
+                                                )}
                                             </TableCell>
                                             {isAdmin && (
                                                 <TableCell sx={TD}>

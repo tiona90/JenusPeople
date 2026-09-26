@@ -11,6 +11,7 @@ import {
     getProjectTypes,
     getTimesheet,
 } from '../../lib/api'
+import { describeMismatch } from '../../lib/daily-hours'
 import type { Timesheet } from '../../lib/types/timesheet'
 import type { TimesheetEntry } from '../../lib/types/timesheet-entry'
 
@@ -34,6 +35,8 @@ type Day = {
     dateLabel: string
     total: number
     tasks: Task[]
+    mismatch: string | null
+    onLeave: boolean
 }
 
 export default function TimesheetDailyBreakdown({ ts, title = 'Daily breakdown' }: { ts: Timesheet; title?: string | null }) {
@@ -86,10 +89,12 @@ export default function TimesheetDailyBreakdown({ ts, title = 'Daily breakdown' 
                     notes: e.notes?.trim() ?? '',
                 }
             })
-            out.push({ key, name, dateLabel, total, tasks })
+            const onLeave = ts.onLeaveDays?.[i] ?? false
+            const mismatch = describeMismatch(total, ts.attendanceMinutes?.[i], ts.dayMismatchMinutes?.[i])
+            out.push({ key, name, dateLabel, total, tasks, mismatch, onLeave })
         }
         return out
-    }, [entries, ts.periodStart, projectById, typeById, componentById, activityById])
+    }, [entries, ts.periodStart, projectById, typeById, componentById, activityById, ts.onLeaveDays, ts.attendanceMinutes, ts.dayMismatchMinutes])
 
     if (isLoading && entries.length === 0) {
         return (
@@ -135,6 +140,12 @@ export default function TimesheetDailyBreakdown({ ts, title = 'Daily breakdown' 
                                     {d.total.toFixed(1)}h
                                 </Typography>
                             </Stack>
+                            {d.onLeave && (
+                                <Box sx={{ fontSize: 10, color: 'info.dark', mb: 0.5 }}>On leave</Box>
+                            )}
+                            {d.mismatch && (
+                                <Box sx={{ fontSize: 10, color: 'warning.dark', fontWeight: 600, mb: 0.5 }}>{d.mismatch}</Box>
+                            )}
                             <Box sx={{
                                 fontSize: 11,
                                 color: isEmpty ? 'text.disabled' : 'text.primary',
