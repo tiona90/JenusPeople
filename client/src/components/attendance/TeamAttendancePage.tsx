@@ -14,8 +14,10 @@ import Typography from '@mui/material/Typography'
 import { getTeamAttendance } from '../../lib/api'
 import { formatElapsed, formatTime } from '../../lib/hooks/useAttendance'
 import { describeBreakVariance, formatBreakMinutes } from '../../lib/break-policy'
+import { describeShortDay } from '../../lib/daily-hours'
 import type { TeamMemberAttendance, TeamMemberStatus } from '../../lib/types'
 import { softBg, type SxColor } from '../../lib/theme-tokens'
+import ShortDaysNote from './ShortDaysNote'
 
 const BLUE = 'primary.main'
 const GREEN = 'success.main'
@@ -230,13 +232,15 @@ export default function TeamAttendancePage() {
                 </Box>
             </Paper>
 
+            <ShortDaysNote date={data?.shortDaysDate} people={data?.shortDays} />
+
             {week.length > 0 && (
                 <Paper elevation={0} sx={{ bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider', borderRadius: '10px', overflow: 'hidden' }}>
                     <Box sx={{ p: '14px 18px', borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                         <Box>
                             <Typography sx={{ fontSize: 14, fontWeight: 600, color: 'text.primary' }}>Weekly Attendance Log</Typography>
                             <Typography sx={{ fontSize: 11, color: 'text.disabled', mt: 0.25, lineHeight: 1.4 }}>
-                                Time clocked in — separate from the hours your team logs on timesheets
+                                Time clocked in against the working day, net of the break — separate from the hours your team logs on timesheets
                             </Typography>
                         </Box>
                         <Select size="small" value="this-week" sx={{ fontSize: 12, '& .MuiSelect-select': { py: 0.5, px: 1.25 } }}>
@@ -264,15 +268,24 @@ export default function TeamAttendancePage() {
                                         </TableCell>
                                         {row.days.map((d, idx) => (
                                             <TableCell key={idx} sx={TD}>
-                                                {d.workedMinutes == null
-                                                    ? <Box component="span" sx={{ color: 'text.disabled' }}>—</Box>
-                                                    : (
-                                                        <>
-                                                            {formatElapsed(d.workedMinutes)}
-                                                            {d.note === 'in' && <Box component="span" sx={{ color: 'text.secondary', fontSize: 11, ml: 0.5 }}>(in)</Box>}
-                                                            {d.note === 'break' && <Box component="span" sx={{ color: AMBER, fontSize: 11, ml: 0.5 }}>(break)</Box>}
-                                                        </>
-                                                    )}
+                                                {d.onLeave
+                                                    ? <Box component="span" sx={{ color: 'info.dark' }}>Leave</Box>
+                                                    : d.workedMinutes == null
+                                                        ? (d.shortByMinutes != null
+                                                            ? <Box component="span" sx={{ color: AMBER }}>No attendance</Box>
+                                                            : <Box component="span" sx={{ color: 'text.disabled' }}>—</Box>)
+                                                        : (
+                                                            <>
+                                                                {formatElapsed(d.workedMinutes)}
+                                                                {d.note === 'in' && <Box component="span" sx={{ color: 'text.secondary', fontSize: 11, ml: 0.5 }}>(in)</Box>}
+                                                                {d.note === 'break' && <Box component="span" sx={{ color: AMBER, fontSize: 11, ml: 0.5 }}>(break)</Box>}
+                                                                {describeShortDay(d.shortByMinutes) && (
+                                                                    <Box component="span" sx={{ display: 'block', color: AMBER, fontSize: 11 }}>
+                                                                        {describeShortDay(d.shortByMinutes)}
+                                                                    </Box>
+                                                                )}
+                                                            </>
+                                                        )}
                                             </TableCell>
                                         ))}
                                         <TableCell sx={TD}>

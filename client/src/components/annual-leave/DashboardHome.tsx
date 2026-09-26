@@ -27,6 +27,7 @@ import { isAwaitingDocument } from '../../lib/attachment-policy'
 import { isAdministrator, isSystemAdministrator } from '../../lib/roles'
 import { activityIcon } from '../../lib/hooks/useAttendance'
 import { describeBreakVariance } from '../../lib/break-policy'
+import ShortDaysNote from '../attendance/ShortDaysNote'
 import { useOfferedLeaveTypes } from '../../lib/hooks'
 import { buildLeaveBalanceRows, type LeaveBalanceRow } from '../../lib/leave-balance-rows'
 import { useStore } from '../../lib/mobx'
@@ -2063,6 +2064,11 @@ function TeamStatusNowCard({ team }: { team: TeamAttendance | null }) {
             <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '8px' }}>
                 {team.members.slice(0, 12).map((m) => <TeamMemberTile key={m.employeeId} member={m} />)}
             </Box>
+            {(team.shortDays?.length ?? 0) > 0 && (
+                <Box sx={{ mt: '12px' }}>
+                    <ShortDaysNote date={team.shortDaysDate} people={team.shortDays} />
+                </Box>
+            )}
         </ActionCard>
     )
 }
