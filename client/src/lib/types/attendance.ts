@@ -34,7 +34,7 @@ export interface AttendanceToday {
     breakVarianceMinutes?: number | null
 }
 
-export type AttendanceHistoryStatus = 'complete' | 'in-progress' | 'late' | 'absent'
+export type AttendanceHistoryStatus = 'complete' | 'in-progress' | 'late' | 'absent' | 'short' | 'leave' | 'off'
 
 export interface AttendanceHistoryDay {
     date: string
@@ -45,6 +45,16 @@ export interface AttendanceHistoryDay {
     workedMinutes: number
     /** See AttendanceToday.breakVarianceMinutes. */
     breakVarianceMinutes?: number | null
+    /**
+     * Minutes under the day's target beyond the grace, decided by the server
+     * (DailyHoursRule): working hours net of the break, halved for a half day of
+     * approved leave. Null when there is nothing to say; optional for an older API.
+     */
+    shortByMinutes?: number | null
+    /** Approved full-day leave. */
+    onLeave?: boolean
+    /** The minutes the day asked for; null on leave, a day off, or with no schedule. */
+    targetMinutes?: number | null
 }
 
 export type TeamMemberStatus = 'in' | 'break' | 'out' | 'leave'
@@ -70,6 +80,10 @@ export interface WeekDayHours {
     date: string
     workedMinutes: number | null
     note: string | null
+    /** See AttendanceHistoryDay.shortByMinutes. */
+    shortByMinutes?: number | null
+    /** See AttendanceHistoryDay.onLeave. */
+    onLeave?: boolean
 }
 
 export interface TeamWeekRow {
@@ -79,9 +93,20 @@ export interface TeamWeekRow {
     totalMinutes: number
 }
 
+export interface ShortDay {
+    employeeId: string
+    employeeName: string
+    departmentName: string
+    workedMinutes: number
+    shortByMinutes: number
+}
+
 export interface TeamAttendance {
     members: TeamMemberAttendance[]
     week: TeamWeekRow[]
+    /** The previous working day `shortDays` judges ("yyyy-MM-dd"). */
+    shortDaysDate?: string | null
+    shortDays?: ShortDay[]
 }
 
 export interface MemberCheckInDay {
