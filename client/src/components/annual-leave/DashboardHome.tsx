@@ -161,7 +161,7 @@ function EmployeeDashboard({ user }: { user: UserInfo }) {
     const { data: profiles = [] } = useQuery({ queryKey: ['employeeProfiles'], queryFn: getEmployeeProfiles })
     const { data: leaves = [], isLoading: isLoadingLeaves } = useQuery({ queryKey: ['annualLeaves'], queryFn: getAnnualLeaves })
     const { data: leaveTypes = [] } = useQuery({ queryKey: ['leaveTypes'], queryFn: getLeaveTypes })
-    const { data: timesheets = [], isLoading: isLoadingTs } = useQuery({ queryKey: ['timesheets', 'mine'], queryFn: getMyTimesheets })
+    const { data: timesheets = [], isLoading: isLoadingTs } = useQuery({ queryKey: ['timesheets', 'mine'], queryFn: () => getMyTimesheets() })
     const { data: settings } = useQuery({ queryKey: ['appSettings'], queryFn: getAppSettings })
 
     const isLoading = isLoadingLeaves || isLoadingTs
@@ -394,7 +394,7 @@ function ManagerDashboard({ user }: { user: UserInfo }) {
     const today = useMemo(() => new Date(), [])
 
     const { data: leaves = [], isLoading: lLoading } = useQuery({ queryKey: ['annualLeaves'], queryFn: getAnnualLeaves })
-    const { data: timesheets = [], isLoading: tLoading } = useQuery({ queryKey: ['timesheets'], queryFn: getTimesheets })
+    const { data: timesheets = [], isLoading: tLoading } = useQuery({ queryKey: ['timesheets'], queryFn: () => getTimesheets() })
     const { data: leaveTypes = [] } = useQuery({ queryKey: ['leaveTypes'], queryFn: getLeaveTypes })
     const { data: profiles = [] } = useQuery({ queryKey: ['employeeProfiles'], queryFn: getEmployeeProfiles })
     const { data: team } = useQuery({ queryKey: ['attendance', 'team'], queryFn: getTeamAttendance })
@@ -891,7 +891,7 @@ function HrDashboard({ user }: { user: UserInfo }) {
     const now = useNow()
 
     const { data: leaves = [], isLoading: lLoading } = useQuery({ queryKey: ['annualLeaves'], queryFn: getAnnualLeaves })
-    const { data: timesheets = [], isLoading: tLoading } = useQuery({ queryKey: ['timesheets'], queryFn: getTimesheets })
+    const { data: timesheets = [], isLoading: tLoading } = useQuery({ queryKey: ['timesheets'], queryFn: () => getTimesheets() })
     const { data: leaveTypes = [] } = useQuery({ queryKey: ['leaveTypes'], queryFn: getLeaveTypes })
     const { data: profiles = [] } = useQuery({ queryKey: ['employeeProfiles'], queryFn: getEmployeeProfiles })
     const { data: company } = useQuery({ queryKey: ['attendance', 'company'], queryFn: getCompanyAttendance })

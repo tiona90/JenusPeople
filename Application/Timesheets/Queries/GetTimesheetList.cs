@@ -23,6 +23,14 @@ namespace Application.Timesheets.Queries
             public int? Page { get; set; }
             public int? PageSize { get; set; }
 
+            /// <summary>
+            /// Compare each weekday with attendance (<see cref="TimesheetAttendanceComparison"/>).
+            /// Opt-in: the notification bell polls this list every 15 seconds and renders
+            /// no chip, so it must not pay for loading everyone's attendance. Off, the
+            /// DTO's comparison fields stay null and no comparison query runs.
+            /// </summary>
+            public bool IncludeAttendanceComparison { get; init; }
+
             /// <summary>Test seam for the clock; the controller leaves it null.</summary>
             public DateTime? NowUtc { get; init; }
         }
@@ -69,7 +77,9 @@ namespace Application.Timesheets.Queries
 
                 // Each weekday against the time attendance recorded for it. Flag only:
                 // the reviewer sees the difference, nothing is blocked.
-                var comparison = await TimesheetAttendanceComparison.LoadAsync(_context, timesheets, now, cancellationToken);
+                var comparison = request.IncludeAttendanceComparison
+                    ? await TimesheetAttendanceComparison.LoadAsync(_context, timesheets, now, cancellationToken)
+                    : TimesheetAttendanceComparison.None;
 
                 // Which open timesheets a manager is available to review today. The HR
                 // pages leave those rows out: the manager stage is the manager's.

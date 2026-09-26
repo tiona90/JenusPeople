@@ -23,6 +23,9 @@ public sealed class TimesheetAttendanceComparison
 
     private TimesheetAttendanceComparison(Dictionary<string, Week> byTimesheetId) => _byTimesheetId = byTimesheetId;
 
+    /// <summary>No sheet compared: what a list that did not ask for the comparison gets.</summary>
+    public static TimesheetAttendanceComparison None { get; } = new([]);
+
     public Week? For(string timesheetId) => _byTimesheetId.GetValueOrDefault(timesheetId);
 
     public static async Task<TimesheetAttendanceComparison> LoadAsync(
@@ -36,9 +39,19 @@ public sealed class TimesheetAttendanceComparison
         var from = inWindow.Min(t => AttendanceDay.UtcDayStart(t.PeriodStart));
         var toExclusive = inWindow.Max(t => AttendanceDay.UtcDayStart(t.PeriodStart)).AddDays(5);
 
-        var events = await context.AttendanceEvents.AsNoTracking()
-            .Where(e => profileIds.Contains(e.EmployeeProfileId) && e.At >= from && e.At < toExclusive)
-            .ToListAsync(cancellationToken);
+        // One events query per week that has sheets, covering only the people with a
+        // sheet that week — at most WindowWeeks queries. A single query from the
+        // earliest week to the latest would pull twelve weeks of events for someone
+        // whose only sheet is this week's.
+        var events = new List<AttendanceEvent>();
+        foreach (var week in inWindow.GroupBy(t => AttendanceDay.UtcDayStart(t.PeriodStart)))
+        {
+            var weekIds = week.Select(t => t.EmployeeProfileId).Distinct().ToList();
+            var weekEnd = week.Key.AddDays(5);
+            events.AddRange(await context.AttendanceEvents.AsNoTracking()
+                .Where(e => weekIds.Contains(e.EmployeeProfileId) && e.At >= week.Key && e.At < weekEnd)
+                .ToListAsync(cancellationToken));
+        }
         var byDay = events
             .GroupBy(e => (e.EmployeeProfileId, Day: AttendanceDay.UtcDayStart(e.At)))
             .ToDictionary(g => g.Key, g => g.ToList());

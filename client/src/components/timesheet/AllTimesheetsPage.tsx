@@ -376,9 +376,11 @@ export default function AllTimesheetsPage() {
     const [rejectReason, setRejectReason] = useState('')
     const [rejectError, setRejectError] = useState('')
 
+    // Its own key, since the bell reads ['timesheets'] without the attendance
+    // comparison; still under 'timesheets', so every prefix invalidation reaches it.
     const { data: timesheets = [], isLoading } = useQuery({
-        queryKey: ['timesheets'],
-        queryFn: getTimesheets,
+        queryKey: ['timesheets', 'with-attendance'],
+        queryFn: () => getTimesheets({ includeAttendance: true }),
     })
 
     /* Nobody decides their own hours. An HR Administrator's own department-less

@@ -81,9 +81,12 @@ export default function MyTimesheetPage({ user: _user }: { user: UserInfo }) {
     const [statusTab, setStatusTab] = useState<StatusTab>('all')
     const [apiError, setApiError] = useState('')
 
+    // Its own key, since the new-timesheet page reads ['timesheets', 'mine']
+    // without the attendance comparison; still under that prefix, so its
+    // invalidations reach this one.
     const { data: timesheets = [], isLoading } = useQuery({
-        queryKey: ['timesheets', 'mine'],
-        queryFn: getMyTimesheets,
+        queryKey: ['timesheets', 'mine', 'with-attendance'],
+        queryFn: () => getMyTimesheets({ includeAttendance: true }),
     })
 
     const { data: histories = [] } = useQuery({

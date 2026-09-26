@@ -96,7 +96,11 @@ namespace API.Controllers
         // GET: api/timesheets
         [HttpGet]
         [Authorize]
-        public async Task<ActionResult<List<TimesheetDto>>> GetTimesheets([FromQuery] bool myOnly = false, [FromQuery] int? page = null, [FromQuery] int? pageSize = null)
+        public async Task<ActionResult<List<TimesheetDto>>> GetTimesheets(
+            [FromQuery] bool myOnly = false,
+            [FromQuery] int? page = null,
+            [FromQuery] int? pageSize = null,
+            [FromQuery] bool includeAttendance = false)
         {
             var userId = ResolveUserId();
             var isAdmin = User.IsSystemAdministrator();
@@ -110,6 +114,7 @@ namespace API.Controllers
                 IsHrAdministrator = !myOnly && User.IsHrAdministrator(),
                 Page = page,
                 PageSize = pageSize,
+                IncludeAttendanceComparison = includeAttendance,
             });
             return Paged(result);
         }

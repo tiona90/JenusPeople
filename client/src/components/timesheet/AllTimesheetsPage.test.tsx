@@ -97,6 +97,14 @@ function openStatusFilter() {
 
 beforeEach(() => vi.clearAllMocks())
 
+describe('All Timesheets asks for the attendance comparison', () => {
+    it('passes the opt-in flag, since its rows render the mismatch chip', async () => {
+        await renderPage(hrAdministrator)
+
+        expect(api.getTimesheets).toHaveBeenCalledWith({ includeAttendance: true })
+    })
+})
+
 describe('the status filter on All Timesheets offers only what the list can show', () => {
     it('has no Draft option for an HR Administrator', async () => {
         await renderPage(hrAdministrator)

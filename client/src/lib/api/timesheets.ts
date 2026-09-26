@@ -3,8 +3,21 @@ import type { Timesheet } from '../types/timesheet';
 import { toPaged, type PageParams, type Paged } from './pagination';
 
 // Zero-arg so it stays safe to pass directly as a React Query queryFn.
-export async function getTimesheets(): Promise<Timesheet[]> {
-    const res = await apiClient.get('/timesheets');
+// The day-by-day comparison with attendance (attendanceMinutes, dayMismatchMinutes,
+// onLeaveDays, mismatchDayCount) is opt-in: the server only loads attendance when
+// asked. Pass it from a page that renders the flags, never from the bell, which
+// polls this list every 15 seconds. `=== true` rather than truthiness, because a
+// bare `queryFn: getTimesheets` hands this slot React Query's context object.
+export interface TimesheetListOptions {
+    includeAttendance?: boolean
+}
+
+function attendanceParams(options?: TimesheetListOptions) {
+    return options?.includeAttendance === true ? { includeAttendance: true } : {}
+}
+
+export async function getTimesheets(options?: TimesheetListOptions): Promise<Timesheet[]> {
+    const res = await apiClient.get('/timesheets', { params: attendanceParams(options) });
     return res.data;
 }
 
@@ -14,8 +27,8 @@ export async function getTimesheetsPaged(params: PageParams): Promise<Paged<Time
     return toPaged(res, params);
 }
 
-export async function getMyTimesheets(): Promise<Timesheet[]> {
-    const res = await apiClient.get('/timesheets', { params: { myOnly: true } });
+export async function getMyTimesheets(options?: TimesheetListOptions): Promise<Timesheet[]> {
+    const res = await apiClient.get('/timesheets', { params: { myOnly: true, ...attendanceParams(options) } });
     return res.data;
 }
 

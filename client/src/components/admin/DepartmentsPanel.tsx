@@ -118,7 +118,7 @@ function DepartmentsPanel() {
     const { data: adminUsers = [] } = useQuery({ queryKey: ['adminUsers'], queryFn: getAdminUsers })
     const { data: company } = useQuery({ queryKey: ['attendance', 'company'], queryFn: getCompanyAttendance })
     const { data: leaves = [] } = useQuery({ queryKey: ['annualLeaves'], queryFn: getAnnualLeaves })
-    const { data: timesheets = [] } = useQuery({ queryKey: ['timesheets'], queryFn: getTimesheets })
+    const { data: timesheets = [] } = useQuery({ queryKey: ['timesheets'], queryFn: () => getTimesheets() })
     const { data: leaveTypes = [] } = useQuery({ queryKey: ['leaveTypes'], queryFn: getLeaveTypes })
 
     /* An employee with no entitlement of their own falls back to the annual-leave

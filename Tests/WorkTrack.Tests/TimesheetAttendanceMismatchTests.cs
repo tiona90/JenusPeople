@@ -76,10 +76,14 @@ public class TimesheetAttendanceMismatchTests
             TimesheetId = "ts-1", ProjectId = 1, Date = new DateTime(2026, 9, 21).AddDays(dayOffset), HoursWorked = hours,
         });
 
-    private static async Task<List<Application.Timesheets.DTOs.TimesheetDto>> List(AppDbContext db)
+    private static async Task<List<Application.Timesheets.DTOs.TimesheetDto>> List(AppDbContext db, bool includeAttendance = true)
     {
         var result = await new GetTimesheetList.Handler(db).Handle(
-            new GetTimesheetList.Query { RequestingUserId = "nobody", IsAdmin = true, NowUtc = Now },
+            new GetTimesheetList.Query
+            {
+                RequestingUserId = "nobody", IsAdmin = true, NowUtc = Now,
+                IncludeAttendanceComparison = includeAttendance,
+            },
             CancellationToken.None);
         return result.Items;
     }
@@ -118,10 +122,28 @@ public class TimesheetAttendanceMismatchTests
         db.SaveChanges();
 
         var result = await new GetTimesheetList.Handler(db).Handle(
-            new GetTimesheetList.Query { RequestingUserId = "nobody", IsAdmin = true, NowUtc = Mon.AddDays(4).AddHours(10) },
+            new GetTimesheetList.Query
+            {
+                RequestingUserId = "nobody", IsAdmin = true, NowUtc = Mon.AddDays(4).AddHours(10),
+                IncludeAttendanceComparison = true,
+            },
             CancellationToken.None);
         var ts = Assert.Single(result.Items, t => t.Id == "ts-1");
 
         Assert.Null(ts.DayMismatchMinutes![4]);
+    }
+
+    [Fact]
+    public async Task Without_the_flag_nothing_is_compared()
+    {
+        // The bell polls the unpaged list every 15 seconds and renders no chip, so
+        // the comparison is opt-in: the pages that show it ask for it.
+        using var db = SeedWorld();
+        var ts = Assert.Single(await List(db, includeAttendance: false), t => t.Id == "ts-1");
+
+        Assert.Null(ts.AttendanceMinutes);
+        Assert.Null(ts.DayMismatchMinutes);
+        Assert.Null(ts.OnLeaveDays);
+        Assert.Equal(0, ts.MismatchDayCount);
     }
 }
