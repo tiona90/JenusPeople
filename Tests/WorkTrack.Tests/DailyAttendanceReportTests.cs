@@ -335,4 +335,41 @@ public class DailyAttendanceReportTests
 
         Assert.Empty(email.Sent);
     }
+
+    [Fact]
+    public async Task Report_lists_who_checked_out_under_the_scheduled_day()
+    {
+        using var db = SeedWorld();
+
+        var mail = await RunAsync(db, Settings());
+
+        var shortDay = Section(mail.HtmlBody, "Short day");
+        Assert.Contains("Eve Employee (Engineering) — 1h 30m short (worked 7h 30m of 9h 00m)", shortDay);
+        Assert.DoesNotContain("Fay", shortDay);    // overtime, not short
+        Assert.DoesNotContain("Bob", shortDay);    // never checked out: reported under that heading
+        Assert.DoesNotContain("Cara", shortDay);   // never checked in: reported under that heading
+        Assert.DoesNotContain("Dan", shortDay);    // on leave
+        Assert.Contains("Short day:", mail.TextBody);
+    }
+
+    [Fact]
+    public async Task A_half_day_of_leave_halves_the_day_the_report_expects()
+    {
+        using var db = SeedWorld();
+        SeedPerson(db, "hal", "Hal Half", "hal@example.com", DepartmentId);
+        db.AnnualLeaves.Add(new AnnualLeave
+        {
+            EmployeeId = "hal-u", EmployeeProfileId = "hal-p", DepartmentId = DepartmentId, LeaveTypeId = 1,
+            StartDate = Yesterday, EndDate = Yesterday, Status = AnnualLeaveStatus.Approved,
+            Duration = Domain.Services.LeaveDuration.HalfDayMorning, CreatedAt = DateTime.UtcNow,
+        });
+        // 4h 30m worked against a 4h 30m half day: not short.
+        db.AttendanceEvents.Add(AttendanceDay.NewEvent("hal-p", Yesterday.AddHours(13), AttendanceEventType.CheckIn));
+        db.AttendanceEvents.Add(AttendanceDay.NewEvent("hal-p", Yesterday.AddHours(17).AddMinutes(30), AttendanceEventType.CheckOut));
+        db.SaveChanges();
+
+        var mail = await RunAsync(db, Settings());
+
+        Assert.DoesNotContain("Hal Half", Section(mail.HtmlBody, "Short day"));
+    }
 }

@@ -557,6 +557,7 @@ public class ReminderDispatcher(
         List<string> NotCheckedIn,
         List<string> NotCheckedOut,
         List<string> Overtime,
+        List<string>? ShortDay,
         List<string>? BreakAllowance,
         List<string> TimesheetNotSubmitted,
         List<string> OnLeave);
@@ -607,10 +608,10 @@ public class ReminderDispatcher(
             .Where(l => l.Status == AnnualLeaveStatus.Approved
                         && l.StartDate < dayEnd && l.EndDate >= dayStart
                         && userIds.Contains(l.EmployeeId))
-            .Select(l => new { l.EmployeeId, LeaveType = l.LeaveType != null ? l.LeaveType.Name : null })
+            .Select(l => new { l.EmployeeId, LeaveType = l.LeaveType != null ? l.LeaveType.Name : null, l.Duration })
             .ToListAsync(ct))
             .GroupBy(l => l.EmployeeId)
-            .ToDictionary(g => g.Key, g => g.First().LeaveType);
+            .ToDictionary(g => g.Key, g => (Name: g.First().LeaveType, Covers: DailyHoursRule.CombineLeave(g.Select(x => x.Duration))));
 
         var weekStart = LatestTimesheetWeekPastDeadline(settings, DateTime.UtcNow);
         var weekStartUtc = weekStart.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
@@ -633,6 +634,10 @@ public class ReminderDispatcher(
         var notIn = new List<string>();
         var notOut = new List<string>();
         var overtime = new List<string>();
+        // Checked-out days under the scheduled day net of the break, beyond the
+        // grace, with approved leave taken off the target (DailyHoursRule). Null,
+        // and no section, when the settings describe no working day at all.
+        var shortDay = scheduledMinutes > 0 ? new List<string>() : null;
         // The break taken against the break allowed, on checked-out days only
         // (WorkingDaySchedule.BreakVariance); null, and no section, when the
         // settings configure no break — "Nobody" under a heading nobody set
@@ -645,10 +650,10 @@ public class ReminderDispatcher(
         {
             var who = string.IsNullOrWhiteSpace(person.DisplayName) ? person.Email ?? person.UserId : person.DisplayName;
             var label = $"{who} ({person.Department ?? "No department"})";
-            var isOnLeave = onLeave.TryGetValue(person.UserId, out var leaveType);
+            var isOnLeave = onLeave.TryGetValue(person.UserId, out var leaveInfo);
 
             if (isOnLeave)
-                leave.Add($"{label} — {leaveType ?? "Leave"}");
+                leave.Add($"{label} — {leaveInfo.Name ?? "Leave"}");
 
             if (stateByProfileId.TryGetValue(person.ProfileId, out var state) && state.CheckInAt is { } checkInAt)
             {
@@ -656,9 +661,23 @@ public class ReminderDispatcher(
                     late.Add($"{label} — checked in {schedule.LocalTimeOf(checkInAt):HH:mm}, {schedule.MinutesLate(checkInAt)} min late");
 
                 if (state.CheckOutAt is null)
+                {
                     notOut.Add(label);
-                else if (state.WorkedMinutes > scheduledMinutes)
-                    overtime.Add($"{label} — {HoursAndMinutes(state.WorkedMinutes - scheduledMinutes)} over (worked {HoursAndMinutes(state.WorkedMinutes)})");
+                }
+                else
+                {
+                    if (state.WorkedMinutes > scheduledMinutes)
+                        overtime.Add($"{label} — {HoursAndMinutes(state.WorkedMinutes - scheduledMinutes)} over (worked {HoursAndMinutes(state.WorkedMinutes)})");
+
+                    var verdict = DailyHoursRule.Judge(
+                        isWorkingDay: true,
+                        isOnLeave ? leaveInfo.Covers : LeaveOnDay.None,
+                        scheduledMinutes,
+                        state.WorkedMinutes,
+                        dayClosed: true);
+                    if (shortDay is not null && verdict.ShortByMinutes is { } shortBy)
+                        shortDay.Add($"{label} — {HoursAndMinutes(shortBy)} short (worked {HoursAndMinutes(state.WorkedMinutes)} of {HoursAndMinutes(verdict.TargetMinutes!.Value)})");
+                }
 
                 if (breakAllowance is not null && schedule.BreakVariance(state, nowUtc) is { } variance && variance != 0)
                 {
@@ -676,7 +695,7 @@ public class ReminderDispatcher(
                 noTimesheet.Add(label);
         }
 
-        return new DailyReport(day, coverage, weekStart, late, notIn, notOut, overtime, breakAllowance, noTimesheet, leave);
+        return new DailyReport(day, coverage, weekStart, late, notIn, notOut, overtime, shortDay, breakAllowance, noTimesheet, leave);
     }
 
     /// <summary>"Engineering", "Engineering and Finance", "Engineering, Finance and Sales".</summary>
@@ -725,6 +744,7 @@ public class ReminderDispatcher(
 {Section("Did not check in", r.NotCheckedIn)}
 {Section("Did not check out", r.NotCheckedOut)}
 {Section("Overtime", r.Overtime)}
+{(r.ShortDay is null ? "" : Section("Short day", r.ShortDay))}
 {(r.BreakAllowance is null ? "" : Section("Break allowance", r.BreakAllowance))}
 {Section("Timesheet not submitted", r.TimesheetNotSubmitted, $"Week of {r.TimesheetWeekStart:dd MMM yyyy}")}
 {Section("On leave", r.OnLeave)}
@@ -744,6 +764,7 @@ public class ReminderDispatcher(
             Section("Did not check in", r.NotCheckedIn),
             Section("Did not check out", r.NotCheckedOut),
             Section("Overtime", r.Overtime),
+            r.ShortDay is null ? null : Section("Short day", r.ShortDay),
             r.BreakAllowance is null ? null : Section("Break allowance", r.BreakAllowance),
             Section($"Timesheet not submitted (week of {r.TimesheetWeekStart:dd MMM yyyy})", r.TimesheetNotSubmitted),
             Section("On leave", r.OnLeave),
