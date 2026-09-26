@@ -195,4 +195,58 @@ public class ShortDayAttendanceTests
 
         Assert.DoesNotContain(team.ShortDays!, s => s.EmployeeName == "Sam Short");
     }
+
+    // ── Company dashboard ─────────────────────────────────────────────────────
+
+    private static async Task<List<Application.Attendance.DTOs.IssueDto>> CompanyIssues(AppDbContext db, DateTime now)
+    {
+        var result = await new GetCompanyAttendance.Handler(db).Handle(
+            new GetCompanyAttendance.Query { NowUtc = now }, CancellationToken.None);
+        Assert.True(result.IsSuccess, result.Error);
+        return result.Value!.Issues;
+    }
+
+    [Fact]
+    public async Task Company_issues_name_who_was_short_on_the_previous_working_day()
+    {
+        using var db = SeedWorld();
+        var issues = await CompanyIssues(db, Mon.AddDays(2).AddHours(10));
+
+        var issue = Assert.Single(issues, i => i.Title.Contains("short day"));
+        Assert.Equal("warning", issue.Severity);
+        Assert.Equal("1 short day on Tue 22 Sep", issue.Title);
+        Assert.Contains("Sam Short (Engineering) · 1h 30m short", issue.Detail);
+        Assert.DoesNotContain("Lea", issue.Detail);   // on leave that day
+    }
+
+    [Fact]
+    public async Task On_Tuesday_morning_the_issue_speaks_about_Monday()
+    {
+        using var db = SeedWorld();
+        var issues = await CompanyIssues(db, Mon.AddDays(1).AddHours(10)); // Tuesday → Monday
+
+        // Monday: Sam made 8h; Lea recorded nothing and had no leave, so she is short.
+        var issue = Assert.Single(issues, i => i.Title.Contains("short day"));
+        Assert.Equal("1 short day on Mon 21 Sep", issue.Title);
+        Assert.Contains("Lea Leave", issue.Detail);
+        Assert.DoesNotContain("Sam", issue.Detail);
+    }
+
+    [Fact]
+    public async Task Overtime_is_judged_against_the_scheduled_day_and_leaves_out_people_on_leave()
+    {
+        using var db = SeedWorld();
+        // Thursday 15:00: Oli has worked 8h40 (over 8h + the 15-minute grace).
+        // Lou has worked 9h too, but is on approved leave today, so is not counted.
+        AddEmployee(db, "oli", "Oli Over");
+        Add(db, "oli", Mon.AddDays(3).AddHours(6).AddMinutes(20), AttendanceEventType.CheckIn);
+        AddEmployee(db, "lou", "Lou Leave");
+        Add(db, "lou", Mon.AddDays(3).AddHours(6), AttendanceEventType.CheckIn);
+        Leave(db, "lou", Mon.AddDays(3), LeaveDuration.Full);
+        db.SaveChanges();
+
+        var issues = await CompanyIssues(db, Now);
+
+        Assert.Contains(issues, i => i.Title == "1 over the 8h working day today");
+    }
 }
