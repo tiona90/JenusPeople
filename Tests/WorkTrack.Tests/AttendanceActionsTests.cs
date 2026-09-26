@@ -365,7 +365,7 @@ public class AttendanceActionsTests
 
     /// <summary>
     /// AttendanceHistoryStatus in the client types. A day with no events reads as
-    /// absent, and an open day as in-progress.
+    /// absent (or off on a non-working day), and an open day as in-progress.
     /// </summary>
     [Fact]
     public async Task History_reports_absent_days_and_the_day_in_progress()
@@ -382,7 +382,9 @@ public class AttendanceActionsTests
 
         Assert.Equal(3, days.Count);
         Assert.Equal("in-progress", days[^1].Status);          // today, still open
-        Assert.All(days.Take(2), d => Assert.Equal("absent", d.Status));
+        // Runs on the real clock, so the two days before today may be a weekend,
+        // which reads as off rather than absent.
+        Assert.All(days.Take(2), d => Assert.Contains(d.Status, new[] { "absent", "off" }));
     }
 
     [Theory]

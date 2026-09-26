@@ -21,6 +21,11 @@ public record TodayStateDto(
     bool IsAutoBreak,
     int? BreakVarianceMinutes = null);
 
+// ShortByMinutes, wherever it appears below, is DailyHoursRule's verdict: minutes
+// under the day's target (the working hours net of the break, halved for a half
+// day of approved leave) beyond the 15-minute grace, on a working day that is
+// over. Null when there is nothing to say — a day within the grace, on leave, not
+// a working day, or still open. OnLeave is approved full-day leave.
 public record DayHistoryDto(
     string Date,
     string Status,
@@ -28,7 +33,10 @@ public record DayHistoryDto(
     DateTime? CheckOutAt,
     int TotalBreakMinutes,
     int WorkedMinutes,
-    int? BreakVarianceMinutes = null);
+    int? BreakVarianceMinutes = null,
+    int? ShortByMinutes = null,
+    bool OnLeave = false,
+    int? TargetMinutes = null);
 
 // BreakMinutes is the break taken so far today, a running break included
 // (WorkingDaySchedule.BreakMinutesTaken), so the board can quote it beside
