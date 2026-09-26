@@ -1048,6 +1048,37 @@ Two more traps worth knowing, both found the hard way:
   `SecurityStampValidatorOptions.ValidationInterval` is lowered to 1 minute in
   `Program.cs` for that reason. Deliberately distinct from `LockoutEnd`, which
   is the 15-minute brake on password guessing (see `API/Security/LockoutPolicy.cs`).
+- **Short days and timesheet ↔ attendance match, in one place.**
+  `Application/Attendance/Support/DailyHoursRule.cs` is the rule and
+  `DailyHoursContext` loads its inputs for a range (settings, the holiday
+  country's holidays, **Approved** leave matched on `EmployeeProfileId`). A
+  working day's target is `WorkingDaySchedule.ScheduledMinutes` — the working
+  hours net of the break — halved for a half day of leave (two halves are a
+  whole); full leave, a non-working day or no schedule has none. A day is
+  **short** once it is over (a past date, or today checked out) and more than
+  `GraceMinutes` (15) under target; no attendance on a past working day is
+  short by the whole target. A timesheet day is a **mismatch** when logged and
+  attended differ by more than the same 15, never on a leave day, never while
+  open, and weekends are compared. Consumers: My Attendance's `short`/`leave`/`off`
+  grades (`GetMyAttendanceHistory`), the team week grid and the previous working
+  day's digest (`GetTeamAttendance`, `ShortDayDigest`, shown by `ShortDaysNote` on
+  Team Attendance and the manager dashboard), a "N short days on …" issue on the
+  company dashboard, the daily report's "Short day" section, and
+  `TimesheetDto.DayMismatchMinutes`/`MismatchDayCount`
+  (`TimesheetAttendanceComparison`, last 12 weeks only) under
+  `TimesheetDailyBreakdown` and as `MismatchChip` on the three timesheet lists.
+  Flag only — nothing blocks submit or approve. The company overtime issue is
+  judged against the same schedule plus the grace, leave excluded (it was a flat
+  10 hours). `client/src/lib/daily-hours.ts` only words the server's figures.
+  A past day left checked in reads long, not short — the calculator runs it to
+  now, as on every other attendance screen. `AttendanceDay.LoadOnLeaveProfileIdsAsync`
+  compares a leave's dates against the calendar day rather than the raw instant —
+  it used to drop the last day of every approved leave once the clock passed
+  midnight. `TeamAttendanceDto.ShortDays` (and the client's `TeamAttendance.shortDays`)
+  is nullable on both sides, since a day with nothing short to report sends none.
+  `DailyHoursRuleTests`, `DailyHoursContextTests`, `ShortDayAttendanceTests`,
+  `TimesheetAttendanceMismatchTests` and `DailyAttendanceReportTests` pin the
+  server.
 ## Improvements & Roadmap
 
 The following areas have been identified for future enhancement to improve scalability, security, and developer experience:
