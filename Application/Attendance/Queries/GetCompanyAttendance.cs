@@ -2,6 +2,7 @@ using System.Globalization;
 using Application.Attendance.DTOs;
 using Application.Attendance.Support;
 using Application.Core;
+using Application.Settings.Support;
 using Domain;
 using Domain.Services;
 using MediatR;
@@ -64,7 +65,15 @@ public class GetCompanyAttendance
         public async Task<Result<CompanyAttendanceDto>> Handle(Query request, CancellationToken cancellationToken)
         {
             var now = request.NowUtc ?? DateTime.UtcNow;
-            var schedule = await WorkingDaySchedule.LoadAsync(context, cancellationToken);
+            var settings = await context.AppSettings.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
+            var schedule = WorkingDaySchedule.From(settings);
+
+            // An empty morning is news only on a day somebody is expected to work,
+            // and only once the local clock is an hour past the start. It used to
+            // ask the clock alone, so every weekend and public holiday reported the
+            // whole company as not checked in.
+            var reportAbsences = schedule.IsPastStart(now, NotCheckedInGraceMinutes)
+                && await WorkingWeek.IsWorkingDayAsync(context, settings, WorkingWeek.TodayLocal(settings, now), cancellationToken);
 
             var profilesQuery = AttendanceDay.ExcludeAdmins(
                 context.EmployeeProfiles
@@ -99,14 +108,14 @@ public class GetCompanyAttendance
             var avgMinutesAll = workedPeopleAll > 0 ? totals.Minutes / workedPeopleAll : 0;
 
             var recent = await BuildRecentActivityAsync(
-                profiles, profileIds, todayByEmployee, onLeave, schedule, now, cancellationToken);
+                profiles, profileIds, todayByEmployee, onLeave, schedule, reportAbsences, now, cancellationToken);
 
             var today = DateOnly.FromDateTime(AttendanceDay.UtcDayStart(now));
             var hours = await DailyHoursContext.LoadAsync(
                 context, profileIds, today.AddDays(-ShortDayDigest.LookBackDays), today, now, cancellationToken);
             var shortDays = await ShortDayDigest.BuildAsync(context, profiles, hours, now, cancellationToken);
 
-            var issues = BuildIssues(profiles, stateByProfileId, onLeave, departments, totals, schedule, shortDays, now);
+            var issues = BuildIssues(profiles, stateByProfileId, onLeave, departments, totals, schedule, shortDays, reportAbsences, now);
 
             return Result<CompanyAttendanceDto>.Success(new CompanyAttendanceDto(
                 totals.Total,
@@ -192,6 +201,7 @@ public class GetCompanyAttendance
             Dictionary<string, List<AttendanceEvent>> todayByEmployee,
             HashSet<string> onLeave,
             WorkingDaySchedule schedule,
+            bool reportAbsences,
             DateTime now,
             CancellationToken cancellationToken)
         {
@@ -220,10 +230,10 @@ public class GetCompanyAttendance
                     BreakOverAt(e, todayByEmployee, schedule));
             }).ToList();
 
-            // Synthetic "Not checked in" rows, added only once the morning is late
-            // enough for an absence to mean anything. They carry no timestamp,
-            // which is the only way a consumer can tell them from real events.
-            if (schedule.IsPastStart(now, NotCheckedInGraceMinutes))
+            // Synthetic "Not checked in" rows, added only on a working day once the
+            // morning is late enough for an absence to mean anything. They carry no
+            // timestamp, which is the only way a consumer can tell them from real events.
+            if (reportAbsences)
             {
                 var notChecked = profiles
                     .Where(p => !onLeave.Contains(p.Id) && !todayByEmployee.ContainsKey(p.Id))
@@ -280,13 +290,14 @@ public class GetCompanyAttendance
             Totals totals,
             WorkingDaySchedule schedule,
             ShortDayDigest.Digest? shortDays,
+            bool reportAbsences,
             DateTime now)
         {
             var issues = new List<IssueDto>();
 
-            // 1) Departments with people who have not checked in, once the local
-            //    clock is an hour past the start.
-            if (schedule.IsPastStart(now, NotCheckedInGraceMinutes))
+            // 1) Departments with people who have not checked in, on a working day
+            //    once the local clock is an hour past the start.
+            if (reportAbsences)
             {
                 foreach (var dept in departments.Where(d => d.Out > 0))
                 {
