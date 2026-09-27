@@ -1059,7 +1059,17 @@ Two more traps worth knowing, both found the hard way:
   `GraceMinutes` (15) under target; no attendance on a past working day is
   short by the whole target. A timesheet day is a **mismatch** when logged and
   attended differ by more than the same 15, never on a leave day, never while
-  open, and weekends are compared. Consumers: My Attendance's `short`/`leave`/`off`
+  open, and never on a day checked into but not out — the calculator would run
+  that to now, so a forgotten check-out read as "attended 71h 40m"; it is
+  reported as 0 attended and no mismatch. The comparison walks the sheet's
+  **Mon–Fri only**: a non-working weekday (a public holiday) is compared, but a
+  Saturday or Sunday entry is not. Neither verdict is given to somebody not
+  expected to work that day — a deactivated account, or a day before their
+  `EmploymentStartDate` (a null one is no restriction, as in
+  `MinimumServiceRule`): `DailyHoursContext.Judge` returns the kind with no
+  target and no short, so a leaver stays on the boards but is never "short"
+  and a new hire is not short for the days before they joined. The mismatch,
+  which reads only the kind, is unaffected. Consumers: My Attendance's `short`/`leave`/`off`
   grades (`GetMyAttendanceHistory`), the team week grid and the previous working
   day's digest (`GetTeamAttendance`, `ShortDayDigest`, shown by `ShortDaysNote` on
   Team Attendance and the manager dashboard), a "N short days on …" issue on the
@@ -1067,11 +1077,27 @@ Two more traps worth knowing, both found the hard way:
   `TimesheetDto.DayMismatchMinutes`/`MismatchDayCount`
   (`TimesheetAttendanceComparison`, last 12 weeks only) under
   `TimesheetDailyBreakdown` and as `MismatchChip` on the three timesheet lists.
+  The two short-day counts measure different populations: the digest and the
+  dashboard issue include people with no attendance at all (short by the whole
+  day), while the email's "Short day" section lists only people who checked out
+  — an absentee is under "Did not check in" there instead. **The comparison is
+  opt-in**: `GET /api/timesheets?includeAttendance=true`
+  (`GetTimesheetList.Query.IncludeAttendanceComparison`); without it the four
+  fields stay null / 0 and no attendance is loaded, because the notification
+  bell polls the unpaged list every 15 seconds and renders no chip. On the
+  client `getTimesheets({ includeAttendance: true })` / `getMyTimesheets(…)` are
+  called by All Timesheets and Team Timesheets under
+  `['timesheets', 'with-attendance']` and by My Timesheets under
+  `['timesheets', 'mine', 'with-attendance']` — separate keys, still under the
+  prefixes every invalidation uses; the bell and the dashboards keep the plain
+  keys and never pass the flag. When it runs, events are loaded one query per
+  week that has sheets, for the people with a sheet that week.
   Flag only — nothing blocks submit or approve. The company overtime issue is
   judged against the same schedule plus the grace, leave excluded (it was a flat
   10 hours). `client/src/lib/daily-hours.ts` only words the server's figures.
   A past day left checked in reads long, not short — the calculator runs it to
-  now, as on every other attendance screen. `AttendanceDay.LoadOnLeaveProfileIdsAsync`
+  now, as on every other attendance screen (the timesheet comparison, above,
+  skips such a day instead). `AttendanceDay.LoadOnLeaveProfileIdsAsync`
   compares a leave's dates against the calendar day rather than the raw instant —
   it used to drop the last day of every approved leave once the clock passed
   midnight. `TeamAttendanceDto.ShortDays` (and the client's `TeamAttendance.shortDays`)

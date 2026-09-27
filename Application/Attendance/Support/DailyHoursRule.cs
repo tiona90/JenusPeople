@@ -45,8 +45,10 @@ public static class DailyHoursRule
     /// <summary>
     /// Logged minus attended, in minutes, when the two differ by more than the
     /// grace; null otherwise and always null on a leave day. A non-working day is
-    /// still compared: weekend work logged but never clocked is exactly the kind
-    /// of disagreement a reviewer wants to see.
+    /// still compared: holiday work logged but never clocked is exactly the kind
+    /// of disagreement a reviewer wants to see. (TimesheetAttendanceComparison
+    /// walks Mon–Fri only, so in practice that is a weekday holiday; weekend
+    /// entries are not compared.)
     /// </summary>
     public static int? MismatchMinutes(DayKind kind, decimal loggedHours, int attendedMinutes)
     {
