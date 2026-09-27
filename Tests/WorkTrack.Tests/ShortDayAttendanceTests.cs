@@ -196,6 +196,39 @@ public class ShortDayAttendanceTests
         Assert.DoesNotContain(team.ShortDays!, s => s.EmployeeName == "Sam Short");
     }
 
+    [Fact]
+    public async Task A_deactivated_account_is_not_in_the_digest()
+    {
+        using var db = SeedWorld();
+        // A leaver keeps their profile, and records nothing: every working day would
+        // read as short by the whole day. Kept on the board, but given no verdict.
+        AddEmployee(db, "ina", "Ina Inactive");
+        db.Users.Find("u-ina")!.IsActive = false;
+        db.SaveChanges();
+
+        var team = await Team(db, Mon.AddDays(2).AddHours(10)); // Wednesday → Tuesday
+
+        Assert.DoesNotContain(team.ShortDays!, s => s.EmployeeName == "Ina Inactive");
+        var ina = Assert.Single(team.Week, r => r.EmployeeName == "Ina Inactive").Days;
+        Assert.All(ina, d => Assert.Null(d.ShortByMinutes));
+    }
+
+    [Fact]
+    public async Task Days_before_the_employment_start_date_are_not_short()
+    {
+        using var db = SeedWorld();
+        // Neo starts on Wednesday and has recorded nothing yet.
+        AddEmployee(db, "neo", "Neo Newhire");
+        db.EmployeeProfiles.Find("p-neo")!.EmploymentStartDate = new DateOnly(2026, 9, 23);
+        db.SaveChanges();
+
+        var neo = Assert.Single((await Team(db)).Week, r => r.EmployeeName == "Neo Newhire").Days;
+
+        Assert.Null(neo[0].ShortByMinutes);           // Monday, before the start
+        Assert.Null(neo[1].ShortByMinutes);           // Tuesday, before the start
+        Assert.Equal(480, neo[2].ShortByMinutes);     // Wednesday, their first day
+    }
+
     // ── Company dashboard ─────────────────────────────────────────────────────
 
     private static async Task<List<Application.Attendance.DTOs.IssueDto>> CompanyIssues(AppDbContext db, DateTime now)
