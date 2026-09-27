@@ -16,16 +16,14 @@ namespace Application.Attendance.Queries;
 /// </summary>
 public class GetCompanyAttendance
 {
-    /// <summary>
-    /// Thresholds the dashboard judgements rest on. "Late" itself is not one of
-    /// them any more: it comes from <see cref="WorkingDaySchedule"/>, the org's
-    /// working-hours start in its own time zone. It used to be a check-in at or
-    /// after 10:00 UTC against a nominal 09:00 UTC start, which on a UTC+3
-    /// deployment flagged nothing before one in the afternoon. Overtime is not
-    /// one either: it is the scheduled day net of the break
-    /// (WorkingDaySchedule.ScheduledMinutes) plus DailyHoursRule's grace, where
-    /// it used to be a flat ten hours.
-    /// </summary>
+    // Thresholds the dashboard judgements rest on. "Late" itself is not one of
+    // them any more: it comes from WorkingDaySchedule, the org's working-hours
+    // start in its own time zone. It used to be a check-in at or after 10:00 UTC
+    // against a nominal 09:00 UTC start, which on a UTC+3 deployment flagged
+    // nothing before one in the afternoon. Overtime is not one either: it is the
+    // scheduled day net of the break (WorkingDaySchedule.ScheduledMinutes) plus
+    // DailyHoursRule's grace, where it used to be a flat ten hours.
+
     /// <summary>
     /// How long past the start an empty morning is left alone before it is
     /// reported as an absence. Someone can be late; a whole hour with nothing is
