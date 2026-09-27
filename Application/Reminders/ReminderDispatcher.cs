@@ -591,7 +591,6 @@ public class ReminderDispatcher(
         var dayStart = day.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
         var dayEnd = dayStart.AddDays(1);
         var profileIds = people.Select(p => p.ProfileId).ToList();
-        var userIds = people.Select(p => p.UserId).ToList();
 
         // Every event of the day, replayed through the same calculator the
         // attendance screens use, so a break is not billed as work.
@@ -604,13 +603,16 @@ public class ReminderDispatcher(
             .GroupBy(e => e.EmployeeProfileId)
             .ToDictionary(g => g.Key, g => AttendanceDayStateCalculator.Calculate(g, nowUtc));
 
+        // Matched on the profile, the key attendance is recorded against, as
+        // DailyHoursContext does for the screens.
         var onLeave = (await context.AnnualLeaves
             .Where(l => l.Status == AnnualLeaveStatus.Approved
                         && l.StartDate < dayEnd && l.EndDate >= dayStart
-                        && userIds.Contains(l.EmployeeId))
-            .Select(l => new { l.EmployeeId, LeaveType = l.LeaveType != null ? l.LeaveType.Name : null, l.Duration })
+                        && l.EmployeeProfileId != null
+                        && profileIds.Contains(l.EmployeeProfileId))
+            .Select(l => new { ProfileId = l.EmployeeProfileId!, LeaveType = l.LeaveType != null ? l.LeaveType.Name : null, l.Duration })
             .ToListAsync(ct))
-            .GroupBy(l => l.EmployeeId)
+            .GroupBy(l => l.ProfileId)
             .ToDictionary(g => g.Key, g => (Name: g.First().LeaveType, Covers: DailyHoursRule.CombineLeave(g.Select(x => x.Duration))));
 
         var weekStart = LatestTimesheetWeekPastDeadline(settings, DateTime.UtcNow);
@@ -650,7 +652,7 @@ public class ReminderDispatcher(
         {
             var who = string.IsNullOrWhiteSpace(person.DisplayName) ? person.Email ?? person.UserId : person.DisplayName;
             var label = $"{who} ({person.Department ?? "No department"})";
-            var isOnLeave = onLeave.TryGetValue(person.UserId, out var leaveInfo);
+            var isOnLeave = onLeave.TryGetValue(person.ProfileId, out var leaveInfo);
 
             if (isOnLeave)
                 leave.Add($"{label} — {leaveInfo.Name ?? "Leave"}");
@@ -666,7 +668,9 @@ public class ReminderDispatcher(
                 }
                 else
                 {
-                    if (state.WorkedMinutes > scheduledMinutes)
+                    // The same grace as the dashboard's overtime line: staying on up to
+                    // the grace past the scheduled day is not overtime.
+                    if (state.WorkedMinutes > scheduledMinutes + DailyHoursRule.GraceMinutes)
                         overtime.Add($"{label} — {HoursAndMinutes(state.WorkedMinutes - scheduledMinutes)} over (worked {HoursAndMinutes(state.WorkedMinutes)})");
 
                     var verdict = DailyHoursRule.Judge(
