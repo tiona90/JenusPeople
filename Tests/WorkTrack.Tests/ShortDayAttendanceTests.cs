@@ -229,6 +229,23 @@ public class ShortDayAttendanceTests
         Assert.Equal(480, neo[2].ShortByMinutes);     // Wednesday, their first day
     }
 
+    [Fact]
+    public async Task A_single_day_leave_today_reads_as_leave_in_the_afternoon()
+    {
+        using var db = SeedWorld();
+        // Leave rows are stored at midnight. Compared with the instant rather than
+        // the calendar day, Thursday's one-day leave (ending Thu 00:00) had already
+        // "ended" by 15:00, and Tom read as simply not checked in.
+        AddEmployee(db, "tom", "Tom Today");
+        Leave(db, "tom", Mon.AddDays(3), LeaveDuration.Full);
+        db.SaveChanges();
+
+        var tom = Assert.Single((await Team(db, Now)).Members, m => m.EmployeeName == "Tom Today");
+
+        Assert.Equal("leave", tom.Status);
+        Assert.Equal("On leave today", tom.TodayNote);
+    }
+
     // ── Company dashboard ─────────────────────────────────────────────────────
 
     private static async Task<List<Application.Attendance.DTOs.IssueDto>> CompanyIssues(AppDbContext db, DateTime now)
