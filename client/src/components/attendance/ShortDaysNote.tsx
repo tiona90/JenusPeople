@@ -1,5 +1,6 @@
 import Box from '@mui/material/Box'
 import { describeShortDay } from '../../lib/daily-hours'
+import { softBg } from '../../lib/theme-tokens'
 import type { ShortDay } from '../../lib/types'
 
 /*
@@ -17,7 +18,7 @@ export default function ShortDaysNote({ date, people }: { date?: string | null; 
 
     return (
         <Box sx={{
-            bgcolor: 'warning.light', color: 'warning.dark',
+            bgcolor: softBg('warning'), color: 'warning.dark',
             border: '1px solid', borderColor: 'warning.main',
             borderRadius: '8px', p: '8px 12px', fontSize: 12, lineHeight: 1.5,
         }}>

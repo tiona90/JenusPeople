@@ -783,12 +783,12 @@ function TimesheetCard({ t, comment, onEdit, onView, onDelete }: {
                                 <Box key={d} title={mismatch ?? undefined} sx={{
                                     flex: 1, p: '6px 8px', borderRadius: '5px', textAlign: 'center',
                                     fontSize: 11, minWidth: 0,
-                                    bgcolor: mismatch ? 'warning.light' : filled ? softBg('success') : 'action.hover',
+                                    bgcolor: mismatch ? softBg('warning') : filled ? softBg('success') : 'action.hover',
                                 }}>
                                     <Box sx={{ fontSize: 9, color: 'text.disabled', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{d}</Box>
                                     <Box sx={{
                                         fontWeight: filled ? 600 : 500,
-                                        color: filled ? 'success.dark' : 'text.disabled',
+                                        color: mismatch ? 'warning.dark' : filled ? 'success.dark' : 'text.disabled',
                                         fontVariantNumeric: 'tabular-nums', mt: '2px',
                                     }}>
                                         {filled ? `${h.toFixed(1)}h` : '—'}
