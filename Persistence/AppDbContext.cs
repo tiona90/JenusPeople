@@ -191,7 +191,17 @@ public class AppDbContext : IdentityDbContext<
                 .HasForeignKey(e => e.ProjectComponentId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            // SetNull, unlike the catalogue links above: a task is a to-do, not a
+            // classification, and deleting one must not delete or block the hours
+            // logged against it. WorkTask's own foreign keys are all Restrict, so
+            // this adds no second cascade path.
+            entity.HasOne(e => e.WorkTask)
+                .WithMany(t => t.TimesheetEntries)
+                .HasForeignKey(e => e.WorkTaskId)
+                .OnDelete(DeleteBehavior.SetNull);
+
             entity.HasIndex(e => e.TimesheetId);
+            entity.HasIndex(e => e.WorkTaskId);
         });
 
         builder.Entity<Timesheet>(entity =>
