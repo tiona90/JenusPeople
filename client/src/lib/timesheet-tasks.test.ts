@@ -47,10 +47,10 @@ describe('copyableWorkTaskId', () => {
 })
 
 describe('taskOptionLabel', () => {
-    it('reads code, title and progress', () => expect(taskOptionLabel(payroll)).toBe('PAY-002 · sdf — 16h left'))
-    it('marks a closed task', () => expect(taskOptionLabel(closed)).toBe('PAY-002 · old (closed)'))
-    it('says over', () => expect(taskOptionLabel(opt({ loggedHours: 30 }))).toBe('PAY-002 · sdf — 6h over'))
-    it('says logged with no target', () => expect(taskOptionLabel(opt({ targetHours: null }))).toBe('PAY-002 · sdf — 8h logged'))
+    it('reads the task name and progress, not the project code', () => expect(taskOptionLabel(payroll)).toBe('sdf — 16h left'))
+    it('marks a closed task', () => expect(taskOptionLabel(closed)).toBe('old (closed)'))
+    it('says over', () => expect(taskOptionLabel(opt({ loggedHours: 30 }))).toBe('sdf — 6h over'))
+    it('says logged with no target', () => expect(taskOptionLabel(opt({ targetHours: null }))).toBe('sdf — 8h logged'))
 })
 
 // Still open, but the owner was taken off it since a row named it.
@@ -62,7 +62,7 @@ describe('a task the owner was taken off', () => {
         expect(taskOptionsForRow([payroll, unassigned], '4').map((o) => o.id)).toEqual([1, 4])
     })
     it('is not carried by a copy', () => expect(copyableWorkTaskId('4', [unassigned])).toBe(''))
-    it('says so in its label', () => expect(taskOptionLabel(unassigned)).toBe('PAY-002 · moved on (no longer yours)'))
+    it('says so in its label', () => expect(taskOptionLabel(unassigned)).toBe('moved on (no longer yours)'))
     it('reads a missing flag from an older API as assigned', () => {
         expect(copyableWorkTaskId('1', [{ ...payroll, isAssigned: undefined }])).toBe('1')
     })

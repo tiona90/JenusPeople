@@ -49,7 +49,8 @@ export function copyableWorkTaskId(workTaskId: string, options: TimesheetTaskOpt
 }
 
 export function taskOptionLabel(option: TimesheetTaskOption): string {
-    const name = option.projectCode ? `${option.projectCode} · ${option.title}` : option.title
+    // The task's own name only: the Project column beside it already says which project.
+    const name = option.title
     if (option.isClosed) return `${name} (closed)`
     if (option.isAssigned === false) return `${name} (no longer yours)`
     const { text } = describeTaskProgress(option.targetHours, option.loggedHours)
