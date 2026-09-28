@@ -43,7 +43,6 @@ public class CreateWorkTask
                 CreatedById = request.CallerUserId,
                 DueDate = input.DueDate,
                 TargetHours = input.TargetHours,
-                TargetWeeks = input.TargetWeeks,
                 IsBillable = input.IsBillable,
                 Priority = input.Priority,
                 CreatedAtUtc = now,

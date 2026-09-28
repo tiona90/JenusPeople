@@ -26,13 +26,13 @@ const base: WorkTask = {
     id: 1, title: 'Mine to do', description: null, departmentId: 1, departmentName: 'Sales',
     projectId: 10, projectName: 'CRM Rollout', projectCode: 'CRM', projectColorKey: 'p1',
     assignees: [{ userId: 'me', displayName: 'Me' }], createdById: 'boss', createdByName: 'Boss',
-    dueDate: '2020-01-01', targetHours: 40, targetWeeks: 2, isBillable: true, priority: 'High', status: 'ToDo',
+    dueDate: '2020-01-01', targetHours: 40, isBillable: true, priority: 'High', status: 'ToDo',
     createdAtUtc: '2026-09-01T08:00:00', updatedAtUtc: '2026-09-01T08:00:00', completedAtUtc: null,
     canEdit: false, canChangeStatus: true,
 }
 const TASKS: WorkTask[] = [
     base,
-    { ...base, id: 2, title: 'I asked for this', assignees: [{ userId: 'x', displayName: 'Xena' }, { userId: 'z', displayName: 'Zoe' }], createdById: 'me', createdByName: 'Me', dueDate: null, targetHours: null, targetWeeks: null, isBillable: false, canEdit: true },
+    { ...base, id: 2, title: 'I asked for this', assignees: [{ userId: 'x', displayName: 'Xena' }, { userId: 'z', displayName: 'Zoe' }], createdById: 'me', createdByName: 'Me', dueDate: null, targetHours: null, isBillable: false, canEdit: true },
     { ...base, id: 3, title: "Someone else's", assignees: [{ userId: 'x', displayName: 'Xena' }], createdById: 'y', createdByName: 'Yan', dueDate: null, canEdit: false, canChangeStatus: false },
 ]
 
@@ -175,7 +175,7 @@ describe('TasksPage', () => {
         renderPage()
         const planned = await cardFor('Mine to do')
         expect(within(planned).getByText('40h')).toBeInTheDocument()
-        expect(within(planned).getByText('over 2 weeks')).toBeInTheDocument()
+        expect(within(planned).getByText('of work')).toBeInTheDocument()
 
         showView('created')
         const unplanned = await cardFor('I asked for this')

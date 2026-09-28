@@ -414,12 +414,8 @@ function TaskCard({ task, today, statusPending, onStatus, onEdit, onDelete }: {
                 />
                 <CardStat
                     label="Target"
-                    value={task.targetHours != null ? `${task.targetHours}h` : task.targetWeeks != null ? `${task.targetWeeks}w` : '—'}
-                    sub={task.targetHours != null && task.targetWeeks != null
-                        ? `over ${plural(task.targetWeeks, 'week')}`
-                        : task.targetHours != null ? 'of work'
-                        : task.targetWeeks != null ? `${task.targetWeeks === 1 ? 'week' : 'weeks'} to complete`
-                        : 'no target set'}
+                    value={task.targetHours != null ? `${task.targetHours}h` : '—'}
+                    sub={task.targetHours != null ? 'of work' : 'no target set'}
                 />
                 <CardStat
                     label={task.status === 'Done' && task.completedAtUtc ? 'Completed' : 'Created'}

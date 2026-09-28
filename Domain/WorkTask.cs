@@ -30,7 +30,6 @@ public class WorkTask
     public const int TitleMaxLength = 200;
     public const int DescriptionMaxLength = 2000;
     public const int MaxTargetHours = 9999;
-    public const int MaxTargetWeeks = 104;
 
     public int Id { get; set; }
     public string Title { get; set; } = string.Empty;
@@ -61,12 +60,11 @@ public class WorkTask
     public DateOnly? DueDate { get; set; }
 
     /// <summary>
-    /// The plan: how many hours of work it should take, and over how many weeks.
-    /// Both optional and quoted only — timesheet entries are not linked to tasks, so
-    /// nothing is measured against them.
+    /// The plan: how many hours of work it should take. Optional and quoted only —
+    /// timesheet entries are not linked to tasks, so nothing is measured against it.
+    /// How long it may take is the due date's job.
     /// </summary>
     public int? TargetHours { get; set; }
-    public int? TargetWeeks { get; set; }
 
     /// <summary>
     /// Whether the work is charged to the client. Required on every save, as an

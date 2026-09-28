@@ -22,7 +22,6 @@ export interface WorkTask {
     dueDate: string | null
     /** The plan, quoted only: nothing is measured against it. */
     targetHours: number | null
-    targetWeeks: number | null
     /** Null only on a task filed before the question was asked; it must be answered on the next edit. */
     isBillable: boolean | null
     priority: WorkTaskPriority
@@ -49,7 +48,6 @@ export interface UpsertWorkTaskRequest {
     assigneeIds: string[]
     dueDate: string | null
     targetHours: number | null
-    targetWeeks: number | null
     /** Required. */
     isBillable: boolean
     priority: WorkTaskPriority

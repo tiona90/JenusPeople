@@ -13,9 +13,8 @@ import { STATUS_COLORS } from './statusStyles'
 
 const TITLE_MAX = 200
 const DESCRIPTION_MAX = 2000
-// Mirrors WorkTask.MaxTargetHours / MaxTargetWeeks on the server.
+// Mirrors WorkTask.MaxTargetHours on the server.
 const TARGET_HOURS_MAX = 9999
-const TARGET_WEEKS_MAX = 104
 
 /** A target field's text as a whole number in range, null when blank, or 'invalid'. */
 function parseTarget(text: string, max: number): number | null | 'invalid' {
@@ -42,7 +41,6 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
     const [priority, setPriority] = useState<WorkTaskPriority>('Normal')
     const [status, setStatus] = useState<WorkTaskStatus>('ToDo')
     const [targetHours, setTargetHours] = useState('')
-    const [targetWeeks, setTargetWeeks] = useState('')
     // No default on purpose: billable or not is a decision, not an unticked box.
     const [isBillable, setIsBillable] = useState<boolean | null>(null)
 
@@ -57,7 +55,6 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
         setPriority(task?.priority ?? 'Normal')
         setStatus(task?.status ?? 'ToDo')
         setTargetHours(task?.targetHours != null ? String(task.targetHours) : '')
-        setTargetWeeks(task?.targetWeeks != null ? String(task.targetWeeks) : '')
         setIsBillable(task?.isBillable ?? null)
     }, [open, task])
 
@@ -122,7 +119,6 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
 
     const trimmedTitle = title.trim()
     const hours = parseTarget(targetHours, TARGET_HOURS_MAX)
-    const weeks = parseTarget(targetWeeks, TARGET_WEEKS_MAX)
     const canSave =
         trimmedTitle.length > 0 &&
         trimmedTitle.length <= TITLE_MAX &&
@@ -131,7 +127,6 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
         projectId !== '' &&
         assigneeIds.length > 0 &&
         hours !== 'invalid' &&
-        weeks !== 'invalid' &&
         isBillable !== null &&
         !save.isPending
 
@@ -145,7 +140,6 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
             assigneeIds,
             dueDate: dueDate === '' ? null : dueDate,
             targetHours: typeof hours === 'number' ? hours : null,
-            targetWeeks: typeof weeks === 'number' ? weeks : null,
             isBillable: isBillable as boolean,
             priority,
         })
@@ -256,28 +250,6 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
                             <FormHelperText>This task was filed before billing was asked — choose one to save.</FormHelperText>
                         )}
                     </FormControl>
-                    <Stack direction="row" spacing={2}>
-                        <TextField
-                            label="Target hours"
-                            type="number"
-                            value={targetHours}
-                            onChange={(e) => setTargetHours(e.target.value)}
-                            error={hours === 'invalid'}
-                            helperText={hours === 'invalid' ? `1 to ${TARGET_HOURS_MAX}` : 'Estimated effort'}
-                            slotProps={{ htmlInput: { min: 1, max: TARGET_HOURS_MAX, step: 1 } }}
-                            sx={{ flex: 1 }}
-                        />
-                        <TextField
-                            label="Target weeks"
-                            type="number"
-                            value={targetWeeks}
-                            onChange={(e) => setTargetWeeks(e.target.value)}
-                            error={weeks === 'invalid'}
-                            helperText={weeks === 'invalid' ? `1 to ${TARGET_WEEKS_MAX}` : 'To complete it in'}
-                            slotProps={{ htmlInput: { min: 1, max: TARGET_WEEKS_MAX, step: 1 } }}
-                            sx={{ flex: 1 }}
-                        />
-                    </Stack>
                     {task && (
                         <FormControl>
                             <InputLabel id="task-status-label">Status</InputLabel>
@@ -303,6 +275,16 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
                             value={dueDate}
                             onChange={(e) => setDueDate(e.target.value)}
                             slotProps={{ inputLabel: { shrink: true } }}
+                            sx={{ flex: 1 }}
+                        />
+                        <TextField
+                            label="Target hours"
+                            type="number"
+                            value={targetHours}
+                            onChange={(e) => setTargetHours(e.target.value)}
+                            error={hours === 'invalid'}
+                            helperText={hours === 'invalid' ? `1 to ${TARGET_HOURS_MAX}` : 'Estimated effort'}
+                            slotProps={{ htmlInput: { min: 1, max: TARGET_HOURS_MAX, step: 1 } }}
                             sx={{ flex: 1 }}
                         />
                         <FormControl sx={{ flex: 1 }}>

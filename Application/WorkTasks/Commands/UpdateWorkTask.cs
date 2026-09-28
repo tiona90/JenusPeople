@@ -68,7 +68,6 @@ public class UpdateWorkTask
                 task.Assignees.Add(new WorkTaskAssignee { UserId = id });
             task.DueDate = input.DueDate;
             task.TargetHours = input.TargetHours;
-            task.TargetWeeks = input.TargetWeeks;
             task.IsBillable = input.IsBillable;
             task.Priority = input.Priority;
             task.UpdatedAtUtc = DateTime.UtcNow;

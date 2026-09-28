@@ -28,9 +28,6 @@ public class UpsertWorkTaskRequestValidator : AbstractValidator<UpsertWorkTaskRe
         RuleFor(x => x.TargetHours).InclusiveBetween(1, WorkTask.MaxTargetHours)
             .When(x => x.TargetHours.HasValue)
             .WithMessage($"Target hours must be between 1 and {WorkTask.MaxTargetHours}.");
-        RuleFor(x => x.TargetWeeks).InclusiveBetween(1, WorkTask.MaxTargetWeeks)
-            .When(x => x.TargetWeeks.HasValue)
-            .WithMessage($"Target weeks must be between 1 and {WorkTask.MaxTargetWeeks}.");
     }
 }
 

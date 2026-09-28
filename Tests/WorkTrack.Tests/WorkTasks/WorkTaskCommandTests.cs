@@ -446,23 +446,20 @@ public class WorkTaskCommandTests
     }
 
     [Fact]
-    public async Task A_task_keeps_its_target_hours_and_weeks_and_an_edit_can_clear_them()
+    public async Task A_task_keeps_its_target_hours_and_an_edit_can_clear_them()
     {
         await using var db = await TransactionalTestDb.CreateAsync();
         await SeedAsync(db);
         var request = Request(Sales, SalesManager);
         request.TargetHours = 40;
-        request.TargetWeeks = 2;
 
         var created = await Create(db, Hr, request);
         Assert.True(created.IsSuccess, created.Error);
         Assert.Equal(40, created.Value!.TargetHours);
-        Assert.Equal(2, created.Value.TargetWeeks);
 
         var cleared = await Update(db, created.Value.Id, Hr, Request(Sales, SalesManager));
         Assert.True(cleared.IsSuccess, cleared.Error);
         Assert.Null(cleared.Value!.TargetHours);
-        Assert.Null(cleared.Value.TargetWeeks);
     }
 
     [Theory]
