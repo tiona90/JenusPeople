@@ -22,4 +22,7 @@ export interface TimesheetEntry {
     // project is made up of. Null for the same reasons.
     projectComponentId?: number | null;
     projectComponent?: ProjectComponent;
+    // Which of the owner's tasks the hours went on; counted towards its target.
+    // Null on every entry predating the link, and on rows logged against no task.
+    workTaskId?: number | null;
 }
