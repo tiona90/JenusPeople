@@ -1,0 +1,230 @@
+using Application.Core;
+using Application.WorkTasks.Commands;
+using Application.WorkTasks.DTOs;
+using Application.WorkTasks.Support;
+using Domain;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
+using Persistence;
+using Xunit;
+using static WorkTrack.Tests.WorkTasks.WorkTaskWorld;
+
+namespace WorkTrack.Tests.WorkTasks;
+
+public class WorkTaskCommandTests
+{
+    private readonly FakeEmailService _email = new();
+
+    private Task<Result<WorkTaskDto>> Create(AppDbContext db, string caller, UpsertWorkTaskRequest task) =>
+        new CreateWorkTask.Handler(db, _email, NullLogger<CreateWorkTask.Handler>.Instance)
+            .Handle(new CreateWorkTask.Command { CallerUserId = caller, Task = task }, CancellationToken.None);
+
+    private Task<Result<WorkTaskDto>> Update(AppDbContext db, int id, string caller, UpsertWorkTaskRequest task) =>
+        new UpdateWorkTask.Handler(db, _email, NullLogger<UpdateWorkTask.Handler>.Instance)
+            .Handle(new UpdateWorkTask.Command { Id = id, CallerUserId = caller, Task = task }, CancellationToken.None);
+
+    private static Task<Result<WorkTaskDto>> SetStatus(AppDbContext db, int id, string caller, WorkTaskStatus status) =>
+        new UpdateWorkTaskStatus.Handler(db)
+            .Handle(new UpdateWorkTaskStatus.Command { Id = id, CallerUserId = caller, Status = status }, CancellationToken.None);
+
+    private static Task<Result<int>> Delete(AppDbContext db, int id, string caller) =>
+        new DeleteWorkTask.Handler(db).Handle(new DeleteWorkTask.Command { Id = id, CallerUserId = caller }, CancellationToken.None);
+
+    private static UpsertWorkTaskRequest Request(int department, string assignee, string title = "Chase notes") =>
+        new() { Title = title, DepartmentId = department, AssigneeId = assignee, Priority = WorkTaskPriority.High };
+
+    private static async Task<int> Seeded(AppDbContext db, WorkTask task)
+    {
+        db.WorkTasks.Add(task);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        return task.Id;
+    }
+
+    [Fact]
+    public async Task Creating_a_task_stores_it_and_emails_the_assignee()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+
+        var result = await Create(db, Hr, Request(Sales, SalesManager));
+
+        Assert.True(result.IsSuccess, result.Error);
+        Assert.Equal(Hr, result.Value!.CreatedById);
+        Assert.Equal(WorkTaskStatus.ToDo, result.Value.Status);
+        var mail = Assert.Single(_email.Sent);
+        Assert.Equal($"{SalesManager}@t", mail.Recipient);
+        Assert.Equal("New task: Chase notes", mail.Subject);
+    }
+
+    [Fact]
+    public async Task Assigning_yourself_sends_no_email()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+
+        var result = await Create(db, SalesManager, Request(Sales, SalesManager));
+
+        Assert.True(result.IsSuccess, result.Error);
+        Assert.Empty(_email.Sent);
+    }
+
+    [Fact]
+    public async Task No_email_when_notifications_are_switched_off()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        db.AppSettings.Add(new AppSettings { EmailNotificationsEnabled = false });
+        await db.SaveChangesAsync();
+
+        var result = await Create(db, Hr, Request(Sales, SalesManager));
+
+        Assert.True(result.IsSuccess, result.Error);
+        Assert.Empty(_email.Sent);
+    }
+
+    [Fact]
+    public async Task A_department_outside_the_callers_scope_is_refused()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+
+        var result = await Create(db, SalesManager, Request(Ops, OpsManager));
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ResultErrorKind.Invalid, result.ErrorKind);
+        Assert.Equal(WorkTaskAccess.DepartmentOutOfScopeMessage, result.Error);
+    }
+
+    [Theory]
+    [InlineData(OpsManager)]  // covers another department
+    [InlineData(Employee)]    // wrong role
+    public async Task An_ineligible_assignee_is_refused(string assignee)
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+
+        var result = await Create(db, Hr, Request(Sales, assignee));
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(WorkTaskAssigneeRule.NotEligibleMessage, result.Error);
+    }
+
+    [Fact]
+    public async Task Only_the_creator_may_edit()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        var id = await Seeded(db, NewTask(Sales, Hr, SalesManager));
+
+        var result = await Update(db, id, SalesManager, Request(Sales, SalesManager, "renamed"));
+
+        Assert.Equal(ResultErrorKind.Forbidden, result.ErrorKind);
+        Assert.Equal(WorkTaskAccess.NotCreatorMessage, result.Error);
+    }
+
+    [Fact]
+    public async Task Reassigning_emails_the_new_assignee_only()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        var id = await Seeded(db, NewTask(Sales, SalesManager, SalesManager, "Chase notes"));
+
+        var result = await Update(db, id, SalesManager, Request(Sales, Hr));
+
+        Assert.True(result.IsSuccess, result.Error);
+        Assert.Equal(Hr, result.Value!.AssigneeId);
+        Assert.Equal($"{Hr}@t", Assert.Single(_email.Sent).Recipient);
+    }
+
+    [Fact]
+    public async Task Editing_title_only_does_not_recheck_an_assignee_who_left_scope()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        var id = await Seeded(db, NewTask(Sales, Hr, SalesManager));
+        // The manager moves to Ops after being given the task.
+        var profile = await db.EmployeeProfiles.SingleAsync(p => p.UserId == SalesManager);
+        profile.DepartmentId = Ops;
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var result = await Update(db, id, Hr, Request(Sales, SalesManager, "Typo fixed"));
+
+        Assert.True(result.IsSuccess, result.Error);
+        Assert.Equal("Typo fixed", result.Value!.Title);
+        Assert.Empty(_email.Sent);
+    }
+
+    [Fact]
+    public async Task A_task_outside_scope_reads_as_not_found()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        var id = await Seeded(db, NewTask(Ops, OpsManager, OpsManager));
+
+        Assert.Equal(ResultErrorKind.NotFound, (await Update(db, id, Hr, Request(Sales, Hr))).ErrorKind);
+        Assert.Equal(ResultErrorKind.NotFound, (await SetStatus(db, id, Hr, WorkTaskStatus.Done)).ErrorKind);
+        Assert.Equal(ResultErrorKind.NotFound, (await Delete(db, id, Hr)).ErrorKind);
+    }
+
+    [Fact]
+    public async Task The_assignee_may_move_the_status_and_done_stamps_completion()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        var id = await Seeded(db, NewTask(Sales, Hr, SalesManager));
+
+        var done = await SetStatus(db, id, SalesManager, WorkTaskStatus.Done);
+        Assert.True(done.IsSuccess, done.Error);
+        Assert.NotNull(done.Value!.CompletedAtUtc);
+
+        var reopened = await SetStatus(db, id, SalesManager, WorkTaskStatus.InProgress);
+        Assert.Null(reopened.Value!.CompletedAtUtc);
+    }
+
+    [Fact]
+    public async Task Setting_done_again_keeps_the_first_completion_time()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        var task = NewTask(Sales, Hr, SalesManager, status: WorkTaskStatus.Done);
+        var first = new DateTime(2026, 9, 2, 9, 0, 0, DateTimeKind.Utc);
+        task.CompletedAtUtc = first;
+        var id = await Seeded(db, task);
+
+        var again = await SetStatus(db, id, Hr, WorkTaskStatus.Done);
+
+        Assert.Equal(first, again.Value!.CompletedAtUtc);
+    }
+
+    [Fact]
+    public async Task A_bystander_in_scope_may_not_move_the_status()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        db.UserDepartments.Add(new UserDepartment { UserId = OpsManager, DepartmentId = Sales });
+        await db.SaveChangesAsync();
+        var id = await Seeded(db, NewTask(Sales, Hr, SalesManager));
+
+        var result = await SetStatus(db, id, OpsManager, WorkTaskStatus.Done);
+
+        Assert.Equal(ResultErrorKind.Forbidden, result.ErrorKind);
+        Assert.Equal(WorkTaskAccess.NotParticipantMessage, result.Error);
+    }
+
+    [Fact]
+    public async Task Only_the_creator_may_delete()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        var id = await Seeded(db, NewTask(Sales, Hr, SalesManager));
+
+        Assert.Equal(ResultErrorKind.Forbidden, (await Delete(db, id, SalesManager)).ErrorKind);
+
+        var deleted = await Delete(db, id, Hr);
+        Assert.True(deleted.IsSuccess);
+        Assert.Equal(Sales, deleted.Value);
+        Assert.False(await db.WorkTasks.AnyAsync());
+    }
+}
