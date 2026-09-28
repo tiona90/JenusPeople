@@ -293,6 +293,7 @@ const Topbar = observer(function Topbar() {
     if (path.startsWith('/my-leave')) pageTitle = 'My Leave'
     else if (path.startsWith('/apply-leave')) pageTitle = 'Apply for Leave'
     else if (path.startsWith('/leave-management')) pageTitle = isAdminUser ? 'Leave Management' : 'Team Leave'
+    else if (path.startsWith('/tasks')) pageTitle = 'Tasks'
     else if (path.startsWith('/timesheets-management')) pageTitle = isAdminUser ? 'Timesheets' : 'Approvals'
     else if (path.startsWith('/timesheets')) pageTitle = isAdminUser ? 'All Timesheets' : 'My Timesheets'
     else if (path.startsWith('/new-timesheet')) pageTitle = 'Submit Timesheet'

@@ -133,3 +133,27 @@ describe('Navigation offered to each administrator role', () => {
         expect(screen.getByText('Administrator')).toBeInTheDocument()
     })
 })
+
+function renderSidebarAs(user: UserInfo) {
+    mobx.useStore.mockReturnValue({ authStore: { user }, uiStore: { sidebarMode: 'light' } } as never)
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+        <MemoryRouter initialEntries={['/dashboard']}>
+            <QueryClientProvider client={queryClient}>
+                <Sidebar />
+            </QueryClientProvider>
+        </MemoryRouter>,
+    )
+}
+
+describe('Tasks is offered to Managers and HR Administrators only', () => {
+    it.each([
+        ['Manager', true],
+        ['HR Administrator', true],
+        ['Employee', false],
+        ['System Administrator', false],
+    ])('%s sees Tasks: %s', (role, shown) => {
+        renderSidebarAs({ ...EMPLOYEE, roles: [role] as UserInfo['roles'] })
+        expect(screen.queryByText('Tasks') != null).toBe(shown)
+    })
+})

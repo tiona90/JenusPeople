@@ -24,6 +24,7 @@ import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
 import BugReportRoundedIcon from '@mui/icons-material/BugReportRounded'
 import EventRoundedIcon from '@mui/icons-material/EventRounded'
 import FactCheckRoundedIcon from '@mui/icons-material/FactCheckRounded'
+import TaskAltRoundedIcon from '@mui/icons-material/TaskAltRounded'
 import NotificationsActiveRoundedIcon from '@mui/icons-material/NotificationsActiveRounded'
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
 import NoteAddRoundedIcon from '@mui/icons-material/NoteAddRounded'
@@ -241,6 +242,7 @@ const Sidebar = observer(function Sidebar() {
                 { kind: 'item', label: 'Leave Management', icon: <CalendarMonthRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamLeave(), active: onPage('/leave-management') } as NavEntry,
                 { kind: 'item', label: 'Attendance', icon: <ApartmentRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToCompanyAttendance(), active: onPage('/attendance-management') } as NavEntry,
                 { kind: 'item', label: 'Timesheets', icon: <AccessTimeRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamTimesheets(), active: onPage('/timesheets-management') } as NavEntry,
+                { kind: 'item', label: 'Tasks', icon: <TaskAltRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTasks(), active: onPage('/tasks') } as NavEntry,
             ] : []),
             ...(isSystemAdminUser ? [
                 { kind: 'section', label: 'Configuration' } as NavEntry,
@@ -281,6 +283,7 @@ const Sidebar = observer(function Sidebar() {
             // Not GroupRounded like Leave Management above: two entries in the same
             // section reading as the same icon is what made them hard to tell apart.
             { kind: 'item', label: 'Approvals', icon: <FactCheckRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamTimesheets(), active: onPage('/timesheets-management') },
+            { kind: 'item', label: 'Tasks', icon: <TaskAltRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTasks(), active: onPage('/tasks') },
         ]
     } else {
         navEntries = [

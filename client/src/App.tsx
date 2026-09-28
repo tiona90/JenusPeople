@@ -29,7 +29,8 @@ import ProtectedRoute from './components/auth/ProtectedRoute'
 import { API_ERROR_EVENT } from './lib/api/error-events'
 import { apiBaseUrl } from './lib/api/client'
 import { useStore } from './lib/mobx'
-import { LEAVE_AND_TIME_ROLES, SYSTEM_ADMINISTRATOR_ROLES, isAdministrator } from './lib/roles'
+import { LEAVE_AND_TIME_ROLES, SYSTEM_ADMINISTRATOR_ROLES, TASK_ROLES, isAdministrator } from './lib/roles'
+import TasksPage from './components/tasks/TasksPage'
 import Sidebar from './components/layout/Sidebar'
 import Topbar from './components/layout/Topbar'
 
@@ -227,6 +228,7 @@ const AppInner = observer(function AppInner() {
             void queryClient.invalidateQueries({ queryKey: ['teamAwayThisWeekCount'] })
             void queryClient.invalidateQueries({ queryKey: ['timesheets'] })
             void queryClient.invalidateQueries({ queryKey: ['timesheetStatusHistories'] })
+            void queryClient.invalidateQueries({ queryKey: ['work-tasks'] })
         })
 
         void connection.start().catch(() => { /* polling fallback */ })
@@ -278,6 +280,11 @@ const AppInner = observer(function AppInner() {
                             <Route path="/attendance" element={<AttendancePage />} />
                             <Route path="/team-attendance" element={<TeamAttendancePage />} />
                             <Route path="/attendance-management" element={<CompanyAttendancePage />} />
+                        </Route>
+
+                        {/* Tasks — Managers and HR Administrators hand each other follow-ups. */}
+                        <Route element={<ProtectedRoute roles={[...TASK_ROLES]} />}>
+                            <Route path="/tasks" element={<TasksPage />} />
                         </Route>
 
                         {/* System Administrator-only nested routes — gated by role inside ProtectedRoute. An HR Administrator has the reach but not the configuration. */}
