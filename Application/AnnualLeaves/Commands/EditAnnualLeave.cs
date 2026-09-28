@@ -339,6 +339,14 @@ public class EditAnnualLeave
                     approvedByUserId: request.ChangedByUserId, cancellationToken);
             }
 
+            if (employeeProfile is not null)
+            {
+                await ManagerReversalNotification.SendAsync(
+                    context, emailService, annualLeave, editedLeaveType?.Name, employeeProfile,
+                    statusBeforeEdit, annualLeave.Status, request.ChangedByUserId,
+                    request.AnnualLeave.StatusComment, cancellationToken);
+            }
+
             return Result<Unit>.Success(Unit.Value);
         }
     }

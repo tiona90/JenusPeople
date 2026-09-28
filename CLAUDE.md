@@ -528,7 +528,13 @@ Eight things about it that are deliberate:
   `HrApprovalNotification` mails them with the reason and the coverage line when
   a request reaches the HR stage — on filing for an HR-only type, on the manager's
   approval otherwise. The employee's status email for that step reads "approved
-  by {manager} and is awaiting HR approval". A department with no HR
+  by {manager} and is awaiting HR approval". Going the other way,
+  `ManagerReversalNotification` mails the employee's managers (the same
+  `ManagerNotificationRecipients` set, minus whoever made the change) when an
+  `Approved` or `AwaitingHrApproval` request is cancelled or rejected, with the
+  status comment and not the leave's reason, from `UpdateLeaveStatus` and the
+  status path of `EditAnnualLeave`; before it, an HR cancellation reached the
+  employee and the delegate only. A department with no HR
   Administrator assigned leaves an HR-stage request stuck, the same way a
   department with no manager leaves a `Pending` one.
 - **A manager on leave, or no manager at all, hands the manager stage to HR.**
