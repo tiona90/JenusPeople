@@ -21,6 +21,11 @@ public class WorkTaskDto
     public string CreatedByName { get; set; } = string.Empty;
     public DateOnly? DueDate { get; set; }
     public int? TargetHours { get; set; }
+    /// <summary>
+    /// Hours on every timesheet row linked to the task, whatever the sheet's status.
+    /// Summed on every read, never stored. May pass <see cref="TargetHours"/>.
+    /// </summary>
+    public decimal LoggedHours { get; set; }
     /// <summary>Null only on a task filed before the question was asked.</summary>
     public bool? IsBillable { get; set; }
     public WorkTaskPriority Priority { get; set; }

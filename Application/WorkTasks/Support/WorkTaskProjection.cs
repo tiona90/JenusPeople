@@ -48,10 +48,36 @@ public static class WorkTaskProjection
                 || t.Assignees.Any(a => a.UserId == callerUserId),
         });
 
-    public static Task<WorkTaskDto> LoadDtoAsync(
-        AppDbContext context, int id, string callerUserId, CancellationToken cancellationToken, bool callerManages = true) =>
-        Project(context.WorkTasks.AsNoTracking().Where(t => t.Id == id), callerUserId, callerManages)
+    public static async Task<WorkTaskDto> LoadDtoAsync(
+        AppDbContext context, int id, string callerUserId, CancellationToken cancellationToken, bool callerManages = true)
+    {
+        var dto = await Project(context.WorkTasks.AsNoTracking().Where(t => t.Id == id), callerUserId, callerManages)
             .SingleAsync(cancellationToken);
+        return (await WithLoggedHoursAsync(context, [dto], cancellationToken))[0];
+    }
+
+    /// <summary>
+    /// Logged hours per task. Summed in memory, as GetProjectList does, because
+    /// SQLite (the tests' provider) cannot aggregate a decimal column.
+    /// </summary>
+    public static async Task<Dictionary<int, decimal>> LoggedHoursAsync(
+        AppDbContext context, IReadOnlyList<int> taskIds, CancellationToken cancellationToken)
+    {
+        var rows = await context.TimesheetEntries
+            .AsNoTracking()
+            .Where(e => e.WorkTaskId != null && taskIds.Contains(e.WorkTaskId.Value))
+            .Select(e => new { TaskId = e.WorkTaskId!.Value, e.HoursWorked })
+            .ToListAsync(cancellationToken);
+        return rows.GroupBy(r => r.TaskId).ToDictionary(g => g.Key, g => g.Sum(r => r.HoursWorked));
+    }
+
+    public static async Task<List<WorkTaskDto>> WithLoggedHoursAsync(
+        AppDbContext context, List<WorkTaskDto> tasks, CancellationToken cancellationToken)
+    {
+        var logged = await LoggedHoursAsync(context, tasks.Select(t => t.Id).ToList(), cancellationToken);
+        foreach (var task in tasks) task.LoggedHours = logged.GetValueOrDefault(task.Id);
+        return tasks;
+    }
 
     /// <summary>Open first, then soonest due (undated last), then highest priority, then oldest.</summary>
     public static List<WorkTaskDto> Sort(IEnumerable<WorkTaskDto> tasks) => tasks

@@ -35,6 +35,7 @@ public class GetWorkTaskList
                     callerManages: !request.AssignedOnly)
                 .ToListAsync(cancellationToken);
 
+            await WorkTaskProjection.WithLoggedHoursAsync(context, tasks, cancellationToken);
             return Result<List<WorkTaskDto>>.Success(WorkTaskProjection.Sort(tasks));
         }
     }
