@@ -207,6 +207,16 @@ public class UpdateLeaveStatus
                     approvedByUserId: request.ChangedByUserId, cancellationToken);
             }
 
+            if (employeeProfile is not null)
+            {
+                // An approval taken back — HR cancelling an approved leave, or
+                // rejecting one the manager passed along — is news to the managers
+                // who gave it, not only to the employee and the delegate.
+                await ManagerReversalNotification.SendAsync(
+                    context, emailService, annualLeave, leaveType?.Name, employeeProfile,
+                    oldStatus, newStatus, request.ChangedByUserId, request.Request.StatusComment, cancellationToken);
+            }
+
             var employeeContact = await context.Users
                 .AsNoTracking()
                 .Where(user => user.Id == annualLeave.EmployeeId)

@@ -233,6 +233,94 @@ public class ApprovalStageHandlerTests
         Assert.Contains(email.Sent, m => m.Recipient == "emp@t.local" && m.Subject == "Your leave request was cancelled");
     }
 
+    /// <summary>
+    /// The manager approved it; HR taking that back is news to them. It used to
+    /// reach the employee and the delegate only.
+    /// </summary>
+    [Fact]
+    public async Task Hr_cancelling_an_approved_request_tells_the_manager()
+    {
+        using var db = await WorldAsync();
+        await SeedLeaveAsync(db, ManagerOnlyType, AnnualLeaveStatus.Approved);
+        var email = new FakeEmailService();
+
+        var result = await new UpdateLeaveStatus.Handler(db, email).Handle(new UpdateLeaveStatus.Command
+        {
+            LeaveId = "L1", ChangedByUserId = Hr, IsAdmin = true,
+            Request = new UpdateLeaveStatusRequest { Status = AnnualLeaveStatus.Cancelled, StatusComment = "Project deadline moved" },
+            NowUtc = Start.AddDays(-10),
+        }, CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.Error);
+        var toManager = Assert.Single(email.Sent, m => m.Recipient == "mgr@t.local");
+        Assert.Equal($"{ManagerReversalNotification.CancelledSubjectPrefix} Maria Ioannou", toManager.Subject);
+        Assert.Contains("Helen HR", toManager.HtmlBody);
+        Assert.Contains("Project deadline moved", toManager.HtmlBody);
+        // The leave's own reason stays with the approval it was written for.
+        Assert.DoesNotContain("Family trip", toManager.HtmlBody);
+        Assert.DoesNotContain(email.Sent, m => m.Recipient == "hr@t.local");
+    }
+
+    [Theory]
+    [InlineData(AnnualLeaveStatus.Approved)]
+    [InlineData(AnnualLeaveStatus.AwaitingHrApproval)]
+    public async Task Hr_rejecting_what_the_manager_approved_tells_the_manager(AnnualLeaveStatus from)
+    {
+        using var db = await WorldAsync();
+        await SeedLeaveAsync(db, BothType, from);
+        var email = new FakeEmailService();
+
+        var result = await DecideAsync(db, email, "L1", AnnualLeaveStatus.Rejected, asHr: true);
+
+        Assert.True(result.IsSuccess, result.Error);
+        var toManager = Assert.Single(email.Sent, m => m.Recipient == "mgr@t.local");
+        Assert.StartsWith(ManagerReversalNotification.RejectedSubjectPrefix, toManager.Subject);
+    }
+
+    [Fact]
+    public async Task A_manager_taking_back_their_own_approval_is_not_emailed_about_it()
+    {
+        using var db = await WorldAsync();
+        await SeedLeaveAsync(db, ManagerOnlyType, AnnualLeaveStatus.Approved);
+        var email = new FakeEmailService();
+
+        var result = await DecideAsync(db, email, "L1", AnnualLeaveStatus.Rejected, asHr: false);
+
+        Assert.True(result.IsSuccess, result.Error);
+        Assert.DoesNotContain(email.Sent, m => m.Recipient == "mgr@t.local");
+        Assert.Contains(email.Sent, m => m.Recipient == "emp@t.local");
+    }
+
+    [Fact]
+    public async Task Hr_cancelling_from_the_edit_dialog_tells_the_manager_too()
+    {
+        using var db = await WorldAsync();
+        // Starts in the future, since the edit path reads the real clock.
+        var start = DateTime.UtcNow.Date.AddDays(30);
+        db.AnnualLeaves.Add(new AnnualLeave
+        {
+            Id = "L1", EmployeeId = Employee, EmployeeProfileId = EmployeeProfile, DepartmentId = Dept,
+            LeaveTypeId = ManagerOnlyType, StartDate = start, EndDate = start, Reason = "Family trip",
+            DelegateId = Delegate, Status = AnnualLeaveStatus.Approved, CreatedAt = DateTime.UtcNow,
+        });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        var email = new FakeEmailService();
+
+        var result = await new EditAnnualLeave.Handler(db, email).Handle(new EditAnnualLeave.Command
+        {
+            ChangedByUserId = Hr, IsAdmin = true, IsManager = false,
+            AnnualLeave = new EditAnnualLeaveRequest
+            {
+                Id = "L1", LeaveTypeId = ManagerOnlyType, StartDate = start, EndDate = start,
+                Reason = "Family trip", DelegateId = Delegate, Status = AnnualLeaveStatus.Cancelled,
+            },
+        }, CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.Error);
+        Assert.Contains(email.Sent, m => m.Recipient == "mgr@t.local" && m.Subject.StartsWith(ManagerReversalNotification.CancelledSubjectPrefix));
+    }
+
     [Fact]
     public async Task An_approved_request_that_has_started_cannot_be_cancelled()
     {
