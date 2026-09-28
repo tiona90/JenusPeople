@@ -175,7 +175,7 @@ describe('TasksPage', () => {
         renderPage()
         const planned = await cardFor('Mine to do')
         expect(within(planned).getByText('40h')).toBeInTheDocument()
-        expect(within(planned).getByText('of work')).toBeInTheDocument()
+        expect(within(planned).getByText('0h logged · 40h left')).toBeInTheDocument()
 
         showView('created')
         const unplanned = await cardFor('I asked for this')
@@ -199,5 +199,17 @@ describe('TasksPage', () => {
         expect(screen.queryByText('Create a new task')).toBeNull()
         expect(screen.queryByRole('combobox', { name: 'View' })).toBeNull()
         expect(api.getWorkTaskDepartments).not.toHaveBeenCalled()
+    })
+})
+
+describe('target progress', () => {
+    it('shows the hours logged and left against the target, and how far over', async () => {
+        api.getWorkTasks.mockResolvedValue([
+            { ...base, id: 11, title: 'on track', targetHours: 24, loggedHours: 8 },
+            { ...base, id: 12, title: 'overrun', targetHours: 10, loggedHours: 14 },
+        ])
+        renderPage()
+        expect(within(await cardFor('on track')).getByText('8h logged · 16h left')).toBeInTheDocument()
+        expect(within(await cardFor('overrun')).getByText('4h over')).toBeInTheDocument()
     })
 })
