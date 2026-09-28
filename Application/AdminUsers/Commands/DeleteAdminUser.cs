@@ -111,6 +111,34 @@ public class DeleteAdminUser
                 leave.DelegateId = null;
             }
 
+            // Tasks. Both foreign keys onto User are Restrict. The ones this user
+            // created go with them (their assignee rows cascade); for the rest, see below.
+            var createdTasks = await context.WorkTasks
+                .Where(t => t.CreatedById == userId)
+                .ToListAsync(cancellationToken);
+            context.WorkTasks.RemoveRange(createdTasks);
+
+            // The leaver comes off every task they were on. A task somebody else
+            // created that would be left with nobody goes back to its creator; one
+            // still shared with others just loses the leaver. The check reads the
+            // database, where the leaver's rows are still present until SaveChanges.
+            var assignedRows = await context.WorkTaskAssignees
+                .Where(a => a.UserId == userId)
+                .ToListAsync(cancellationToken);
+            context.WorkTaskAssignees.RemoveRange(assignedRows);
+
+            var assignedTaskIds = assignedRows.Select(a => a.WorkTaskId).ToList();
+            var leftWithNobody = await context.WorkTasks
+                .Where(t => assignedTaskIds.Contains(t.Id)
+                    && t.CreatedById != userId
+                    && !t.Assignees.Any(a => a.UserId != userId))
+                .ToListAsync(cancellationToken);
+            foreach (var task in leftWithNobody)
+            {
+                context.WorkTaskAssignees.Add(new WorkTaskAssignee { WorkTaskId = task.Id, UserId = task.CreatedById });
+                task.UpdatedAtUtc = DateTime.UtcNow;
+            }
+
             var assignedByRows = await context.UserDepartments
                 .Where(ud => ud.AssignedByUserId == userId)
                 .ToListAsync(cancellationToken);

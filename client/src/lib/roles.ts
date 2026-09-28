@@ -44,3 +44,13 @@ export function isSystemAdministrator(roles: readonly string[] | null | undefine
 export function isHrAdministrator(roles: readonly string[] | null | undefined): boolean {
     return !!roles && roles.includes('HR Administrator')
 }
+
+/**
+ * Who uses Tasks: the two department-scoped roles, mirroring
+ * `AppRoles.LeaveAndTimeDecisionRoles` on `WorkTasksController`.
+ */
+export const TASK_ROLES: readonly UserRole[] = ['HR Administrator', 'Manager']
+
+export function canUseTasks(roles: readonly string[] | null | undefined): boolean {
+    return !!roles && roles.some((role) => (TASK_ROLES as readonly string[]).includes(role))
+}

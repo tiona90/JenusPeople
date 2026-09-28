@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Persistence;
 
@@ -11,9 +12,11 @@ using Persistence;
 namespace Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260928102111_AddWorkTaskProject")]
+    partial class AddWorkTaskProject
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1287,6 +1290,11 @@ namespace Persistence.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("AssigneeId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
                     b.Property<DateTime?>("CompletedAtUtc")
                         .HasColumnType("datetime2");
 
@@ -1308,9 +1316,6 @@ namespace Persistence.Migrations
                     b.Property<DateOnly?>("DueDate")
                         .HasColumnType("date");
 
-                    b.Property<bool?>("IsBillable")
-                        .HasColumnType("bit");
-
                     b.Property<int>("Priority")
                         .HasColumnType("int");
 
@@ -1318,9 +1323,6 @@ namespace Persistence.Migrations
                         .HasColumnType("int");
 
                     b.Property<int>("Status")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("TargetHours")
                         .HasColumnType("int");
 
                     b.Property<string>("Title")
@@ -1333,6 +1335,8 @@ namespace Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("AssigneeId");
+
                     b.HasIndex("CreatedById");
 
                     b.HasIndex("ProjectId");
@@ -1340,22 +1344,6 @@ namespace Persistence.Migrations
                     b.HasIndex("DepartmentId", "Status");
 
                     b.ToTable("WorkTasks");
-                });
-
-            modelBuilder.Entity("Domain.WorkTaskAssignee", b =>
-                {
-                    b.Property<int>("WorkTaskId")
-                        .HasColumnType("int");
-
-                    b.Property<string>("UserId")
-                        .HasMaxLength(450)
-                        .HasColumnType("nvarchar(450)");
-
-                    b.HasKey("WorkTaskId", "UserId");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("WorkTaskAssignees");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
@@ -1814,6 +1802,12 @@ namespace Persistence.Migrations
 
             modelBuilder.Entity("Domain.WorkTask", b =>
                 {
+                    b.HasOne("Domain.User", "Assignee")
+                        .WithMany()
+                        .HasForeignKey("AssigneeId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("Domain.User", "CreatedBy")
                         .WithMany()
                         .HasForeignKey("CreatedById")
@@ -1831,30 +1825,13 @@ namespace Persistence.Migrations
                         .HasForeignKey("ProjectId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.Navigation("Assignee");
+
                     b.Navigation("CreatedBy");
 
                     b.Navigation("Department");
 
                     b.Navigation("Project");
-                });
-
-            modelBuilder.Entity("Domain.WorkTaskAssignee", b =>
-                {
-                    b.HasOne("Domain.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Domain.WorkTask", "WorkTask")
-                        .WithMany("Assignees")
-                        .HasForeignKey("WorkTaskId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("User");
-
-                    b.Navigation("WorkTask");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
@@ -1991,11 +1968,6 @@ namespace Persistence.Migrations
                     b.Navigation("UserDepartments");
 
                     b.Navigation("UserRoles");
-                });
-
-            modelBuilder.Entity("Domain.WorkTask", b =>
-                {
-                    b.Navigation("Assignees");
                 });
 #pragma warning restore 612, 618
         }

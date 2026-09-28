@@ -97,6 +97,7 @@ class UiStore {
     navigateToAttendance() { this.go('/attendance') }
     navigateToTeamAttendance() { this.go('/team-attendance') }
     navigateToCompanyAttendance() { this.go('/attendance-management') }
+    navigateToTasks() { this.go('/tasks') }
 
     consumePendingWeekStart(): string | null {
         const v = this.pendingWeekStart

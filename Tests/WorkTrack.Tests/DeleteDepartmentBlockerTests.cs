@@ -238,4 +238,25 @@ public class DeleteDepartmentBlockerTests
         db.ChangeTracker.Clear();
         Assert.Equal(OtherId, (await db.Departments.SingleAsync()).Id);
     }
+
+    [Fact]
+    public async Task A_task_in_the_department_is_a_conflict_not_a_500()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+
+        db.WorkTasks.Add(new WorkTask
+        {
+            Title = "Chase notes", DepartmentId = TargetId, CreatedById = "u-leaver",
+            Assignees = [new WorkTaskAssignee { UserId = "u-leaver" }],
+            CreatedAtUtc = DateTime.UtcNow, UpdatedAtUtc = DateTime.UtcNow,
+        });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var result = await Delete(db);
+
+        Assert.Equal(ResultErrorKind.Conflict, result.ErrorKind);
+        Assert.Contains("1 task", result.Error);
+    }
 }
