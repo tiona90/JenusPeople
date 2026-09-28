@@ -20,6 +20,8 @@ public class WorkTaskDto
     public string CreatedById { get; set; } = string.Empty;
     public string CreatedByName { get; set; } = string.Empty;
     public DateOnly? DueDate { get; set; }
+    public int? TargetHours { get; set; }
+    public int? TargetWeeks { get; set; }
     public WorkTaskPriority Priority { get; set; }
     public WorkTaskStatus Status { get; set; }
     public DateTime CreatedAtUtc { get; set; }
@@ -63,6 +65,9 @@ public class UpsertWorkTaskRequest
     /// <summary>At least one, no repeats — see <c>UpsertWorkTaskRequestValidator</c>.</summary>
     public List<string> AssigneeIds { get; set; } = [];
     public DateOnly? DueDate { get; set; }
+    /// <summary>Optional; a null clears it (this is a full replace).</summary>
+    public int? TargetHours { get; set; }
+    public int? TargetWeeks { get; set; }
     public WorkTaskPriority Priority { get; set; } = WorkTaskPriority.Normal;
 }
 

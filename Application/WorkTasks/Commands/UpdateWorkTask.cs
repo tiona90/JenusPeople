@@ -67,6 +67,8 @@ public class UpdateWorkTask
             foreach (var id in added)
                 task.Assignees.Add(new WorkTaskAssignee { UserId = id });
             task.DueDate = input.DueDate;
+            task.TargetHours = input.TargetHours;
+            task.TargetWeeks = input.TargetWeeks;
             task.Priority = input.Priority;
             task.UpdatedAtUtc = DateTime.UtcNow;
             await context.SaveChangesAsync(cancellationToken);

@@ -12,6 +12,16 @@ import { STATUS_COLORS } from './statusStyles'
 
 const TITLE_MAX = 200
 const DESCRIPTION_MAX = 2000
+// Mirrors WorkTask.MaxTargetHours / MaxTargetWeeks on the server.
+const TARGET_HOURS_MAX = 9999
+const TARGET_WEEKS_MAX = 104
+
+/** A target field's text as a whole number in range, null when blank, or 'invalid'. */
+function parseTarget(text: string, max: number): number | null | 'invalid' {
+    if (text.trim() === '') return null
+    const n = Number(text)
+    return Number.isInteger(n) && n >= 1 && n <= max ? n : 'invalid'
+}
 
 interface Props {
     open: boolean
@@ -30,6 +40,8 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
     const [dueDate, setDueDate] = useState('')
     const [priority, setPriority] = useState<WorkTaskPriority>('Normal')
     const [status, setStatus] = useState<WorkTaskStatus>('ToDo')
+    const [targetHours, setTargetHours] = useState('')
+    const [targetWeeks, setTargetWeeks] = useState('')
 
     useEffect(() => {
         if (!open) return
@@ -41,6 +53,8 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
         setDueDate(task?.dueDate?.slice(0, 10) ?? '')
         setPriority(task?.priority ?? 'Normal')
         setStatus(task?.status ?? 'ToDo')
+        setTargetHours(task?.targetHours != null ? String(task.targetHours) : '')
+        setTargetWeeks(task?.targetWeeks != null ? String(task.targetWeeks) : '')
     }, [open, task])
 
     const departments = useQuery({ queryKey: ['work-tasks', 'departments'], queryFn: getWorkTaskDepartments, enabled: open })
@@ -103,6 +117,8 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
     }, [open, resetSave])
 
     const trimmedTitle = title.trim()
+    const hours = parseTarget(targetHours, TARGET_HOURS_MAX)
+    const weeks = parseTarget(targetWeeks, TARGET_WEEKS_MAX)
     const canSave =
         trimmedTitle.length > 0 &&
         trimmedTitle.length <= TITLE_MAX &&
@@ -110,6 +126,8 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
         departmentId !== '' &&
         projectId !== '' &&
         assigneeIds.length > 0 &&
+        hours !== 'invalid' &&
+        weeks !== 'invalid' &&
         !save.isPending
 
     const submit = () => {
@@ -121,6 +139,8 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
             projectId: projectId as number,
             assigneeIds,
             dueDate: dueDate === '' ? null : dueDate,
+            targetHours: typeof hours === 'number' ? hours : null,
+            targetWeeks: typeof weeks === 'number' ? weeks : null,
             priority,
         })
     }
@@ -215,6 +235,28 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
                             ))}
                         </Select>
                     </FormControl>
+                    <Stack direction="row" spacing={2}>
+                        <TextField
+                            label="Target hours"
+                            type="number"
+                            value={targetHours}
+                            onChange={(e) => setTargetHours(e.target.value)}
+                            error={hours === 'invalid'}
+                            helperText={hours === 'invalid' ? `1 to ${TARGET_HOURS_MAX}` : 'Estimated effort'}
+                            slotProps={{ htmlInput: { min: 1, max: TARGET_HOURS_MAX, step: 1 } }}
+                            sx={{ flex: 1 }}
+                        />
+                        <TextField
+                            label="Target weeks"
+                            type="number"
+                            value={targetWeeks}
+                            onChange={(e) => setTargetWeeks(e.target.value)}
+                            error={weeks === 'invalid'}
+                            helperText={weeks === 'invalid' ? `1 to ${TARGET_WEEKS_MAX}` : 'To complete it in'}
+                            slotProps={{ htmlInput: { min: 1, max: TARGET_WEEKS_MAX, step: 1 } }}
+                            sx={{ flex: 1 }}
+                        />
+                    </Stack>
                     {task && (
                         <FormControl>
                             <InputLabel id="task-status-label">Status</InputLabel>

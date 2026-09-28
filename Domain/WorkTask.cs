@@ -29,6 +29,8 @@ public class WorkTask
 {
     public const int TitleMaxLength = 200;
     public const int DescriptionMaxLength = 2000;
+    public const int MaxTargetHours = 9999;
+    public const int MaxTargetWeeks = 104;
 
     public int Id { get; set; }
     public string Title { get; set; } = string.Empty;
@@ -57,6 +59,14 @@ public class WorkTask
 
     /// <summary>A calendar date, no zone.</summary>
     public DateOnly? DueDate { get; set; }
+
+    /// <summary>
+    /// The plan: how many hours of work it should take, and over how many weeks.
+    /// Both optional and quoted only — timesheet entries are not linked to tasks, so
+    /// nothing is measured against them.
+    /// </summary>
+    public int? TargetHours { get; set; }
+    public int? TargetWeeks { get; set; }
 
     public WorkTaskPriority Priority { get; set; } = WorkTaskPriority.Normal;
     public WorkTaskStatus Status { get; set; } = WorkTaskStatus.ToDo;

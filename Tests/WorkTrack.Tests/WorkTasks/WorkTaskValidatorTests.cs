@@ -67,4 +67,19 @@ public class WorkTaskValidatorTests
         var r = Ok(); r.AssigneeIds = Enumerable.Range(1, 21).Select(i => $"u{i}").ToList();
         Assert.False(Valid(r));
     }
+
+    [Theory]
+    [InlineData(null, null, true)]
+    [InlineData(1, 1, true)]
+    [InlineData(9999, 104, true)]
+    [InlineData(0, null, false)]
+    [InlineData(-5, null, false)]
+    [InlineData(10000, null, false)]
+    [InlineData(null, 0, false)]
+    [InlineData(null, 105, false)]
+    public void Targets_are_optional_but_must_be_sensible(int? hours, int? weeks, bool valid)
+    {
+        var r = Ok(); r.TargetHours = hours; r.TargetWeeks = weeks;
+        Assert.Equal(valid, Valid(r));
+    }
 }

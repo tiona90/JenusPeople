@@ -42,6 +42,8 @@ public class CreateWorkTask
                 Assignees = [.. input.AssigneeIds.Select(id => new WorkTaskAssignee { UserId = id })],
                 CreatedById = request.CallerUserId,
                 DueDate = input.DueDate,
+                TargetHours = input.TargetHours,
+                TargetWeeks = input.TargetWeeks,
                 Priority = input.Priority,
                 CreatedAtUtc = now,
                 UpdatedAtUtc = now,

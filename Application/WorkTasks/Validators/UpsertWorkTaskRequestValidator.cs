@@ -24,6 +24,12 @@ public class UpsertWorkTaskRequestValidator : AbstractValidator<UpsertWorkTaskRe
             .Must(ids => ids.All(id => !string.IsNullOrWhiteSpace(id))).WithMessage("An assignee is blank.")
             .Must(ids => ids.Distinct().Count() == ids.Count).WithMessage("The same person is assigned twice.");
         RuleFor(x => x.Priority).IsInEnum();
+        RuleFor(x => x.TargetHours).InclusiveBetween(1, WorkTask.MaxTargetHours)
+            .When(x => x.TargetHours.HasValue)
+            .WithMessage($"Target hours must be between 1 and {WorkTask.MaxTargetHours}.");
+        RuleFor(x => x.TargetWeeks).InclusiveBetween(1, WorkTask.MaxTargetWeeks)
+            .When(x => x.TargetWeeks.HasValue)
+            .WithMessage($"Target weeks must be between 1 and {WorkTask.MaxTargetWeeks}.");
     }
 }
 

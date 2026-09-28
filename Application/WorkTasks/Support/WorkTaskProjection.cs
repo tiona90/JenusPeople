@@ -30,6 +30,8 @@ public static class WorkTaskProjection
             CreatedById = t.CreatedById,
             CreatedByName = !string.IsNullOrWhiteSpace(t.CreatedBy!.DisplayName) ? t.CreatedBy.DisplayName : (t.CreatedBy.Email ?? ""),
             DueDate = t.DueDate,
+            TargetHours = t.TargetHours,
+            TargetWeeks = t.TargetWeeks,
             Priority = t.Priority,
             Status = t.Status,
             CreatedAtUtc = t.CreatedAtUtc,

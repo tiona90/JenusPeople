@@ -20,6 +20,9 @@ export interface WorkTask {
     createdByName: string
     /** Calendar date, `YYYY-MM-DD`. */
     dueDate: string | null
+    /** The plan, quoted only: nothing is measured against it. */
+    targetHours: number | null
+    targetWeeks: number | null
     priority: WorkTaskPriority
     status: WorkTaskStatus
     createdAtUtc: string
@@ -43,5 +46,7 @@ export interface UpsertWorkTaskRequest {
     /** At least one, no repeats. */
     assigneeIds: string[]
     dueDate: string | null
+    targetHours: number | null
+    targetWeeks: number | null
     priority: WorkTaskPriority
 }

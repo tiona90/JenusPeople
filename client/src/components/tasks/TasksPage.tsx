@@ -405,7 +405,15 @@ function TaskCard({ task, today, statusPending, onStatus, onEdit, onDelete }: {
                     sub={task.dueDate ? (late > 0 ? 'past due' : closed ? 'closed' : 'on track') : 'no date set'}
                     valueColor={late > 0 ? 'error.main' : undefined}
                 />
-                <CardStat label="Priority" value={PRIORITY_LABELS[task.priority]} sub="as set" valueColor={priority.fg} />
+                <CardStat
+                    label="Target"
+                    value={task.targetHours != null ? `${task.targetHours}h` : task.targetWeeks != null ? `${task.targetWeeks}w` : '—'}
+                    sub={task.targetHours != null && task.targetWeeks != null
+                        ? `over ${plural(task.targetWeeks, 'week')}`
+                        : task.targetHours != null ? 'of work'
+                        : task.targetWeeks != null ? `${task.targetWeeks === 1 ? 'week' : 'weeks'} to complete`
+                        : 'no target set'}
+                />
                 <CardStat
                     label={task.status === 'Done' && task.completedAtUtc ? 'Completed' : 'Created'}
                     value={formatDate(task.status === 'Done' && task.completedAtUtc ? task.completedAtUtc : task.createdAtUtc)}

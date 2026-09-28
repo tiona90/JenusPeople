@@ -83,7 +83,7 @@ describe('TaskDialog', () => {
 
         await waitFor(() => expect(onSaved).toHaveBeenCalled())
         expect(api.createWorkTask).toHaveBeenCalledWith({
-            title: 'Chase notes', description: null, departmentId: 1, projectId: 10, assigneeIds: ['u-sam'], dueDate: null, priority: 'Normal',
+            title: 'Chase notes', description: null, departmentId: 1, projectId: 10, assigneeIds: ['u-sam'], dueDate: null, targetHours: null, targetWeeks: null, priority: 'Normal',
         })
     })
 
@@ -180,7 +180,7 @@ describe('TaskDialog', () => {
             id: 7, title: 'Chase notes', description: null, departmentId: 1, departmentName: 'Sales',
             projectId: 10, projectName: 'CRM Rollout', projectCode: 'CRM', projectColorKey: 'p1',
             assignees: [{ userId: 'u-sam', displayName: 'Sam Sales' }], createdById: 'me', createdByName: 'Me',
-            dueDate: null, priority: 'Normal' as const, status: 'ToDo' as const,
+            dueDate: null, targetHours: null, targetWeeks: null, priority: 'Normal' as const, status: 'ToDo' as const,
             createdAtUtc: '2026-09-01T08:00:00', updatedAtUtc: '2026-09-01T08:00:00', completedAtUtc: null,
             canEdit: true, canChangeStatus: true,
         }
@@ -201,5 +201,31 @@ describe('TaskDialog', () => {
         await waitFor(() => expect(onSaved).toHaveBeenCalled())
         expect(api.updateWorkTaskStatus).toHaveBeenCalledWith(7, 'Done')
         expect(order).toEqual(['details', 'status'])
+    })
+
+    it('sends the target hours and weeks typed in', async () => {
+        api.createWorkTask.mockResolvedValue({} as never)
+        const { onSaved } = renderDialog()
+        fireEvent.change(screen.getByRole('textbox', { name: /^Title/ }), { target: { value: 'Chase notes' } })
+        await choose('Department', 'Sales')
+        await choose('Project', 'CRM Rollout')
+        await choose('Assignees', 'Sam Sales')
+        fireEvent.change(screen.getByRole('spinbutton', { name: /Target hours/ }), { target: { value: '40' } })
+        fireEvent.change(screen.getByRole('spinbutton', { name: /Target weeks/ }), { target: { value: '2' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Create task' }))
+
+        await waitFor(() => expect(onSaved).toHaveBeenCalled())
+        expect(api.createWorkTask).toHaveBeenCalledWith(expect.objectContaining({ targetHours: 40, targetWeeks: 2 }))
+    })
+
+    it('holds Save on a target out of range', async () => {
+        renderDialog()
+        fireEvent.change(screen.getByRole('textbox', { name: /^Title/ }), { target: { value: 'Chase notes' } })
+        await choose('Department', 'Sales')
+        await choose('Project', 'CRM Rollout')
+        await choose('Assignees', 'Sam Sales')
+        fireEvent.change(screen.getByRole('spinbutton', { name: /Target weeks/ }), { target: { value: '0' } })
+
+        expect(screen.getByRole('button', { name: 'Create task' })).toBeDisabled()
     })
 })
