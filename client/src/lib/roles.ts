@@ -46,10 +46,18 @@ export function isHrAdministrator(roles: readonly string[] | null | undefined): 
 }
 
 /**
- * Who uses Tasks: the two department-scoped roles, mirroring
- * `AppRoles.LeaveAndTimeDecisionRoles` on `WorkTasksController`.
+ * Who opens Tasks: everyone in Leave & Time, mirroring `AppRoles.LeaveAndTimeRoles`
+ * on `WorkTasksController`. An Employee works the tasks they are given; running
+ * them — creating, editing, deleting — is `canManageTasks`.
  */
-export const TASK_ROLES: readonly UserRole[] = ['HR Administrator', 'Manager']
+export const TASK_ROLES: readonly UserRole[] = ['HR Administrator', 'Manager', 'Employee']
+
+/** Who runs tasks: the two department-scoped roles (`AppRoles.LeaveAndTimeDecisionRoles`). */
+export const TASK_MANAGER_ROLES: readonly UserRole[] = ['HR Administrator', 'Manager']
+
+export function canManageTasks(roles: readonly string[] | null | undefined): boolean {
+    return !!roles && roles.some((role) => (TASK_MANAGER_ROLES as readonly string[]).includes(role))
+}
 
 export function canUseTasks(roles: readonly string[] | null | undefined): boolean {
     return !!roles && roles.some((role) => (TASK_ROLES as readonly string[]).includes(role))

@@ -32,12 +32,15 @@ public static class WorkTaskAccess
         task.CreatedById == callerUserId
         || !await context.Users.AnyAsync(u => u.Id == task.CreatedById && u.IsActive, cancellationToken);
 
+    /// <param name="assignedOnly">An Employee's view: of the tasks in scope, only the ones they are on.</param>
     public static async Task<WorkTask?> FindVisibleAsync(
-        AppDbContext context, int id, string callerUserId, CancellationToken cancellationToken)
+        AppDbContext context, int id, string callerUserId, CancellationToken cancellationToken, bool assignedOnly = false)
     {
         var departmentIds = await DepartmentIdsAsync(context, callerUserId, cancellationToken);
         return await context.WorkTasks
             .Include(t => t.Assignees)
-            .FirstOrDefaultAsync(t => t.Id == id && departmentIds.Contains(t.DepartmentId), cancellationToken);
+            .FirstOrDefaultAsync(t => t.Id == id
+                && departmentIds.Contains(t.DepartmentId)
+                && (!assignedOnly || t.Assignees.Any(a => a.UserId == callerUserId)), cancellationToken);
     }
 }

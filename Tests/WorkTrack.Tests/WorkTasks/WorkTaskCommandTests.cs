@@ -106,7 +106,7 @@ public class WorkTaskCommandTests
 
     [Theory]
     [InlineData(OpsManager)]  // covers another department
-    [InlineData(Employee)]    // wrong role
+    [InlineData(SysAdmin)]    // wrong role
     public async Task An_ineligible_assignee_is_refused(string assignee)
     {
         await using var db = await TransactionalTestDb.CreateAsync();
@@ -373,7 +373,7 @@ public class WorkTaskCommandTests
         await using var db = await TransactionalTestDb.CreateAsync();
         await SeedAsync(db);
 
-        var result = await Create(db, Hr, RequestFor(Sales, SalesManager, Employee));
+        var result = await Create(db, Hr, RequestFor(Sales, SalesManager, SysAdmin));
 
         Assert.Equal(WorkTaskAssigneeRule.NotEligibleMessage, result.Error);
         Assert.False(await db.WorkTasks.AnyAsync());

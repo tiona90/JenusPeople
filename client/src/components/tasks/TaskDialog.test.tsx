@@ -13,6 +13,10 @@ vi.mock('../../lib/api', () => ({
 }))
 const api = vi.mocked(await import('../../lib/api'))
 
+// Each test drives several MUI Selects, which jsdom renders slowly: alone the heaviest
+// takes ~4s, so under a loaded machine the 5s default is a coin toss, not a signal.
+vi.setConfig({ testTimeout: 15_000 })
+
 function renderDialog() {
     const onSaved = vi.fn()
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })

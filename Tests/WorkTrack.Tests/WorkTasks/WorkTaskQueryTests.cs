@@ -89,7 +89,7 @@ public class WorkTaskQueryTests
         var sales = await WorkTaskAssigneeRule.EligibleAsync(db, Sales, CancellationToken.None);
         var ops = await WorkTaskAssigneeRule.EligibleAsync(db, Ops, CancellationToken.None);
 
-        Assert.Equal([Hr, SalesManager], sales.Select(a => a.UserId).OrderBy(x => x).ToList());
+        Assert.Equal([Employee, Hr, SalesManager], sales.Select(a => a.UserId).OrderBy(x => x).ToList());
         Assert.Equal([OpsManager], ops.Select(a => a.UserId).ToList());
     }
 
@@ -100,7 +100,7 @@ public class WorkTaskQueryTests
         await SeedAsync(db);
 
         Assert.False(await WorkTaskAssigneeRule.IsEligibleAsync(db, GoneManager, Ops, CancellationToken.None));
-        Assert.False(await WorkTaskAssigneeRule.IsEligibleAsync(db, Employee, Sales, CancellationToken.None));
+        Assert.False(await WorkTaskAssigneeRule.IsEligibleAsync(db, SysAdmin, Sales, CancellationToken.None));
     }
 
     [Fact]

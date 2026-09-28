@@ -7,7 +7,11 @@ namespace Application.WorkTasks.Support;
 
 public static class WorkTaskProjection
 {
-    public static IQueryable<WorkTaskDto> Project(IQueryable<WorkTask> tasks, string callerUserId) =>
+    /// <param name="callerManages">
+    /// False for an Employee: they never create, edit or delete, so CanEdit is off
+    /// whoever created the task — a deactivated creator's takeover is for Managers and HR.
+    /// </param>
+    public static IQueryable<WorkTaskDto> Project(IQueryable<WorkTask> tasks, string callerUserId, bool callerManages = true) =>
         tasks.Select(t => new WorkTaskDto
         {
             Id = t.Id,
@@ -38,13 +42,14 @@ public static class WorkTaskProjection
             UpdatedAtUtc = t.UpdatedAtUtc,
             CompletedAtUtc = t.CompletedAtUtc,
             // Mirrors WorkTaskAccess.CanManageAsync: an inactive creator opens the task to everyone in scope.
-            CanEdit = t.CreatedById == callerUserId || !t.CreatedBy!.IsActive,
-            CanChangeStatus = t.CreatedById == callerUserId || !t.CreatedBy!.IsActive || t.Assignees.Any(a => a.UserId == callerUserId),
+            CanEdit = callerManages && (t.CreatedById == callerUserId || !t.CreatedBy!.IsActive),
+            CanChangeStatus = (callerManages && (t.CreatedById == callerUserId || !t.CreatedBy!.IsActive))
+                || t.Assignees.Any(a => a.UserId == callerUserId),
         });
 
     public static Task<WorkTaskDto> LoadDtoAsync(
-        AppDbContext context, int id, string callerUserId, CancellationToken cancellationToken) =>
-        Project(context.WorkTasks.AsNoTracking().Where(t => t.Id == id), callerUserId)
+        AppDbContext context, int id, string callerUserId, CancellationToken cancellationToken, bool callerManages = true) =>
+        Project(context.WorkTasks.AsNoTracking().Where(t => t.Id == id), callerUserId, callerManages)
             .SingleAsync(cancellationToken);
 
     /// <summary>Open first, then soonest due (undated last), then highest priority, then oldest.</summary>

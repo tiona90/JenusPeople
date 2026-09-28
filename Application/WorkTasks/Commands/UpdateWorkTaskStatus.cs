@@ -14,13 +14,16 @@ public class UpdateWorkTaskStatus
         public int Id { get; set; }
         public string CallerUserId { get; set; } = string.Empty;
         public WorkTaskStatus Status { get; set; }
+
+        /// <summary>An Employee: only a task they are on is visible, and only as its assignee.</summary>
+        public bool AssignedOnly { get; set; }
     }
 
     public class Handler(AppDbContext context) : IRequestHandler<Command, Result<WorkTaskDto>>
     {
         public async Task<Result<WorkTaskDto>> Handle(Command request, CancellationToken cancellationToken)
         {
-            var task = await WorkTaskAccess.FindVisibleAsync(context, request.Id, request.CallerUserId, cancellationToken);
+            var task = await WorkTaskAccess.FindVisibleAsync(context, request.Id, request.CallerUserId, cancellationToken, request.AssignedOnly);
             if (task is null)
                 return Result<WorkTaskDto>.Failure(WorkTaskAccess.NotFoundMessage);
             if (!task.Assignees.Any(a => a.UserId == request.CallerUserId)
@@ -37,7 +40,7 @@ public class UpdateWorkTaskStatus
             }
 
             return Result<WorkTaskDto>.Success(
-                await WorkTaskProjection.LoadDtoAsync(context, task.Id, request.CallerUserId, cancellationToken));
+                await WorkTaskProjection.LoadDtoAsync(context, task.Id, request.CallerUserId, cancellationToken, callerManages: !request.AssignedOnly));
         }
     }
 }

@@ -6,17 +6,19 @@ using Persistence;
 namespace Application.WorkTasks.Support;
 
 /// <summary>
-/// Who a task in a department may be assigned to: an active Manager or HR
-/// Administrator whose own scope covers it — the department on their profile, or
-/// a UserDepartment row. The same two sources ManagerAccessScopeResolver reads, so
+/// Who a task in a department may be assigned to: an active Manager, HR
+/// Administrator or Employee whose own scope covers it — the department on their
+/// profile, or (for a Manager or HR Administrator) a UserDepartment row. The same two sources ManagerAccessScopeResolver reads, so
 /// an assignee can always see the task they were given.
 /// </summary>
 public static class WorkTaskAssigneeRule
 {
     public const string NotEligibleMessage =
-        "The assignee must be an active Manager or HR Administrator who covers this department.";
+        "Every assignee must be an active Manager, HR Administrator or Employee in this department.";
 
-    private static readonly List<string> EligibleRoles = [AppRoles.Manager, AppRoles.HrAdministrator];
+    // Everyone who works in Leave & Time; a System Administrator configures the
+    // workspace and is never handed work.
+    private static readonly List<string> EligibleRoles = [AppRoles.Manager, AppRoles.HrAdministrator, AppRoles.Employee];
 
     public static async Task<List<WorkTaskAssigneeDto>> EligibleAsync(
         AppDbContext context, int departmentId, CancellationToken cancellationToken)

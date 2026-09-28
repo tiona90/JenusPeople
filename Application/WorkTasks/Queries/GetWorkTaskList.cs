@@ -16,6 +16,9 @@ public class GetWorkTaskList
     public class Query : IRequest<Result<List<WorkTaskDto>>>
     {
         public string CallerUserId { get; set; } = string.Empty;
+
+        /// <summary>An Employee's view: only the tasks they are on, and none of them editable.</summary>
+        public bool AssignedOnly { get; set; }
     }
 
     public class Handler(AppDbContext context) : IRequestHandler<Query, Result<List<WorkTaskDto>>>
@@ -25,7 +28,11 @@ public class GetWorkTaskList
             var departmentIds = await WorkTaskAccess.DepartmentIdsAsync(context, request.CallerUserId, cancellationToken);
 
             var tasks = await WorkTaskProjection
-                .Project(context.WorkTasks.AsNoTracking().Where(t => departmentIds.Contains(t.DepartmentId)), request.CallerUserId)
+                .Project(
+                    context.WorkTasks.AsNoTracking().Where(t => departmentIds.Contains(t.DepartmentId)
+                        && (!request.AssignedOnly || t.Assignees.Any(a => a.UserId == request.CallerUserId))),
+                    request.CallerUserId,
+                    callerManages: !request.AssignedOnly)
                 .ToListAsync(cancellationToken);
 
             return Result<List<WorkTaskDto>>.Success(WorkTaskProjection.Sort(tasks));

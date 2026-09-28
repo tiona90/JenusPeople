@@ -36,8 +36,8 @@ const TASKS: WorkTask[] = [
     { ...base, id: 3, title: "Someone else's", assignees: [{ userId: 'x', displayName: 'Xena' }], createdById: 'y', createdByName: 'Yan', dueDate: null, canEdit: false, canChangeStatus: false },
 ]
 
-function renderPage() {
-    mobx.useStore.mockReturnValue({ authStore: { user: { id: 'me' } } } as never)
+function renderPage(roles: string[] = ['Manager']) {
+    mobx.useStore.mockReturnValue({ authStore: { user: { id: 'me', roles } } } as never)
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
         <MemoryRouter initialEntries={['/tasks']}>
@@ -187,5 +187,17 @@ describe('TasksPage', () => {
         expect(within(await cardFor('Mine to do')).getByText('Billable')).toBeInTheDocument()
         showView('created')
         expect(within(await cardFor('I asked for this')).getByText('Non-billable')).toBeInTheDocument()
+    })
+
+    it('gives an Employee their tasks to work, and nothing to create or pick between', async () => {
+        api.getWorkTasks.mockResolvedValue([base])
+        renderPage(['Employee'])
+
+        const card = await cardFor('Mine to do')
+        expect(within(card).getByRole('button', { name: /Start/ })).toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: /New task/ })).toBeNull()
+        expect(screen.queryByText('Create a new task')).toBeNull()
+        expect(screen.queryByRole('combobox', { name: 'View' })).toBeNull()
+        expect(api.getWorkTaskDepartments).not.toHaveBeenCalled()
     })
 })
