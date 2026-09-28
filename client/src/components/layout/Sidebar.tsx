@@ -216,6 +216,13 @@ const Sidebar = observer(function Sidebar() {
     const onAdminSection = (...sections: string[]) =>
         sections.some((s) => path === `/admin/${s}` || path.startsWith(`/admin/${s}/`))
 
+    // Tasks is neither leave nor time, and not only a manager's team: Managers and
+    // HR Administrators hand each other tasks, so both get the same section for it.
+    const collaborationEntries: NavEntry[] = [
+        { kind: 'section', label: 'Collaboration' },
+        { kind: 'item', label: 'Tasks', icon: <TaskAltRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTasks(), active: onPage('/tasks') },
+    ]
+
     let navEntries: NavEntry[]
     if (isAdminUser) {
         navEntries = [
@@ -242,7 +249,6 @@ const Sidebar = observer(function Sidebar() {
                 { kind: 'item', label: 'Leave Management', icon: <CalendarMonthRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamLeave(), active: onPage('/leave-management') } as NavEntry,
                 { kind: 'item', label: 'Attendance', icon: <ApartmentRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToCompanyAttendance(), active: onPage('/attendance-management') } as NavEntry,
                 { kind: 'item', label: 'Timesheets', icon: <AccessTimeRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamTimesheets(), active: onPage('/timesheets-management') } as NavEntry,
-                { kind: 'item', label: 'Tasks', icon: <TaskAltRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTasks(), active: onPage('/tasks') } as NavEntry,
             ] : []),
             ...(isSystemAdminUser ? [
                 { kind: 'section', label: 'Configuration' } as NavEntry,
@@ -262,6 +268,8 @@ const Sidebar = observer(function Sidebar() {
                 // The faults the system hit — what the System Administrator's bell points at.
                 { kind: 'item', label: 'System Log', icon: <BugReportRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('system-log'), active: onAdminSection('system-log') } as NavEntry,
             ] : []),
+            // Tasks is the HR Administrator's too, not the System Administrator's.
+            ...(!isSystemAdminUser ? collaborationEntries : []),
         ]
     } else if (isManagerUser) {
         // A manager reads two kinds of page: their own records and their team's.
@@ -283,7 +291,7 @@ const Sidebar = observer(function Sidebar() {
             // Not GroupRounded like Leave Management above: two entries in the same
             // section reading as the same icon is what made them hard to tell apart.
             { kind: 'item', label: 'Approvals', icon: <FactCheckRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamTimesheets(), active: onPage('/timesheets-management') },
-            { kind: 'item', label: 'Tasks', icon: <TaskAltRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTasks(), active: onPage('/tasks') },
+            ...collaborationEntries,
         ]
     } else {
         navEntries = [

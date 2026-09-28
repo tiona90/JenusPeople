@@ -156,4 +156,16 @@ describe('Tasks is offered to Managers and HR Administrators only', () => {
         renderSidebarAs({ ...EMPLOYEE, roles: [role] as UserInfo['roles'] })
         expect(screen.queryByText('Tasks') != null).toBe(shown)
     })
+
+    // Tasks is neither leave nor time, and not only the manager's team: it sits in a
+    // section of its own, the same one for both roles, after everything else.
+    it.each(['Manager', 'HR Administrator'])('puts Tasks under Collaboration for a %s', (role) => {
+        renderSidebarAs({ ...EMPLOYEE, roles: [role] as UserInfo['roles'] })
+        const heading = screen.getByText('Collaboration')
+        const tasks = screen.getByText('Tasks')
+        expect(heading.compareDocumentPosition(tasks) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+        for (const other of ['Leave Management', 'Dashboard']) {
+            expect(screen.getByText(other).compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+        }
+    })
 })
