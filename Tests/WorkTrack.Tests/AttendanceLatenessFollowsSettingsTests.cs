@@ -163,15 +163,17 @@ public class AttendanceLatenessFollowsSettingsTests
     public async Task History_grades_a_finished_day_late_by_the_local_start()
     {
         using var db = SeedWorld();
-        db.AttendanceEvents.Add(Event(Eve, Today.AddHours(9), AttendanceEventType.CheckOut));
-        db.AttendanceEvents.Add(Event(Bob, Today.AddHours(9), AttendanceEventType.CheckOut));
+        // Checked out a full 9-hour (540 min) day after each check-in, so neither
+        // reads as short — only Eve's late start is left to grade.
+        db.AttendanceEvents.Add(Event(Eve, Today.AddHours(7).AddMinutes(30).AddMinutes(540), AttendanceEventType.CheckOut));
+        db.AttendanceEvents.Add(Event(Bob, Today.AddHours(6).AddMinutes(30).AddMinutes(540), AttendanceEventType.CheckOut));
         db.SaveChanges();
 
         var eve = await new GetMyAttendanceHistory.Handler(db).Handle(
-            new GetMyAttendanceHistory.Query { RequestingUserId = $"u-{Eve}", Days = 1, NowUtc = Today.AddHours(10) },
+            new GetMyAttendanceHistory.Query { RequestingUserId = $"u-{Eve}", Days = 1, NowUtc = Today.AddHours(17) },
             CancellationToken.None);
         var bob = await new GetMyAttendanceHistory.Handler(db).Handle(
-            new GetMyAttendanceHistory.Query { RequestingUserId = $"u-{Bob}", Days = 1, NowUtc = Today.AddHours(10) },
+            new GetMyAttendanceHistory.Query { RequestingUserId = $"u-{Bob}", Days = 1, NowUtc = Today.AddHours(17) },
             CancellationToken.None);
 
         Assert.Equal("late", Assert.Single(eve.Value!).Status);

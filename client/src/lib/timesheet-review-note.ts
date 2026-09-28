@@ -3,7 +3,9 @@ import type { TimesheetStatusHistory } from './types'
 /**
  * A reviewer's note on a timesheet is a status-history row with a comment: the
  * reason a manager gave when rejecting, or the reason an HR Administrator gave
- * when cancelling an approval (ReopenTimesheet, Approved → Submitted). The
+ * when cancelling an approval (ReopenTimesheet, Approved → Rejected, which hands
+ * the sheet back to the employee to correct; rows written before that went
+ * Approved → Submitted and still read as a cancelled approval). The
  * server writes it and emails it; these helpers put it on screen, because a
  * manager whose queue holds a week they already approved needs to know why it
  * is back without hunting for the email.
@@ -34,7 +36,7 @@ export function currentReviewNote(status: string, latest: TimesheetStatusHistory
 }
 
 export function isCancelledApproval(h: TimesheetStatusHistory): boolean {
-    return h.oldStatus === 'Approved' && h.newStatus === 'Submitted'
+    return h.oldStatus === 'Approved' && (h.newStatus === 'Rejected' || h.newStatus === 'Submitted')
 }
 
 /** "Approval cancelled by Helen HR", "Rejected by Mark Manager", or a plain "Note from …". */

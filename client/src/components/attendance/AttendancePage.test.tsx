@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AppSettings, AttendanceToday } from '../../lib/types'
+import type { AppSettings, AttendanceHistoryDay, AttendanceToday } from '../../lib/types'
 import AttendancePage from './AttendancePage'
 
 /*
@@ -139,5 +139,44 @@ describe('My Attendance says how the break compares with the allowance', () => {
 
         expect(await screen.findByText('30 min over')).toBeInTheDocument()
         expect(screen.getByText('15 min under')).toBeInTheDocument()
+    })
+})
+
+function historyDay(overrides: Partial<AttendanceHistoryDay>): AttendanceHistoryDay {
+    return {
+        date: '2026-09-22', status: 'complete', checkInAt: '2026-09-22T08:00:00Z', checkOutAt: '2026-09-22T17:00:00Z',
+        totalBreakMinutes: 60, workedMinutes: 480, breakVarianceMinutes: null,
+        ...overrides,
+    }
+}
+
+describe('My Attendance flags a short day and reads leave as leave', () => {
+    it('grades a short day with how far short it was', async () => {
+        api.getAttendanceHistory.mockResolvedValue([
+            historyDay({ status: 'short', workedMinutes: 390, shortByMinutes: 90, targetMinutes: 480 }),
+        ])
+        await renderPage(SETTINGS)
+
+        expect(await screen.findByText('1h 30m short')).toBeInTheDocument()
+    })
+
+    it('reads a leave day as leave and a weekend as a day off', async () => {
+        api.getAttendanceHistory.mockResolvedValue([
+            historyDay({ date: '2026-09-19', status: 'off', checkInAt: null, checkOutAt: null, workedMinutes: 0, totalBreakMinutes: 0 }),
+            historyDay({ date: '2026-09-21', status: 'leave', onLeave: true, checkInAt: null, checkOutAt: null, workedMinutes: 0, totalBreakMinutes: 0 }),
+        ])
+        await renderPage(SETTINGS)
+
+        expect(await screen.findByText('On leave')).toBeInTheDocument()
+        expect(screen.getByText('Day off')).toBeInTheDocument()
+        expect(screen.queryByText('No record')).not.toBeInTheDocument()
+    })
+
+    it('reads an older API with no short-day fields as it always did', async () => {
+        api.getAttendanceHistory.mockResolvedValue([historyDay({ status: 'complete' })])
+        await renderPage(SETTINGS)
+
+        expect(await screen.findByText('Complete')).toBeInTheDocument()
+        expect(screen.queryByText(/short$/)).not.toBeInTheDocument()
     })
 })

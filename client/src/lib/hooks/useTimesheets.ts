@@ -29,7 +29,7 @@ type QueryOpts<TData> = Omit<
 export function useTimesheets(options?: QueryOpts<Timesheet[]>) {
     return useQuery({
         queryKey: queryKeys.timesheets,
-        queryFn: getTimesheets,
+        queryFn: () => getTimesheets(),
         ...options,
     })
 }
@@ -37,7 +37,7 @@ export function useTimesheets(options?: QueryOpts<Timesheet[]>) {
 export function useMyTimesheets(options?: QueryOpts<Timesheet[]>) {
     return useQuery({
         queryKey: queryKeys.myTimesheets,
-        queryFn: getMyTimesheets,
+        queryFn: () => getMyTimesheets(),
         ...options,
     })
 }

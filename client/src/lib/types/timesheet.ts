@@ -40,4 +40,16 @@ export interface Timesheet {
    * the flag, which reads as not with the manager.
    */
   awaitingManager?: boolean;
+  /**
+   * Minutes attendance recorded per weekday, parallel to dailyHours. Absent or
+   * null for an older API and for a sheet the server does not compare (older than
+   * its comparison window).
+   */
+  attendanceMinutes?: number[] | null;
+  /** Logged minus attended per weekday beyond the grace; null where the day agrees. */
+  dayMismatchMinutes?: (number | null)[] | null;
+  /** Approved full-day leave per weekday. */
+  onLeaveDays?: boolean[] | null;
+  /** How many weekdays disagree with attendance. */
+  mismatchDayCount?: number;
 }

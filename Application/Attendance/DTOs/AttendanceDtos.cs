@@ -21,6 +21,11 @@ public record TodayStateDto(
     bool IsAutoBreak,
     int? BreakVarianceMinutes = null);
 
+// ShortByMinutes, wherever it appears below, is DailyHoursRule's verdict: minutes
+// under the day's target (the working hours net of the break, halved for a half
+// day of approved leave) beyond the 15-minute grace, on a working day that is
+// over. Null when there is nothing to say — a day within the grace, on leave, not
+// a working day, or still open. OnLeave is approved full-day leave.
 public record DayHistoryDto(
     string Date,
     string Status,
@@ -28,7 +33,10 @@ public record DayHistoryDto(
     DateTime? CheckOutAt,
     int TotalBreakMinutes,
     int WorkedMinutes,
-    int? BreakVarianceMinutes = null);
+    int? BreakVarianceMinutes = null,
+    int? ShortByMinutes = null,
+    bool OnLeave = false,
+    int? TargetMinutes = null);
 
 // BreakMinutes is the break taken so far today, a running break included
 // (WorkingDaySchedule.BreakMinutesTaken), so the board can quote it beside
@@ -47,7 +55,12 @@ public record TeamMemberAttendanceDto(
     int BreakMinutes = 0,
     int? BreakVarianceMinutes = null);
 
-public record WeekDayHoursDto(string Date, int? WorkedMinutes, string? Note);
+public record WeekDayHoursDto(
+    string Date,
+    int? WorkedMinutes,
+    string? Note,
+    int? ShortByMinutes = null,
+    bool OnLeave = false);
 
 public record TeamWeekRowDto(
     string EmployeeId,
@@ -55,9 +68,22 @@ public record TeamWeekRowDto(
     List<WeekDayHoursDto> Days,
     int TotalMinutes);
 
+// One person short on the previous working day (ShortDayDigest), for the
+// dashboards' "short days" line.
+public record ShortDayDto(
+    string EmployeeId,
+    string EmployeeName,
+    string DepartmentName,
+    int WorkedMinutes,
+    int ShortByMinutes);
+
+// ShortDaysDate is the previous working day ShortDays judges ("yyyy-MM-dd"),
+// null when none was found in the look-back.
 public record TeamAttendanceDto(
     List<TeamMemberAttendanceDto> Members,
-    List<TeamWeekRowDto> Week);
+    List<TeamWeekRowDto> Week,
+    string? ShortDaysDate = null,
+    List<ShortDayDto>? ShortDays = null);
 
 // History endpoint: per-day earliest-check-in time per team member over the
 // last N days. The check-in is expressed as minutes-from-midnight in the org's

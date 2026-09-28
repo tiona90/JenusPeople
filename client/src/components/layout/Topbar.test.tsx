@@ -152,6 +152,11 @@ describe("An HR Administrator's bell", () => {
         expect(screen.queryByText(/Leave approved/)).not.toBeInTheDocument()
         expect(api.getLeaveStatusHistories).not.toHaveBeenCalled()
         expect(api.getSystemErrors).not.toHaveBeenCalled()
+        // The bell polls every 15 seconds and renders no mismatch chip, so it never
+        // asks the server for the attendance comparison.
+        for (const call of api.getTimesheets.mock.calls) {
+            expect((call[0] as { includeAttendance?: boolean } | undefined)?.includeAttendance).not.toBe(true)
+        }
     })
 })
 

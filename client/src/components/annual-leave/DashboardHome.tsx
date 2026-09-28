@@ -27,6 +27,7 @@ import { isAwaitingDocument } from '../../lib/attachment-policy'
 import { isAdministrator, isSystemAdministrator } from '../../lib/roles'
 import { activityIcon } from '../../lib/hooks/useAttendance'
 import { describeBreakVariance } from '../../lib/break-policy'
+import ShortDaysNote from '../attendance/ShortDaysNote'
 import { useOfferedLeaveTypes } from '../../lib/hooks'
 import { buildLeaveBalanceRows, type LeaveBalanceRow } from '../../lib/leave-balance-rows'
 import { useStore } from '../../lib/mobx'
@@ -160,7 +161,7 @@ function EmployeeDashboard({ user }: { user: UserInfo }) {
     const { data: profiles = [] } = useQuery({ queryKey: ['employeeProfiles'], queryFn: getEmployeeProfiles })
     const { data: leaves = [], isLoading: isLoadingLeaves } = useQuery({ queryKey: ['annualLeaves'], queryFn: getAnnualLeaves })
     const { data: leaveTypes = [] } = useQuery({ queryKey: ['leaveTypes'], queryFn: getLeaveTypes })
-    const { data: timesheets = [], isLoading: isLoadingTs } = useQuery({ queryKey: ['timesheets', 'mine'], queryFn: getMyTimesheets })
+    const { data: timesheets = [], isLoading: isLoadingTs } = useQuery({ queryKey: ['timesheets', 'mine'], queryFn: () => getMyTimesheets() })
     const { data: settings } = useQuery({ queryKey: ['appSettings'], queryFn: getAppSettings })
 
     const isLoading = isLoadingLeaves || isLoadingTs
@@ -393,7 +394,7 @@ function ManagerDashboard({ user }: { user: UserInfo }) {
     const today = useMemo(() => new Date(), [])
 
     const { data: leaves = [], isLoading: lLoading } = useQuery({ queryKey: ['annualLeaves'], queryFn: getAnnualLeaves })
-    const { data: timesheets = [], isLoading: tLoading } = useQuery({ queryKey: ['timesheets'], queryFn: getTimesheets })
+    const { data: timesheets = [], isLoading: tLoading } = useQuery({ queryKey: ['timesheets'], queryFn: () => getTimesheets() })
     const { data: leaveTypes = [] } = useQuery({ queryKey: ['leaveTypes'], queryFn: getLeaveTypes })
     const { data: profiles = [] } = useQuery({ queryKey: ['employeeProfiles'], queryFn: getEmployeeProfiles })
     const { data: team } = useQuery({ queryKey: ['attendance', 'team'], queryFn: getTeamAttendance })
@@ -890,7 +891,7 @@ function HrDashboard({ user }: { user: UserInfo }) {
     const now = useNow()
 
     const { data: leaves = [], isLoading: lLoading } = useQuery({ queryKey: ['annualLeaves'], queryFn: getAnnualLeaves })
-    const { data: timesheets = [], isLoading: tLoading } = useQuery({ queryKey: ['timesheets'], queryFn: getTimesheets })
+    const { data: timesheets = [], isLoading: tLoading } = useQuery({ queryKey: ['timesheets'], queryFn: () => getTimesheets() })
     const { data: leaveTypes = [] } = useQuery({ queryKey: ['leaveTypes'], queryFn: getLeaveTypes })
     const { data: profiles = [] } = useQuery({ queryKey: ['employeeProfiles'], queryFn: getEmployeeProfiles })
     const { data: company } = useQuery({ queryKey: ['attendance', 'company'], queryFn: getCompanyAttendance })
@@ -2063,6 +2064,11 @@ function TeamStatusNowCard({ team }: { team: TeamAttendance | null }) {
             <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '8px' }}>
                 {team.members.slice(0, 12).map((m) => <TeamMemberTile key={m.employeeId} member={m} />)}
             </Box>
+            {(team.shortDays?.length ?? 0) > 0 && (
+                <Box sx={{ mt: '12px' }}>
+                    <ShortDaysNote date={team.shortDaysDate} people={team.shortDays} />
+                </Box>
+            )}
         </ActionCard>
     )
 }

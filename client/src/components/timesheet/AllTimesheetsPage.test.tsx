@@ -97,6 +97,14 @@ function openStatusFilter() {
 
 beforeEach(() => vi.clearAllMocks())
 
+describe('All Timesheets asks for the attendance comparison', () => {
+    it('passes the opt-in flag, since its rows render the mismatch chip', async () => {
+        await renderPage(hrAdministrator)
+
+        expect(api.getTimesheets).toHaveBeenCalledWith({ includeAttendance: true })
+    })
+})
+
 describe('the status filter on All Timesheets offers only what the list can show', () => {
     it('has no Draft option for an HR Administrator', async () => {
         await renderPage(hrAdministrator)
@@ -195,5 +203,48 @@ describe('the daily breakdown files each entry under its own date', () => {
         expect(monday.getByText('ELLS-001')).toBeInTheDocument()
         expect(monday.getByText('CJS-001')).toBeInTheDocument()
         expect(screen.queryByText(/Project #/)).not.toBeInTheDocument()
+    })
+})
+
+describe('each timesheet day is checked against attendance', () => {
+    const mismatched = sheet({
+        id: 'ts-mm',
+        employeeName: 'Mia Mismatch',
+        status: 'Submitted',
+        periodStart: '2026-09-21T00:00:00',
+        periodEnd: '2026-09-27T00:00:00',
+        dailyHours: [8, 8, 0, 8, 0],
+        attendanceMinutes: [480, 390, 0, 0, 0],
+        dayMismatchMinutes: [null, 90, null, 480, null],
+        onLeaveDays: [false, false, true, false, false],
+        mismatchDayCount: 2,
+        entries: [
+            { id: 'e1', timesheetId: 'ts-mm', projectId: 6, date: '2026-09-21T00:00:00', hoursWorked: 8 },
+            { id: 'e2', timesheetId: 'ts-mm', projectId: 6, date: '2026-09-22T00:00:00', hoursWorked: 8 },
+            { id: 'e4', timesheetId: 'ts-mm', projectId: 6, date: '2026-09-24T00:00:00', hoursWorked: 8 },
+        ] as TimesheetEntry[],
+    })
+
+    it('puts a chip on the row', async () => {
+        await renderPage(systemAdministrator, [mismatched])
+
+        expect(screen.getByText("2 days don't match attendance")).toBeInTheDocument()
+    })
+
+    it('says on each day card what was logged against what was attended', async () => {
+        await renderPage(systemAdministrator, [mismatched])
+        fireEvent.click(screen.getByText('Mia Mismatch'))
+        await screen.findByText('Daily breakdown')
+
+        expect(dayCard('2026-09-22').getByText('Logged 8h · attended 6h 30m')).toBeInTheDocument()
+        expect(dayCard('2026-09-24').getByText('Logged 8h · no attendance')).toBeInTheDocument()
+        expect(dayCard('2026-09-23').getByText('On leave')).toBeInTheDocument()
+        expect(dayCard('2026-09-21').queryByText(/^Logged/)).not.toBeInTheDocument()
+    })
+
+    it('shows nothing for a sheet from an older API', async () => {
+        await renderPage(systemAdministrator, [approved])
+
+        expect(screen.queryByText(/match attendance/)).not.toBeInTheDocument()
     })
 })

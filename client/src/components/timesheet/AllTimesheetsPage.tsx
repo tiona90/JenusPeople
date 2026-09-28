@@ -31,6 +31,7 @@ import { isHrAdministrator } from '../../lib/roles'
 import { softBg, type SxColor } from '../../lib/theme-tokens'
 import { ActionBtn, RejectReasonDialog } from '../ui'
 import { buildTimesheetsCsv } from './timesheet-csv'
+import MismatchChip from './MismatchChip'
 import TimesheetDailyBreakdown from './TimesheetDailyBreakdown'
 
 const BLUE = 'primary.main'
@@ -194,7 +195,7 @@ function ReviewRow({
     deadlineTime: string
     /** The viewer's own timesheet: shown, but nobody decides their own hours. */
     own?: boolean
-    /** The HR Administrator's Cancel approval on an approved sheet — back to the manager for review. */
+    /** The HR Administrator's Cancel approval on an approved sheet — back to the employee to correct. */
     canReopen?: boolean
     onReopen?: () => void
 }) {
@@ -258,6 +259,9 @@ function ReviewRow({
                         }}>
                             {deptName}
                         </Box>
+                        {(ts.mismatchDayCount ?? 0) > 0 && (
+                            <Box sx={{ mt: '2px' }}><MismatchChip count={ts.mismatchDayCount} /></Box>
+                        )}
                     </Box>
                 </Stack>
 
@@ -372,9 +376,11 @@ export default function AllTimesheetsPage() {
     const [rejectReason, setRejectReason] = useState('')
     const [rejectError, setRejectError] = useState('')
 
+    // Its own key, since the bell reads ['timesheets'] without the attendance
+    // comparison; still under 'timesheets', so every prefix invalidation reaches it.
     const { data: timesheets = [], isLoading } = useQuery({
-        queryKey: ['timesheets'],
-        queryFn: getTimesheets,
+        queryKey: ['timesheets', 'with-attendance'],
+        queryFn: () => getTimesheets({ includeAttendance: true }),
     })
 
     /* Nobody decides their own hours. An HR Administrator's own department-less
@@ -499,8 +505,8 @@ export default function AllTimesheetsPage() {
         [timesheets, isHr],
     )
 
-    /* The HR Administrator's Cancel approval: the sheet goes back to Submitted for the
-       manager to review again (ReopenTimesheet), with a reason the employee reads. */
+    /* The HR Administrator's Cancel approval: the sheet goes back to Rejected for the
+       employee to correct and resubmit (ReopenTimesheet), with a reason they read. */
     const reopenMutation = useMutation({
         mutationFn: ({ id, comment }: { id: string; comment: string }) => reopenTimesheet(id, comment),
         onSuccess: async () => {
@@ -1074,7 +1080,7 @@ export default function AllTimesheetsPage() {
                 })
             )}
 
-            {/* Cancel approval — the sheet goes back to the manager for review */}
+            {/* Cancel approval — the sheet goes back to the employee to correct and resubmit */}
             <RejectReasonDialog
                 open={reopenDialog !== null}
                 title="Cancel approved timesheet"

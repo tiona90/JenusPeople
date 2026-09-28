@@ -1,6 +1,8 @@
+using System.Globalization;
 using Application.Attendance.DTOs;
 using Application.Attendance.Support;
 using Application.Core;
+using Application.Settings.Support;
 using Domain;
 using Domain.Services;
 using MediatR;
@@ -15,14 +17,14 @@ namespace Application.Attendance.Queries;
 /// </summary>
 public class GetCompanyAttendance
 {
-    /// <summary>
-    /// Thresholds the dashboard judgements rest on. "Late" itself is not one of
-    /// them any more: it comes from <see cref="WorkingDaySchedule"/>, the org's
-    /// working-hours start in its own time zone. It used to be a check-in at or
-    /// after 10:00 UTC against a nominal 09:00 UTC start, which on a UTC+3
-    /// deployment flagged nothing before one in the afternoon.
-    /// </summary>
-    private const int OvertimeMinutes = 600;
+    // Thresholds the dashboard judgements rest on. "Late" itself is not one of
+    // them any more: it comes from WorkingDaySchedule, the org's working-hours
+    // start in its own time zone. It used to be a check-in at or after 10:00 UTC
+    // against a nominal 09:00 UTC start, which on a UTC+3 deployment flagged
+    // nothing before one in the afternoon. Overtime is not one either: it is the
+    // scheduled day net of the break (WorkingDaySchedule.ScheduledMinutes) plus
+    // DailyHoursRule's grace, where it used to be a flat ten hours.
+
     /// <summary>
     /// How long past the start an empty morning is left alone before it is
     /// reported as an absence. Someone can be late; a whole hour with nothing is
@@ -37,6 +39,7 @@ public class GetCompanyAttendance
     private const int NotCheckedInListLimit = 5;
     private const int LateNamesShown = 3;
     private const int OverBreakNamesShown = 3;
+    private const int ShortDayNamesShown = 3;
 
     public class Query : IRequest<Result<CompanyAttendanceDto>>
     {
@@ -62,7 +65,15 @@ public class GetCompanyAttendance
         public async Task<Result<CompanyAttendanceDto>> Handle(Query request, CancellationToken cancellationToken)
         {
             var now = request.NowUtc ?? DateTime.UtcNow;
-            var schedule = await WorkingDaySchedule.LoadAsync(context, cancellationToken);
+            var settings = await context.AppSettings.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
+            var schedule = WorkingDaySchedule.From(settings);
+
+            // An empty morning is news only on a day somebody is expected to work,
+            // and only once the local clock is an hour past the start. It used to
+            // ask the clock alone, so every weekend and public holiday reported the
+            // whole company as not checked in.
+            var reportAbsences = schedule.IsPastStart(now, NotCheckedInGraceMinutes)
+                && await WorkingWeek.IsWorkingDayAsync(context, settings, WorkingWeek.TodayLocal(settings, now), cancellationToken);
 
             var profilesQuery = AttendanceDay.ExcludeAdmins(
                 context.EmployeeProfiles
@@ -97,9 +108,14 @@ public class GetCompanyAttendance
             var avgMinutesAll = workedPeopleAll > 0 ? totals.Minutes / workedPeopleAll : 0;
 
             var recent = await BuildRecentActivityAsync(
-                profiles, profileIds, todayByEmployee, onLeave, schedule, now, cancellationToken);
+                profiles, profileIds, todayByEmployee, onLeave, schedule, reportAbsences, now, cancellationToken);
 
-            var issues = BuildIssues(profiles, stateByProfileId, onLeave, departments, totals, schedule, now);
+            var today = DateOnly.FromDateTime(AttendanceDay.UtcDayStart(now));
+            var hours = await DailyHoursContext.LoadAsync(
+                context, profileIds, today.AddDays(-ShortDayDigest.LookBackDays), today, now, cancellationToken);
+            var shortDays = await ShortDayDigest.BuildAsync(context, profiles, hours, now, cancellationToken);
+
+            var issues = BuildIssues(profiles, stateByProfileId, onLeave, departments, totals, schedule, shortDays, reportAbsences, now);
 
             return Result<CompanyAttendanceDto>.Success(new CompanyAttendanceDto(
                 totals.Total,
@@ -185,6 +201,7 @@ public class GetCompanyAttendance
             Dictionary<string, List<AttendanceEvent>> todayByEmployee,
             HashSet<string> onLeave,
             WorkingDaySchedule schedule,
+            bool reportAbsences,
             DateTime now,
             CancellationToken cancellationToken)
         {
@@ -213,10 +230,10 @@ public class GetCompanyAttendance
                     BreakOverAt(e, todayByEmployee, schedule));
             }).ToList();
 
-            // Synthetic "Not checked in" rows, added only once the morning is late
-            // enough for an absence to mean anything. They carry no timestamp,
-            // which is the only way a consumer can tell them from real events.
-            if (schedule.IsPastStart(now, NotCheckedInGraceMinutes))
+            // Synthetic "Not checked in" rows, added only on a working day once the
+            // morning is late enough for an absence to mean anything. They carry no
+            // timestamp, which is the only way a consumer can tell them from real events.
+            if (reportAbsences)
             {
                 var notChecked = profiles
                     .Where(p => !onLeave.Contains(p.Id) && !todayByEmployee.ContainsKey(p.Id))
@@ -272,13 +289,15 @@ public class GetCompanyAttendance
             List<DeptAttendanceDto> departments,
             Totals totals,
             WorkingDaySchedule schedule,
+            ShortDayDigest.Digest? shortDays,
+            bool reportAbsences,
             DateTime now)
         {
             var issues = new List<IssueDto>();
 
-            // 1) Departments with people who have not checked in, once the local
-            //    clock is an hour past the start.
-            if (schedule.IsPastStart(now, NotCheckedInGraceMinutes))
+            // 1) Departments with people who have not checked in, on a working day
+            //    once the local clock is an hour past the start.
+            if (reportAbsences)
             {
                 foreach (var dept in departments.Where(d => d.Out > 0))
                 {
@@ -310,6 +329,20 @@ public class GetCompanyAttendance
                     "warning",
                     $"{lateNames.Count} late check-in{(lateNames.Count == 1 ? "" : "s")}",
                     string.Join(" · ", lateNames.Take(LateNamesShown))));
+            }
+
+            // 2b) Short days on the previous working day: under the day's target
+            //     net of the break, with no approved leave to excuse it
+            //     (DailyHoursRule). Today is not judged; it is not over.
+            if (shortDays is { People.Count: > 0 } digest)
+            {
+                var n = digest.People.Count;
+                issues.Add(new IssueDto(
+                    "warning",
+                    $"{n} short day{(n == 1 ? "" : "s")} on {digest.Day.ToString("ddd d MMM", CultureInfo.InvariantCulture)}",
+                    string.Join(" · ", digest.People
+                        .Take(ShortDayNamesShown)
+                        .Select(p => $"{p.EmployeeName} ({p.DepartmentName}) · {DailyHoursRule.Describe(p.ShortByMinutes)} short"))));
             }
 
             // 3) Over the break allowance, reported as minutes over the configured
@@ -354,12 +387,16 @@ public class GetCompanyAttendance
                     string.Join(" · ", breakdown)));
             }
 
-            // 5) Overtime. Always reported, so the panel says something reassuring
-            // when nothing is wrong rather than going blank.
-            var overtime = profiles.Count(p => stateByProfileId[p.Id].WorkedMinutes > OvertimeMinutes);
+            // 5) Overtime, against the scheduled day net of the break plus the grace,
+            // people on leave left out. Always reported, so the panel says something
+            // reassuring when nothing is wrong rather than going blank.
+            var overtimeThreshold = schedule.ScheduledMinutes + DailyHoursRule.GraceMinutes;
+            var overtime = schedule.ScheduledMinutes <= 0
+                ? 0
+                : profiles.Count(p => !onLeave.Contains(p.Id) && stateByProfileId[p.Id].WorkedMinutes > overtimeThreshold);
             issues.Add(overtime == 0
                 ? new IssueDto("success", "No unusual overtime", "All employees within healthy hour ranges")
-                : new IssueDto("warning", $"{overtime} over 10 hours today", "Consider checking in"));
+                : new IssueDto("warning", $"{overtime} over the {DailyHoursRule.Describe(schedule.ScheduledMinutes)} working day today", "Consider checking in"));
 
             return issues;
         }

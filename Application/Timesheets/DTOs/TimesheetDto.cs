@@ -36,5 +36,25 @@ namespace Application.Timesheets.DTOs
         /// the department has none, or every manager is on leave.
         /// </summary>
         public bool AwaitingManager { get; set; }
+
+        /// <summary>
+        /// Minutes attendance recorded per weekday (index 0 = Monday … 4 = Friday),
+        /// parallel to <see cref="DailyHours"/>. Null for a sheet older than
+        /// <c>TimesheetAttendanceComparison.WindowWeeks</c>, which is not compared.
+        /// </summary>
+        public List<int>? AttendanceMinutes { get; set; }
+
+        /// <summary>
+        /// Logged minus attended per weekday, in minutes, when they differ by more
+        /// than the grace (<c>DailyHoursRule.MismatchMinutes</c>); null on a day that
+        /// agrees, a day of approved leave, or a day still open.
+        /// </summary>
+        public List<int?>? DayMismatchMinutes { get; set; }
+
+        /// <summary>Approved full-day leave per weekday.</summary>
+        public List<bool>? OnLeaveDays { get; set; }
+
+        /// <summary>How many weekdays disagree with attendance; 0 when not compared.</summary>
+        public int MismatchDayCount { get; set; }
     }
 }

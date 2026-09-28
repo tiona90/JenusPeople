@@ -219,7 +219,7 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
 
     const { data: myTimesheets = [] } = useQuery({
         queryKey: ['timesheets', 'mine'],
-        queryFn: getMyTimesheets,
+        queryFn: () => getMyTimesheets(),
     })
 
     const currentTs: Timesheet | undefined = useMemo(() => {

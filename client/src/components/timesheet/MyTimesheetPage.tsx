@@ -7,10 +7,12 @@ import { useState } from 'react'
 import { SweetAlert } from '../ui'
 import { deleteTimesheet, getMyTimesheets, getTimesheetStatusHistories } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
+import { describeMismatch } from '../../lib/daily-hours'
 import { useStore } from '../../lib/mobx'
 import type { Timesheet, TimesheetStatus, TimesheetStatusHistory, UserInfo } from '../../lib/types'
 import { softBg, type SxColor } from '../../lib/theme-tokens'
 import { isCancelledApproval, latestCommentByTimesheet } from '../../lib/timesheet-review-note'
+import MismatchChip from './MismatchChip'
 
 
 const WEEKLY_TARGET = 40
@@ -79,9 +81,12 @@ export default function MyTimesheetPage({ user: _user }: { user: UserInfo }) {
     const [statusTab, setStatusTab] = useState<StatusTab>('all')
     const [apiError, setApiError] = useState('')
 
+    // Its own key, since the new-timesheet page reads ['timesheets', 'mine']
+    // without the attendance comparison; still under that prefix, so its
+    // invalidations reach this one.
     const { data: timesheets = [], isLoading } = useQuery({
-        queryKey: ['timesheets', 'mine'],
-        queryFn: getMyTimesheets,
+        queryKey: ['timesheets', 'mine', 'with-attendance'],
+        queryFn: () => getMyTimesheets({ includeAttendance: true }),
     })
 
     const { data: histories = [] } = useQuery({
@@ -761,6 +766,7 @@ function TimesheetCard({ t, comment, onEdit, onView, onDelete }: {
                             </Box>
                         </Box>
                         <StatusBadge status={status} />
+                        <MismatchChip count={t.mismatchDayCount} />
                     </Box>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: '18px', mb: '10px', flexWrap: 'wrap' }}>
                         <SummaryItem label="Total" value={`${hours.toFixed(1)}h`} tone={isUnder ? 'amber' : undefined} />
@@ -772,16 +778,17 @@ function TimesheetCard({ t, comment, onEdit, onView, onDelete }: {
                         {DAY_LABELS.map((d, i) => {
                             const h = daily[i] ?? 0
                             const filled = h > 0
+                            const mismatch = describeMismatch(h, t.attendanceMinutes?.[i], t.dayMismatchMinutes?.[i])
                             return (
-                                <Box key={d} sx={{
+                                <Box key={d} title={mismatch ?? undefined} sx={{
                                     flex: 1, p: '6px 8px', borderRadius: '5px', textAlign: 'center',
                                     fontSize: 11, minWidth: 0,
-                                    bgcolor: filled ? softBg('success') : 'action.hover',
+                                    bgcolor: mismatch ? softBg('warning') : filled ? softBg('success') : 'action.hover',
                                 }}>
                                     <Box sx={{ fontSize: 9, color: 'text.disabled', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{d}</Box>
                                     <Box sx={{
                                         fontWeight: filled ? 600 : 500,
-                                        color: filled ? 'success.dark' : 'text.disabled',
+                                        color: mismatch ? 'warning.dark' : filled ? 'success.dark' : 'text.disabled',
                                         fontVariantNumeric: 'tabular-nums', mt: '2px',
                                     }}>
                                         {filled ? `${h.toFixed(1)}h` : '—'}
@@ -893,6 +900,17 @@ function FeedbackBox({ t, comment }: { t: Timesheet; comment?: TimesheetStatusHi
                 <Box>
                     Approved{comment ? <> by <Box component="strong">{comment.changedByUserName}</Box></> : ''}
                     {t.approvedAt ? ` on ${formatDate(t.approvedAt)}` : ''}
+                </Box>
+            </Box>
+        )
+    }
+    if (t.status === 'Rejected' && comment?.comment && isCancelledApproval(comment)) {
+        return (
+            <Box sx={feedbackSx(softBg('warning'), 'warning.dark', 'warning.main')}>
+                <Box component="span">💬</Box>
+                <Box>
+                    Approval cancelled by <Box component="strong">{comment.changedByUserName}</Box>: "{comment.comment}"
+                    {' '}· edit and resubmit
                 </Box>
             </Box>
         )

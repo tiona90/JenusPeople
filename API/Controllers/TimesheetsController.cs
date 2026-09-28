@@ -96,7 +96,11 @@ namespace API.Controllers
         // GET: api/timesheets
         [HttpGet]
         [Authorize]
-        public async Task<ActionResult<List<TimesheetDto>>> GetTimesheets([FromQuery] bool myOnly = false, [FromQuery] int? page = null, [FromQuery] int? pageSize = null)
+        public async Task<ActionResult<List<TimesheetDto>>> GetTimesheets(
+            [FromQuery] bool myOnly = false,
+            [FromQuery] int? page = null,
+            [FromQuery] int? pageSize = null,
+            [FromQuery] bool includeAttendance = false)
         {
             var userId = ResolveUserId();
             var isAdmin = User.IsSystemAdministrator();
@@ -110,6 +114,7 @@ namespace API.Controllers
                 IsHrAdministrator = !myOnly && User.IsHrAdministrator(),
                 Page = page,
                 PageSize = pageSize,
+                IncludeAttendanceComparison = includeAttendance,
             });
             return Paged(result);
         }
@@ -261,7 +266,7 @@ namespace API.Controllers
         }
 
         // PATCH: api/timesheets/{id}/reopen — the HR Administrator takes an approval
-        // back; the sheet returns to Submitted for the manager to review again.
+        // back; the sheet returns to Rejected for the employee to correct and resubmit.
         [HttpPatch("{id}/reopen")]
         [Authorize(Roles = AppRoles.HrAdministrator)]
         public async Task<IActionResult> ReopenTimesheet(string id, [FromBody] RejectTimesheetRequest? body, CancellationToken cancellationToken)

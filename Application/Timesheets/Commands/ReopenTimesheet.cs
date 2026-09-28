@@ -10,11 +10,13 @@ namespace Application.Timesheets.Commands;
 
 /// <summary>
 /// The HR Administrator takes an approval back — the timesheet counterpart of
-/// cancelling an approved leave. The sheet returns to <see cref="TimesheetStatus.Submitted"/>,
-/// so it is the manager's to review again (or HR's, when no manager is available —
-/// <c>TimesheetReviewRule</c>), the approval stamp is cleared, the history says who
-/// sent it back and why, and both the employee and the managers who would review it
-/// are told. HR alone may do this, inside their assigned departments (or on a
+/// cancelling an approved leave. The sheet returns to <see cref="TimesheetStatus.Rejected"/>,
+/// so it is the employee's to correct and resubmit (it then goes back through review as
+/// <see cref="TimesheetStatus.Resubmitted"/>, the same path as a manager's rejection),
+/// the approval stamp is cleared, the history says who sent it back and why, and both
+/// the employee and the managers who review it are told. It used to return to
+/// Submitted, which put it straight back in the manager's queue with the employee's
+/// editor locked — nobody could fix the hours HR had objected to. HR alone may do this, inside their assigned departments (or on a
 /// department-less sheet), and only to an approved sheet; the reason is required,
 /// like a rejection's, because the employee will read it.
 /// </summary>
@@ -63,7 +65,7 @@ public class ReopenTimesheet
 
             var comment = request.Comment!.Trim();
 
-            timesheet.Status = TimesheetStatus.Submitted;
+            timesheet.Status = TimesheetStatus.Rejected;
             timesheet.ApprovedAt = null;
             timesheet.ApproverId = null;
             context.TimesheetStatusHistories.Add(new TimesheetStatusHistory
@@ -71,7 +73,7 @@ public class ReopenTimesheet
                 TimesheetId = timesheet.Id,
                 ChangedByUserId = request.RequestingUserId,
                 FromStatus = (int)TimesheetStatus.Approved,
-                ToStatus = (int)TimesheetStatus.Submitted,
+                ToStatus = (int)TimesheetStatus.Rejected,
                 Comment = comment,
                 ChangedAt = DateTime.UtcNow,
             });
@@ -98,7 +100,7 @@ public class ReopenTimesheet
             var employeeName = timesheet.Employee?.User?.DisplayName ?? timesheet.Employee?.User?.Email ?? "Employee";
             var encodedComment = System.Net.WebUtility.HtmlEncode(comment);
 
-            // The employee: their approval is gone and the sheet is back under review.
+            // The employee: their approval is gone and the sheet is back with them to correct.
             var employeeEmail = timesheet.Employee?.User?.Email;
             if (!string.IsNullOrWhiteSpace(employeeEmail))
             {
@@ -107,14 +109,14 @@ public class ReopenTimesheet
                     "Your timesheet approval was cancelled",
                     $"""
 <p>Hello {employeeName},</p>
-<p>The approval of your timesheet for <strong>{period}</strong> ({timesheet.TotalHours:0.##} hours) was cancelled by {byName}, and it is back with your manager for review.</p>
+<p>The approval of your timesheet for <strong>{period}</strong> ({timesheet.TotalHours:0.##} hours) was cancelled by {byName}. It is back with you to correct and resubmit.</p>
 <p><strong>Reason:</strong> {encodedComment}</p>
 <p>Please log in to Jenus People to review the latest update.</p>
 """,
                     $"""
 Hello {employeeName},
 
-The approval of your timesheet for {period} ({timesheet.TotalHours:0.##} hours) was cancelled by {byName}, and it is back with your manager for review.
+The approval of your timesheet for {period} ({timesheet.TotalHours:0.##} hours) was cancelled by {byName}. It is back with you to correct and resubmit.
 Reason: {comment}
 
 Please log in to Jenus People to review the latest update.
@@ -122,7 +124,8 @@ Please log in to Jenus People to review the latest update.
                     timesheet.Id, cancellationToken);
             }
 
-            // The managers who review it: it is in their queue again.
+            // The managers who review it: the approval they gave is gone, and the
+            // sheet will reach their queue again once the employee resubmits it.
             if (timesheet.Employee is null) return;
             var managers = await ManagerNotificationRecipients.ResolveAsync(context, timesheet.Employee, cancellationToken);
             foreach (var manager in managers)
@@ -130,20 +133,20 @@ Please log in to Jenus People to review the latest update.
                 var greeting = manager.DisplayName ?? manager.Email;
                 await SendAsync(
                     manager.Email,
-                    $"Timesheet sent back for review: {employeeName}",
+                    $"Timesheet approval cancelled: {employeeName}",
                     $"""
 <p>Hello {greeting},</p>
-<p>{byName} cancelled the approval of <strong>{employeeName}</strong>'s timesheet for <strong>{period}</strong> ({timesheet.TotalHours:0.##} hours). It is back in your queue for review.</p>
+<p>{byName} cancelled the approval of <strong>{employeeName}</strong>'s timesheet for <strong>{period}</strong> ({timesheet.TotalHours:0.##} hours). It has been returned to them to correct, and will come back to you for review once they resubmit it.</p>
 <p><strong>Reason:</strong> {encodedComment}</p>
-<p>Please log in to Jenus People to review and take action.</p>
+<p>Please log in to Jenus People to review the latest update.</p>
 """,
                     $"""
 Hello {greeting},
 
-{byName} cancelled the approval of {employeeName}'s timesheet for {period} ({timesheet.TotalHours:0.##} hours). It is back in your queue for review.
+{byName} cancelled the approval of {employeeName}'s timesheet for {period} ({timesheet.TotalHours:0.##} hours). It has been returned to them to correct, and will come back to you for review once they resubmit it.
 Reason: {comment}
 
-Please log in to Jenus People to review and take action.
+Please log in to Jenus People to review the latest update.
 """,
                     timesheet.Id, cancellationToken);
             }

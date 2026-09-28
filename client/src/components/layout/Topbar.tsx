@@ -111,7 +111,7 @@ const Topbar = observer(function Topbar() {
 
     const { data: timesheets, isLoading: isLoadingTimesheets } = useQuery({
         queryKey: ['timesheets'],
-        queryFn: getTimesheets,
+        queryFn: () => getTimesheets(),
         enabled: authStore.isAuthenticated && shouldUseManagerNotifications,
         refetchInterval: authStore.isAuthenticated && shouldUseManagerNotifications ? notificationRefreshMs : false,
         refetchIntervalInBackground: true,

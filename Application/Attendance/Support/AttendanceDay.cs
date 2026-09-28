@@ -143,13 +143,19 @@ public static class AttendanceDay
     }
 
     /// <summary>
-    /// Profile ids on approved leave spanning <paramref name="instant"/>, limited
-    /// to <paramref name="employeeProfileIds"/>.
+    /// Profile ids on approved leave spanning the calendar day
+    /// <paramref name="instant"/> falls in, limited to
+    /// <paramref name="employeeProfileIds"/>.
     ///
     /// AnnualLeave carries two employee keys and they are not interchangeable:
     /// EmployeeId is an AspNetUsers.Id, EmployeeProfileId is an
     /// EmployeeProfile.Id. Filtering the profile list against the wrong one is
     /// what left "on leave today" permanently empty on both boards.
+    ///
+    /// StartDate/EndDate are calendar dates stored at midnight, so the day is
+    /// compared against <see cref="UtcDayStart"/> of the instant rather than the
+    /// instant itself — a single day's leave still reads as "on leave" in the
+    /// afternoon, not just before the clock passes its own midnight EndDate.
     /// </summary>
     public static async Task<HashSet<string>> LoadOnLeaveProfileIdsAsync(
         AppDbContext context,
@@ -157,11 +163,12 @@ public static class AttendanceDay
         DateTime instant,
         CancellationToken cancellationToken)
     {
+        var day = UtcDayStart(instant);
         var onLeave = await context.AnnualLeaves
             .Where(l => l.EmployeeProfileId != null
                 && employeeProfileIds.Contains(l.EmployeeProfileId)
                 && l.Status == AnnualLeaveStatus.Approved
-                && l.StartDate <= instant && l.EndDate >= instant)
+                && l.StartDate <= day && l.EndDate >= day)
             .Select(l => l.EmployeeProfileId!)
             .ToListAsync(cancellationToken);
 
