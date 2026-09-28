@@ -3,7 +3,7 @@ import type { WorkTask } from './types'
 import { filterTasks, isOverdue, openCount, todayIso } from './work-tasks'
 
 const base: WorkTask = {
-    id: 1, title: 't', description: null, departmentId: 1, departmentName: 'Sales',
+    id: 1, title: 't', description: null, departmentId: 1, departmentName: 'Sales', projectId: 10, projectName: 'CRM Rollout',
     assigneeId: 'me', assigneeName: 'Me', createdById: 'boss', createdByName: 'Boss',
     dueDate: null, priority: 'Normal', status: 'ToDo',
     createdAtUtc: '2026-09-01T08:00:00', updatedAtUtc: '2026-09-01T08:00:00', completedAtUtc: null,

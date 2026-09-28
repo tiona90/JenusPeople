@@ -34,6 +34,10 @@ public class WorkTasksController(IHubContext<NotificationsHub> notificationsHub)
     public async Task<ActionResult<List<WorkTaskAssigneeDto>>> GetAssignees([FromQuery] int departmentId) =>
         HandleResult(await Mediator.Send(new GetWorkTaskAssignees.Query { CallerUserId = CallerUserId, DepartmentId = departmentId }));
 
+    [HttpGet("projects")]
+    public async Task<ActionResult<List<WorkTaskProjectDto>>> GetProjects([FromQuery] int departmentId) =>
+        HandleResult(await Mediator.Send(new GetWorkTaskProjects.Query { CallerUserId = CallerUserId, DepartmentId = departmentId }));
+
     [HttpPost]
     public async Task<ActionResult<WorkTaskDto>> CreateWorkTask(UpsertWorkTaskRequest request, CancellationToken cancellationToken)
     {

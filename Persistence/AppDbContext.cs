@@ -559,6 +559,12 @@ public class AppDbContext : IdentityDbContext<
                 .WithMany()
                 .HasForeignKey(t => t.DepartmentId)
                 .OnDelete(DeleteBehavior.Restrict);
+            // Projects are soft-deleted, so this never has to be unpicked; Restrict
+            // keeps it that way should a hard delete ever appear.
+            entity.HasOne(t => t.Project)
+                .WithMany()
+                .HasForeignKey(t => t.ProjectId)
+                .OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(t => t.Assignee)
                 .WithMany()
                 .HasForeignKey(t => t.AssigneeId)

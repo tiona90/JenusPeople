@@ -9,6 +9,9 @@ public class WorkTaskDto
     public string? Description { get; set; }
     public int DepartmentId { get; set; }
     public string DepartmentName { get; set; } = string.Empty;
+    /// <summary>Null only on a task filed before projects were required.</summary>
+    public int? ProjectId { get; set; }
+    public string? ProjectName { get; set; }
     public string AssigneeId { get; set; } = string.Empty;
     public string AssigneeName { get; set; } = string.Empty;
     public string CreatedById { get; set; } = string.Empty;
@@ -33,6 +36,13 @@ public class WorkTaskAssigneeDto
     public string DisplayName { get; set; } = string.Empty;
 }
 
+public class WorkTaskProjectDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Code { get; set; } = string.Empty;
+}
+
 public class WorkTaskDepartmentDto
 {
     public int Id { get; set; }
@@ -45,6 +55,8 @@ public class UpsertWorkTaskRequest
     public string Title { get; set; } = string.Empty;
     public string? Description { get; set; }
     public int DepartmentId { get; set; }
+    /// <summary>Required; nullable so a missing one reaches the validator as a message, not a 0.</summary>
+    public int? ProjectId { get; set; }
     public string AssigneeId { get; set; } = string.Empty;
     public DateOnly? DueDate { get; set; }
     public WorkTaskPriority Priority { get; set; } = WorkTaskPriority.Normal;

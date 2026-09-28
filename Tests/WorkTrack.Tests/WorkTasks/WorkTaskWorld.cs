@@ -18,6 +18,12 @@ internal static class WorkTaskWorld
     public const string GoneManager = "u-mgr-gone";
     public const string Hr = "u-hr";
     public const string Employee = "u-emp";
+    /// <summary>Active, assigned to Sales.</summary>
+    public const int SalesProject = 10;
+    /// <summary>Assigned to Sales but switched off.</summary>
+    public const int InactiveSalesProject = 11;
+    /// <summary>Active, assigned to Ops.</summary>
+    public const int OpsProject = 12;
 
     public static async Task SeedAsync(AppDbContext db)
     {
@@ -36,6 +42,13 @@ internal static class WorkTaskWorld
 
         db.UserDepartments.Add(new UserDepartment { UserId = Hr, DepartmentId = Sales });
 
+        db.Projects.Add(new Project { Id = SalesProject, Name = "CRM Rollout", Code = "CRM" });
+        db.Projects.Add(new Project { Id = InactiveSalesProject, Name = "Legacy", Code = "LEG", IsActive = false });
+        db.Projects.Add(new Project { Id = OpsProject, Name = "Ops Tooling", Code = "OPT" });
+        db.ProjectDepartments.Add(new ProjectDepartment { ProjectId = SalesProject, DepartmentId = Sales });
+        db.ProjectDepartments.Add(new ProjectDepartment { ProjectId = InactiveSalesProject, DepartmentId = Sales });
+        db.ProjectDepartments.Add(new ProjectDepartment { ProjectId = OpsProject, DepartmentId = Ops });
+
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
     }
@@ -45,6 +58,7 @@ internal static class WorkTaskWorld
     {
         Title = title,
         DepartmentId = departmentId,
+        ProjectId = departmentId == Sales ? SalesProject : OpsProject,
         CreatedById = createdBy,
         AssigneeId = assignee,
         Status = status,

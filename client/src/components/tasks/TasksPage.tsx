@@ -129,6 +129,7 @@ const TasksPage = observer(function TasksPage() {
                                         <Typography fontWeight={600} noWrap>{task.title}</Typography>
                                         <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 0.5, flexWrap: 'wrap', color: 'text.secondary', fontSize: 13 }}>
                                             <Chip size="small" label={task.departmentName} />
+                                            {task.projectName && <Chip size="small" variant="outlined" label={task.projectName} />}
                                             <Chip size="small" color={PRIORITY_COLOR[task.priority]} label={PRIORITY_LABELS[task.priority]} />
                                             <span>{task.assigneeName}</span>
                                             <span>· from {task.createdByName}</span>

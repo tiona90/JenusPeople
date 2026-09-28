@@ -14,6 +14,7 @@ public class UpsertWorkTaskRequestValidator : AbstractValidator<UpsertWorkTaskRe
             .MaximumLength(WorkTask.TitleMaxLength);
         RuleFor(x => x.Description).MaximumLength(WorkTask.DescriptionMaxLength);
         RuleFor(x => x.DepartmentId).GreaterThan(0).WithMessage("Department is required.");
+        RuleFor(x => x.ProjectId).NotNull().GreaterThan(0).WithMessage("Project is required.");
         RuleFor(x => x.AssigneeId).NotEmpty().WithMessage("Assignee is required.");
         RuleFor(x => x.Priority).IsInEnum();
     }

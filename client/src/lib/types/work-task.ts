@@ -8,6 +8,9 @@ export interface WorkTask {
     description: string | null
     departmentId: number
     departmentName: string
+    /** Null only on a task filed before projects were required; it must be given one on its next edit. */
+    projectId: number | null
+    projectName: string | null
     assigneeId: string
     assigneeName: string
     createdById: string
@@ -27,11 +30,13 @@ export interface WorkTask {
 
 export interface WorkTaskAssignee { userId: string; displayName: string }
 export interface WorkTaskDepartment { id: number; name: string }
+export interface WorkTaskProject { id: number; name: string; code: string }
 
 export interface UpsertWorkTaskRequest {
     title: string
     description: string | null
     departmentId: number
+    projectId: number
     assigneeId: string
     dueDate: string | null
     priority: WorkTaskPriority

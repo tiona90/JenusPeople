@@ -37,6 +37,14 @@ public class WorkTask
     public int DepartmentId { get; set; }
     public Department? Department { get; set; }
 
+    /// <summary>
+    /// The project the task is about: an active one assigned to <see cref="DepartmentId"/>.
+    /// Required on every save; nullable only for tasks filed before the column,
+    /// which must be given one the next time they are edited.
+    /// </summary>
+    public int? ProjectId { get; set; }
+    public Project? Project { get; set; }
+
     public string AssigneeId { get; set; } = string.Empty;
     public User? Assignee { get; set; }
 

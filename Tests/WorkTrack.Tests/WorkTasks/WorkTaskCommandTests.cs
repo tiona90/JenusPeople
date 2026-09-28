@@ -30,8 +30,15 @@ public class WorkTaskCommandTests
     private static Task<Result<int>> Delete(AppDbContext db, int id, string caller) =>
         new DeleteWorkTask.Handler(db).Handle(new DeleteWorkTask.Command { Id = id, CallerUserId = caller }, CancellationToken.None);
 
-    private static UpsertWorkTaskRequest Request(int department, string assignee, string title = "Chase notes") =>
-        new() { Title = title, DepartmentId = department, AssigneeId = assignee, Priority = WorkTaskPriority.High };
+    private static UpsertWorkTaskRequest Request(int department, string assignee, string title = "Chase notes", int? project = null) =>
+        new()
+        {
+            Title = title,
+            DepartmentId = department,
+            ProjectId = project ?? (department == Sales ? SalesProject : OpsProject),
+            AssigneeId = assignee,
+            Priority = WorkTaskPriority.High,
+        };
 
     private static async Task<int> Seeded(AppDbContext db, WorkTask task)
     {
@@ -260,5 +267,66 @@ public class WorkTaskCommandTests
 
         var deleted = await Delete(db, id, OpsManager);
         Assert.True(deleted.IsSuccess, deleted.Error);
+    }
+
+    [Fact]
+    public async Task A_created_task_carries_its_project()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+
+        var result = await Create(db, Hr, Request(Sales, SalesManager));
+
+        Assert.True(result.IsSuccess, result.Error);
+        Assert.Equal(SalesProject, result.Value!.ProjectId);
+        Assert.Equal("CRM Rollout", result.Value.ProjectName);
+    }
+
+    [Theory]
+    [InlineData(OpsProject)]            // belongs to another department
+    [InlineData(InactiveSalesProject)]  // switched off
+    [InlineData(999)]                   // does not exist
+    public async Task A_project_not_open_to_the_department_is_refused(int project)
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+
+        var result = await Create(db, Hr, Request(Sales, SalesManager, project: project));
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ResultErrorKind.Invalid, result.ErrorKind);
+        Assert.Equal(WorkTaskProjectRule.NotAvailableMessage, result.Error);
+    }
+
+    [Fact]
+    public async Task Moving_a_task_to_another_department_requires_a_project_of_that_department()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        db.UserDepartments.Add(new UserDepartment { UserId = Hr, DepartmentId = Ops });
+        await db.SaveChangesAsync();
+        var id = await Seeded(db, NewTask(Sales, Hr, Hr));
+
+        var kept = await Update(db, id, Hr, Request(Ops, OpsManager, project: SalesProject));
+        Assert.Equal(WorkTaskProjectRule.NotAvailableMessage, kept.Error);
+
+        var moved = await Update(db, id, Hr, Request(Ops, OpsManager, project: OpsProject));
+        Assert.True(moved.IsSuccess, moved.Error);
+    }
+
+    [Fact]
+    public async Task Editing_title_only_does_not_recheck_a_project_since_switched_off()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        var id = await Seeded(db, NewTask(Sales, Hr, SalesManager));
+        var project = await db.Projects.SingleAsync(p => p.Id == SalesProject);
+        project.IsActive = false;
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var result = await Update(db, id, Hr, Request(Sales, SalesManager, "Typo fixed"));
+
+        Assert.True(result.IsSuccess, result.Error);
     }
 }

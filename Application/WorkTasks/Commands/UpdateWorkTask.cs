@@ -10,8 +10,10 @@ namespace Application.WorkTasks.Commands;
 
 /// <summary>
 /// The creator's full replace of a task's details. Eligibility is re-checked only
-/// when the department or the assignee changes: an assignee who has since left the
-/// department must not stop the creator fixing a typo in the title.
+/// when the department or the assignee changes, and the project only when the
+/// department or the project changes: an assignee who has since left the
+/// department, or a project since switched off, must not stop the creator fixing
+/// a typo in the title.
 /// </summary>
 public class UpdateWorkTask
 {
@@ -36,6 +38,7 @@ public class UpdateWorkTask
             var input = request.Task;
             var departmentChanged = input.DepartmentId != task.DepartmentId;
             var assigneeChanged = input.AssigneeId != task.AssigneeId;
+            var projectChanged = input.ProjectId != task.ProjectId;
 
             if (departmentChanged)
             {
@@ -43,6 +46,10 @@ public class UpdateWorkTask
                 if (!departmentIds.Contains(input.DepartmentId))
                     return Result<WorkTaskDto>.Invalid(WorkTaskAccess.DepartmentOutOfScopeMessage);
             }
+            if ((departmentChanged || projectChanged)
+                && (input.ProjectId is not { } projectId
+                    || !await WorkTaskProjectRule.IsAvailableAsync(context, projectId, input.DepartmentId, cancellationToken)))
+                return Result<WorkTaskDto>.Invalid(WorkTaskProjectRule.NotAvailableMessage);
             if ((departmentChanged || assigneeChanged)
                 && !await WorkTaskAssigneeRule.IsEligibleAsync(context, input.AssigneeId, input.DepartmentId, cancellationToken))
                 return Result<WorkTaskDto>.Invalid(WorkTaskAssigneeRule.NotEligibleMessage);
@@ -50,6 +57,7 @@ public class UpdateWorkTask
             task.Title = input.Title.Trim();
             task.Description = string.IsNullOrWhiteSpace(input.Description) ? null : input.Description.Trim();
             task.DepartmentId = input.DepartmentId;
+            task.ProjectId = input.ProjectId;
             task.AssigneeId = input.AssigneeId;
             task.DueDate = input.DueDate;
             task.Priority = input.Priority;

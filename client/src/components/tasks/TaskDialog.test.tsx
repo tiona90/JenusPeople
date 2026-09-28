@@ -6,6 +6,7 @@ import TaskDialog from './TaskDialog'
 vi.mock('../../lib/api', () => ({
     getWorkTaskDepartments: vi.fn(),
     getWorkTaskAssignees: vi.fn(),
+    getWorkTaskProjects: vi.fn(),
     createWorkTask: vi.fn(),
     updateWorkTask: vi.fn(),
 }))
@@ -32,12 +33,15 @@ beforeEach(() => {
     api.getWorkTaskDepartments.mockResolvedValue([{ id: 1, name: 'Sales' }, { id: 2, name: 'Ops' }])
     api.getWorkTaskAssignees.mockImplementation(async (departmentId: number) =>
         departmentId === 1 ? [{ userId: 'u-sam', displayName: 'Sam Sales' }] : [{ userId: 'u-olga', displayName: 'Olga Ops' }])
+    api.getWorkTaskProjects.mockImplementation(async (departmentId: number) =>
+        departmentId === 1 ? [{ id: 10, name: 'CRM Rollout', code: 'CRM' }] : [{ id: 12, name: 'Ops Tooling', code: 'OPT' }])
 })
 
 describe('TaskDialog', () => {
     it('loads assignees for the chosen department and clears one that no longer fits', async () => {
         renderDialog()
         await choose('Department', 'Sales')
+        await choose('Project', 'CRM Rollout')
         await choose('Assignee', 'Sam Sales')
         await choose('Department', 'Ops')
 
@@ -52,6 +56,7 @@ describe('TaskDialog', () => {
 
         fireEvent.change(screen.getByRole('textbox', { name: /^Title/ }), { target: { value: '   ' } })
         await choose('Department', 'Sales')
+        await choose('Project', 'CRM Rollout')
         await choose('Assignee', 'Sam Sales')
         expect(create).toBeDisabled()
 
@@ -64,12 +69,13 @@ describe('TaskDialog', () => {
         const { onSaved } = renderDialog()
         fireEvent.change(screen.getByRole('textbox', { name: /^Title/ }), { target: { value: ' Chase notes ' } })
         await choose('Department', 'Sales')
+        await choose('Project', 'CRM Rollout')
         await choose('Assignee', 'Sam Sales')
         fireEvent.click(screen.getByRole('button', { name: 'Create task' }))
 
         await waitFor(() => expect(onSaved).toHaveBeenCalled())
         expect(api.createWorkTask).toHaveBeenCalledWith({
-            title: 'Chase notes', description: null, departmentId: 1, assigneeId: 'u-sam', dueDate: null, priority: 'Normal',
+            title: 'Chase notes', description: null, departmentId: 1, projectId: 10, assigneeId: 'u-sam', dueDate: null, priority: 'Normal',
         })
     })
 
@@ -84,6 +90,7 @@ describe('TaskDialog', () => {
         const { rerender } = render(ui(true))
         fireEvent.change(screen.getByRole('textbox', { name: /^Title/ }), { target: { value: 'Chase notes' } })
         await choose('Department', 'Sales')
+        await choose('Project', 'CRM Rollout')
         await choose('Assignee', 'Sam Sales')
         fireEvent.click(screen.getByRole('button', { name: 'Create task' }))
         expect(await screen.findByRole('alert')).toBeInTheDocument()
@@ -94,5 +101,34 @@ describe('TaskDialog', () => {
 
         await screen.findByRole('dialog')
         expect(screen.queryByRole('alert')).toBeNull()
+    })
+
+    it("loads the chosen department's projects and clears one from another department", async () => {
+        renderDialog()
+        await choose('Department', 'Sales')
+        await choose('Project', 'CRM Rollout')
+        await choose('Department', 'Ops')
+
+        await waitFor(() => expect(api.getWorkTaskProjects).toHaveBeenCalledWith(2))
+        expect(within(screen.getByRole('combobox', { name: /^Project/ })).queryByText('CRM Rollout')).toBeNull()
+    })
+
+    it('holds Create until a project is chosen', async () => {
+        renderDialog()
+        fireEvent.change(screen.getByRole('textbox', { name: /^Title/ }), { target: { value: 'Chase notes' } })
+        await choose('Department', 'Sales')
+        await choose('Assignee', 'Sam Sales')
+        expect(screen.getByRole('button', { name: 'Create task' })).toBeDisabled()
+
+        await choose('Project', 'CRM Rollout')
+        expect(screen.getByRole('button', { name: 'Create task' })).toBeEnabled()
+    })
+
+    it('says so when the department has no active projects', async () => {
+        api.getWorkTaskProjects.mockResolvedValue([])
+        renderDialog()
+        await choose('Department', 'Sales')
+
+        expect(await screen.findByText('No active projects in this department')).toBeInTheDocument()
     })
 })

@@ -129,4 +129,32 @@ public class WorkTaskQueryTests
 
         Assert.Equal(["Ops", "Sales"], r.Value!.Select(d => d.Name).ToList());
     }
+
+    [Fact]
+    public async Task Projects_are_the_departments_active_ones()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+
+        var r = await new GetWorkTaskProjects.Handler(db).Handle(
+            new GetWorkTaskProjects.Query { CallerUserId = Hr, DepartmentId = Sales }, CancellationToken.None);
+
+        Assert.True(r.IsSuccess, r.Error);
+        var project = Assert.Single(r.Value!);
+        Assert.Equal(SalesProject, project.Id);
+        Assert.Equal("CRM Rollout", project.Name);
+        Assert.Equal("CRM", project.Code);
+    }
+
+    [Fact]
+    public async Task Projects_for_a_department_outside_scope_is_not_found()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+
+        var r = await new GetWorkTaskProjects.Handler(db).Handle(
+            new GetWorkTaskProjects.Query { CallerUserId = SalesManager, DepartmentId = Ops }, CancellationToken.None);
+
+        Assert.Equal(Application.Core.ResultErrorKind.NotFound, r.ErrorKind);
+    }
 }

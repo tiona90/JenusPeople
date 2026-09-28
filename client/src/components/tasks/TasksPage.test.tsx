@@ -9,6 +9,7 @@ vi.mock('../../lib/api', () => ({
     getWorkTasks: vi.fn(),
     getWorkTaskDepartments: vi.fn(),
     getWorkTaskAssignees: vi.fn(),
+    getWorkTaskProjects: vi.fn(),
     createWorkTask: vi.fn(),
     updateWorkTask: vi.fn(),
     updateWorkTaskStatus: vi.fn(),
@@ -20,7 +21,7 @@ const api = vi.mocked(await import('../../lib/api'))
 const mobx = vi.mocked(await import('../../lib/mobx'))
 
 const base: WorkTask = {
-    id: 1, title: 'Mine to do', description: null, departmentId: 1, departmentName: 'Sales',
+    id: 1, title: 'Mine to do', description: null, departmentId: 1, departmentName: 'Sales', projectId: 10, projectName: 'CRM Rollout',
     assigneeId: 'me', assigneeName: 'Me', createdById: 'boss', createdByName: 'Boss',
     dueDate: '2020-01-01', priority: 'High', status: 'ToDo',
     createdAtUtc: '2026-09-01T08:00:00', updatedAtUtc: '2026-09-01T08:00:00', completedAtUtc: null,
@@ -83,5 +84,11 @@ describe('TasksPage', () => {
         api.getWorkTasks.mockResolvedValue([])
         renderPage()
         expect(await screen.findByText('Nothing assigned to you.')).toBeInTheDocument()
+    })
+
+    it("shows the task's project on its row", async () => {
+        renderPage()
+        const row = (await screen.findAllByTestId('task-row'))[0]
+        expect(within(row).getByText('CRM Rollout')).toBeInTheDocument()
     })
 })

@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import {
-    Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, InputLabel,
+    Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormHelperText, InputLabel,
     MenuItem, Select, Stack, TextField,
 } from '@mui/material'
-import { createWorkTask, getWorkTaskAssignees, getWorkTaskDepartments, updateWorkTask } from '../../lib/api'
+import { createWorkTask, getWorkTaskAssignees, getWorkTaskDepartments, getWorkTaskProjects, updateWorkTask } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
 import type { UpsertWorkTaskRequest, WorkTask, WorkTaskPriority } from '../../lib/types'
 import { PRIORITY_LABELS } from '../../lib/work-tasks'
@@ -24,6 +24,7 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
     const [title, setTitle] = useState('')
     const [description, setDescription] = useState('')
     const [departmentId, setDepartmentId] = useState<number | ''>('')
+    const [projectId, setProjectId] = useState<number | ''>('')
     const [assigneeId, setAssigneeId] = useState('')
     const [dueDate, setDueDate] = useState('')
     const [priority, setPriority] = useState<WorkTaskPriority>('Normal')
@@ -33,6 +34,7 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
         setTitle(task?.title ?? '')
         setDescription(task?.description ?? '')
         setDepartmentId(task?.departmentId ?? '')
+        setProjectId(task?.projectId ?? '')
         setAssigneeId(task?.assigneeId ?? '')
         setDueDate(task?.dueDate?.slice(0, 10) ?? '')
         setPriority(task?.priority ?? 'Normal')
@@ -44,6 +46,21 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
     useEffect(() => {
         if (open && !task && departmentId === '' && departments.data?.length === 1) setDepartmentId(departments.data[0].id)
     }, [open, task, departmentId, departments.data])
+
+    const projects = useQuery({
+        queryKey: ['work-tasks', 'projects', departmentId],
+        queryFn: () => getWorkTaskProjects(departmentId as number),
+        enabled: open && departmentId !== '',
+    })
+
+    // Same shape as the assignee below: a project outside the chosen department is
+    // dropped once the list says so, but an edited task keeps its own project while
+    // its department is unchanged — the server re-checks only when either moves.
+    useEffect(() => {
+        if (!projects.data || projectId === '') return
+        const unchangedOnEdit = task != null && departmentId === task.departmentId && projectId === task.projectId
+        if (!unchangedOnEdit && !projects.data.some((p) => p.id === projectId)) setProjectId('')
+    }, [projects.data, projectId, departmentId, task])
 
     const assignees = useQuery({
         queryKey: ['work-tasks', 'assignees', departmentId],
@@ -79,6 +96,7 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
         trimmedTitle.length <= TITLE_MAX &&
         description.length <= DESCRIPTION_MAX &&
         departmentId !== '' &&
+        projectId !== '' &&
         assigneeId !== '' &&
         !save.isPending
 
@@ -88,11 +106,18 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
             title: trimmedTitle,
             description: description.trim() === '' ? null : description.trim(),
             departmentId: departmentId as number,
+            projectId: projectId as number,
             assigneeId,
             dueDate: dueDate === '' ? null : dueDate,
             priority,
         })
     }
+
+    // Keep an edited task's own project selectable after it was switched off.
+    const projectOptions = [...(projects.data ?? [])]
+    if (task?.projectId != null && projectId === task.projectId && !projectOptions.some((p) => p.id === projectId))
+        projectOptions.push({ id: task.projectId, name: task.projectName ?? `Project ${task.projectId}`, code: '' })
+    const noProjects = departmentId !== '' && projects.data?.length === 0 && projectOptions.length === 0
 
     // Keep an edited task's current assignee selectable while the list loads, or after they left scope.
     const assigneeOptions = [...(assignees.data ?? [])]
@@ -136,6 +161,23 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
                                 <MenuItem key={d.id} value={d.id}>{d.name}</MenuItem>
                             ))}
                         </Select>
+                    </FormControl>
+                    <FormControl required disabled={departmentId === ''} error={noProjects}>
+                        <InputLabel id="task-project-label">Project</InputLabel>
+                        <Select
+                            labelId="task-project-label"
+                            label="Project"
+                            value={projectOptions.some((p) => p.id === projectId) ? projectId : ''}
+                            onChange={(e) => {
+                                const value = String(e.target.value)
+                                setProjectId(value === '' ? '' : Number(value))
+                            }}
+                        >
+                            {projectOptions.map((p) => (
+                                <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>
+                            ))}
+                        </Select>
+                        {noProjects && <FormHelperText>No active projects in this department</FormHelperText>}
                     </FormControl>
                     <FormControl required disabled={departmentId === ''}>
                         <InputLabel id="task-assignee-label">Assignee</InputLabel>

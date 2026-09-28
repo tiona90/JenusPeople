@@ -26,6 +26,9 @@ public class CreateWorkTask
             var departmentIds = await WorkTaskAccess.DepartmentIdsAsync(context, request.CallerUserId, cancellationToken);
             if (!departmentIds.Contains(input.DepartmentId))
                 return Result<WorkTaskDto>.Invalid(WorkTaskAccess.DepartmentOutOfScopeMessage);
+            if (input.ProjectId is not { } projectId
+                || !await WorkTaskProjectRule.IsAvailableAsync(context, projectId, input.DepartmentId, cancellationToken))
+                return Result<WorkTaskDto>.Invalid(WorkTaskProjectRule.NotAvailableMessage);
             if (!await WorkTaskAssigneeRule.IsEligibleAsync(context, input.AssigneeId, input.DepartmentId, cancellationToken))
                 return Result<WorkTaskDto>.Invalid(WorkTaskAssigneeRule.NotEligibleMessage);
 
@@ -35,6 +38,7 @@ public class CreateWorkTask
                 Title = input.Title.Trim(),
                 Description = string.IsNullOrWhiteSpace(input.Description) ? null : input.Description.Trim(),
                 DepartmentId = input.DepartmentId,
+                ProjectId = input.ProjectId,
                 AssigneeId = input.AssigneeId,
                 CreatedById = request.CallerUserId,
                 DueDate = input.DueDate,

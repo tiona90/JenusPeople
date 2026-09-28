@@ -15,6 +15,8 @@ public static class WorkTaskProjection
             Description = t.Description,
             DepartmentId = t.DepartmentId,
             DepartmentName = t.Department!.Name,
+            ProjectId = t.ProjectId,
+            ProjectName = t.Project != null ? t.Project.Name : null,
             AssigneeId = t.AssigneeId,
             AssigneeName = !string.IsNullOrWhiteSpace(t.Assignee!.DisplayName) ? t.Assignee.DisplayName : (t.Assignee.Email ?? ""),
             CreatedById = t.CreatedById,
