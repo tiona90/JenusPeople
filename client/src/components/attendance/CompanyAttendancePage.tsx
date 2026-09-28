@@ -1,5 +1,7 @@
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
+import type { MouseEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
@@ -17,7 +19,7 @@ import Typography from '@mui/material/Typography'
 import { getCompanyAttendance } from '../../lib/api'
 import { activityIcon, formatElapsed, formatTime } from '../../lib/hooks/useAttendance'
 import { describeBreakVariance } from '../../lib/break-policy'
-import type { RecentActivity } from '../../lib/types'
+import type { DepartmentAttendance, DepartmentMemberAttendance, RecentActivity } from '../../lib/types'
 import { softBg } from '../../lib/theme-tokens'
 
 const BLUE = 'primary.main'
@@ -149,6 +151,112 @@ function BreakOverNote({ r }: { r: RecentActivity }) {
     )
 }
 
+const MEMBER_STATUS: Record<DepartmentMemberAttendance['status'], { label: string; color: string }> = {
+    in: { label: 'Working', color: GREEN },
+    break: { label: 'On break', color: AMBER },
+    done: { label: 'Checked out', color: 'text.secondary' },
+    'not-in': { label: 'Not checked in', color: NEUTRAL },
+    leave: { label: 'On leave', color: BLUE },
+}
+
+const DASH = <Box component="span" sx={{ color: 'text.disabled' }}>—</Box>
+
+/**
+ * The people behind one department row's counts, opened by clicking the row.
+ * Every figure is the server's (GetCompanyAttendance.BuildMember): lateness
+ * against the configured start, the break against the configured allowance.
+ * Someone on leave shows no times — leave outranks attendance, as in the counts.
+ */
+function DepartmentMembers({ department }: { department: DepartmentAttendance }) {
+    const members = department.members ?? []
+    if (members.length === 0) {
+        return (
+            <Typography sx={{ fontSize: 12, color: 'text.disabled', p: '12px 18px' }}>
+                No people to show.
+            </Typography>
+        )
+    }
+
+    const SUB_TH = { ...TH, bgcolor: 'transparent', py: '8px', fontSize: 10 }
+    const SUB_TD = { ...TD, py: '8px', fontSize: 12 }
+
+    return (
+        <Table size="small" aria-label={`${department.name} people`}>
+            <TableHead>
+                <TableRow>
+                    <TableCell sx={{ ...SUB_TH, pl: '40px' }}>Employee</TableCell>
+                    <TableCell sx={SUB_TH}>Status</TableCell>
+                    <TableCell sx={SUB_TH}>Check-in</TableCell>
+                    <TableCell sx={SUB_TH}>Check-out</TableCell>
+                    <TableCell sx={SUB_TH}>Break</TableCell>
+                    <TableCell sx={{ ...SUB_TH, textAlign: 'right' }}>Worked</TableCell>
+                </TableRow>
+            </TableHead>
+            <TableBody>
+                {members.map((m) => {
+                    const onLeave = m.status === 'leave'
+                    const status = MEMBER_STATUS[m.status] ?? MEMBER_STATUS['not-in']
+                    const statusLabel = m.status === 'break' && m.isAutoBreak ? 'Idle' : status.label
+                    const breakVerdict = (m.breakVarianceMinutes ?? 0) > 0 ? describeBreakVariance(m.breakVarianceMinutes) : null
+                    return (
+                        <TableRow key={m.employeeId}>
+                            <TableCell sx={{ ...SUB_TD, pl: '40px' }}>
+                                <Box sx={{ fontWeight: 600 }}>{m.employeeName}</Box>
+                                {m.jobTitle && (
+                                    <Box sx={{ fontSize: 11, color: 'text.secondary' }}>{m.jobTitle}</Box>
+                                )}
+                            </TableCell>
+                            <TableCell sx={SUB_TD}>
+                                <Stack direction="row" alignItems="center" spacing={0.75}>
+                                    <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: status.color, flexShrink: 0 }} />
+                                    <Box component="span">
+                                        {statusLabel}
+                                        {m.status === 'break' && m.onBreakSince && (
+                                            <Box component="span" sx={{ color: 'text.secondary' }}>
+                                                {' '}since {formatTime(m.onBreakSince)}
+                                            </Box>
+                                        )}
+                                    </Box>
+                                </Stack>
+                            </TableCell>
+                            <TableCell sx={SUB_TD}>
+                                {!onLeave && m.checkInAt ? (
+                                    <>
+                                        {formatTime(m.checkInAt)}
+                                        {(m.lateMinutes ?? 0) > 0 && (
+                                            <Box component="span" sx={{ fontWeight: 600, color: 'warning.dark' }}>
+                                                {' · '}{m.lateMinutes} min late
+                                            </Box>
+                                        )}
+                                    </>
+                                ) : DASH}
+                            </TableCell>
+                            <TableCell sx={SUB_TD}>
+                                {!onLeave && m.checkOutAt ? formatTime(m.checkOutAt) : DASH}
+                            </TableCell>
+                            <TableCell sx={SUB_TD}>
+                                {!onLeave && m.breakMinutes > 0 ? (
+                                    <>
+                                        {formatElapsed(m.breakMinutes)}
+                                        {breakVerdict && (
+                                            <Box component="span" sx={{ fontWeight: 600, color: 'warning.dark' }}>
+                                                {' · '}{breakVerdict}
+                                            </Box>
+                                        )}
+                                    </>
+                                ) : DASH}
+                            </TableCell>
+                            <TableCell sx={{ ...SUB_TD, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                                {!onLeave && m.workedMinutes > 0 ? formatElapsed(m.workedMinutes) : DASH}
+                            </TableCell>
+                        </TableRow>
+                    )
+                })}
+            </TableBody>
+        </Table>
+    )
+}
+
 function progressColor(pct: number) {
     return pct >= 80 ? GREEN : pct >= 60 ? AMBER : RED
 }
@@ -225,6 +333,16 @@ export default function CompanyAttendancePage() {
     const [deptFilter, setDeptFilter] = useState('all')
     const [actionFilter, setActionFilter] = useState('all')
     const [windowFilter, setWindowFilter] = useState('all')
+    // Department rows opened into their people. A set, so HR can compare two
+    // departments side by side; keyed by name, which the rollup groups on.
+    const [expandedDepts, setExpandedDepts] = useState<Set<string>>(() => new Set())
+
+    const toggleDept = (name: string) => setExpandedDepts((prev) => {
+        const next = new Set(prev)
+        if (next.has(name)) next.delete(name)
+        else next.add(name)
+        return next
+    })
 
     const recent = useMemo(() => data?.recent ?? [], [data])
 
@@ -348,9 +466,37 @@ export default function CompanyAttendancePage() {
                         <TableBody>
                             {data.departments.map((d) => {
                                 const pct = d.total > 0 ? (d.in / d.total) * 100 : 0
+                                const expanded = expandedDepts.has(d.name)
                                 return (
-                                    <TableRow key={d.name} sx={{ '&:hover td': { bgcolor: 'action.hover' } }}>
+                                    <Fragment key={d.name}>
+                                    <TableRow
+                                        onClick={() => toggleDept(d.name)}
+                                        sx={{
+                                            cursor: 'pointer',
+                                            '& td': expanded ? { bgcolor: 'action.hover' } : undefined,
+                                            '&:hover td': { bgcolor: 'action.hover' },
+                                        }}
+                                    >
                                         <TableCell sx={TD}>
+                                            <Box
+                                                component="button"
+                                                type="button"
+                                                aria-expanded={expanded}
+                                                aria-label={`${expanded ? 'Hide' : 'Show'} people in ${d.name}`}
+                                                onClick={(e: MouseEvent) => { e.stopPropagation(); toggleDept(d.name) }}
+                                                sx={{
+                                                    all: 'unset', cursor: 'pointer',
+                                                    display: 'inline-flex', alignItems: 'center', verticalAlign: 'middle',
+                                                    mr: 0.5, borderRadius: '4px', color: 'text.secondary',
+                                                    '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main' },
+                                                }}
+                                            >
+                                                <ChevronRightRoundedIcon sx={{
+                                                    fontSize: 18,
+                                                    transition: 'transform 150ms',
+                                                    transform: expanded ? 'rotate(90deg)' : 'none',
+                                                }} />
+                                            </Box>
                                             <Box component="strong">{d.name}</Box>{' '}
                                             <Box component="span" sx={{ color: 'text.disabled', fontSize: 11 }}>({d.total})</Box>
                                         </TableCell>
@@ -385,6 +531,14 @@ export default function CompanyAttendancePage() {
                                         </TableCell>
                                         <TableCell sx={TD_NUM}>{minutesToHours(d.avgMinutes)} h</TableCell>
                                     </TableRow>
+                                    {expanded && (
+                                        <TableRow>
+                                            <TableCell colSpan={8} sx={{ p: 0, bgcolor: 'background.default', borderBottom: '1px solid', borderColor: 'divider' }}>
+                                                <DepartmentMembers department={d} />
+                                            </TableCell>
+                                        </TableRow>
+                                    )}
+                                    </Fragment>
                                 )
                             })}
                             <TableRow sx={{ bgcolor: 'action.hover', '& td': { borderTop: '2px solid', borderTopColor: 'divider' } }}>

@@ -294,3 +294,78 @@ describe("Today's Issues lives on the dashboard only", () => {
         expect(screen.getByText('5 not checked in (Engineering)')).toBeInTheDocument()
     })
 })
+
+describe('a department row opens into its people', () => {
+    const WITH_MEMBERS: CompanyAttendance = {
+        ...COMPANY,
+        departments: [
+            {
+                ...COMPANY.departments[0],
+                members: [
+                    {
+                        employeeId: 'p-1a', employeeName: 'Employee 1A', jobTitle: 'Developer', status: 'in',
+                        checkInAt: '2026-08-21T06:15:00Z', checkOutAt: null, onBreakSince: null, isAutoBreak: false,
+                        workedMinutes: 66, breakMinutes: 80, breakVarianceMinutes: 20, lateMinutes: 15,
+                    },
+                    {
+                        employeeId: 'p-1d', employeeName: 'Employee 1D', jobTitle: null, status: 'not-in',
+                        checkInAt: null, checkOutAt: null, onBreakSince: null, isAutoBreak: false,
+                        workedMinutes: 0, breakMinutes: 0, breakVarianceMinutes: null, lateMinutes: null,
+                    },
+                    {
+                        employeeId: 'p-1e', employeeName: 'Employee 1E', jobTitle: null, status: 'leave',
+                        // A stale check-in on a leave day: leave outranks it, so no times show.
+                        checkInAt: '2026-08-21T06:00:00Z', checkOutAt: null, onBreakSince: null, isAutoBreak: false,
+                        workedMinutes: 30, breakMinutes: 0, breakVarianceMinutes: null, lateMinutes: null,
+                    },
+                ],
+            },
+            COMPANY.departments[1],
+        ],
+    }
+
+    beforeEach(() => {
+        api.getCompanyAttendance.mockResolvedValue(WITH_MEMBERS)
+    })
+
+    it('is collapsed until the department is clicked', async () => {
+        renderCompanyPage()
+        const toggle = await screen.findByRole('button', { name: 'Show people in Engineering' })
+
+        expect(toggle).toHaveAttribute('aria-expanded', 'false')
+        expect(screen.queryByRole('table', { name: 'Engineering people' })).not.toBeInTheDocument()
+
+        fireEvent.click(screen.getByText('Engineering'))
+
+        const people = screen.getByRole('table', { name: 'Engineering people' })
+        expect(screen.getByRole('button', { name: 'Hide people in Engineering' })).toHaveAttribute('aria-expanded', 'true')
+        expect(within(people).getByText('Employee 1A')).toBeInTheDocument()
+        expect(within(people).getByText('Developer')).toBeInTheDocument()
+        expect(within(people).getByText('Working')).toBeInTheDocument()
+        expect(within(people).getByText(/15 min late/)).toBeInTheDocument()
+        expect(within(people).getByText(/20 min over/)).toBeInTheDocument()
+        expect(within(people).getByText('1h 06m')).toBeInTheDocument()
+        expect(within(people).getByText('Not checked in')).toBeInTheDocument()
+
+        fireEvent.click(screen.getByRole('button', { name: 'Hide people in Engineering' }))
+        expect(screen.queryByRole('table', { name: 'Engineering people' })).not.toBeInTheDocument()
+    })
+
+    it('shows someone on leave without their stale attendance', async () => {
+        renderCompanyPage()
+        fireEvent.click(await screen.findByRole('button', { name: 'Show people in Engineering' }))
+
+        const people = screen.getByRole('table', { name: 'Engineering people' })
+        const row = within(people).getByText('Employee 1E').closest('tr')!
+        expect(within(row).getByText('On leave')).toBeInTheDocument()
+        expect(within(row).queryByText('0h 30m')).not.toBeInTheDocument()
+        expect(within(row).getAllByText('—')).toHaveLength(4)
+    })
+
+    it('says so when an older API sends no people', async () => {
+        renderCompanyPage()
+        fireEvent.click(await screen.findByRole('button', { name: 'Show people in Finance' }))
+
+        expect(screen.getByText('No people to show.')).toBeInTheDocument()
+    })
+})

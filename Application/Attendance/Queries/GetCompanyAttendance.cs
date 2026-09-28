@@ -102,7 +102,7 @@ public class GetCompanyAttendance
                 p => p.Id,
                 p => AttendanceDay.StateFor(todayByEmployee, p.Id, now));
 
-            var departments = BuildDepartments(profiles, stateByProfileId, onLeave, out var totals);
+            var departments = BuildDepartments(profiles, stateByProfileId, onLeave, schedule, now, out var totals);
 
             var workedPeopleAll = profiles.Count(p => stateByProfileId[p.Id].WorkedMinutes > 0);
             var avgMinutesAll = workedPeopleAll > 0 ? totals.Minutes / workedPeopleAll : 0;
@@ -136,6 +136,8 @@ public class GetCompanyAttendance
             List<EmployeeProfile> profiles,
             Dictionary<string, AttendanceDayState> stateByProfileId,
             HashSet<string> onLeave,
+            WorkingDaySchedule schedule,
+            DateTime now,
             out Totals totals)
         {
             var departments = new List<DeptAttendanceDto>();
@@ -181,7 +183,11 @@ public class GetCompanyAttendance
                     dOut,
                     dLeave,
                     dMinutes,
-                    dWorkedPeople > 0 ? dMinutes / dWorkedPeople : 0));
+                    dWorkedPeople > 0 ? dMinutes / dWorkedPeople : 0,
+                    group
+                        .Select(p => BuildMember(p, stateByProfileId[p.Id], onLeave, schedule, now))
+                        .OrderBy(m => m.EmployeeName, StringComparer.OrdinalIgnoreCase)
+                        .ToList()));
 
                 total += group.Count();
                 inCount += dIn;
@@ -193,6 +199,43 @@ public class GetCompanyAttendance
 
             totals = new Totals(total, inCount, breakCount, outCount, leaveCount, minutesAll);
             return departments;
+        }
+
+        private static DeptMemberAttendanceDto BuildMember(
+            EmployeeProfile profile,
+            AttendanceDayState state,
+            HashSet<string> onLeave,
+            WorkingDaySchedule schedule,
+            DateTime now)
+        {
+            // Leave outranks attendance, matching the counts: a stale check-in on a
+            // leave day must not put the person back on the Working column's list.
+            var status = onLeave.Contains(profile.Id)
+                ? "leave"
+                : state.Status switch
+                {
+                    AttendanceDayStatus.In => "in",
+                    AttendanceDayStatus.Break => "break",
+                    AttendanceDayStatus.Done => "done",
+                    _ => "not-in",
+                };
+
+            var checkIn = AttendanceDay.AsUtcNullable(state.CheckInAt);
+            int? late = checkIn is { } at && schedule.IsLate(at) ? schedule.MinutesLate(at) : null;
+
+            return new DeptMemberAttendanceDto(
+                profile.Id,
+                AttendanceDay.DisplayNameOf(profile),
+                profile.JobTitle,
+                status,
+                checkIn,
+                AttendanceDay.AsUtcNullable(state.CheckOutAt),
+                AttendanceDay.AsUtcNullable(state.OnBreakSince),
+                state.IsAutoBreak,
+                state.WorkedMinutes,
+                schedule.BreakMinutesTaken(state, now),
+                schedule.BreakVariance(state, now),
+                late);
         }
 
         private async Task<List<RecentActivityDto>> BuildRecentActivityAsync(

@@ -100,6 +100,11 @@ public record TeamMemberHistoryDto(
 
 public record TeamHistoryDto(List<TeamMemberHistoryDto> Members);
 
+/// <param name="Members">
+/// The people behind the counts, so Company Attendance can open a department row
+/// into who is in, on a break, done, not in or on leave. Defaulted so positional
+/// callers keep compiling; the handler always fills it.
+/// </param>
 public record DeptAttendanceDto(
     string Name,
     int Total,
@@ -108,7 +113,32 @@ public record DeptAttendanceDto(
     int Out,
     int Leave,
     int TotalMinutes,
-    int AvgMinutes);
+    int AvgMinutes,
+    List<DeptMemberAttendanceDto>? Members = null);
+
+/// <summary>
+/// One person's day on Company Attendance's department breakdown. Status is
+/// <c>in</c>, <c>break</c>, <c>done</c> (checked out), <c>not-in</c> (no check-in
+/// yet) or <c>leave</c> — the department row's Off column is <c>done</c> plus
+/// <c>not-in</c>, split here because "went home" and "never came" are different
+/// news. Leave outranks attendance, as it does in the counts. LateMinutes is
+/// minutes past the configured start (WorkingDaySchedule.MinutesLate), null when
+/// on time or not checked in. BreakMinutes counts a running break, and
+/// BreakVarianceMinutes reads as everywhere else in this file.
+/// </summary>
+public record DeptMemberAttendanceDto(
+    string EmployeeId,
+    string EmployeeName,
+    string? JobTitle,
+    string Status,
+    DateTime? CheckInAt,
+    DateTime? CheckOutAt,
+    DateTime? OnBreakSince,
+    bool IsAutoBreak,
+    int WorkedMinutes,
+    int BreakMinutes,
+    int? BreakVarianceMinutes,
+    int? LateMinutes);
 
 /// <param name="BreakVarianceMinutes">
 /// On a break's end only: how many minutes over the configured allowance the
