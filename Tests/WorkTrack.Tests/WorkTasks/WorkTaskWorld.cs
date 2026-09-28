@@ -1,0 +1,61 @@
+using Domain;
+using Persistence;
+
+namespace WorkTrack.Tests.WorkTasks;
+
+/// <summary>
+/// Two departments and five people:
+/// Sales (1) — Manager "u-mgr-sales" (profile), HR "u-hr" (UserDepartment row);
+/// Ops (2) — Manager "u-mgr-ops" (profile), and "u-mgr-gone" (deactivated, profile);
+/// "u-emp" — an Employee in Sales, who is never eligible.
+/// </summary>
+internal static class WorkTaskWorld
+{
+    public const int Sales = 1;
+    public const int Ops = 2;
+    public const string SalesManager = "u-mgr-sales";
+    public const string OpsManager = "u-mgr-ops";
+    public const string GoneManager = "u-mgr-gone";
+    public const string Hr = "u-hr";
+    public const string Employee = "u-emp";
+
+    public static async Task SeedAsync(AppDbContext db)
+    {
+        db.Departments.Add(new Department { Id = Sales, Name = "Sales", Code = "SAL" });
+        db.Departments.Add(new Department { Id = Ops, Name = "Ops", Code = "OPS" });
+
+        db.Roles.Add(new Role { Id = "r-mgr", Name = AppRoles.Manager, NormalizedName = AppRoles.Manager.ToUpperInvariant() });
+        db.Roles.Add(new Role { Id = "r-hr", Name = AppRoles.HrAdministrator, NormalizedName = AppRoles.HrAdministrator.ToUpperInvariant() });
+        db.Roles.Add(new Role { Id = "r-emp", Name = AppRoles.Employee, NormalizedName = AppRoles.Employee.ToUpperInvariant() });
+
+        AddUser(db, SalesManager, "Sam Sales", "r-mgr", Sales);
+        AddUser(db, OpsManager, "Olga Ops", "r-mgr", Ops);
+        AddUser(db, GoneManager, "Gary Gone", "r-mgr", Ops, isActive: false);
+        AddUser(db, Hr, "Hana HR", "r-hr", departmentId: null);
+        AddUser(db, Employee, "Eve Employee", "r-emp", Sales);
+
+        db.UserDepartments.Add(new UserDepartment { UserId = Hr, DepartmentId = Sales });
+
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+    }
+
+    public static WorkTask NewTask(int departmentId, string createdBy, string assignee, string title = "Task",
+        WorkTaskStatus status = WorkTaskStatus.ToDo) => new()
+    {
+        Title = title,
+        DepartmentId = departmentId,
+        CreatedById = createdBy,
+        AssigneeId = assignee,
+        Status = status,
+        CreatedAtUtc = new DateTime(2026, 9, 1, 8, 0, 0, DateTimeKind.Utc),
+        UpdatedAtUtc = new DateTime(2026, 9, 1, 8, 0, 0, DateTimeKind.Utc),
+    };
+
+    private static void AddUser(AppDbContext db, string id, string name, string roleId, int? departmentId, bool isActive = true)
+    {
+        db.Users.Add(new User { Id = id, UserName = $"{id}@t", Email = $"{id}@t", DisplayName = name, IsActive = isActive });
+        db.UserRoles.Add(new UserRole { UserId = id, RoleId = roleId });
+        db.EmployeeProfiles.Add(new EmployeeProfile { Id = $"p-{id}", UserId = id, DepartmentId = departmentId });
+    }
+}

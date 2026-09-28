@@ -1,0 +1,56 @@
+using Domain;
+
+namespace Application.WorkTasks.DTOs;
+
+public class WorkTaskDto
+{
+    public int Id { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public int DepartmentId { get; set; }
+    public string DepartmentName { get; set; } = string.Empty;
+    public string AssigneeId { get; set; } = string.Empty;
+    public string AssigneeName { get; set; } = string.Empty;
+    public string CreatedById { get; set; } = string.Empty;
+    public string CreatedByName { get; set; } = string.Empty;
+    public DateOnly? DueDate { get; set; }
+    public WorkTaskPriority Priority { get; set; }
+    public WorkTaskStatus Status { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+    public DateTime? CompletedAtUtc { get; set; }
+
+    /// <summary>The caller created it: may edit, reassign and delete.</summary>
+    public bool CanEdit { get; set; }
+
+    /// <summary>The caller created it or is assigned it: may move its status.</summary>
+    public bool CanChangeStatus { get; set; }
+}
+
+public class WorkTaskAssigneeDto
+{
+    public string UserId { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+}
+
+public class WorkTaskDepartmentDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+}
+
+/// <summary>A full replace: every field is written as sent.</summary>
+public class UpsertWorkTaskRequest
+{
+    public string Title { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public int DepartmentId { get; set; }
+    public string AssigneeId { get; set; } = string.Empty;
+    public DateOnly? DueDate { get; set; }
+    public WorkTaskPriority Priority { get; set; } = WorkTaskPriority.Normal;
+}
+
+public class UpdateWorkTaskStatusRequest
+{
+    public WorkTaskStatus Status { get; set; }
+}
