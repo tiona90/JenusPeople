@@ -66,6 +66,13 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
         onSuccess: onSaved,
     })
 
+    // The dialog stays mounted between uses, so a refused save from last time
+    // would otherwise greet the next, blank form.
+    const { reset: resetSave } = save
+    useEffect(() => {
+        if (open) resetSave()
+    }, [open, resetSave])
+
     const trimmedTitle = title.trim()
     const canSave =
         trimmedTitle.length > 0 &&

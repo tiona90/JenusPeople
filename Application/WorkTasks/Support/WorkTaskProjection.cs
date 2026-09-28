@@ -25,8 +25,9 @@ public static class WorkTaskProjection
             CreatedAtUtc = t.CreatedAtUtc,
             UpdatedAtUtc = t.UpdatedAtUtc,
             CompletedAtUtc = t.CompletedAtUtc,
-            CanEdit = t.CreatedById == callerUserId,
-            CanChangeStatus = t.CreatedById == callerUserId || t.AssigneeId == callerUserId,
+            // Mirrors WorkTaskAccess.CanManageAsync: an inactive creator opens the task to everyone in scope.
+            CanEdit = t.CreatedById == callerUserId || !t.CreatedBy!.IsActive,
+            CanChangeStatus = t.CreatedById == callerUserId || !t.CreatedBy!.IsActive || t.AssigneeId == callerUserId,
         });
 
     public static Task<WorkTaskDto> LoadDtoAsync(

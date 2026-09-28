@@ -30,7 +30,7 @@ public class UpdateWorkTask
             var task = await WorkTaskAccess.FindVisibleAsync(context, request.Id, request.CallerUserId, cancellationToken);
             if (task is null)
                 return Result<WorkTaskDto>.Failure(WorkTaskAccess.NotFoundMessage);
-            if (task.CreatedById != request.CallerUserId)
+            if (!await WorkTaskAccess.CanManageAsync(context, task, request.CallerUserId, cancellationToken))
                 return Result<WorkTaskDto>.Forbidden(WorkTaskAccess.NotCreatorMessage);
 
             var input = request.Task;

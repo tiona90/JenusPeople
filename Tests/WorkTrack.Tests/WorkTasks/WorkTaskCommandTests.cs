@@ -227,4 +227,38 @@ public class WorkTaskCommandTests
         Assert.Equal(Sales, deleted.Value);
         Assert.False(await db.WorkTasks.AnyAsync());
     }
+
+    /// <summary>
+    /// A leaver is deactivated, not deleted, so the delete-time cleanup never runs for
+    /// them. Their tasks must not freeze: once the creator is inactive, anyone who can
+    /// see the task may manage it.
+    /// </summary>
+    [Fact]
+    public async Task A_deactivated_creators_task_can_be_managed_by_anyone_in_scope()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        db.UserDepartments.Add(new UserDepartment { UserId = OpsManager, DepartmentId = Sales });
+        await db.SaveChangesAsync();
+        var id = await Seeded(db, NewTask(Sales, SalesManager, Hr));
+        var creator = await db.Users.SingleAsync(u => u.Id == SalesManager);
+        creator.IsActive = false;
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var listed = await new Application.WorkTasks.Queries.GetWorkTaskList.Handler(db).Handle(
+            new Application.WorkTasks.Queries.GetWorkTaskList.Query { CallerUserId = OpsManager }, CancellationToken.None);
+        var row = Assert.Single(listed.Value!);
+        Assert.True(row.CanEdit);
+        Assert.True(row.CanChangeStatus);
+
+        var edited = await Update(db, id, OpsManager, Request(Sales, Hr, "Taken over"));
+        Assert.True(edited.IsSuccess, edited.Error);
+
+        var moved = await SetStatus(db, id, OpsManager, WorkTaskStatus.InProgress);
+        Assert.True(moved.IsSuccess, moved.Error);
+
+        var deleted = await Delete(db, id, OpsManager);
+        Assert.True(deleted.IsSuccess, deleted.Error);
+    }
 }

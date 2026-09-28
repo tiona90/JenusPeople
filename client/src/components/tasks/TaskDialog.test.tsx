@@ -72,4 +72,27 @@ describe('TaskDialog', () => {
             title: 'Chase notes', description: null, departmentId: 1, assigneeId: 'u-sam', dueDate: null, priority: 'Normal',
         })
     })
+
+    it('opens clean after a failed save was cancelled', async () => {
+        api.createWorkTask.mockRejectedValue(new Error('The assignee must be an active Manager or HR Administrator who covers this department.'))
+        const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        const ui = (open: boolean) => (
+            <QueryClientProvider client={queryClient}>
+                <TaskDialog open={open} task={null} onClose={vi.fn()} onSaved={vi.fn()} />
+            </QueryClientProvider>
+        )
+        const { rerender } = render(ui(true))
+        fireEvent.change(screen.getByRole('textbox', { name: /^Title/ }), { target: { value: 'Chase notes' } })
+        await choose('Department', 'Sales')
+        await choose('Assignee', 'Sam Sales')
+        fireEvent.click(screen.getByRole('button', { name: 'Create task' }))
+        expect(await screen.findByRole('alert')).toBeInTheDocument()
+
+        rerender(ui(false))
+        await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+        rerender(ui(true))
+
+        await screen.findByRole('dialog')
+        expect(screen.queryByRole('alert')).toBeNull()
+    })
 })

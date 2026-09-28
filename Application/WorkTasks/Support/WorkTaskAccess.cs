@@ -21,6 +21,17 @@ public static class WorkTaskAccess
         AppDbContext context, string callerUserId, CancellationToken cancellationToken) =>
         (await ManagerAccessScopeResolver.ResolveAsync(context, callerUserId, cancellationToken)).ManagedDepartmentIds;
 
+    /// <summary>
+    /// Whether the caller may edit, reassign or delete the task: its creator — or,
+    /// once the creator's account is deactivated, anyone who can see it. A leaver is
+    /// deactivated rather than deleted, so without this their tasks would freeze with
+    /// nobody able to touch them.
+    /// </summary>
+    public static async Task<bool> CanManageAsync(
+        AppDbContext context, WorkTask task, string callerUserId, CancellationToken cancellationToken) =>
+        task.CreatedById == callerUserId
+        || !await context.Users.AnyAsync(u => u.Id == task.CreatedById && u.IsActive, cancellationToken);
+
     public static async Task<WorkTask?> FindVisibleAsync(
         AppDbContext context, int id, string callerUserId, CancellationToken cancellationToken)
     {

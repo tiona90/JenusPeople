@@ -21,7 +21,7 @@ public class DeleteWorkTask
             var task = await WorkTaskAccess.FindVisibleAsync(context, request.Id, request.CallerUserId, cancellationToken);
             if (task is null)
                 return Result<int>.Failure(WorkTaskAccess.NotFoundMessage);
-            if (task.CreatedById != request.CallerUserId)
+            if (!await WorkTaskAccess.CanManageAsync(context, task, request.CallerUserId, cancellationToken))
                 return Result<int>.Forbidden(WorkTaskAccess.NotCreatorMessage);
 
             context.WorkTasks.Remove(task);

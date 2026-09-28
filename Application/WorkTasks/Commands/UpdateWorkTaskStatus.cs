@@ -23,7 +23,8 @@ public class UpdateWorkTaskStatus
             var task = await WorkTaskAccess.FindVisibleAsync(context, request.Id, request.CallerUserId, cancellationToken);
             if (task is null)
                 return Result<WorkTaskDto>.Failure(WorkTaskAccess.NotFoundMessage);
-            if (task.CreatedById != request.CallerUserId && task.AssigneeId != request.CallerUserId)
+            if (task.AssigneeId != request.CallerUserId
+                && !await WorkTaskAccess.CanManageAsync(context, task, request.CallerUserId, cancellationToken))
                 return Result<WorkTaskDto>.Forbidden(WorkTaskAccess.NotParticipantMessage);
 
             if (task.Status != request.Status)

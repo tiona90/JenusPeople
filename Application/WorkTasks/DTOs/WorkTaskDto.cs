@@ -20,10 +20,10 @@ public class WorkTaskDto
     public DateTime UpdatedAtUtc { get; set; }
     public DateTime? CompletedAtUtc { get; set; }
 
-    /// <summary>The caller created it: may edit, reassign and delete.</summary>
+    /// <summary>The caller created it, or its creator is deactivated: may edit, reassign and delete.</summary>
     public bool CanEdit { get; set; }
 
-    /// <summary>The caller created it or is assigned it: may move its status.</summary>
+    /// <summary>The caller may edit it, or is assigned it: may move its status.</summary>
     public bool CanChangeStatus { get; set; }
 }
 
