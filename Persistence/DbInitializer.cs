@@ -553,6 +553,23 @@ public class DbInitializer
             leave.DelegateId = null;
         }
 
+        // Tasks. Both foreign keys onto User are Restrict. The ones this user
+        // created go with them; the ones somebody else assigned them return to
+        // that somebody, so the work is not lost with the leaver.
+        var createdTasks = await context.WorkTasks
+            .Where(t => t.CreatedById == userId)
+            .ToListAsync(cancellationToken);
+        context.WorkTasks.RemoveRange(createdTasks);
+
+        var assignedTasks = await context.WorkTasks
+            .Where(t => t.AssigneeId == userId && t.CreatedById != userId)
+            .ToListAsync(cancellationToken);
+        foreach (var task in assignedTasks)
+        {
+            task.AssigneeId = task.CreatedById;
+            task.UpdatedAtUtc = DateTime.UtcNow;
+        }
+
         var assignedByRows = await context.UserDepartments
             .Where(ud => ud.AssignedByUserId == userId)
             .ToListAsync(cancellationToken);
