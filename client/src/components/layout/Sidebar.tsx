@@ -217,7 +217,8 @@ const Sidebar = observer(function Sidebar() {
         sections.some((s) => path === `/admin/${s}` || path.startsWith(`/admin/${s}/`))
 
     // Tasks is neither leave nor time, and not only a manager's team: Managers and
-    // HR Administrators hand each other tasks, so both get the same section for it.
+    // HR Administrators hand tasks out and Employees work them, so all three get
+    // the same section for it.
     const collaborationEntries: NavEntry[] = [
         { kind: 'section', label: 'Collaboration' },
         { kind: 'item', label: 'Tasks', icon: <TaskAltRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTasks(), active: onPage('/tasks') },
@@ -304,6 +305,8 @@ const Sidebar = observer(function Sidebar() {
             { kind: 'item', label: 'My Attendance', icon: <AccessAlarmRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAttendance(), active: onPage('/attendance') },
             { kind: 'item', label: 'Submit Timesheet', icon: <NoteAddRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToNewTimesheet(), active: onPage('/new-timesheet') },
             { kind: 'item', label: 'My Timesheets', icon: <AccessTimeRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTimesheets(), active: onPage('/timesheets') },
+            // An Employee works the tasks they are given.
+            ...collaborationEntries,
         ]
     }
 

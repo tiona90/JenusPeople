@@ -106,7 +106,7 @@ public class WorkTaskCommandTests
 
     [Theory]
     [InlineData(OpsManager)]  // covers another department
-    [InlineData(Employee)]    // wrong role
+    [InlineData(SysAdmin)]    // wrong role
     public async Task An_ineligible_assignee_is_refused(string assignee)
     {
         await using var db = await TransactionalTestDb.CreateAsync();
@@ -138,11 +138,11 @@ public class WorkTaskCommandTests
         await SeedAsync(db);
         var id = await Seeded(db, NewTask(Sales, SalesManager, SalesManager, "Chase notes"));
 
-        var result = await Update(db, id, SalesManager, Request(Sales, Hr));
+        var result = await Update(db, id, SalesManager, Request(Sales, Employee));
 
         Assert.True(result.IsSuccess, result.Error);
-        Assert.Equal([Hr], result.Value!.Assignees.Select(a => a.UserId).ToList());
-        Assert.Equal($"{Hr}@t", Assert.Single(_email.Sent).Recipient);
+        Assert.Equal([Employee], result.Value!.Assignees.Select(a => a.UserId).ToList());
+        Assert.Equal($"{Employee}@t", Assert.Single(_email.Sent).Recipient);
     }
 
     [Fact]
@@ -248,7 +248,7 @@ public class WorkTaskCommandTests
         await SeedAsync(db);
         db.UserDepartments.Add(new UserDepartment { UserId = OpsManager, DepartmentId = Sales });
         await db.SaveChangesAsync();
-        var id = await Seeded(db, NewTask(Sales, SalesManager, Hr));
+        var id = await Seeded(db, NewTask(Sales, SalesManager, Employee));
         var creator = await db.Users.SingleAsync(u => u.Id == SalesManager);
         creator.IsActive = false;
         await db.SaveChangesAsync();
@@ -260,7 +260,7 @@ public class WorkTaskCommandTests
         Assert.True(row.CanEdit);
         Assert.True(row.CanChangeStatus);
 
-        var edited = await Update(db, id, OpsManager, Request(Sales, Hr, "Taken over"));
+        var edited = await Update(db, id, OpsManager, Request(Sales, Employee, "Taken over"));
         Assert.True(edited.IsSuccess, edited.Error);
 
         var moved = await SetStatus(db, id, OpsManager, WorkTaskStatus.InProgress);
@@ -308,7 +308,7 @@ public class WorkTaskCommandTests
         await SeedAsync(db);
         db.UserDepartments.Add(new UserDepartment { UserId = Hr, DepartmentId = Ops });
         await db.SaveChangesAsync();
-        var id = await Seeded(db, NewTask(Sales, Hr, Hr));
+        var id = await Seeded(db, NewTask(Sales, Hr, SalesManager));
 
         var kept = await Update(db, id, Hr, Request(Ops, OpsManager, project: SalesProject));
         Assert.Equal(WorkTaskProjectRule.NotAvailableMessage, kept.Error);
@@ -355,15 +355,15 @@ public class WorkTaskCommandTests
         await SeedAsync(db);
         await OpsManagerCoversSalesAsync(db);
 
-        var result = await Create(db, Hr, RequestFor(Sales, SalesManager, OpsManager, Hr));
+        var result = await Create(db, SalesManager, RequestFor(Sales, SalesManager, OpsManager, Employee));
 
         Assert.True(result.IsSuccess, result.Error);
         Assert.Equal(
-            ["Hana HR", "Olga Ops", "Sam Sales"],
+            ["Eve Employee", "Olga Ops", "Sam Sales"],
             result.Value!.Assignees.Select(a => a.DisplayName).ToList());
-        // Hr is the creator, and nobody is emailed about a task they assigned themselves.
+        // SalesManager is the creator, and nobody is emailed about a task they assigned themselves.
         Assert.Equal(
-            [$"{OpsManager}@t", $"{SalesManager}@t"],
+            [$"{Employee}@t", $"{OpsManager}@t"],
             _email.Sent.Select(m => m.Recipient).OrderBy(x => x).ToList());
     }
 
@@ -373,7 +373,7 @@ public class WorkTaskCommandTests
         await using var db = await TransactionalTestDb.CreateAsync();
         await SeedAsync(db);
 
-        var result = await Create(db, Hr, RequestFor(Sales, SalesManager, Employee));
+        var result = await Create(db, Hr, RequestFor(Sales, SalesManager, SysAdmin));
 
         Assert.Equal(WorkTaskAssigneeRule.NotEligibleMessage, result.Error);
         Assert.False(await db.WorkTasks.AnyAsync());
@@ -476,5 +476,35 @@ public class WorkTaskCommandTests
 
         Assert.True(created.IsSuccess, created.Error);
         Assert.Equal(billable, created.Value!.IsBillable);
+    }
+
+    [Theory]
+    [InlineData(Hr)]            // HR putting themselves on a task
+    [InlineData(SalesManager)]  // a Manager putting HR on one
+    public async Task An_hr_administrator_can_never_be_assigned(string caller)
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+
+        var result = await Create(db, caller, RequestFor(Sales, SalesManager, Hr));
+
+        Assert.Equal(ResultErrorKind.Invalid, result.ErrorKind);
+        Assert.Equal(WorkTaskAssigneeRule.HrNotAssignableMessage, result.Error);
+        Assert.False(await db.WorkTasks.AnyAsync());
+    }
+
+    [Fact]
+    public async Task A_save_that_keeps_an_hr_administrator_on_a_task_is_refused()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        // A task from before the rule, with HR already on it.
+        var id = await Seeded(db, NewTask(Sales, SalesManager, Hr));
+
+        var kept = await Update(db, id, SalesManager, Request(Sales, Hr, "Typo fixed"));
+        Assert.Equal(WorkTaskAssigneeRule.HrNotAssignableMessage, kept.Error);
+
+        var replaced = await Update(db, id, SalesManager, Request(Sales, Employee, "Typo fixed"));
+        Assert.True(replaced.IsSuccess, replaced.Error);
     }
 }

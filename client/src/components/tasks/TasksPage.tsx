@@ -9,10 +9,11 @@ import MenuItem from '@mui/material/MenuItem'
 import { deleteWorkTask, getWorkTaskDepartments, getWorkTasks, updateWorkTaskStatus } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
 import { useStore } from '../../lib/mobx'
+import { canManageTasks } from '../../lib/roles'
 import { softBg } from '../../lib/theme-tokens'
 import type { WorkTask, WorkTaskPriority, WorkTaskStatus } from '../../lib/types'
 import {
-    PRIORITY_LABELS, STATUS_LABELS, filterTasks, isOpenTask, nextStatusAction, openCount, overdueDays, taskStats, todayIso,
+    PRIORITY_LABELS, STATUS_LABELS, describeTaskProgress, filterTasks, isOpenTask, nextStatusAction, openCount, overdueDays, taskStats, todayIso,
     type StatusFilter, type TaskTab,
 } from '../../lib/work-tasks'
 import { SweetAlert } from '../ui'
@@ -45,6 +46,9 @@ function plural(n: number, one: string, many = `${one}s`) {
 const TasksPage = observer(function TasksPage() {
     const { authStore } = useStore()
     const userId = authStore.user?.id ?? ''
+    // An Employee works the tasks they are given: no creating, and no views to pick
+    // between, since the server sends them only their own.
+    const manages = canManageTasks(authStore.user?.roles)
     const queryClient = useQueryClient()
 
     const [view, setView] = useState<TaskTab>('assigned')
@@ -55,7 +59,7 @@ const TasksPage = observer(function TasksPage() {
     const [dialogTask, setDialogTask] = useState<WorkTask | null | undefined>(undefined) // undefined = closed
 
     const tasks = useQuery({ queryKey: ['work-tasks'], queryFn: getWorkTasks })
-    const departments = useQuery({ queryKey: ['work-tasks', 'departments'], queryFn: getWorkTaskDepartments })
+    const departments = useQuery({ queryKey: ['work-tasks', 'departments'], queryFn: getWorkTaskDepartments, enabled: manages })
 
     const refresh = () => queryClient.invalidateQueries({ queryKey: ['work-tasks'] })
     const moveStatus = useMutation({
@@ -161,12 +165,14 @@ const TasksPage = observer(function TasksPage() {
                         }}
                     />
                 </Box>
-                <SelectFilter
-                    ariaLabel="View"
-                    value={view}
-                    onChange={(v) => setView(v as TaskTab)}
-                    options={VIEWS.map((v) => ({ value: v.value, label: `${v.label} (${openCount(all, v.value, userId)})` }))}
-                />
+                {manages && (
+                    <SelectFilter
+                        ariaLabel="View"
+                        value={view}
+                        onChange={(v) => setView(v as TaskTab)}
+                        options={VIEWS.map((v) => ({ value: v.value, label: `${v.label} (${openCount(all, v.value, userId)})` }))}
+                    />
+                )}
                 <SelectFilter
                     ariaLabel="Status filter"
                     value={status}
@@ -198,7 +204,7 @@ const TasksPage = observer(function TasksPage() {
                     ]}
                 />
                 <Box sx={{ flex: 1 }} />
-                <Box
+                {manages && <Box
                     component="button"
                     type="button"
                     onClick={() => setDialogTask(null)}
@@ -210,7 +216,7 @@ const TasksPage = observer(function TasksPage() {
                     }}
                 >
                     + New task
-                </Box>
+                </Box>}
             </Box>
 
             {/* Grid */}
@@ -240,7 +246,7 @@ const TasksPage = observer(function TasksPage() {
                             onDelete={() => void confirmDelete(task)}
                         />
                     ))}
-                    <AddCard onClick={() => setDialogTask(null)} />
+                    {manages && <AddCard onClick={() => setDialogTask(null)} />}
                 </Box>
             )}
 
@@ -270,6 +276,7 @@ function TaskCard({ task, today, statusPending, onStatus, onEdit, onDelete }: {
 }) {
     const closed = !isOpenTask(task)
     const late = overdueDays(task, today)
+    const progress = describeTaskProgress(task.targetHours, task.loggedHours)
     const status = STATUS_COLORS[task.status]
     const priority = PRIORITY_COLORS[task.priority]
     const codeColor = closed ? 'text.disabled' : (CODE_COLORS[task.projectColorKey ?? ''] ?? CODE_COLORS.p1)
@@ -415,7 +422,8 @@ function TaskCard({ task, today, statusPending, onStatus, onEdit, onDelete }: {
                 <CardStat
                     label="Target"
                     value={task.targetHours != null ? `${task.targetHours}h` : '—'}
-                    sub={task.targetHours != null ? 'of work' : 'no target set'}
+                    sub={task.targetHours == null && progress.text === 'nothing logged' ? 'no target set' : progress.text}
+                    valueColor={progress.over ? 'error.main' : undefined}
                 />
                 <CardStat
                     label={task.status === 'Done' && task.completedAtUtc ? 'Completed' : 'Created'}

@@ -18,6 +18,8 @@ internal static class WorkTaskWorld
     public const string GoneManager = "u-mgr-gone";
     public const string Hr = "u-hr";
     public const string Employee = "u-emp";
+    /// <summary>The one role never eligible for a task.</summary>
+    public const string SysAdmin = "u-sysadmin";
     /// <summary>Active, assigned to Sales.</summary>
     public const int SalesProject = 10;
     /// <summary>Assigned to Sales but switched off.</summary>
@@ -33,12 +35,14 @@ internal static class WorkTaskWorld
         db.Roles.Add(new Role { Id = "r-mgr", Name = AppRoles.Manager, NormalizedName = AppRoles.Manager.ToUpperInvariant() });
         db.Roles.Add(new Role { Id = "r-hr", Name = AppRoles.HrAdministrator, NormalizedName = AppRoles.HrAdministrator.ToUpperInvariant() });
         db.Roles.Add(new Role { Id = "r-emp", Name = AppRoles.Employee, NormalizedName = AppRoles.Employee.ToUpperInvariant() });
+        db.Roles.Add(new Role { Id = "r-sys", Name = AppRoles.SystemAdministrator, NormalizedName = AppRoles.SystemAdministrator.ToUpperInvariant() });
 
         AddUser(db, SalesManager, "Sam Sales", "r-mgr", Sales);
         AddUser(db, OpsManager, "Olga Ops", "r-mgr", Ops);
         AddUser(db, GoneManager, "Gary Gone", "r-mgr", Ops, isActive: false);
         AddUser(db, Hr, "Hana HR", "r-hr", departmentId: null);
         AddUser(db, Employee, "Eve Employee", "r-emp", Sales);
+        AddUser(db, SysAdmin, "Sid Sysadmin", "r-sys", departmentId: null);
 
         db.UserDepartments.Add(new UserDepartment { UserId = Hr, DepartmentId = Sales });
 

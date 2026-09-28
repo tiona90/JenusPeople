@@ -81,7 +81,7 @@ public class WorkTaskQueryTests
     }
 
     [Fact]
-    public async Task Eligible_assignees_are_active_managers_and_hr_covering_the_department()
+    public async Task Eligible_assignees_are_active_managers_and_employees_in_the_department()
     {
         await using var db = await TransactionalTestDb.CreateAsync();
         await SeedAsync(db);
@@ -89,7 +89,8 @@ public class WorkTaskQueryTests
         var sales = await WorkTaskAssigneeRule.EligibleAsync(db, Sales, CancellationToken.None);
         var ops = await WorkTaskAssigneeRule.EligibleAsync(db, Ops, CancellationToken.None);
 
-        Assert.Equal([Hr, SalesManager], sales.Select(a => a.UserId).OrderBy(x => x).ToList());
+        // HR runs tasks but is never handed one.
+        Assert.Equal([Employee, SalesManager], sales.Select(a => a.UserId).OrderBy(x => x).ToList());
         Assert.Equal([OpsManager], ops.Select(a => a.UserId).ToList());
     }
 
@@ -100,7 +101,7 @@ public class WorkTaskQueryTests
         await SeedAsync(db);
 
         Assert.False(await WorkTaskAssigneeRule.IsEligibleAsync(db, GoneManager, Ops, CancellationToken.None));
-        Assert.False(await WorkTaskAssigneeRule.IsEligibleAsync(db, Employee, Sales, CancellationToken.None));
+        Assert.False(await WorkTaskAssigneeRule.IsEligibleAsync(db, SysAdmin, Sales, CancellationToken.None));
     }
 
     [Fact]
@@ -156,5 +157,22 @@ public class WorkTaskQueryTests
             new GetWorkTaskProjects.Query { CallerUserId = SalesManager, DepartmentId = Ops }, CancellationToken.None);
 
         Assert.Equal(Application.Core.ResultErrorKind.NotFound, r.ErrorKind);
+    }
+
+    [Fact]
+    public async Task A_listed_task_flags_an_hr_administrator_among_its_assignees()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        var legacy = NewTask(Sales, SalesManager, SalesManager);
+        legacy.Assignees.Add(new Domain.WorkTaskAssignee { UserId = Hr });
+        db.WorkTasks.Add(legacy);
+        await db.SaveChangesAsync();
+
+        var r = await new GetWorkTaskList.Handler(db).Handle(new GetWorkTaskList.Query { CallerUserId = SalesManager }, CancellationToken.None);
+
+        var assignees = Assert.Single(r.Value!).Assignees.ToDictionary(a => a.UserId, a => a.IsHrAdministrator);
+        Assert.True(assignees[Hr]);
+        Assert.False(assignees[SalesManager]);
     }
 }

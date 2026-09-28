@@ -65,6 +65,13 @@ public static class AppRoles
     /// </summary>
     public const string LeaveAndTimeDecisionRoles = HrAdministrator + "," + Manager;
 
+    /// <summary>
+    /// Who works in Leave &amp; Time: everyone but the System Administrator, who
+    /// configures the workspace. Mirrors <c>LEAVE_AND_TIME_ROLES</c> in
+    /// <c>client/src/lib/roles.ts</c>. Comma-joined for <c>[Authorize(Roles = ...)]</c>.
+    /// </summary>
+    public const string LeaveAndTimeRoles = HrAdministrator + "," + Manager + "," + Employee;
+
     /// <summary>Whether the signed-in principal is the HR Administrator — the one administrator who runs Leave &amp; Time.</summary>
     public static bool IsHrAdministrator(this ClaimsPrincipal user) => user.IsInRole(HrAdministrator);
 

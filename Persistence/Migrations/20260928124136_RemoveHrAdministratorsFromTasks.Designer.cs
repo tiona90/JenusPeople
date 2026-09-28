@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Persistence;
 
@@ -11,9 +12,11 @@ using Persistence;
 namespace Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260928124136_RemoveHrAdministratorsFromTasks")]
+    partial class RemoveHrAdministratorsFromTasks
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1096,9 +1099,6 @@ namespace Persistence.Migrations
                         .HasMaxLength(450)
                         .HasColumnType("nvarchar(450)");
 
-                    b.Property<int?>("WorkTaskId")
-                        .HasColumnType("int");
-
                     b.HasKey("Id");
 
                     b.HasIndex("ActivityTypeId");
@@ -1110,8 +1110,6 @@ namespace Persistence.Migrations
                     b.HasIndex("ProjectTypeId");
 
                     b.HasIndex("TimesheetId");
-
-                    b.HasIndex("WorkTaskId");
 
                     b.ToTable("TimesheetEntries");
                 });
@@ -1738,11 +1736,6 @@ namespace Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("Domain.WorkTask", "WorkTask")
-                        .WithMany("TimesheetEntries")
-                        .HasForeignKey("WorkTaskId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.Navigation("ActivityType");
 
                     b.Navigation("Project");
@@ -1752,8 +1745,6 @@ namespace Persistence.Migrations
                     b.Navigation("ProjectType");
 
                     b.Navigation("Timesheet");
-
-                    b.Navigation("WorkTask");
                 });
 
             modelBuilder.Entity("Domain.TimesheetStatusHistory", b =>
@@ -2008,8 +1999,6 @@ namespace Persistence.Migrations
             modelBuilder.Entity("Domain.WorkTask", b =>
                 {
                     b.Navigation("Assignees");
-
-                    b.Navigation("TimesheetEntries");
                 });
 #pragma warning restore 612, 618
         }

@@ -21,6 +21,11 @@ public class WorkTaskDto
     public string CreatedByName { get; set; } = string.Empty;
     public DateOnly? DueDate { get; set; }
     public int? TargetHours { get; set; }
+    /// <summary>
+    /// Hours on every timesheet row linked to the task, whatever the sheet's status.
+    /// Summed on every read, never stored. May pass <see cref="TargetHours"/>.
+    /// </summary>
+    public decimal LoggedHours { get; set; }
     /// <summary>Null only on a task filed before the question was asked.</summary>
     public bool? IsBillable { get; set; }
     public WorkTaskPriority Priority { get; set; }
@@ -40,6 +45,13 @@ public class WorkTaskAssigneeDto
 {
     public string UserId { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// On a task's assignee list only: this person is an HR Administrator, who is never
+    /// assignable, left on a task from before the rule. The edit dialog drops them, since
+    /// a save that keeps them is refused. Always false on the picker's list.
+    /// </summary>
+    public bool IsHrAdministrator { get; set; }
 }
 
 public class WorkTaskProjectDto
@@ -76,4 +88,23 @@ public class UpsertWorkTaskRequest
 public class UpdateWorkTaskStatusRequest
 {
     public WorkTaskStatus Status { get; set; }
+}
+
+/// <summary>One task a timesheet row may be logged against, for the editor's Task picker.</summary>
+public class TimesheetTaskOptionDto
+{
+    public int Id { get; set; }
+    public string Title { get; set; } = string.Empty;
+    /// <summary>The picker narrows by it; null only on a task predating required projects.</summary>
+    public int? ProjectId { get; set; }
+    public string? ProjectCode { get; set; }
+    public int? TargetHours { get; set; }
+    public decimal LoggedHours { get; set; }
+    /// <summary>Done or cancelled: on the list only because a row on the sheet already names it.</summary>
+    public bool IsClosed { get; set; }
+    /// <summary>
+    /// The sheet's owner is still one of its assignees. False only on a task the sheet
+    /// already names, from before they were taken off: kept for that row, pickable nowhere else.
+    /// </summary>
+    public bool IsAssigned { get; set; }
 }

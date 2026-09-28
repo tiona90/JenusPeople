@@ -29,6 +29,8 @@ public class CreateWorkTask
             if (input.ProjectId is not { } projectId
                 || !await WorkTaskProjectRule.IsAvailableAsync(context, projectId, input.DepartmentId, cancellationToken))
                 return Result<WorkTaskDto>.Invalid(WorkTaskProjectRule.NotAvailableMessage);
+            if (await WorkTaskAssigneeRule.AnyHrAdministratorAsync(context, input.AssigneeIds, cancellationToken))
+                return Result<WorkTaskDto>.Invalid(WorkTaskAssigneeRule.HrNotAssignableMessage);
             if (!await WorkTaskAssigneeRule.AllEligibleAsync(context, input.AssigneeIds, input.DepartmentId, cancellationToken))
                 return Result<WorkTaskDto>.Invalid(WorkTaskAssigneeRule.NotEligibleMessage);
 

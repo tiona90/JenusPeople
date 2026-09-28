@@ -1,5 +1,5 @@
 import apiClient from './client'
-import type { UpsertWorkTaskRequest, WorkTask, WorkTaskAssignee, WorkTaskDepartment, WorkTaskProject, WorkTaskStatus } from '../types'
+import type { TimesheetTaskOption, UpsertWorkTaskRequest, WorkTask, WorkTaskAssignee, WorkTaskDepartment, WorkTaskProject, WorkTaskStatus } from '../types'
 
 // Every task in the caller's departments. Zero-arg so it is safe as a queryFn.
 export async function getWorkTasks() {
@@ -40,4 +40,12 @@ export async function updateWorkTaskStatus(id: number, status: WorkTaskStatus) {
 
 export async function deleteWorkTask(id: number) {
     await apiClient.delete(`/worktasks/${id}`)
+}
+
+// The Task picker on a timesheet row. Without an id: the caller's own (a week not yet saved).
+export async function getTimesheetTaskOptions(timesheetId?: string) {
+    const response = await apiClient.get<TimesheetTaskOption[]>('/worktasks/timesheet-options', {
+        params: timesheetId ? { timesheetId } : undefined,
+    })
+    return response.data
 }

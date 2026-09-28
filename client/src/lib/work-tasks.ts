@@ -111,3 +111,21 @@ export function taskStats(tasks: readonly WorkTask[], userId: string, today: str
 export function openCount(tasks: readonly WorkTask[], tab: TaskTab, userId: string): number {
     return tasks.filter((task) => inTab(task, tab, userId) && isOpenTask(task)).length
 }
+
+/** `8`, `1.5`, `22.5` — one decimal at most, no trailing `.0`. */
+export function formatHours(hours: number): string {
+    return `${Math.round(hours * 10) / 10}`
+}
+
+/**
+ * How far through its target a task is, in the words the card and the timesheet
+ * picker share. Over target is reported, never refused. A missing figure (an API
+ * predating the field) reads as nothing logged.
+ */
+export function describeTaskProgress(targetHours: number | null, loggedHours: number): { text: string; over: boolean } {
+    const logged = Number(loggedHours) || 0
+    if (targetHours == null) return { text: logged > 0 ? `${formatHours(logged)}h logged` : 'nothing logged', over: false }
+    const left = targetHours - logged
+    if (left < 0) return { text: `${formatHours(-left)}h over`, over: true }
+    return { text: `${formatHours(logged)}h logged · ${formatHours(left)}h left`, over: false }
+}
