@@ -44,6 +44,7 @@ public class AppDbContext : IdentityDbContext<
     public DbSet<StoredFile> StoredFiles { get; set; }
     public DbSet<Child> Children { get; set; }
     public DbSet<SystemError> SystemErrors { get; set; }
+    public DbSet<WorkTask> WorkTasks { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -542,6 +543,35 @@ public class AppDbContext : IdentityDbContext<
             // row to bump by source + type.
             entity.HasIndex(e => e.LastOccurredAtUtc);
             entity.HasIndex(e => new { e.Source, e.ExceptionType });
+        });
+
+        builder.Entity<WorkTask>(entity =>
+        {
+            entity.Property(t => t.Title).IsRequired().HasMaxLength(WorkTask.TitleMaxLength);
+            entity.Property(t => t.Description).HasMaxLength(WorkTask.DescriptionMaxLength);
+            entity.Property(t => t.AssigneeId).IsRequired().HasMaxLength(450);
+            entity.Property(t => t.CreatedById).IsRequired().HasMaxLength(450);
+
+            // All three Restrict: DeleteDepartment counts tasks as a blocker, and
+            // DeleteAdminUser (plus DbInitializer.CleanupUserDependencies) removes
+            // or hands back a leaver's tasks before the user row goes.
+            entity.HasOne(t => t.Department)
+                .WithMany()
+                .HasForeignKey(t => t.DepartmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(t => t.Assignee)
+                .WithMany()
+                .HasForeignKey(t => t.AssigneeId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(t => t.CreatedBy)
+                .WithMany()
+                .HasForeignKey(t => t.CreatedById)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // The list reads by department; the tabs by person.
+            entity.HasIndex(t => new { t.DepartmentId, t.Status });
+            entity.HasIndex(t => t.AssigneeId);
+            entity.HasIndex(t => t.CreatedById);
         });
 
         builder.Entity<AuditLog>(entity =>
