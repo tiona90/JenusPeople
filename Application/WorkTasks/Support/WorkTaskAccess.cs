@@ -37,6 +37,7 @@ public static class WorkTaskAccess
     {
         var departmentIds = await DepartmentIdsAsync(context, callerUserId, cancellationToken);
         return await context.WorkTasks
+            .Include(t => t.Assignees)
             .FirstOrDefaultAsync(t => t.Id == id && departmentIds.Contains(t.DepartmentId), cancellationToken);
     }
 }

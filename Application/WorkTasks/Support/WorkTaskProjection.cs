@@ -17,8 +17,14 @@ public static class WorkTaskProjection
             DepartmentName = t.Department!.Name,
             ProjectId = t.ProjectId,
             ProjectName = t.Project != null ? t.Project.Name : null,
-            AssigneeId = t.AssigneeId,
-            AssigneeName = !string.IsNullOrWhiteSpace(t.Assignee!.DisplayName) ? t.Assignee.DisplayName : (t.Assignee.Email ?? ""),
+            Assignees = t.Assignees
+                .Select(a => new WorkTaskAssigneeDto
+                {
+                    UserId = a.UserId,
+                    DisplayName = !string.IsNullOrWhiteSpace(a.User!.DisplayName) ? a.User.DisplayName : (a.User.Email ?? ""),
+                })
+                .OrderBy(a => a.DisplayName)
+                .ToList(),
             CreatedById = t.CreatedById,
             CreatedByName = !string.IsNullOrWhiteSpace(t.CreatedBy!.DisplayName) ? t.CreatedBy.DisplayName : (t.CreatedBy.Email ?? ""),
             DueDate = t.DueDate,
@@ -29,7 +35,7 @@ public static class WorkTaskProjection
             CompletedAtUtc = t.CompletedAtUtc,
             // Mirrors WorkTaskAccess.CanManageAsync: an inactive creator opens the task to everyone in scope.
             CanEdit = t.CreatedById == callerUserId || !t.CreatedBy!.IsActive,
-            CanChangeStatus = t.CreatedById == callerUserId || !t.CreatedBy!.IsActive || t.AssigneeId == callerUserId,
+            CanChangeStatus = t.CreatedById == callerUserId || !t.CreatedBy!.IsActive || t.Assignees.Any(a => a.UserId == callerUserId),
         });
 
     public static Task<WorkTaskDto> LoadDtoAsync(

@@ -247,7 +247,8 @@ public class DeleteDepartmentBlockerTests
 
         db.WorkTasks.Add(new WorkTask
         {
-            Title = "Chase notes", DepartmentId = TargetId, CreatedById = "u-leaver", AssigneeId = "u-leaver",
+            Title = "Chase notes", DepartmentId = TargetId, CreatedById = "u-leaver",
+            Assignees = [new WorkTaskAssignee { UserId = "u-leaver" }],
             CreatedAtUtc = DateTime.UtcNow, UpdatedAtUtc = DateTime.UtcNow,
         });
         await db.SaveChangesAsync();

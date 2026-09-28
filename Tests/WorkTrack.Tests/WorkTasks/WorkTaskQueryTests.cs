@@ -24,7 +24,7 @@ public class WorkTaskQueryTests
         var task = Assert.Single(result.Value!);
         Assert.Equal("sales task", task.Title);
         Assert.Equal("Sales", task.DepartmentName);
-        Assert.Equal("Sam Sales", task.AssigneeName);
+        Assert.Equal(["Sam Sales"], task.Assignees.Select(a => a.DisplayName).ToList());
         Assert.Equal("Hana HR", task.CreatedByName);
     }
 

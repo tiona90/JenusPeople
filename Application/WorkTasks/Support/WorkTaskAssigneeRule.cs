@@ -52,6 +52,16 @@ public static class WorkTaskAssigneeRule
             .ToList();
     }
 
+    /// <summary>Every one of <paramref name="userIds"/> is eligible (vacuously true for none).</summary>
+    public static async Task<bool> AllEligibleAsync(
+        AppDbContext context, IReadOnlyCollection<string> userIds, int departmentId, CancellationToken cancellationToken)
+    {
+        if (userIds.Count == 0)
+            return true;
+        var eligible = (await EligibleAsync(context, departmentId, cancellationToken)).Select(a => a.UserId).ToHashSet();
+        return userIds.All(eligible.Contains);
+    }
+
     public static async Task<bool> IsEligibleAsync(
         AppDbContext context, string userId, int departmentId, CancellationToken cancellationToken) =>
         (await EligibleAsync(context, departmentId, cancellationToken)).Any(a => a.UserId == userId);

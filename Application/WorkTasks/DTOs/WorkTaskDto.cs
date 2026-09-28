@@ -12,8 +12,8 @@ public class WorkTaskDto
     /// <summary>Null only on a task filed before projects were required.</summary>
     public int? ProjectId { get; set; }
     public string? ProjectName { get; set; }
-    public string AssigneeId { get; set; } = string.Empty;
-    public string AssigneeName { get; set; } = string.Empty;
+    /// <summary>Everyone on the task, by name.</summary>
+    public List<WorkTaskAssigneeDto> Assignees { get; set; } = [];
     public string CreatedById { get; set; } = string.Empty;
     public string CreatedByName { get; set; } = string.Empty;
     public DateOnly? DueDate { get; set; }
@@ -26,7 +26,7 @@ public class WorkTaskDto
     /// <summary>The caller created it, or its creator is deactivated: may edit, reassign and delete.</summary>
     public bool CanEdit { get; set; }
 
-    /// <summary>The caller may edit it, or is assigned it: may move its status.</summary>
+    /// <summary>The caller may edit it, or is one of its assignees: may move its status.</summary>
     public bool CanChangeStatus { get; set; }
 }
 
@@ -57,7 +57,8 @@ public class UpsertWorkTaskRequest
     public int DepartmentId { get; set; }
     /// <summary>Required; nullable so a missing one reaches the validator as a message, not a 0.</summary>
     public int? ProjectId { get; set; }
-    public string AssigneeId { get; set; } = string.Empty;
+    /// <summary>At least one, no repeats — see <c>UpsertWorkTaskRequestValidator</c>.</summary>
+    public List<string> AssigneeIds { get; set; } = [];
     public DateOnly? DueDate { get; set; }
     public WorkTaskPriority Priority { get; set; } = WorkTaskPriority.Normal;
 }

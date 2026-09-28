@@ -21,7 +21,7 @@ public class WorkTaskMappingTests
         {
             Title = "Chase sick notes",
             DepartmentId = 1,
-            AssigneeId = "u-b",
+            Assignees = [new WorkTaskAssignee { UserId = "u-b" }, new WorkTaskAssignee { UserId = "u-a" }],
             CreatedById = "u-a",
             DueDate = new DateOnly(2026, 10, 5),
             CreatedAtUtc = DateTime.UtcNow,
@@ -30,7 +30,8 @@ public class WorkTaskMappingTests
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
 
-        var task = await db.WorkTasks.Include(t => t.Department).SingleAsync();
+        var task = await db.WorkTasks.Include(t => t.Department).Include(t => t.Assignees).SingleAsync();
+        Assert.Equal(["u-a", "u-b"], task.Assignees.Select(a => a.UserId).OrderBy(x => x).ToList());
         Assert.Equal("Sales", task.Department!.Name);
         Assert.Equal(WorkTaskStatus.ToDo, task.Status);
         Assert.Equal(WorkTaskPriority.Normal, task.Priority);
@@ -44,9 +45,30 @@ public class WorkTaskMappingTests
         db.Users.Add(new User { Id = "u-a", UserName = "a@t", Email = "a@t", DisplayName = "A" });
         db.WorkTasks.Add(new WorkTask
         {
-            Title = "x", DepartmentId = 99, AssigneeId = "u-a", CreatedById = "u-a",
+            Title = "x", DepartmentId = 99, CreatedById = "u-a",
             CreatedAtUtc = DateTime.UtcNow, UpdatedAtUtc = DateTime.UtcNow,
         });
         await Assert.ThrowsAsync<DbUpdateException>(() => db.SaveChangesAsync());
+    }
+
+    [Fact]
+    public async Task Deleting_a_task_takes_its_assignee_rows_with_it()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        db.Departments.Add(new Department { Id = 1, Name = "Sales", Code = "SAL" });
+        db.Users.Add(new User { Id = "u-a", UserName = "a@t", Email = "a@t", DisplayName = "A" });
+        var task = new WorkTask
+        {
+            Title = "x", DepartmentId = 1, CreatedById = "u-a",
+            Assignees = [new WorkTaskAssignee { UserId = "u-a" }],
+            CreatedAtUtc = DateTime.UtcNow, UpdatedAtUtc = DateTime.UtcNow,
+        };
+        db.WorkTasks.Add(task);
+        await db.SaveChangesAsync();
+
+        db.WorkTasks.Remove(task);
+        await db.SaveChangesAsync();
+
+        Assert.False(await db.WorkTaskAssignees.AnyAsync());
     }
 }

@@ -26,13 +26,20 @@ function renderDialog() {
 async function choose(label: string, option: string) {
     fireEvent.mouseDown(screen.getByRole('combobox', { name: new RegExp(`^${label}`) }))
     fireEvent.click(await screen.findByRole('option', { name: option }))
+    const listbox = screen.queryByRole('listbox')
+    if (listbox) {
+        fireEvent.keyDown(listbox, { key: 'Escape' })
+        await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull())
+    }
 }
 
 beforeEach(() => {
     vi.clearAllMocks()
     api.getWorkTaskDepartments.mockResolvedValue([{ id: 1, name: 'Sales' }, { id: 2, name: 'Ops' }])
     api.getWorkTaskAssignees.mockImplementation(async (departmentId: number) =>
-        departmentId === 1 ? [{ userId: 'u-sam', displayName: 'Sam Sales' }] : [{ userId: 'u-olga', displayName: 'Olga Ops' }])
+        departmentId === 1
+            ? [{ userId: 'u-sam', displayName: 'Sam Sales' }, { userId: 'u-hana', displayName: 'Hana HR' }]
+            : [{ userId: 'u-olga', displayName: 'Olga Ops' }, { userId: 'u-hana', displayName: 'Hana HR' }])
     api.getWorkTaskProjects.mockImplementation(async (departmentId: number) =>
         departmentId === 1 ? [{ id: 10, name: 'CRM Rollout', code: 'CRM' }] : [{ id: 12, name: 'Ops Tooling', code: 'OPT' }])
 })
@@ -42,11 +49,11 @@ describe('TaskDialog', () => {
         renderDialog()
         await choose('Department', 'Sales')
         await choose('Project', 'CRM Rollout')
-        await choose('Assignee', 'Sam Sales')
+        await choose('Assignees', 'Sam Sales')
         await choose('Department', 'Ops')
 
         await waitFor(() => expect(api.getWorkTaskAssignees).toHaveBeenCalledWith(2))
-        expect(within(screen.getByRole('combobox', { name: /^Assignee/ })).queryByText('Sam Sales')).toBeNull()
+        expect(within(screen.getByRole('combobox', { name: /^Assignees/ })).queryByText('Sam Sales')).toBeNull()
     })
 
     it('holds Create until title, department and assignee are set', async () => {
@@ -57,7 +64,7 @@ describe('TaskDialog', () => {
         fireEvent.change(screen.getByRole('textbox', { name: /^Title/ }), { target: { value: '   ' } })
         await choose('Department', 'Sales')
         await choose('Project', 'CRM Rollout')
-        await choose('Assignee', 'Sam Sales')
+        await choose('Assignees', 'Sam Sales')
         expect(create).toBeDisabled()
 
         fireEvent.change(screen.getByRole('textbox', { name: /^Title/ }), { target: { value: 'Chase notes' } })
@@ -70,12 +77,12 @@ describe('TaskDialog', () => {
         fireEvent.change(screen.getByRole('textbox', { name: /^Title/ }), { target: { value: ' Chase notes ' } })
         await choose('Department', 'Sales')
         await choose('Project', 'CRM Rollout')
-        await choose('Assignee', 'Sam Sales')
+        await choose('Assignees', 'Sam Sales')
         fireEvent.click(screen.getByRole('button', { name: 'Create task' }))
 
         await waitFor(() => expect(onSaved).toHaveBeenCalled())
         expect(api.createWorkTask).toHaveBeenCalledWith({
-            title: 'Chase notes', description: null, departmentId: 1, projectId: 10, assigneeId: 'u-sam', dueDate: null, priority: 'Normal',
+            title: 'Chase notes', description: null, departmentId: 1, projectId: 10, assigneeIds: ['u-sam'], dueDate: null, priority: 'Normal',
         })
     })
 
@@ -91,7 +98,7 @@ describe('TaskDialog', () => {
         fireEvent.change(screen.getByRole('textbox', { name: /^Title/ }), { target: { value: 'Chase notes' } })
         await choose('Department', 'Sales')
         await choose('Project', 'CRM Rollout')
-        await choose('Assignee', 'Sam Sales')
+        await choose('Assignees', 'Sam Sales')
         fireEvent.click(screen.getByRole('button', { name: 'Create task' }))
         expect(await screen.findByRole('alert')).toBeInTheDocument()
 
@@ -117,7 +124,7 @@ describe('TaskDialog', () => {
         renderDialog()
         fireEvent.change(screen.getByRole('textbox', { name: /^Title/ }), { target: { value: 'Chase notes' } })
         await choose('Department', 'Sales')
-        await choose('Assignee', 'Sam Sales')
+        await choose('Assignees', 'Sam Sales')
         expect(screen.getByRole('button', { name: 'Create task' })).toBeDisabled()
 
         await choose('Project', 'CRM Rollout')
@@ -130,5 +137,35 @@ describe('TaskDialog', () => {
         await choose('Department', 'Sales')
 
         expect(await screen.findByText('No active projects in this department')).toBeInTheDocument()
+    })
+
+    it('assigns several people and posts all of them', async () => {
+        api.createWorkTask.mockResolvedValue({} as never)
+        const { onSaved } = renderDialog()
+        fireEvent.change(screen.getByRole('textbox', { name: /^Title/ }), { target: { value: 'Chase notes' } })
+        await choose('Department', 'Sales')
+        await choose('Project', 'CRM Rollout')
+        await choose('Assignees', 'Sam Sales')
+        await choose('Assignees', 'Hana HR')
+        fireEvent.click(screen.getByRole('button', { name: 'Create task' }))
+
+        await waitFor(() => expect(onSaved).toHaveBeenCalled())
+        expect(api.createWorkTask).toHaveBeenCalledWith(expect.objectContaining({ assigneeIds: ['u-sam', 'u-hana'] }))
+    })
+
+    it('keeps the people who cover the new department and drops the rest', async () => {
+        api.createWorkTask.mockResolvedValue({} as never)
+        const { onSaved } = renderDialog()
+        fireEvent.change(screen.getByRole('textbox', { name: /^Title/ }), { target: { value: 'Chase notes' } })
+        await choose('Department', 'Sales')
+        await choose('Assignees', 'Sam Sales')
+        await choose('Assignees', 'Hana HR')
+        await choose('Department', 'Ops')
+        await waitFor(() => expect(api.getWorkTaskAssignees).toHaveBeenCalledWith(2))
+        await choose('Project', 'Ops Tooling')
+        fireEvent.click(screen.getByRole('button', { name: 'Create task' }))
+
+        await waitFor(() => expect(onSaved).toHaveBeenCalled())
+        expect(api.createWorkTask).toHaveBeenCalledWith(expect.objectContaining({ departmentId: 2, assigneeIds: ['u-hana'] }))
     })
 })

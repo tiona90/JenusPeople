@@ -45,8 +45,12 @@ public class WorkTask
     public int? ProjectId { get; set; }
     public Project? Project { get; set; }
 
-    public string AssigneeId { get; set; } = string.Empty;
-    public User? Assignee { get; set; }
+    /// <summary>
+    /// Who is working on it: at least one active Manager or HR Administrator
+    /// covering <see cref="DepartmentId"/>. They share one <see cref="Status"/> —
+    /// any of them moving it moves it for all.
+    /// </summary>
+    public ICollection<WorkTaskAssignee> Assignees { get; set; } = new List<WorkTaskAssignee>();
 
     public string CreatedById { get; set; } = string.Empty;
     public User? CreatedBy { get; set; }

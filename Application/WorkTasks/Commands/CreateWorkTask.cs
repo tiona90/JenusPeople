@@ -29,7 +29,7 @@ public class CreateWorkTask
             if (input.ProjectId is not { } projectId
                 || !await WorkTaskProjectRule.IsAvailableAsync(context, projectId, input.DepartmentId, cancellationToken))
                 return Result<WorkTaskDto>.Invalid(WorkTaskProjectRule.NotAvailableMessage);
-            if (!await WorkTaskAssigneeRule.IsEligibleAsync(context, input.AssigneeId, input.DepartmentId, cancellationToken))
+            if (!await WorkTaskAssigneeRule.AllEligibleAsync(context, input.AssigneeIds, input.DepartmentId, cancellationToken))
                 return Result<WorkTaskDto>.Invalid(WorkTaskAssigneeRule.NotEligibleMessage);
 
             var now = DateTime.UtcNow;
@@ -39,7 +39,7 @@ public class CreateWorkTask
                 Description = string.IsNullOrWhiteSpace(input.Description) ? null : input.Description.Trim(),
                 DepartmentId = input.DepartmentId,
                 ProjectId = input.ProjectId,
-                AssigneeId = input.AssigneeId,
+                Assignees = [.. input.AssigneeIds.Select(id => new WorkTaskAssignee { UserId = id })],
                 CreatedById = request.CallerUserId,
                 DueDate = input.DueDate,
                 Priority = input.Priority,
@@ -49,8 +49,9 @@ public class CreateWorkTask
             context.WorkTasks.Add(task);
             await context.SaveChangesAsync(cancellationToken);
 
-            if (task.AssigneeId != request.CallerUserId)
-                await WorkTaskAssignmentNotification.SendAsync(context, emailService, logger, task, cancellationToken);
+            // Nobody is emailed about a task they assigned themselves.
+            var recipients = input.AssigneeIds.Where(id => id != request.CallerUserId).ToList();
+            await WorkTaskAssignmentNotification.SendAsync(context, emailService, logger, task, recipients, cancellationToken);
 
             return Result<WorkTaskDto>.Success(
                 await WorkTaskProjection.LoadDtoAsync(context, task.Id, request.CallerUserId, cancellationToken));

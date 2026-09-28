@@ -36,7 +36,7 @@ public class WorkTaskCommandTests
             Title = title,
             DepartmentId = department,
             ProjectId = project ?? (department == Sales ? SalesProject : OpsProject),
-            AssigneeId = assignee,
+            AssigneeIds = [assignee],
             Priority = WorkTaskPriority.High,
         };
 
@@ -140,7 +140,7 @@ public class WorkTaskCommandTests
         var result = await Update(db, id, SalesManager, Request(Sales, Hr));
 
         Assert.True(result.IsSuccess, result.Error);
-        Assert.Equal(Hr, result.Value!.AssigneeId);
+        Assert.Equal([Hr], result.Value!.Assignees.Select(a => a.UserId).ToList());
         Assert.Equal($"{Hr}@t", Assert.Single(_email.Sent).Recipient);
     }
 
@@ -326,6 +326,118 @@ public class WorkTaskCommandTests
         db.ChangeTracker.Clear();
 
         var result = await Update(db, id, Hr, Request(Sales, SalesManager, "Typo fixed"));
+
+        Assert.True(result.IsSuccess, result.Error);
+    }
+
+    /// <summary>OpsManager covers Sales as well, so Sales has three eligible people.</summary>
+    private static async Task OpsManagerCoversSalesAsync(AppDbContext db)
+    {
+        db.UserDepartments.Add(new UserDepartment { UserId = OpsManager, DepartmentId = Sales });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+    }
+
+    private static UpsertWorkTaskRequest RequestFor(int department, params string[] assignees)
+    {
+        var request = Request(department, assignees[0]);
+        request.AssigneeIds = [.. assignees];
+        return request;
+    }
+
+    [Fact]
+    public async Task A_task_can_have_several_assignees_and_each_is_emailed_once()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        await OpsManagerCoversSalesAsync(db);
+
+        var result = await Create(db, Hr, RequestFor(Sales, SalesManager, OpsManager, Hr));
+
+        Assert.True(result.IsSuccess, result.Error);
+        Assert.Equal(
+            ["Hana HR", "Olga Ops", "Sam Sales"],
+            result.Value!.Assignees.Select(a => a.DisplayName).ToList());
+        // Hr is the creator, and nobody is emailed about a task they assigned themselves.
+        Assert.Equal(
+            [$"{OpsManager}@t", $"{SalesManager}@t"],
+            _email.Sent.Select(m => m.Recipient).OrderBy(x => x).ToList());
+    }
+
+    [Fact]
+    public async Task One_ineligible_person_among_several_refuses_the_save()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+
+        var result = await Create(db, Hr, RequestFor(Sales, SalesManager, Employee));
+
+        Assert.Equal(WorkTaskAssigneeRule.NotEligibleMessage, result.Error);
+        Assert.False(await db.WorkTasks.AnyAsync());
+        Assert.Empty(_email.Sent);
+    }
+
+    [Fact]
+    public async Task Adding_an_assignee_emails_only_the_newcomer()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        await OpsManagerCoversSalesAsync(db);
+        var id = await Seeded(db, NewTask(Sales, Hr, SalesManager));
+
+        var result = await Update(db, id, Hr, RequestFor(Sales, SalesManager, OpsManager));
+
+        Assert.True(result.IsSuccess, result.Error);
+        Assert.Equal(2, result.Value!.Assignees.Count);
+        Assert.Equal($"{OpsManager}@t", Assert.Single(_email.Sent).Recipient);
+    }
+
+    [Fact]
+    public async Task Removing_an_assignee_keeps_the_rest()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        await OpsManagerCoversSalesAsync(db);
+        var created = await Create(db, Hr, RequestFor(Sales, SalesManager, OpsManager));
+        _email.Sent.Clear();
+
+        var result = await Update(db, created.Value!.Id, Hr, RequestFor(Sales, OpsManager));
+
+        Assert.True(result.IsSuccess, result.Error);
+        Assert.Equal([OpsManager], result.Value!.Assignees.Select(a => a.UserId).ToList());
+        Assert.Empty(_email.Sent);
+        Assert.Equal(1, await db.WorkTaskAssignees.CountAsync());
+    }
+
+    [Fact]
+    public async Task Any_assignee_may_move_the_status()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        await OpsManagerCoversSalesAsync(db);
+        var created = await Create(db, Hr, RequestFor(Sales, SalesManager, OpsManager));
+
+        var moved = await SetStatus(db, created.Value!.Id, OpsManager, WorkTaskStatus.Done);
+
+        Assert.True(moved.IsSuccess, moved.Error);
+        Assert.Equal(WorkTaskStatus.Done, moved.Value!.Status);
+        Assert.True(moved.Value.CanChangeStatus);
+    }
+
+    [Fact]
+    public async Task Keeping_an_assignee_who_left_scope_beside_a_new_one_still_saves()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        await OpsManagerCoversSalesAsync(db);
+        var id = await Seeded(db, NewTask(Sales, Hr, SalesManager));
+        var profile = await db.EmployeeProfiles.SingleAsync(p => p.UserId == SalesManager);
+        profile.DepartmentId = Ops;
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        // Only the newcomer is checked: SalesManager stays although they now cover Ops.
+        var result = await Update(db, id, Hr, RequestFor(Sales, SalesManager, OpsManager));
 
         Assert.True(result.IsSuccess, result.Error);
     }

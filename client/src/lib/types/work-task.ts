@@ -11,8 +11,8 @@ export interface WorkTask {
     /** Null only on a task filed before projects were required; it must be given one on its next edit. */
     projectId: number | null
     projectName: string | null
-    assigneeId: string
-    assigneeName: string
+    /** Everyone on the task, by name. They share one status. */
+    assignees: WorkTaskAssignee[]
     createdById: string
     createdByName: string
     /** Calendar date, `YYYY-MM-DD`. */
@@ -37,7 +37,8 @@ export interface UpsertWorkTaskRequest {
     description: string | null
     departmentId: number
     projectId: number
-    assigneeId: string
+    /** At least one, no repeats. */
+    assigneeIds: string[]
     dueDate: string | null
     priority: WorkTaskPriority
 }

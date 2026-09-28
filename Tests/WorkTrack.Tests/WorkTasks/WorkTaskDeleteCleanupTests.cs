@@ -49,9 +49,10 @@ public class WorkTaskDeleteCleanupTests : IAsyncLifetime
         Assert.True(created.Succeeded, string.Join("; ", created.Errors.Select(e => e.Description)));
     }
 
-    private static WorkTask NewTask(string createdBy, string assignee, string title) => new()
+    private static WorkTask NewTask(string createdBy, string title, params string[] assignees) => new()
     {
-        Title = title, DepartmentId = 1, CreatedById = createdBy, AssigneeId = assignee,
+        Title = title, DepartmentId = 1, CreatedById = createdBy,
+        Assignees = [.. assignees.Select(a => new WorkTaskAssignee { UserId = a })],
         CreatedAtUtc = DateTime.UtcNow, UpdatedAtUtc = DateTime.UtcNow,
     };
 
@@ -63,9 +64,10 @@ public class WorkTaskDeleteCleanupTests : IAsyncLifetime
         await AddUserAsync("u-other");
         Db.Departments.Add(new Department { Id = 1, Name = "Sales", Code = "SAL" });
         Db.WorkTasks.AddRange(
-            NewTask("u-leaver", "u-other", "created by leaver"),
-            NewTask("u-other", "u-leaver", "given to leaver"),
-            NewTask("u-leaver", "u-leaver", "leaver's own"));
+            NewTask("u-leaver", "created by leaver", "u-other"),
+            NewTask("u-other", "given to leaver", "u-leaver"),
+            NewTask("u-other", "shared with leaver", "u-leaver", "u-admin"),
+            NewTask("u-leaver", "leaver's own", "u-leaver"));
         await Db.SaveChangesAsync();
         Db.ChangeTracker.Clear();
 
@@ -73,9 +75,11 @@ public class WorkTaskDeleteCleanupTests : IAsyncLifetime
             new DeleteAdminUser.Command { Id = "u-leaver", RequestingUserId = "u-admin" }, CancellationToken.None);
 
         Assert.True(result.IsSuccess, result.Error);
-        var left = await Db.WorkTasks.AsNoTracking().ToListAsync();
-        var handedBack = Assert.Single(left);
-        Assert.Equal("given to leaver", handedBack.Title);
-        Assert.Equal("u-other", handedBack.AssigneeId);
+        var left = await Db.WorkTasks.AsNoTracking().Include(t => t.Assignees).OrderBy(t => t.Title).ToListAsync();
+        Assert.Equal(["given to leaver", "shared with leaver"], left.Select(t => t.Title).ToList());
+        // Left with nobody, it goes back to its creator.
+        Assert.Equal(["u-other"], left[0].Assignees.Select(a => a.UserId).ToList());
+        // Still somebody's: the leaver just drops off it.
+        Assert.Equal(["u-admin"], left[1].Assignees.Select(a => a.UserId).ToList());
     }
 }

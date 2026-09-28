@@ -32,7 +32,7 @@ export function isOverdue(task: WorkTask, today: string): boolean {
 }
 
 function inTab(task: WorkTask, tab: TaskTab, userId: string): boolean {
-    if (tab === 'assigned') return task.assigneeId === userId
+    if (tab === 'assigned') return task.assignees.some((a) => a.userId === userId)
     if (tab === 'created') return task.createdById === userId
     return true
 }

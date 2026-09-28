@@ -60,7 +60,7 @@ internal static class WorkTaskWorld
         DepartmentId = departmentId,
         ProjectId = departmentId == Sales ? SalesProject : OpsProject,
         CreatedById = createdBy,
-        AssigneeId = assignee,
+        Assignees = [new WorkTaskAssignee { UserId = assignee }],
         Status = status,
         CreatedAtUtc = new DateTime(2026, 9, 1, 8, 0, 0, DateTimeKind.Utc),
         UpdatedAtUtc = new DateTime(2026, 9, 1, 8, 0, 0, DateTimeKind.Utc),

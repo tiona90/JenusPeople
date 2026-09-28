@@ -131,7 +131,7 @@ const TasksPage = observer(function TasksPage() {
                                             <Chip size="small" label={task.departmentName} />
                                             {task.projectName && <Chip size="small" variant="outlined" label={task.projectName} />}
                                             <Chip size="small" color={PRIORITY_COLOR[task.priority]} label={PRIORITY_LABELS[task.priority]} />
-                                            <span>{task.assigneeName}</span>
+                                            <span>{task.assignees.map((a) => a.displayName).join(', ')}</span>
                                             <span>· from {task.createdByName}</span>
                                             {task.dueDate && (
                                                 <Box component="span" sx={{ color: overdue ? 'error.main' : undefined, fontWeight: overdue ? 600 : undefined }}>

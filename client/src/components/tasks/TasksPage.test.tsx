@@ -22,15 +22,15 @@ const mobx = vi.mocked(await import('../../lib/mobx'))
 
 const base: WorkTask = {
     id: 1, title: 'Mine to do', description: null, departmentId: 1, departmentName: 'Sales', projectId: 10, projectName: 'CRM Rollout',
-    assigneeId: 'me', assigneeName: 'Me', createdById: 'boss', createdByName: 'Boss',
+    assignees: [{ userId: 'me', displayName: 'Me' }], createdById: 'boss', createdByName: 'Boss',
     dueDate: '2020-01-01', priority: 'High', status: 'ToDo',
     createdAtUtc: '2026-09-01T08:00:00', updatedAtUtc: '2026-09-01T08:00:00', completedAtUtc: null,
     canEdit: false, canChangeStatus: true,
 }
 const TASKS: WorkTask[] = [
     base,
-    { ...base, id: 2, title: 'I asked for this', assigneeId: 'x', assigneeName: 'Xena', createdById: 'me', createdByName: 'Me', dueDate: null, canEdit: true },
-    { ...base, id: 3, title: 'Someone else\'s', assigneeId: 'x', assigneeName: 'Xena', createdById: 'y', createdByName: 'Yan', dueDate: null, canEdit: false, canChangeStatus: false },
+    { ...base, id: 2, title: 'I asked for this', assignees: [{ userId: 'x', displayName: 'Xena' }, { userId: 'z', displayName: 'Zoe' }], createdById: 'me', createdByName: 'Me', dueDate: null, canEdit: true },
+    { ...base, id: 3, title: 'Someone else\'s', assignees: [{ userId: 'x', displayName: 'Xena' }, { userId: 'z', displayName: 'Zoe' }], createdById: 'y', createdByName: 'Yan', dueDate: null, canEdit: false, canChangeStatus: false },
 ]
 
 function renderPage() {
@@ -90,5 +90,14 @@ describe('TasksPage', () => {
         renderPage()
         const row = (await screen.findAllByTestId('task-row'))[0]
         expect(within(row).getByText('CRM Rollout')).toBeInTheDocument()
+    })
+
+    it('lists every assignee on the row', async () => {
+        renderPage()
+        await screen.findAllByTestId('task-row')
+        fireEvent.click(screen.getByRole('tab', { name: /Created by me/ }))
+
+        const row = (await screen.findAllByTestId('task-row'))[0]
+        expect(within(row).getByText('Xena, Zoe')).toBeInTheDocument()
     })
 })

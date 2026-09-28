@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import {
-    Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormHelperText, InputLabel,
+    Alert, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormHelperText, InputLabel,
     MenuItem, Select, Stack, TextField,
 } from '@mui/material'
 import { createWorkTask, getWorkTaskAssignees, getWorkTaskDepartments, getWorkTaskProjects, updateWorkTask } from '../../lib/api'
@@ -25,7 +25,7 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
     const [description, setDescription] = useState('')
     const [departmentId, setDepartmentId] = useState<number | ''>('')
     const [projectId, setProjectId] = useState<number | ''>('')
-    const [assigneeId, setAssigneeId] = useState('')
+    const [assigneeIds, setAssigneeIds] = useState<string[]>([])
     const [dueDate, setDueDate] = useState('')
     const [priority, setPriority] = useState<WorkTaskPriority>('Normal')
 
@@ -35,7 +35,7 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
         setDescription(task?.description ?? '')
         setDepartmentId(task?.departmentId ?? '')
         setProjectId(task?.projectId ?? '')
-        setAssigneeId(task?.assigneeId ?? '')
+        setAssigneeIds(task?.assignees.map((a) => a.userId) ?? [])
         setDueDate(task?.dueDate?.slice(0, 10) ?? '')
         setPriority(task?.priority ?? 'Normal')
     }, [open, task])
@@ -68,15 +68,17 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
         enabled: open && departmentId !== '',
     })
 
-    // A department change can leave the chosen assignee outside it. Keep them while
-    // the list loads; drop them once it says they are not there. Editing an existing
-    // task keeps its assignee even if they have since left — the server only
-    // re-checks when the assignee or department changes.
+    // A department change can leave some of the chosen people outside it. Keep
+    // them while the list loads; drop only those it says are not there. Editing a
+    // task in its own department keeps the people already on it even if they have
+    // since left — the server checks only the newcomers unless the department moves.
     useEffect(() => {
-        if (!assignees.data || assigneeId === '') return
-        const unchangedOnEdit = task != null && departmentId === task.departmentId && assigneeId === task.assigneeId
-        if (!unchangedOnEdit && !assignees.data.some((a) => a.userId === assigneeId)) setAssigneeId('')
-    }, [assignees.data, assigneeId, departmentId, task])
+        if (!assignees.data || assigneeIds.length === 0) return
+        const listed = new Set(assignees.data.map((a) => a.userId))
+        const kept = new Set(task != null && departmentId === task.departmentId ? task.assignees.map((a) => a.userId) : [])
+        const next = assigneeIds.filter((id) => listed.has(id) || kept.has(id))
+        if (next.length !== assigneeIds.length) setAssigneeIds(next)
+    }, [assignees.data, assigneeIds, departmentId, task])
 
     const save = useMutation({
         mutationFn: (request: UpsertWorkTaskRequest) => (task ? updateWorkTask(task.id, request) : createWorkTask(request)),
@@ -97,7 +99,7 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
         description.length <= DESCRIPTION_MAX &&
         departmentId !== '' &&
         projectId !== '' &&
-        assigneeId !== '' &&
+        assigneeIds.length > 0 &&
         !save.isPending
 
     const submit = () => {
@@ -107,7 +109,7 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
             description: description.trim() === '' ? null : description.trim(),
             departmentId: departmentId as number,
             projectId: projectId as number,
-            assigneeId,
+            assigneeIds,
             dueDate: dueDate === '' ? null : dueDate,
             priority,
         })
@@ -119,10 +121,12 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
         projectOptions.push({ id: task.projectId, name: task.projectName ?? `Project ${task.projectId}`, code: '' })
     const noProjects = departmentId !== '' && projects.data?.length === 0 && projectOptions.length === 0
 
-    // Keep an edited task's current assignee selectable while the list loads, or after they left scope.
+    // Keep an edited task's own people selectable while the list loads, or after they left scope.
     const assigneeOptions = [...(assignees.data ?? [])]
-    if (task && assigneeId === task.assigneeId && !assigneeOptions.some((a) => a.userId === assigneeId))
-        assigneeOptions.push({ userId: task.assigneeId, displayName: task.assigneeName })
+    for (const existing of task?.assignees ?? [])
+        if (assigneeIds.includes(existing.userId) && !assigneeOptions.some((a) => a.userId === existing.userId))
+            assigneeOptions.push(existing)
+    const nameOf = (id: string) => assigneeOptions.find((a) => a.userId === id)?.displayName ?? id
 
     return (
         <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
@@ -180,12 +184,21 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
                         {noProjects && <FormHelperText>No active projects in this department</FormHelperText>}
                     </FormControl>
                     <FormControl required disabled={departmentId === ''}>
-                        <InputLabel id="task-assignee-label">Assignee</InputLabel>
-                        <Select
+                        <InputLabel id="task-assignee-label">Assignees</InputLabel>
+                        <Select<string[]>
+                            multiple
                             labelId="task-assignee-label"
-                            label="Assignee"
-                            value={assigneeOptions.some((a) => a.userId === assigneeId) ? assigneeId : ''}
-                            onChange={(e) => setAssigneeId(String(e.target.value))}
+                            label="Assignees"
+                            value={assigneeIds.filter((id) => assigneeOptions.some((a) => a.userId === id))}
+                            onChange={(e) => {
+                                const value = e.target.value
+                                setAssigneeIds(typeof value === 'string' ? value.split(',') : value)
+                            }}
+                            renderValue={(selected) => (
+                                <Stack direction="row" spacing={0.5} useFlexGap sx={{ flexWrap: 'wrap' }}>
+                                    {selected.map((id) => <Chip key={id} size="small" label={nameOf(id)} />)}
+                                </Stack>
+                            )}
                         >
                             {assigneeOptions.map((a) => (
                                 <MenuItem key={a.userId} value={a.userId}>{a.displayName}</MenuItem>

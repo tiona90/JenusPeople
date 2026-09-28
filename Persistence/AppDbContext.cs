@@ -45,6 +45,7 @@ public class AppDbContext : IdentityDbContext<
     public DbSet<Child> Children { get; set; }
     public DbSet<SystemError> SystemErrors { get; set; }
     public DbSet<WorkTask> WorkTasks { get; set; }
+    public DbSet<WorkTaskAssignee> WorkTaskAssignees { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -549,7 +550,6 @@ public class AppDbContext : IdentityDbContext<
         {
             entity.Property(t => t.Title).IsRequired().HasMaxLength(WorkTask.TitleMaxLength);
             entity.Property(t => t.Description).HasMaxLength(WorkTask.DescriptionMaxLength);
-            entity.Property(t => t.AssigneeId).IsRequired().HasMaxLength(450);
             entity.Property(t => t.CreatedById).IsRequired().HasMaxLength(450);
 
             // All three Restrict: DeleteDepartment counts tasks as a blocker, and
@@ -565,10 +565,6 @@ public class AppDbContext : IdentityDbContext<
                 .WithMany()
                 .HasForeignKey(t => t.ProjectId)
                 .OnDelete(DeleteBehavior.Restrict);
-            entity.HasOne(t => t.Assignee)
-                .WithMany()
-                .HasForeignKey(t => t.AssigneeId)
-                .OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(t => t.CreatedBy)
                 .WithMany()
                 .HasForeignKey(t => t.CreatedById)
@@ -576,8 +572,27 @@ public class AppDbContext : IdentityDbContext<
 
             // The list reads by department; the tabs by person.
             entity.HasIndex(t => new { t.DepartmentId, t.Status });
-            entity.HasIndex(t => t.AssigneeId);
             entity.HasIndex(t => t.CreatedById);
+        });
+
+        builder.Entity<WorkTaskAssignee>(entity =>
+        {
+            entity.HasKey(a => new { a.WorkTaskId, a.UserId });
+            entity.Property(a => a.UserId).HasMaxLength(450);
+
+            entity.HasOne(a => a.WorkTask)
+                .WithMany(t => t.Assignees)
+                .HasForeignKey(a => a.WorkTaskId)
+                .OnDelete(DeleteBehavior.Cascade);
+            // Restrict: DeleteAdminUser and DbInitializer.CleanupUserDependencies
+            // remove a leaver's rows before the user goes.
+            entity.HasOne(a => a.User)
+                .WithMany()
+                .HasForeignKey(a => a.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // "Assigned to me" and the user-delete sweep read by person.
+            entity.HasIndex(a => a.UserId);
         });
 
         builder.Entity<AuditLog>(entity =>

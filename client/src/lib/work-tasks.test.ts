@@ -4,7 +4,7 @@ import { filterTasks, isOverdue, openCount, todayIso } from './work-tasks'
 
 const base: WorkTask = {
     id: 1, title: 't', description: null, departmentId: 1, departmentName: 'Sales', projectId: 10, projectName: 'CRM Rollout',
-    assigneeId: 'me', assigneeName: 'Me', createdById: 'boss', createdByName: 'Boss',
+    assignees: [{ userId: 'me', displayName: 'Me' }], createdById: 'boss', createdByName: 'Boss',
     dueDate: null, priority: 'Normal', status: 'ToDo',
     createdAtUtc: '2026-09-01T08:00:00', updatedAtUtc: '2026-09-01T08:00:00', completedAtUtc: null,
     canEdit: false, canChangeStatus: true,
@@ -26,8 +26,8 @@ describe('work-tasks helpers', () => {
     it('filters by tab, status and department', () => {
         const tasks = [
             t({ id: 1 }),
-            t({ id: 2, assigneeId: 'x', createdById: 'me' }),
-            t({ id: 3, assigneeId: 'x', createdById: 'y', departmentId: 2 }),
+            t({ id: 2, assignees: [{ userId: 'x', displayName: 'X' }], createdById: 'me' }),
+            t({ id: 3, assignees: [{ userId: 'x', displayName: 'X' }], createdById: 'y', departmentId: 2 }),
             t({ id: 4, status: 'Done' }),
         ]
         const ids = (xs: WorkTask[]) => xs.map((x) => x.id)
@@ -39,9 +39,15 @@ describe('work-tasks helpers', () => {
     })
 
     it('counts open tasks per tab', () => {
-        const tasks = [t({ id: 1 }), t({ id: 2, status: 'Done' }), t({ id: 3, assigneeId: 'x', createdById: 'me' })]
+        const tasks = [t({ id: 1 }), t({ id: 2, status: 'Done' }), t({ id: 3, assignees: [{ userId: 'x', displayName: 'X' }], createdById: 'me' })]
         expect(openCount(tasks, 'assigned', 'me')).toBe(1)
         expect(openCount(tasks, 'created', 'me')).toBe(1)
         expect(openCount(tasks, 'all', 'me')).toBe(2)
+    })
+
+    it('counts a task as assigned to me when I am one of several', () => {
+        const shared = t({ id: 9, createdById: 'boss', assignees: [{ userId: 'x', displayName: 'X' }, { userId: 'me', displayName: 'Me' }] })
+        expect(filterTasks([shared], { tab: 'assigned', status: 'open', departmentId: null, userId: 'me' })).toHaveLength(1)
+        expect(openCount([shared], 'assigned', 'x')).toBe(1)
     })
 })
