@@ -61,10 +61,17 @@ public class GetTimesheetTaskOptions
                     .ToListAsync(cancellationToken);
             }
 
+            // Somebody reading another person's sheet (a reviewer) gets only what the
+            // sheet names. The sheet was admitted by the department it was filed under,
+            // which may no longer be the owner's, so the owner's other tasks may sit in
+            // a department outside the reader's task scope.
+            var readingOwnSheet = ownerUserId == request.CallerUserId;
+
             var options = await context.WorkTasks
                 .AsNoTracking()
                 .Where(t => onSheet.Contains(t.Id)
-                    || ((t.Status == WorkTaskStatus.ToDo || t.Status == WorkTaskStatus.InProgress)
+                    || (readingOwnSheet
+                        && (t.Status == WorkTaskStatus.ToDo || t.Status == WorkTaskStatus.InProgress)
                         && t.Assignees.Any(a => a.UserId == ownerUserId)))
                 .OrderBy(t => t.Title)
                 .Select(t => new TimesheetTaskOptionDto
@@ -75,6 +82,7 @@ public class GetTimesheetTaskOptions
                     ProjectCode = t.Project != null ? t.Project.Code : null,
                     TargetHours = t.TargetHours,
                     IsClosed = t.Status == WorkTaskStatus.Done || t.Status == WorkTaskStatus.Cancelled,
+                    IsAssigned = t.Assignees.Any(a => a.UserId == ownerUserId),
                 })
                 .ToListAsync(cancellationToken);
 

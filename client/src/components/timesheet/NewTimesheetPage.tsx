@@ -36,7 +36,7 @@ import { formatElapsed, formatTime12, useAttendanceToday, useLiveElapsedMinutes 
 import { activityOptionsFor, retainedActivityId } from '../../lib/project-activities'
 import { componentOptionsFor, retainedComponentId } from '../../lib/project-components'
 import { projectOptionsFor, retainedProjectId, typeOptionsFrom } from '../../lib/project-types'
-import { copyableWorkTaskId, retainedWorkTaskId, taskOptionLabel, taskOptionsForRow } from '../../lib/timesheet-tasks'
+import { copyableWorkTaskId, isPickable, retainedWorkTaskId, taskOptionLabel, taskOptionsForRow } from '../../lib/timesheet-tasks'
 import type { Project, ProjectActivityType, ProjectComponent, ProjectType, TimesheetTaskOption, UserInfo } from '../../lib/types'
 import type { Timesheet, TimesheetStatus } from '../../lib/types/timesheet'
 import type { TimesheetEntry } from '../../lib/types/timesheet-entry'
@@ -1136,9 +1136,9 @@ function DayCard({
                                     <MenuItem value="">
                                         <Box component="em" sx={{ color: 'text.disabled' }}>No task</Box>
                                     </MenuItem>
-                                    {/* A closed task already on the row still shows as its value, but cannot be picked again. */}
+                                    {/* A task closed since, or no longer the owner's, still shows as the row's value, but cannot be picked again. */}
                                     {taskOptionsForRow(taskOptions, t.projectId, t.workTaskId).map((o) => (
-                                        <MenuItem key={o.id} value={String(o.id)} disabled={o.isClosed}>
+                                        <MenuItem key={o.id} value={String(o.id)} disabled={!isPickable(o)}>
                                             {taskOptionLabel(o)}
                                         </MenuItem>
                                     ))}

@@ -70,4 +70,6 @@ export interface TimesheetTaskOption {
     loggedHours: number
     /** Done or cancelled: listed only because a row on the sheet already names it. */
     isClosed: boolean
+    /** False on a task the sheet names from before its owner was taken off it. Missing from an older API: read as true. */
+    isAssigned?: boolean
 }

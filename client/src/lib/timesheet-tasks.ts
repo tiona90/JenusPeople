@@ -4,13 +4,18 @@ import { describeTaskProgress } from './work-tasks'
 /*
  * The Task column on a timesheet row. Mirrors TimesheetEntryTaskRule: a row may
  * name one of its owner's open tasks on its own project. The server re-checks
- * only a changed task or project, so a closed task already on a row stays listed
- * for that row, and for no other.
+ * only a changed task or project, so a task closed since, or one the owner was
+ * taken off, stays listed for the row already naming it, and for no other.
  */
+
+/** Open and still the owner's: what a row may newly pick, and a copy may carry. */
+export function isPickable(option: TimesheetTaskOption): boolean {
+    return !option.isClosed && option.isAssigned !== false
+}
 
 export function taskOptionsForRow(options: TimesheetTaskOption[], projectId: string, currentTaskId: string): TimesheetTaskOption[] {
     return options.filter((o) =>
-        (!o.isClosed || String(o.id) === currentTaskId)
+        (isPickable(o) || String(o.id) === currentTaskId)
         && (!projectId || String(o.projectId) === projectId))
 }
 
@@ -26,15 +31,16 @@ export function retainedWorkTaskId(workTaskId: string, projectId: string, option
     return String(option.projectId) === projectId ? workTaskId : ''
 }
 
-/** "Copy to rest of week" carries a task only while it is still open and listed. */
+/** "Copy to rest of week" carries a task only while it is still pickable. */
 export function copyableWorkTaskId(workTaskId: string, options: TimesheetTaskOption[]): string {
     const option = options.find((o) => String(o.id) === workTaskId)
-    return option && !option.isClosed ? workTaskId : ''
+    return option && isPickable(option) ? workTaskId : ''
 }
 
 export function taskOptionLabel(option: TimesheetTaskOption): string {
     const name = option.projectCode ? `${option.projectCode} · ${option.title}` : option.title
     if (option.isClosed) return `${name} (closed)`
+    if (option.isAssigned === false) return `${name} (no longer yours)`
     const { text } = describeTaskProgress(option.targetHours, option.loggedHours)
     // The picker has room for one figure: what is left, how far over, or what is logged.
     const short = text.includes(' · ') ? text.split(' · ')[1] : text

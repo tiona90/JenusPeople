@@ -102,4 +102,9 @@ public class TimesheetTaskOptionDto
     public decimal LoggedHours { get; set; }
     /// <summary>Done or cancelled: on the list only because a row on the sheet already names it.</summary>
     public bool IsClosed { get; set; }
+    /// <summary>
+    /// The sheet's owner is still one of its assignees. False only on a task the sheet
+    /// already names, from before they were taken off: kept for that row, pickable nowhere else.
+    /// </summary>
+    public bool IsAssigned { get; set; }
 }
