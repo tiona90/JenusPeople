@@ -266,7 +266,7 @@ namespace API.Controllers
         }
 
         // PATCH: api/timesheets/{id}/reopen — the HR Administrator takes an approval
-        // back; the sheet returns to Submitted for the manager to review again.
+        // back; the sheet returns to Rejected for the employee to correct and resubmit.
         [HttpPatch("{id}/reopen")]
         [Authorize(Roles = AppRoles.HrAdministrator)]
         public async Task<IActionResult> ReopenTimesheet(string id, [FromBody] RejectTimesheetRequest? body, CancellationToken cancellationToken)

@@ -904,6 +904,17 @@ function FeedbackBox({ t, comment }: { t: Timesheet; comment?: TimesheetStatusHi
             </Box>
         )
     }
+    if (t.status === 'Rejected' && comment?.comment && isCancelledApproval(comment)) {
+        return (
+            <Box sx={feedbackSx(softBg('warning'), 'warning.dark', 'warning.main')}>
+                <Box component="span">💬</Box>
+                <Box>
+                    Approval cancelled by <Box component="strong">{comment.changedByUserName}</Box>: "{comment.comment}"
+                    {' '}· edit and resubmit
+                </Box>
+            </Box>
+        )
+    }
     if (t.status === 'Rejected' && comment?.comment) {
         return (
             <Box sx={feedbackSx(softBg('error'), 'error.dark', 'error.main')}>

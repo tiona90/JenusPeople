@@ -11,9 +11,9 @@ namespace WorkTrack.Tests;
 
 /// <summary>
 /// The HR Administrator takes a timesheet approval back, the way they cancel an
-/// approved leave: the sheet returns to Submitted for the manager to review again,
-/// the approval stamp is cleared, the history says why, and the employee and the
-/// managers are told. HR alone, inside their departments, on an approved sheet,
+/// approved leave: the sheet returns to Rejected for the employee to correct and
+/// resubmit, the approval stamp is cleared, the history says why, and the employee
+/// and the managers are told. HR alone, inside their departments, on an approved sheet,
 /// with a reason.
 /// </summary>
 public class ReopenTimesheetTests
@@ -73,27 +73,31 @@ public class ReopenTimesheetTests
 
         Assert.True(result.IsSuccess, result.Error);
         var stored = await db.Timesheets.AsNoTracking().FirstAsync(t => t.Id == "ts");
-        Assert.Equal(TimesheetStatus.Submitted, stored.Status);
+        Assert.Equal(TimesheetStatus.Rejected, stored.Status);
         Assert.Null(stored.ApprovedAt);
         Assert.Null(stored.ApproverId);
         Assert.NotNull(stored.SubmittedAt);
 
         var history = await db.TimesheetStatusHistories.AsNoTracking().SingleAsync(h => h.TimesheetId == "ts");
         Assert.Equal((int)TimesheetStatus.Approved, history.FromStatus);
-        Assert.Equal((int)TimesheetStatus.Submitted, history.ToStatus);
+        Assert.Equal((int)TimesheetStatus.Rejected, history.ToStatus);
         Assert.Equal(Hr, history.ChangedByUserId);
         Assert.Equal("Hours booked to the wrong project", history.Comment);
 
         var toEmployee = Assert.Single(email.Sent, m => m.Recipient == "emp@t.local");
         Assert.Equal("Your timesheet approval was cancelled", toEmployee.Subject);
         Assert.Contains("Hours booked to the wrong project", toEmployee.HtmlBody);
+        Assert.Contains("correct and resubmit", toEmployee.HtmlBody);
         var toManager = Assert.Single(email.Sent, m => m.Recipient == "mgr@t.local");
-        Assert.Contains("back in your queue", toManager.HtmlBody);
+        Assert.Contains("once they resubmit", toManager.HtmlBody);
     }
 
-    /// <summary>Back with the manager: the list now says a manager is available to review it.</summary>
+    /// <summary>
+    /// Back with the employee, not the manager: it is out of the review queue until
+    /// they resubmit, and resubmitting sends it back through review as Resubmitted.
+    /// </summary>
     [Fact]
-    public async Task A_sent_back_timesheet_is_the_managers_again()
+    public async Task The_employee_can_resubmit_a_sent_back_timesheet()
     {
         using var db = await WorldAsync();
         Assert.True((await ReopenAsync(db, new FakeEmailService(), Hr, asHr: true)).IsSuccess);
@@ -101,8 +105,17 @@ public class ReopenTimesheetTests
         var page = await new GetTimesheetList.Handler(db).Handle(
             new GetTimesheetList.Query { RequestingUserId = Hr, IsAdmin = false, IsManager = true, IsHrAdministrator = true },
             CancellationToken.None);
+        Assert.False(page.Items.Single(t => t.Id == "ts").AwaitingManager);
 
-        Assert.True(page.Items.Single(t => t.Id == "ts").AwaitingManager);
+        db.ChangeTracker.Clear();
+        var email = new FakeEmailService();
+        var submitted = await new SubmitTimesheet.Handler(db, email, NullLogger<SubmitTimesheet.Handler>.Instance).Handle(
+            new SubmitTimesheet.Command { Id = "ts", RequestingUserId = Employee },
+            CancellationToken.None);
+
+        Assert.True(submitted.IsSuccess, submitted.Error);
+        Assert.Equal(TimesheetStatus.Resubmitted, (await db.Timesheets.AsNoTracking().FirstAsync(t => t.Id == "ts")).Status);
+        Assert.Contains(email.Sent, m => m.Recipient == "mgr@t.local");
     }
 
     [Fact]

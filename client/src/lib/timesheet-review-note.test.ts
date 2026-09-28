@@ -11,7 +11,7 @@ function row(overrides: Partial<TimesheetStatusHistory>): TimesheetStatusHistory
         changedByUserId: 'u-hr',
         changedByUserName: 'Helen HR',
         oldStatus: 'Approved',
-        newStatus: 'Submitted',
+        newStatus: 'Rejected',
         comment: 'Hours on Wednesday do not match the project log.',
         changedAt: '2026-09-25T08:00:00Z',
         ...overrides,
@@ -36,6 +36,10 @@ describe('reviewNoteLabel', () => {
         expect(reviewNoteLabel(row({}))).toBe('Approval cancelled by Helen HR')
     })
 
+    it('still names a cancelled approval written before it returned the sheet to the employee', () => {
+        expect(reviewNoteLabel(row({ newStatus: 'Submitted' }))).toBe('Approval cancelled by Helen HR')
+    })
+
     it('names a rejection', () => {
         expect(reviewNoteLabel(row({ oldStatus: 'Submitted', newStatus: 'Rejected', changedByUserName: 'Mark Manager' })))
             .toBe('Rejected by Mark Manager')
@@ -49,8 +53,8 @@ describe('reviewNoteLabel', () => {
 describe('currentReviewNote', () => {
     it('is the note that put the sheet in its present status', () => {
         const note = row({})
-        expect(currentReviewNote('Submitted', note)).toBe(note)
-        expect(currentReviewNote('Rejected', row({ newStatus: 'Rejected' }))).not.toBeUndefined()
+        expect(currentReviewNote('Rejected', note)).toBe(note)
+        expect(currentReviewNote('Submitted', row({ newStatus: 'Submitted' }))).not.toBeUndefined()
     })
 
     it('is nothing once the sheet has moved on', () => {

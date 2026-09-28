@@ -195,7 +195,7 @@ function ReviewRow({
     deadlineTime: string
     /** The viewer's own timesheet: shown, but nobody decides their own hours. */
     own?: boolean
-    /** The HR Administrator's Cancel approval on an approved sheet — back to the manager for review. */
+    /** The HR Administrator's Cancel approval on an approved sheet — back to the employee to correct. */
     canReopen?: boolean
     onReopen?: () => void
 }) {
@@ -505,8 +505,8 @@ export default function AllTimesheetsPage() {
         [timesheets, isHr],
     )
 
-    /* The HR Administrator's Cancel approval: the sheet goes back to Submitted for the
-       manager to review again (ReopenTimesheet), with a reason the employee reads. */
+    /* The HR Administrator's Cancel approval: the sheet goes back to Rejected for the
+       employee to correct and resubmit (ReopenTimesheet), with a reason they read. */
     const reopenMutation = useMutation({
         mutationFn: ({ id, comment }: { id: string; comment: string }) => reopenTimesheet(id, comment),
         onSuccess: async () => {
@@ -1080,7 +1080,7 @@ export default function AllTimesheetsPage() {
                 })
             )}
 
-            {/* Cancel approval — the sheet goes back to the manager for review */}
+            {/* Cancel approval — the sheet goes back to the employee to correct and resubmit */}
             <RejectReasonDialog
                 open={reopenDialog !== null}
                 title="Cancel approved timesheet"
