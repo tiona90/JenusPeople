@@ -133,6 +133,33 @@ export interface DepartmentAttendance {
     leave: number
     totalMinutes: number
     avgMinutes: number
+    /** The people behind the counts; missing from an older API. */
+    members?: DepartmentMemberAttendance[] | null
+}
+
+/**
+ * One person on Company Attendance's department breakdown. The row's Off column
+ * is `done` plus `not-in`, split here because "went home" and "never came" are
+ * different news. Leave outranks attendance, as in the counts.
+ */
+export type DepartmentMemberStatus = 'in' | 'break' | 'done' | 'not-in' | 'leave'
+
+export interface DepartmentMemberAttendance {
+    employeeId: string
+    employeeName: string
+    jobTitle: string | null
+    status: DepartmentMemberStatus
+    checkInAt: string | null
+    checkOutAt: string | null
+    onBreakSince: string | null
+    isAutoBreak: boolean
+    workedMinutes: number
+    /** Break taken so far today, a running break included. */
+    breakMinutes: number
+    /** See AttendanceToday.breakVarianceMinutes. */
+    breakVarianceMinutes: number | null
+    /** Minutes past the configured start; null when on time or not checked in. */
+    lateMinutes: number | null
 }
 
 export interface RecentActivity {

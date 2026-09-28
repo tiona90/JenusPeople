@@ -244,6 +244,48 @@ public class CompanyAttendanceAggregationTests
         Assert.DoesNotContain(company.Recent, a => a.Action == "Started break" && a.EmployeeName == "working");
     }
 
+    /// <summary>
+    /// A department row opens into the people behind its counts on Company
+    /// Attendance, so each row's member list has to be the same people in the
+    /// same buckets — leave outranking a check-in included.
+    /// </summary>
+    [Fact]
+    public async Task Each_department_lists_its_people_in_the_state_it_counted_them()
+    {
+        using var db = SeedWorld();
+
+        var company = await Company(db);
+
+        var engineering = Assert.Single(company.Departments, d => d.Name == "Engineering");
+        Assert.NotNull(engineering.Members);
+        Assert.Equal(["on-break", "working"], engineering.Members!.Select(m => m.EmployeeName));
+        Assert.Equal("break", engineering.Members!.Single(m => m.EmployeeName == "on-break").Status);
+        Assert.Equal("in", engineering.Members!.Single(m => m.EmployeeName == "working").Status);
+
+        var support = Assert.Single(company.Departments, d => d.Name == "Support");
+        Assert.Equal("not-in", support.Members!.Single(m => m.EmployeeName == "absent").Status);
+        Assert.Equal("leave", support.Members!.Single(m => m.EmployeeName == "on-leave").Status);
+
+        Assert.All(company.Departments, d => Assert.Equal(d.Total, d.Members!.Count));
+    }
+
+    [Fact]
+    public async Task A_member_who_checked_out_reads_as_done_with_both_times()
+    {
+        using var db = SeedWorld();
+        db.AttendanceEvents.Add(Event("working", 30, AttendanceEventType.CheckOut));
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var company = await Company(db);
+
+        var member = company.Departments.SelectMany(d => d.Members!).Single(m => m.EmployeeName == "working");
+        Assert.Equal("done", member.Status);
+        Assert.Equal(JustAfterMidnight(1), member.CheckInAt);
+        Assert.Equal(JustAfterMidnight(30), member.CheckOutAt);
+        Assert.Equal(29, member.WorkedMinutes);
+    }
+
     [Fact]
     public async Task An_empty_company_reports_zeroes_rather_than_failing()
     {
