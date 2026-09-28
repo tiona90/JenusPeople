@@ -62,6 +62,8 @@ public class DeleteDepartment
                 .CountAsync(t => t.DepartmentId == request.Id, cancellationToken);
             var leaveCount = await context.AnnualLeaves
                 .CountAsync(al => al.DepartmentId == request.Id, cancellationToken);
+            var taskCount = await context.WorkTasks
+                .CountAsync(t => t.DepartmentId == request.Id, cancellationToken);
 
             var blockers = new List<string>();
             if (liveProfileCount > 0) blockers.Add(Count(liveProfileCount, "employee"));
@@ -71,6 +73,7 @@ public class DeleteDepartment
             if (archivedProjectCount > 0) blockers.Add(Count(archivedProjectCount, "archived project"));
             if (timesheetCount > 0) blockers.Add(Count(timesheetCount, "timesheet"));
             if (leaveCount > 0) blockers.Add(Count(leaveCount, "leave request"));
+            if (taskCount > 0) blockers.Add(Count(taskCount, "task"));
 
             if (blockers.Count > 0)
             {

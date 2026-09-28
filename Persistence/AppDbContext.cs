@@ -44,6 +44,8 @@ public class AppDbContext : IdentityDbContext<
     public DbSet<StoredFile> StoredFiles { get; set; }
     public DbSet<Child> Children { get; set; }
     public DbSet<SystemError> SystemErrors { get; set; }
+    public DbSet<WorkTask> WorkTasks { get; set; }
+    public DbSet<WorkTaskAssignee> WorkTaskAssignees { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -542,6 +544,55 @@ public class AppDbContext : IdentityDbContext<
             // row to bump by source + type.
             entity.HasIndex(e => e.LastOccurredAtUtc);
             entity.HasIndex(e => new { e.Source, e.ExceptionType });
+        });
+
+        builder.Entity<WorkTask>(entity =>
+        {
+            entity.Property(t => t.Title).IsRequired().HasMaxLength(WorkTask.TitleMaxLength);
+            entity.Property(t => t.Description).HasMaxLength(WorkTask.DescriptionMaxLength);
+            entity.Property(t => t.CreatedById).IsRequired().HasMaxLength(450);
+
+            // All three Restrict: DeleteDepartment counts tasks as a blocker, and
+            // DeleteAdminUser (plus DbInitializer.CleanupUserDependencies) removes
+            // or hands back a leaver's tasks before the user row goes.
+            entity.HasOne(t => t.Department)
+                .WithMany()
+                .HasForeignKey(t => t.DepartmentId)
+                .OnDelete(DeleteBehavior.Restrict);
+            // Projects are soft-deleted, so this never has to be unpicked; Restrict
+            // keeps it that way should a hard delete ever appear.
+            entity.HasOne(t => t.Project)
+                .WithMany()
+                .HasForeignKey(t => t.ProjectId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(t => t.CreatedBy)
+                .WithMany()
+                .HasForeignKey(t => t.CreatedById)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // The list reads by department; the tabs by person.
+            entity.HasIndex(t => new { t.DepartmentId, t.Status });
+            entity.HasIndex(t => t.CreatedById);
+        });
+
+        builder.Entity<WorkTaskAssignee>(entity =>
+        {
+            entity.HasKey(a => new { a.WorkTaskId, a.UserId });
+            entity.Property(a => a.UserId).HasMaxLength(450);
+
+            entity.HasOne(a => a.WorkTask)
+                .WithMany(t => t.Assignees)
+                .HasForeignKey(a => a.WorkTaskId)
+                .OnDelete(DeleteBehavior.Cascade);
+            // Restrict: DeleteAdminUser and DbInitializer.CleanupUserDependencies
+            // remove a leaver's rows before the user goes.
+            entity.HasOne(a => a.User)
+                .WithMany()
+                .HasForeignKey(a => a.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // "Assigned to me" and the user-delete sweep read by person.
+            entity.HasIndex(a => a.UserId);
         });
 
         builder.Entity<AuditLog>(entity =>

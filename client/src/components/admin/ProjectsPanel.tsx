@@ -30,6 +30,8 @@ import {
 } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
 import { softBg } from '../../lib/theme-tokens'
+import { CardStat, OutlineBtn, SelectFilter, StatCard } from '../ui/CardKit'
+import { CODE_COLORS, avatarBg, initials } from '../../lib/card-kit'
 import type {
     AdminUser,
     Department,
@@ -43,10 +45,6 @@ import type {
 
 /* ─── tokens ─────────────────────────────────────────────────────────────── */
 
-
-const CODE_COLORS: Record<string, string> = {
-    p1: 'primary.main', p2: 'success.main', p3: 'warning.main', p4: 'secondary.main', p5: 'error.main',
-}
 const COLOR_KEYS = Object.keys(CODE_COLORS)
 
 const STATUS_COLORS = {
@@ -54,8 +52,6 @@ const STATUS_COLORS = {
     OnHold:   { bg: softBg('warning'), fg: 'warning.dark', dot: 'warning.main' },
     Inactive: { bg: 'divider', fg: 'text.secondary', dot: 'text.disabled' },
 } as const
-
-const AVATAR_PALETTE = ['primary.main', 'success.main', 'warning.main', 'secondary.main', '#EC4899', '#06B6D4', '#84CC16', 'error.main']
 
 type StatusFilter = 'all' | ProjectStatus
 type DeptFilter = 'all' | number | 'cross'
@@ -70,17 +66,6 @@ function hoursFor(p: Project, period: HoursPeriod) {
 }
 
 /* ─── helpers ────────────────────────────────────────────────────────────── */
-
-function initials(name: string) {
-    const parts = (name ?? '').trim().split(/\s+/).filter(Boolean)
-    return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase() || '?'
-}
-
-function avatarBg(seed: string) {
-    let hash = 0
-    for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) | 0
-    return AVATAR_PALETTE[Math.abs(hash) % AVATAR_PALETTE.length]
-}
 
 function statusLabel(s: ProjectStatus) {
     return s === 'Active' ? 'Active' : s === 'OnHold' ? 'On Hold' : 'Inactive'
@@ -635,90 +620,6 @@ function AddCard({ onClick }: { onClick: () => void }) {
 }
 
 /* ────── small UI bits ──────────────────────────────────────────────────── */
-
-function CardStat({ label, value, sub, valueColor }: {
-    label: string
-    value: string
-    sub: string
-    valueColor?: string
-}) {
-    return (
-        <Box sx={{ bgcolor: 'background.paper', p: '12px 14px', textAlign: 'center' }}>
-            <Box sx={{ fontSize: 10, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.05em', mb: '4px' }}>
-                {label}
-            </Box>
-            <Box sx={{ fontSize: 17, fontWeight: 700, color: valueColor ?? 'text.primary', lineHeight: 1 }}>{value}</Box>
-            <Box sx={{ fontSize: 10, color: 'text.secondary', mt: '2px' }}>{sub}</Box>
-        </Box>
-    )
-}
-
-function StatCard({ label, value, sub, valueColor }: {
-    label: string
-    value: string
-    sub: string
-    valueColor?: string
-}) {
-    return (
-        <Box sx={{ bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider', borderRadius: '12px', p: '14px 16px' }}>
-            <Box sx={{ fontSize: 11, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.05em', mb: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                {label}
-            </Box>
-            <Box sx={{ fontSize: 26, fontWeight: 700, color: valueColor ?? 'text.primary', lineHeight: 1 }}>{value}</Box>
-            <Box sx={{ fontSize: 11, color: 'text.secondary', mt: '6px' }}>{sub}</Box>
-        </Box>
-    )
-}
-
-function SelectFilter({ value, onChange, options, ariaLabel }: {
-    value: string
-    onChange: (v: string) => void
-    options: { value: string; label: string }[]
-    ariaLabel?: string
-}) {
-    return (
-        <Box
-            component="select"
-            aria-label={ariaLabel}
-            value={value}
-            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => onChange(e.target.value)}
-            sx={{
-                fontSize: 12, fontFamily: 'inherit', p: '7px 10px',
-                border: '1px solid', borderColor: 'divider', borderRadius: '6px',
-                color: 'text.primary', bgcolor: 'background.paper', outline: 'none', cursor: 'pointer',
-                '&:focus': { borderColor: 'primary.main' },
-            }}
-        >
-            {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </Box>
-    )
-}
-
-function OutlineBtn({ children, onClick, flex, danger }: {
-    children: React.ReactNode
-    onClick: () => void
-    flex?: boolean
-    danger?: boolean
-}) {
-    return (
-        <Box
-            component="button"
-            onClick={onClick}
-            sx={{
-                bgcolor: 'background.paper', color: danger ? 'error.main' : 'text.primary',
-                border: `1px solid ${danger ? 'error.main' : 'divider'}`,
-                borderRadius: '6px', px: '12px', py: '6px',
-                fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
-                flex: flex ? 1 : 'initial',
-                '&:hover': danger
-                    ? { bgcolor: '#FFF5F5', borderColor: 'error.main' }
-                    : { bgcolor: 'action.hover', borderColor: 'primary.main', color: 'primary.main' },
-            }}
-        >
-            {children}
-        </Box>
-    )
-}
 
 /* ════════════════════════════════════════════════════════════════════════ */
 /* Form dialog                                                               */
