@@ -15,7 +15,9 @@ namespace WorkTrack.Tests.WorkTasks;
 public class WorkTaskSurfaceTests
 {
     private static readonly string[] EmployeeActions =
-        [nameof(WorkTasksController.GetWorkTasks), nameof(WorkTasksController.UpdateWorkTaskStatus)];
+        [nameof(WorkTasksController.GetWorkTasks), nameof(WorkTasksController.UpdateWorkTaskStatus),
+            // The timesheet Task picker: every timesheet writer logs against their own tasks.
+            nameof(WorkTasksController.GetTimesheetOptions)];
 
     private static IEnumerable<MethodInfo> Actions() =>
         typeof(WorkTasksController).GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly);

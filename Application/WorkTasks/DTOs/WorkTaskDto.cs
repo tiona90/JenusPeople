@@ -89,3 +89,17 @@ public class UpdateWorkTaskStatusRequest
 {
     public WorkTaskStatus Status { get; set; }
 }
+
+/// <summary>One task a timesheet row may be logged against, for the editor's Task picker.</summary>
+public class TimesheetTaskOptionDto
+{
+    public int Id { get; set; }
+    public string Title { get; set; } = string.Empty;
+    /// <summary>The picker narrows by it; null only on a task predating required projects.</summary>
+    public int? ProjectId { get; set; }
+    public string? ProjectCode { get; set; }
+    public int? TargetHours { get; set; }
+    public decimal LoggedHours { get; set; }
+    /// <summary>Done or cancelled: on the list only because a row on the sheet already names it.</summary>
+    public bool IsClosed { get; set; }
+}

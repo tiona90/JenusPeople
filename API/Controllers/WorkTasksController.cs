@@ -32,6 +32,21 @@ public class WorkTasksController(IHubContext<NotificationsHub> notificationsHub)
     public async Task<ActionResult<List<WorkTaskDto>>> GetWorkTasks() =>
         HandleResult(await Mediator.Send(new GetWorkTaskList.Query { CallerUserId = CallerUserId, AssignedOnly = AssignedOnly }));
 
+    /// <summary>
+    /// The Task picker on a timesheet row: the sheet owner's open tasks. Without a
+    /// timesheet id the owner is the caller (a week not yet saved).
+    /// </summary>
+    [HttpGet("timesheet-options")]
+    public async Task<ActionResult<List<TimesheetTaskOptionDto>>> GetTimesheetOptions([FromQuery] string? timesheetId) =>
+        HandleResult(await Mediator.Send(new GetTimesheetTaskOptions.Query
+        {
+            CallerUserId = CallerUserId,
+            TimesheetId = timesheetId,
+            IsAdmin = User.IsSystemAdministrator(),
+            IsManager = User.IsDepartmentScoped(),
+            IsHrAdministrator = User.IsHrAdministrator(),
+        }));
+
     [HttpGet("departments")]
     [Authorize(Roles = AppRoles.LeaveAndTimeDecisionRoles)]
     public async Task<ActionResult<List<WorkTaskDepartmentDto>>> GetDepartments() =>
