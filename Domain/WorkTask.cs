@@ -68,6 +68,13 @@ public class WorkTask
     public int? TargetHours { get; set; }
     public int? TargetWeeks { get; set; }
 
+    /// <summary>
+    /// Whether the work is charged to the client. Required on every save, as an
+    /// explicit answer rather than an unticked box; nullable only for tasks filed
+    /// before the column, which must be given one the next time they are edited.
+    /// </summary>
+    public bool? IsBillable { get; set; }
+
     public WorkTaskPriority Priority { get; set; } = WorkTaskPriority.Normal;
     public WorkTaskStatus Status { get; set; } = WorkTaskStatus.ToDo;
 

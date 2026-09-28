@@ -307,6 +307,13 @@ function TaskCard({ task, today, statusPending, onStatus, onEdit, onDelete }: {
                             fontSize: 11, px: '8px', py: '2px', borderRadius: '10px',
                             bgcolor: 'action.hover', color: 'text.secondary', fontWeight: 500,
                         }}>{task.departmentName}</Box>
+                        {task.isBillable != null && (
+                            <Box sx={{
+                                fontSize: 11, px: '8px', py: '2px', borderRadius: '10px', fontWeight: 600,
+                                bgcolor: task.isBillable ? softBg('success') : 'action.hover',
+                                color: task.isBillable ? 'success.dark' : 'text.secondary',
+                            }}>{task.isBillable ? 'Billable' : 'Non-billable'}</Box>
+                        )}
                         {task.projectName && (
                             <Box sx={{ fontSize: 11, color: 'text.secondary' }}>{task.projectName}</Box>
                         )}

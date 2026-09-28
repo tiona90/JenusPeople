@@ -32,6 +32,7 @@ public static class WorkTaskProjection
             DueDate = t.DueDate,
             TargetHours = t.TargetHours,
             TargetWeeks = t.TargetWeeks,
+            IsBillable = t.IsBillable,
             Priority = t.Priority,
             Status = t.Status,
             CreatedAtUtc = t.CreatedAtUtc,

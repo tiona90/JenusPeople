@@ -22,6 +22,8 @@ public class WorkTaskDto
     public DateOnly? DueDate { get; set; }
     public int? TargetHours { get; set; }
     public int? TargetWeeks { get; set; }
+    /// <summary>Null only on a task filed before the question was asked.</summary>
+    public bool? IsBillable { get; set; }
     public WorkTaskPriority Priority { get; set; }
     public WorkTaskStatus Status { get; set; }
     public DateTime CreatedAtUtc { get; set; }
@@ -68,6 +70,8 @@ public class UpsertWorkTaskRequest
     /// <summary>Optional; a null clears it (this is a full replace).</summary>
     public int? TargetHours { get; set; }
     public int? TargetWeeks { get; set; }
+    /// <summary>Required; nullable so an unanswered choice reaches the validator as a message.</summary>
+    public bool? IsBillable { get; set; }
     public WorkTaskPriority Priority { get; set; } = WorkTaskPriority.Normal;
 }
 

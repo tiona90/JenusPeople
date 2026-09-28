@@ -44,6 +44,7 @@ public class CreateWorkTask
                 DueDate = input.DueDate,
                 TargetHours = input.TargetHours,
                 TargetWeeks = input.TargetWeeks,
+                IsBillable = input.IsBillable,
                 Priority = input.Priority,
                 CreatedAtUtc = now,
                 UpdatedAtUtc = now,

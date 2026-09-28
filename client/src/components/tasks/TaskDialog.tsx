@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import {
-    Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormHelperText, InputLabel,
+    Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormControlLabel, FormHelperText, FormLabel, InputLabel,
+    Radio, RadioGroup,
     MenuItem, Select, Stack, TextField,
 } from '@mui/material'
 import { createWorkTask, getWorkTaskAssignees, getWorkTaskDepartments, getWorkTaskProjects, updateWorkTask, updateWorkTaskStatus } from '../../lib/api'
@@ -42,6 +43,8 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
     const [status, setStatus] = useState<WorkTaskStatus>('ToDo')
     const [targetHours, setTargetHours] = useState('')
     const [targetWeeks, setTargetWeeks] = useState('')
+    // No default on purpose: billable or not is a decision, not an unticked box.
+    const [isBillable, setIsBillable] = useState<boolean | null>(null)
 
     useEffect(() => {
         if (!open) return
@@ -55,6 +58,7 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
         setStatus(task?.status ?? 'ToDo')
         setTargetHours(task?.targetHours != null ? String(task.targetHours) : '')
         setTargetWeeks(task?.targetWeeks != null ? String(task.targetWeeks) : '')
+        setIsBillable(task?.isBillable ?? null)
     }, [open, task])
 
     const departments = useQuery({ queryKey: ['work-tasks', 'departments'], queryFn: getWorkTaskDepartments, enabled: open })
@@ -128,6 +132,7 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
         assigneeIds.length > 0 &&
         hours !== 'invalid' &&
         weeks !== 'invalid' &&
+        isBillable !== null &&
         !save.isPending
 
     const submit = () => {
@@ -141,6 +146,7 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
             dueDate: dueDate === '' ? null : dueDate,
             targetHours: typeof hours === 'number' ? hours : null,
             targetWeeks: typeof weeks === 'number' ? weeks : null,
+            isBillable: isBillable as boolean,
             priority,
         })
     }
@@ -234,6 +240,21 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
                                 <MenuItem key={a.userId} value={a.userId}>{a.displayName}</MenuItem>
                             ))}
                         </Select>
+                    </FormControl>
+                    <FormControl required error={task != null && isBillable === null}>
+                        <FormLabel id="task-billing-label" sx={{ fontSize: 13 }}>Billing</FormLabel>
+                        <RadioGroup
+                            row
+                            aria-labelledby="task-billing-label"
+                            value={isBillable === null ? '' : isBillable ? 'billable' : 'non-billable'}
+                            onChange={(e) => setIsBillable(e.target.value === 'billable')}
+                        >
+                            <FormControlLabel value="billable" control={<Radio size="small" />} label="Billable" />
+                            <FormControlLabel value="non-billable" control={<Radio size="small" />} label="Non-billable" />
+                        </RadioGroup>
+                        {task != null && isBillable === null && (
+                            <FormHelperText>This task was filed before billing was asked — choose one to save.</FormHelperText>
+                        )}
                     </FormControl>
                     <Stack direction="row" spacing={2}>
                         <TextField

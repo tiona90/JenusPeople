@@ -69,6 +69,7 @@ public class UpdateWorkTask
             task.DueDate = input.DueDate;
             task.TargetHours = input.TargetHours;
             task.TargetWeeks = input.TargetWeeks;
+            task.IsBillable = input.IsBillable;
             task.Priority = input.Priority;
             task.UpdatedAtUtc = DateTime.UtcNow;
             await context.SaveChangesAsync(cancellationToken);

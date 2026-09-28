@@ -24,6 +24,10 @@ function renderDialog() {
     return { onSaved }
 }
 
+function pickBilling(option: 'Billable' | 'Non-billable') {
+    fireEvent.click(screen.getByRole('radio', { name: option }))
+}
+
 async function choose(label: string, option: string) {
     fireEvent.mouseDown(screen.getByRole('combobox', { name: new RegExp(`^${label}`) }))
     fireEvent.click(await screen.findByRole('option', { name: option }))
@@ -51,6 +55,7 @@ describe('TaskDialog', () => {
         await choose('Department', 'Sales')
         await choose('Project', 'CRM Rollout')
         await choose('Assignees', 'Sam Sales')
+        pickBilling('Billable')
         await choose('Department', 'Ops')
 
         await waitFor(() => expect(api.getWorkTaskAssignees).toHaveBeenCalledWith(2))
@@ -66,6 +71,7 @@ describe('TaskDialog', () => {
         await choose('Department', 'Sales')
         await choose('Project', 'CRM Rollout')
         await choose('Assignees', 'Sam Sales')
+        pickBilling('Billable')
         expect(create).toBeDisabled()
 
         fireEvent.change(screen.getByRole('textbox', { name: /^Title/ }), { target: { value: 'Chase notes' } })
@@ -79,11 +85,12 @@ describe('TaskDialog', () => {
         await choose('Department', 'Sales')
         await choose('Project', 'CRM Rollout')
         await choose('Assignees', 'Sam Sales')
+        pickBilling('Billable')
         fireEvent.click(screen.getByRole('button', { name: 'Create task' }))
 
         await waitFor(() => expect(onSaved).toHaveBeenCalled())
         expect(api.createWorkTask).toHaveBeenCalledWith({
-            title: 'Chase notes', description: null, departmentId: 1, projectId: 10, assigneeIds: ['u-sam'], dueDate: null, targetHours: null, targetWeeks: null, priority: 'Normal',
+            title: 'Chase notes', description: null, departmentId: 1, projectId: 10, assigneeIds: ['u-sam'], dueDate: null, targetHours: null, targetWeeks: null, isBillable: true, priority: 'Normal',
         })
     })
 
@@ -100,6 +107,7 @@ describe('TaskDialog', () => {
         await choose('Department', 'Sales')
         await choose('Project', 'CRM Rollout')
         await choose('Assignees', 'Sam Sales')
+        pickBilling('Billable')
         fireEvent.click(screen.getByRole('button', { name: 'Create task' }))
         expect(await screen.findByRole('alert')).toBeInTheDocument()
 
@@ -126,6 +134,7 @@ describe('TaskDialog', () => {
         fireEvent.change(screen.getByRole('textbox', { name: /^Title/ }), { target: { value: 'Chase notes' } })
         await choose('Department', 'Sales')
         await choose('Assignees', 'Sam Sales')
+        pickBilling('Billable')
         expect(screen.getByRole('button', { name: 'Create task' })).toBeDisabled()
 
         await choose('Project', 'CRM Rollout')
@@ -147,6 +156,7 @@ describe('TaskDialog', () => {
         await choose('Department', 'Sales')
         await choose('Project', 'CRM Rollout')
         await choose('Assignees', 'Sam Sales')
+        pickBilling('Billable')
         await choose('Assignees', 'Hana HR')
         fireEvent.click(screen.getByRole('button', { name: 'Create task' }))
 
@@ -160,6 +170,7 @@ describe('TaskDialog', () => {
         fireEvent.change(screen.getByRole('textbox', { name: /^Title/ }), { target: { value: 'Chase notes' } })
         await choose('Department', 'Sales')
         await choose('Assignees', 'Sam Sales')
+        pickBilling('Billable')
         await choose('Assignees', 'Hana HR')
         await choose('Department', 'Ops')
         await waitFor(() => expect(api.getWorkTaskAssignees).toHaveBeenCalledWith(2))
@@ -180,7 +191,7 @@ describe('TaskDialog', () => {
             id: 7, title: 'Chase notes', description: null, departmentId: 1, departmentName: 'Sales',
             projectId: 10, projectName: 'CRM Rollout', projectCode: 'CRM', projectColorKey: 'p1',
             assignees: [{ userId: 'u-sam', displayName: 'Sam Sales' }], createdById: 'me', createdByName: 'Me',
-            dueDate: null, targetHours: null, targetWeeks: null, priority: 'Normal' as const, status: 'ToDo' as const,
+            dueDate: null, targetHours: null, targetWeeks: null, isBillable: true, priority: 'Normal' as const, status: 'ToDo' as const,
             createdAtUtc: '2026-09-01T08:00:00', updatedAtUtc: '2026-09-01T08:00:00', completedAtUtc: null,
             canEdit: true, canChangeStatus: true,
         }
@@ -210,6 +221,7 @@ describe('TaskDialog', () => {
         await choose('Department', 'Sales')
         await choose('Project', 'CRM Rollout')
         await choose('Assignees', 'Sam Sales')
+        pickBilling('Billable')
         fireEvent.change(screen.getByRole('spinbutton', { name: /Target hours/ }), { target: { value: '40' } })
         fireEvent.change(screen.getByRole('spinbutton', { name: /Target weeks/ }), { target: { value: '2' } })
         fireEvent.click(screen.getByRole('button', { name: 'Create task' }))
@@ -224,8 +236,28 @@ describe('TaskDialog', () => {
         await choose('Department', 'Sales')
         await choose('Project', 'CRM Rollout')
         await choose('Assignees', 'Sam Sales')
+        pickBilling('Billable')
         fireEvent.change(screen.getByRole('spinbutton', { name: /Target weeks/ }), { target: { value: '0' } })
 
         expect(screen.getByRole('button', { name: 'Create task' })).toBeDisabled()
+    })
+
+    it('holds Create until billable or not is answered', async () => {
+        api.createWorkTask.mockResolvedValue({} as never)
+        const { onSaved } = renderDialog()
+        fireEvent.change(screen.getByRole('textbox', { name: /^Title/ }), { target: { value: 'Chase notes' } })
+        await choose('Department', 'Sales')
+        await choose('Project', 'CRM Rollout')
+        await choose('Assignees', 'Hana HR')
+
+        expect(screen.getByRole('radio', { name: 'Billable' })).not.toBeChecked()
+        expect(screen.getByRole('radio', { name: 'Non-billable' })).not.toBeChecked()
+        expect(screen.getByRole('button', { name: 'Create task' })).toBeDisabled()
+
+        pickBilling('Non-billable')
+        fireEvent.click(screen.getByRole('button', { name: 'Create task' }))
+
+        await waitFor(() => expect(onSaved).toHaveBeenCalled())
+        expect(api.createWorkTask).toHaveBeenCalledWith(expect.objectContaining({ isBillable: false }))
     })
 })

@@ -38,6 +38,7 @@ public class WorkTaskCommandTests
             ProjectId = project ?? (department == Sales ? SalesProject : OpsProject),
             AssigneeIds = [assignee],
             Priority = WorkTaskPriority.High,
+            IsBillable = true,
         };
 
     private static async Task<int> Seeded(AppDbContext db, WorkTask task)
@@ -462,5 +463,21 @@ public class WorkTaskCommandTests
         Assert.True(cleared.IsSuccess, cleared.Error);
         Assert.Null(cleared.Value!.TargetHours);
         Assert.Null(cleared.Value.TargetWeeks);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task A_task_records_whether_it_is_billable(bool billable)
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        var request = Request(Sales, SalesManager);
+        request.IsBillable = billable;
+
+        var created = await Create(db, Hr, request);
+
+        Assert.True(created.IsSuccess, created.Error);
+        Assert.Equal(billable, created.Value!.IsBillable);
     }
 }
