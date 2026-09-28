@@ -83,6 +83,7 @@ async function renderPage(user: UserInfo, timesheets: Timesheet[] = [approved, d
     ] as never)
     api.getProjectTypes.mockResolvedValue([])
     api.getProjectComponents.mockResolvedValue([])
+    api.getTimesheetTaskOptions.mockResolvedValue([])
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(<QueryClientProvider client={queryClient}><AllTimesheetsPage /></QueryClientProvider>)
     await screen.findByText(timesheets[0].employeeName)
