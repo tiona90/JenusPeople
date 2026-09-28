@@ -40,6 +40,13 @@ public class WorkTaskAssigneeDto
 {
     public string UserId { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// On a task's assignee list only: this person is an HR Administrator, who is never
+    /// assignable, left on a task from before the rule. The edit dialog drops them, since
+    /// a save that keeps them is refused. Always false on the picker's list.
+    /// </summary>
+    public bool IsHrAdministrator { get; set; }
 }
 
 public class WorkTaskProjectDto

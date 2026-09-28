@@ -53,6 +53,8 @@ public class UpdateWorkTask
                 && (input.ProjectId is not { } projectId
                     || !await WorkTaskProjectRule.IsAvailableAsync(context, projectId, input.DepartmentId, cancellationToken)))
                 return Result<WorkTaskDto>.Invalid(WorkTaskProjectRule.NotAvailableMessage);
+            if (await WorkTaskAssigneeRule.AnyHrAdministratorAsync(context, input.AssigneeIds, cancellationToken))
+                return Result<WorkTaskDto>.Invalid(WorkTaskAssigneeRule.HrNotAssignableMessage);
             if (!await WorkTaskAssigneeRule.AllEligibleAsync(
                     context, departmentChanged ? input.AssigneeIds : added, input.DepartmentId, cancellationToken))
                 return Result<WorkTaskDto>.Invalid(WorkTaskAssigneeRule.NotEligibleMessage);

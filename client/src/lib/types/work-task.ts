@@ -35,7 +35,12 @@ export interface WorkTask {
     canChangeStatus: boolean
 }
 
-export interface WorkTaskAssignee { userId: string; displayName: string }
+export interface WorkTaskAssignee {
+    userId: string
+    displayName: string
+    /** On a task's list only: an HR Administrator left on from before HR stopped being assignable. */
+    isHrAdministrator?: boolean
+}
 export interface WorkTaskDepartment { id: number; name: string }
 export interface WorkTaskProject { id: number; name: string; code: string }
 

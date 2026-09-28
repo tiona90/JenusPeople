@@ -6,19 +6,23 @@ using Persistence;
 namespace Application.WorkTasks.Support;
 
 /// <summary>
-/// Who a task in a department may be assigned to: an active Manager, HR
-/// Administrator or Employee whose own scope covers it — the department on their
-/// profile, or (for a Manager or HR Administrator) a UserDepartment row. The same two sources ManagerAccessScopeResolver reads, so
+/// Who a task in a department may be assigned to: an active Manager or Employee
+/// whose own scope covers it — the department on their profile, or (for a
+/// Manager) a UserDepartment row. An HR Administrator runs tasks but is never
+/// handed one, by themselves or anybody else. The same two sources ManagerAccessScopeResolver reads, so
 /// an assignee can always see the task they were given.
 /// </summary>
 public static class WorkTaskAssigneeRule
 {
     public const string NotEligibleMessage =
-        "Every assignee must be an active Manager, HR Administrator or Employee in this department.";
+        "Every assignee must be an active Manager or Employee in this department.";
 
-    // Everyone who works in Leave & Time; a System Administrator configures the
-    // workspace and is never handed work.
-    private static readonly List<string> EligibleRoles = [AppRoles.Manager, AppRoles.HrAdministrator, AppRoles.Employee];
+    public const string HrNotAssignableMessage =
+        "HR Administrators can't be assigned tasks. Take them off the task to save it.";
+
+    // The people who do the work. An HR Administrator hands tasks out and a System
+    // Administrator configures the workspace; neither is ever handed one.
+    private static readonly List<string> EligibleRoles = [AppRoles.Manager, AppRoles.Employee];
 
     public static async Task<List<WorkTaskAssigneeDto>> EligibleAsync(
         AppDbContext context, int departmentId, CancellationToken cancellationToken)
@@ -52,6 +56,25 @@ public static class WorkTaskAssigneeRule
             })
             .OrderBy(a => a.DisplayName)
             .ToList();
+    }
+
+    /// <summary>
+    /// Whether any of <paramref name="userIds"/> holds the HR Administrator role. Checked
+    /// against the whole list on every save, not just the people being added: unlike
+    /// somebody who has since moved department, an HR Administrator on a task is never
+    /// right, so an edit may not carry one forward.
+    /// </summary>
+    public static async Task<bool> AnyHrAdministratorAsync(
+        AppDbContext context, IReadOnlyCollection<string> userIds, CancellationToken cancellationToken)
+    {
+        if (userIds.Count == 0)
+            return false;
+        var ids = userIds.ToList();
+        return await (
+            from ur in context.UserRoles
+            join r in context.Roles on ur.RoleId equals r.Id
+            where r.Name == AppRoles.HrAdministrator && ids.Contains(ur.UserId)
+            select ur.UserId).AnyAsync(cancellationToken);
     }
 
     /// <summary>Every one of <paramref name="userIds"/> is eligible (vacuously true for none).</summary>

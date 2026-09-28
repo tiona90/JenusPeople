@@ -28,6 +28,7 @@ public static class WorkTaskProjection
                 {
                     UserId = a.UserId,
                     DisplayName = !string.IsNullOrWhiteSpace(a.User!.DisplayName) ? a.User.DisplayName : (a.User.Email ?? ""),
+                    IsHrAdministrator = a.User.UserRoles.Any(ur => ur.Role!.Name == AppRoles.HrAdministrator),
                 })
                 .OrderBy(a => a.DisplayName)
                 .ToList(),

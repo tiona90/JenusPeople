@@ -264,4 +264,35 @@ describe('TaskDialog', () => {
         await waitFor(() => expect(onSaved).toHaveBeenCalled())
         expect(api.createWorkTask).toHaveBeenCalledWith(expect.objectContaining({ isBillable: false }))
     })
+
+    it('takes an HR Administrator off a task being edited, since HR is never assigned', async () => {
+        const task = {
+            id: 8, title: 'Old task', description: null, departmentId: 1, departmentName: 'Sales',
+            projectId: 10, projectName: 'CRM Rollout', projectCode: 'CRM', projectColorKey: 'p1',
+            assignees: [
+                { userId: 'u-sam', displayName: 'Sam Sales', isHrAdministrator: false },
+                { userId: 'u-hr', displayName: 'Hana HR', isHrAdministrator: true },
+            ],
+            createdById: 'me', createdByName: 'Me', dueDate: null, targetHours: null, isBillable: true,
+            priority: 'Normal' as const, status: 'ToDo' as const,
+            createdAtUtc: '2026-09-01T08:00:00', updatedAtUtc: '2026-09-01T08:00:00', completedAtUtc: null,
+            canEdit: true, canChangeStatus: true,
+        }
+        api.updateWorkTask.mockResolvedValue(task)
+        const onSaved = vi.fn()
+        const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        render(
+            <QueryClientProvider client={queryClient}>
+                <TaskDialog open task={task} onClose={vi.fn()} onSaved={onSaved} />
+            </QueryClientProvider>,
+        )
+
+        const assignees = screen.getByRole('combobox', { name: /^Assignees/ })
+        await waitFor(() => expect(within(assignees).getByText('Sam Sales')).toBeInTheDocument())
+        expect(within(assignees).queryByText('Hana HR')).toBeNull()
+
+        fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+        await waitFor(() => expect(onSaved).toHaveBeenCalled())
+        expect(api.updateWorkTask).toHaveBeenCalledWith(8, expect.objectContaining({ assigneeIds: ['u-sam'] }))
+    })
 })

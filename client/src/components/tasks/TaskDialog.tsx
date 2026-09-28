@@ -50,7 +50,9 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
         setDescription(task?.description ?? '')
         setDepartmentId(task?.departmentId ?? '')
         setProjectId(task?.projectId ?? '')
-        setAssigneeIds(task?.assignees.map((a) => a.userId) ?? [])
+        // HR is never assigned; one left on from before the rule comes off here,
+        // since a save that keeps them is refused.
+        setAssigneeIds(task?.assignees.filter((a) => !a.isHrAdministrator).map((a) => a.userId) ?? [])
         setDueDate(task?.dueDate?.slice(0, 10) ?? '')
         setPriority(task?.priority ?? 'Normal')
         setStatus(task?.status ?? 'ToDo')
