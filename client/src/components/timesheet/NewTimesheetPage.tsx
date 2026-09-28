@@ -36,7 +36,7 @@ import { formatElapsed, formatTime12, useAttendanceToday, useLiveElapsedMinutes 
 import { activityOptionsFor, retainedActivityId } from '../../lib/project-activities'
 import { componentOptionsFor, retainedComponentId } from '../../lib/project-components'
 import { projectOptionsFor, retainedProjectId, typeOptionsFrom } from '../../lib/project-types'
-import { copyableWorkTaskId, isPickable, retainedWorkTaskId, taskOptionLabel, taskOptionsForRow } from '../../lib/timesheet-tasks'
+import { copyableWorkTaskId, isPickable, projectIdForTask, retainedWorkTaskId, taskOptionLabel, taskOptionsForRow } from '../../lib/timesheet-tasks'
 import type { Project, ProjectActivityType, ProjectComponent, ProjectType, TimesheetTaskOption, UserInfo } from '../../lib/types'
 import type { Timesheet, TimesheetStatus } from '../../lib/types/timesheet'
 import type { TimesheetEntry } from '../../lib/types/timesheet-entry'
@@ -58,13 +58,14 @@ const STATUS_BADGE: Record<TimesheetStatus, { bg: SxColor; color: string; label:
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const FULL_DOW = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
-// Row one of a task card: the five pickers, hours, and the remove button. Description
-// gets its own full-width row underneath, so it is not part of this grid.
-const TASK_GRID = '1fr 1.3fr 1.3fr 1.1fr 1.1fr 84px 40px'
+// Row one of a task card: the five pickers, hours, and the remove button. Task comes
+// first because picking one fills in the project. Description gets its own
+// full-width row underneath, so it is not part of this grid.
+const TASK_GRID = '1.4fr 1fr 1.3fr 1.1fr 1.1fr 84px 40px'
 const TASK_HEADERS: { label: string; align?: 'center' }[] = [
+    { label: 'Task' },
     { label: 'Type' },
     { label: 'Project' },
-    { label: 'Task' },
     { label: 'Component' },
     { label: 'Activity' },
     { label: 'Hours', align: 'center' },
@@ -424,10 +425,17 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
                         next.projectId = retainedProjectId(next.projectId, value, activeProjects)
                     }
 
-                    // Picking a task on a row with no project yet fills the project in.
-                    if (field === 'workTaskId' && value && !next.projectId) {
-                        const option = taskOptions.find((o) => String(o.id) === value)
-                        if (option?.projectId != null) next.projectId = String(option.projectId)
+                    // Task is the row's first pick: it decides the project, and a type
+                    // that project is not classified as goes, rather than hiding the
+                    // project it just set from the Project picker.
+                    if (field === 'workTaskId' && value) {
+                        const taskProjectId = projectIdForTask(value, taskOptions)
+                        if (taskProjectId) {
+                            next.projectId = taskProjectId
+                            if (next.projectTypeId && !retainedProjectId(taskProjectId, next.projectTypeId, activeProjects)) {
+                                next.projectTypeId = ''
+                            }
+                        }
                     }
 
                     // Switching project can strand an activity or a component the
@@ -1092,6 +1100,25 @@ function DayCard({
                                 <Select
                                     size="small"
                                     displayEmpty
+                                    value={t.workTaskId}
+                                    onChange={(e) => onUpdateTask(t._id, 'workTaskId', e.target.value)}
+                                    disabled={disabled}
+                                    sx={TASK_FIELD_SX}
+                                    inputProps={{ 'aria-label': 'Task' }}
+                                >
+                                    <MenuItem value="">
+                                        <Box component="em" sx={{ color: 'text.disabled' }}>No task</Box>
+                                    </MenuItem>
+                                    {/* A task closed since, or no longer the owner's, still shows as the row's value, but cannot be picked again. */}
+                                    {taskOptionsForRow(taskOptions, t.workTaskId).map((o) => (
+                                        <MenuItem key={o.id} value={String(o.id)} disabled={!isPickable(o)}>
+                                            {taskOptionLabel(o)}
+                                        </MenuItem>
+                                    ))}
+                                </Select>
+                                <Select
+                                    size="small"
+                                    displayEmpty
                                     value={t.projectTypeId}
                                     onChange={(e) => onUpdateTask(t._id, 'projectTypeId', e.target.value)}
                                     disabled={disabled}
@@ -1121,25 +1148,6 @@ function DayCard({
                                     {projectOptionsFor(t.projectTypeId, activeProjects).map((p) => (
                                         <MenuItem key={p.id} value={String(p.id)}>
                                             {p.name}
-                                        </MenuItem>
-                                    ))}
-                                </Select>
-                                <Select
-                                    size="small"
-                                    displayEmpty
-                                    value={t.workTaskId}
-                                    onChange={(e) => onUpdateTask(t._id, 'workTaskId', e.target.value)}
-                                    disabled={disabled}
-                                    sx={TASK_FIELD_SX}
-                                    inputProps={{ 'aria-label': 'Task' }}
-                                >
-                                    <MenuItem value="">
-                                        <Box component="em" sx={{ color: 'text.disabled' }}>No task</Box>
-                                    </MenuItem>
-                                    {/* A task closed since, or no longer the owner's, still shows as the row's value, but cannot be picked again. */}
-                                    {taskOptionsForRow(taskOptions, t.projectId, t.workTaskId).map((o) => (
-                                        <MenuItem key={o.id} value={String(o.id)} disabled={!isPickable(o)}>
-                                            {taskOptionLabel(o)}
                                         </MenuItem>
                                     ))}
                                 </Select>

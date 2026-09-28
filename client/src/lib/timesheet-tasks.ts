@@ -13,10 +13,21 @@ export function isPickable(option: TimesheetTaskOption): boolean {
     return !option.isClosed && option.isAssigned !== false
 }
 
-export function taskOptionsForRow(options: TimesheetTaskOption[], projectId: string, currentTaskId: string): TimesheetTaskOption[] {
+/**
+ * The Task picker's list. Task is the row's first pick and decides the project,
+ * so it is not narrowed by whatever project the row holds. A legacy task with no
+ * project is left out: no row could save it.
+ */
+export function taskOptionsForRow(options: TimesheetTaskOption[], currentTaskId: string): TimesheetTaskOption[] {
     return options.filter((o) =>
-        (isPickable(o) || String(o.id) === currentTaskId)
-        && (!projectId || String(o.projectId) === projectId))
+        o.projectId != null
+        && (isPickable(o) || String(o.id) === currentTaskId))
+}
+
+/** The project a picked task sets on its row, or null for no task (or one not listed yet). */
+export function projectIdForTask(workTaskId: string, options: TimesheetTaskOption[]): string | null {
+    const option = options.find((o) => String(o.id) === workTaskId)
+    return option?.projectId != null ? String(option.projectId) : null
 }
 
 /**

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { copyableWorkTaskId, retainedWorkTaskId, taskOptionLabel, taskOptionsForRow } from './timesheet-tasks'
+import { copyableWorkTaskId, projectIdForTask, retainedWorkTaskId, taskOptionLabel, taskOptionsForRow } from './timesheet-tasks'
 import type { TimesheetTaskOption } from './types'
 
 const opt = (o: Partial<TimesheetTaskOption>): TimesheetTaskOption => ({
@@ -9,16 +9,26 @@ const payroll = opt({ id: 1, projectId: 7 })
 const crm = opt({ id: 2, projectId: 8, projectCode: 'CRM', title: 'crm' })
 const closed = opt({ id: 3, projectId: 7, isClosed: true, title: 'old' })
 
+// Task is the row's first pick and decides its project, so the list is never
+// narrowed by a project the row happens to hold.
 describe('taskOptionsForRow', () => {
-    it('narrows to the row project', () => {
-        expect(taskOptionsForRow([payroll, crm], '7', '').map((o) => o.id)).toEqual([1])
-    })
-    it('offers every open task while the row has no project', () => {
-        expect(taskOptionsForRow([payroll, crm], '', '').map((o) => o.id)).toEqual([1, 2])
+    it('offers every open task whatever the row project', () => {
+        expect(taskOptionsForRow([payroll, crm], '').map((o) => o.id)).toEqual([1, 2])
     })
     it('hides a closed task unless the row already carries it', () => {
-        expect(taskOptionsForRow([payroll, closed], '7', '').map((o) => o.id)).toEqual([1])
-        expect(taskOptionsForRow([payroll, closed], '7', '3').map((o) => o.id)).toEqual([1, 3])
+        expect(taskOptionsForRow([payroll, closed], '').map((o) => o.id)).toEqual([1])
+        expect(taskOptionsForRow([payroll, closed], '3').map((o) => o.id)).toEqual([1, 3])
+    })
+    it('drops a legacy task with no project, which no row could save', () => {
+        expect(taskOptionsForRow([payroll, opt({ id: 5, projectId: null })], '').map((o) => o.id)).toEqual([1])
+    })
+})
+
+describe('projectIdForTask', () => {
+    it('is the picked task project', () => expect(projectIdForTask('2', [payroll, crm])).toBe('8'))
+    it('is nothing for no task, or one not listed yet', () => {
+        expect(projectIdForTask('', [payroll])).toBeNull()
+        expect(projectIdForTask('9', [payroll])).toBeNull()
     })
 })
 
@@ -48,8 +58,8 @@ const unassigned = opt({ id: 4, projectId: 7, isAssigned: false, title: 'moved o
 
 describe('a task the owner was taken off', () => {
     it('is offered only to the row that already names it', () => {
-        expect(taskOptionsForRow([payroll, unassigned], '7', '').map((o) => o.id)).toEqual([1])
-        expect(taskOptionsForRow([payroll, unassigned], '7', '4').map((o) => o.id)).toEqual([1, 4])
+        expect(taskOptionsForRow([payroll, unassigned], '').map((o) => o.id)).toEqual([1])
+        expect(taskOptionsForRow([payroll, unassigned], '4').map((o) => o.id)).toEqual([1, 4])
     })
     it('is not carried by a copy', () => expect(copyableWorkTaskId('4', [unassigned])).toBe(''))
     it('says so in its label', () => expect(taskOptionLabel(unassigned)).toBe('PAY-002 · moved on (no longer yours)'))
