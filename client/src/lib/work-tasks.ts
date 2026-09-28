@@ -43,16 +43,54 @@ function matchesStatus(task: WorkTask, status: StatusFilter): boolean {
     return task.status === status
 }
 
+/** Title, description and project name or code, ignoring case. A blank search matches everything. */
+function matchesSearch(task: WorkTask, search: string | undefined): boolean {
+    const needle = (search ?? '').trim().toLowerCase()
+    if (needle === '') return true
+    return [task.title, task.description, task.projectName, task.projectCode]
+        .some((field) => (field ?? '').toLowerCase().includes(needle))
+}
+
 export function filterTasks(
     tasks: readonly WorkTask[],
-    filter: { tab: TaskTab; status: StatusFilter; departmentId: number | null; userId: string },
+    filter: {
+        tab: TaskTab
+        status: StatusFilter
+        departmentId: number | null
+        userId: string
+        priority?: WorkTaskPriority | 'any'
+        search?: string
+    },
 ): WorkTask[] {
     return tasks.filter(
         (task) =>
             inTab(task, filter.tab, filter.userId) &&
             matchesStatus(task, filter.status) &&
-            (filter.departmentId == null || task.departmentId === filter.departmentId),
+            (filter.departmentId == null || task.departmentId === filter.departmentId) &&
+            (filter.priority == null || filter.priority === 'any' || task.priority === filter.priority) &&
+            matchesSearch(task, filter.search),
     )
+}
+
+/** Whole days an open task is past its due date; 0 when it is not overdue. */
+export function overdueDays(task: WorkTask, today: string): number {
+    if (!isOverdue(task, today)) return 0
+    const [y1, m1, d1] = task.dueDate!.slice(0, 10).split('-').map(Number)
+    const [y2, m2, d2] = today.split('-').map(Number)
+    return Math.round((Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / 86_400_000)
+}
+
+/** The figures the summary tiles show, over every task the viewer can see. */
+export function taskStats(tasks: readonly WorkTask[], userId: string, today: string) {
+    const month = today.slice(0, 7)
+    return {
+        total: tasks.length,
+        open: tasks.filter(isOpenTask).length,
+        inProgress: tasks.filter((t) => t.status === 'InProgress').length,
+        overdue: tasks.filter((t) => isOverdue(t, today)).length,
+        doneThisMonth: tasks.filter((t) => t.status === 'Done' && (t.completedAtUtc ?? '').slice(0, 7) === month).length,
+        assignedToMeOpen: openCount(tasks, 'assigned', userId),
+    }
 }
 
 export function openCount(tasks: readonly WorkTask[], tab: TaskTab, userId: string): number {

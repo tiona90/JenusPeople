@@ -280,6 +280,8 @@ public class WorkTaskCommandTests
         Assert.True(result.IsSuccess, result.Error);
         Assert.Equal(SalesProject, result.Value!.ProjectId);
         Assert.Equal("CRM Rollout", result.Value.ProjectName);
+        Assert.Equal("CRM", result.Value.ProjectCode);
+        Assert.Equal("p3", result.Value.ProjectColorKey);
     }
 
     [Theory]

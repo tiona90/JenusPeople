@@ -42,7 +42,7 @@ internal static class WorkTaskWorld
 
         db.UserDepartments.Add(new UserDepartment { UserId = Hr, DepartmentId = Sales });
 
-        db.Projects.Add(new Project { Id = SalesProject, Name = "CRM Rollout", Code = "CRM" });
+        db.Projects.Add(new Project { Id = SalesProject, Name = "CRM Rollout", Code = "CRM", ColorKey = "p3" });
         db.Projects.Add(new Project { Id = InactiveSalesProject, Name = "Legacy", Code = "LEG", IsActive = false });
         db.Projects.Add(new Project { Id = OpsProject, Name = "Ops Tooling", Code = "OPT" });
         db.ProjectDepartments.Add(new ProjectDepartment { ProjectId = SalesProject, DepartmentId = Sales });

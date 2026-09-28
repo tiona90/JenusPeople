@@ -11,6 +11,9 @@ export interface WorkTask {
     /** Null only on a task filed before projects were required; it must be given one on its next edit. */
     projectId: number | null
     projectName: string | null
+    /** The project's code and colour key, for the card's badge. */
+    projectCode: string | null
+    projectColorKey: string | null
     /** Everyone on the task, by name. They share one status. */
     assignees: WorkTaskAssignee[]
     createdById: string

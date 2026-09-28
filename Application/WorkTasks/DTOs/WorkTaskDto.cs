@@ -12,6 +12,9 @@ public class WorkTaskDto
     /// <summary>Null only on a task filed before projects were required.</summary>
     public int? ProjectId { get; set; }
     public string? ProjectName { get; set; }
+    /// <summary>The project's code and colour, for the card's badge.</summary>
+    public string? ProjectCode { get; set; }
+    public string? ProjectColorKey { get; set; }
     /// <summary>Everyone on the task, by name.</summary>
     public List<WorkTaskAssigneeDto> Assignees { get; set; } = [];
     public string CreatedById { get; set; } = string.Empty;

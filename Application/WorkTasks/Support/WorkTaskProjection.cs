@@ -17,6 +17,8 @@ public static class WorkTaskProjection
             DepartmentName = t.Department!.Name,
             ProjectId = t.ProjectId,
             ProjectName = t.Project != null ? t.Project.Name : null,
+            ProjectCode = t.Project != null ? t.Project.Code : null,
+            ProjectColorKey = t.Project != null ? t.Project.ColorKey : null,
             Assignees = t.Assignees
                 .Select(a => new WorkTaskAssigneeDto
                 {

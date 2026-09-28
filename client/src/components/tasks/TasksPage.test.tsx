@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -16,12 +16,15 @@ vi.mock('../../lib/api', () => ({
     deleteWorkTask: vi.fn(),
 }))
 vi.mock('../../lib/mobx')
+vi.mock('../ui/SweetAlert', () => ({ default: { fire: vi.fn() } }))
 
 const api = vi.mocked(await import('../../lib/api'))
 const mobx = vi.mocked(await import('../../lib/mobx'))
+const sweetAlert = vi.mocked((await import('../ui/SweetAlert')).default)
 
 const base: WorkTask = {
-    id: 1, title: 'Mine to do', description: null, departmentId: 1, departmentName: 'Sales', projectId: 10, projectName: 'CRM Rollout',
+    id: 1, title: 'Mine to do', description: null, departmentId: 1, departmentName: 'Sales',
+    projectId: 10, projectName: 'CRM Rollout', projectCode: 'CRM', projectColorKey: 'p1',
     assignees: [{ userId: 'me', displayName: 'Me' }], createdById: 'boss', createdByName: 'Boss',
     dueDate: '2020-01-01', priority: 'High', status: 'ToDo',
     createdAtUtc: '2026-09-01T08:00:00', updatedAtUtc: '2026-09-01T08:00:00', completedAtUtc: null,
@@ -30,7 +33,7 @@ const base: WorkTask = {
 const TASKS: WorkTask[] = [
     base,
     { ...base, id: 2, title: 'I asked for this', assignees: [{ userId: 'x', displayName: 'Xena' }, { userId: 'z', displayName: 'Zoe' }], createdById: 'me', createdByName: 'Me', dueDate: null, canEdit: true },
-    { ...base, id: 3, title: 'Someone else\'s', assignees: [{ userId: 'x', displayName: 'Xena' }, { userId: 'z', displayName: 'Zoe' }], createdById: 'y', createdByName: 'Yan', dueDate: null, canEdit: false, canChangeStatus: false },
+    { ...base, id: 3, title: "Someone else's", assignees: [{ userId: 'x', displayName: 'Xena' }], createdById: 'y', createdByName: 'Yan', dueDate: null, canEdit: false, canChangeStatus: false },
 ]
 
 function renderPage() {
@@ -45,6 +48,11 @@ function renderPage() {
     )
 }
 
+const cards = () => screen.findAllByTestId('task-card')
+const cardFor = async (title: string) => (await cards()).find((c) => within(c).queryByText(title))!
+const showView = (view: 'assigned' | 'created' | 'all') =>
+    fireEvent.change(screen.getByRole('combobox', { name: 'View' }), { target: { value: view } })
+
 beforeEach(() => {
     vi.clearAllMocks()
     api.getWorkTasks.mockResolvedValue(TASKS)
@@ -52,52 +60,88 @@ beforeEach(() => {
 })
 
 describe('TasksPage', () => {
-    it('opens on Assigned to me, with open counts on each tab', async () => {
+    it('opens on Assigned to me, with open counts in the view picker', async () => {
         renderPage()
-        const rows = await screen.findAllByTestId('task-row')
-        expect(rows).toHaveLength(1)
-        expect(within(rows[0]).getByText('Mine to do')).toBeInTheDocument()
-        expect(screen.getByRole('tab', { name: /Assigned to me\s*1/ })).toBeInTheDocument()
-        expect(screen.getByRole('tab', { name: /Created by me\s*1/ })).toBeInTheDocument()
-        expect(screen.getByRole('tab', { name: /All in my departments\s*3/ })).toBeInTheDocument()
+        const shown = await cards()
+        expect(shown).toHaveLength(1)
+        expect(within(shown[0]).getByText('Mine to do')).toBeInTheDocument()
+
+        const view = screen.getByRole('combobox', { name: 'View' })
+        expect(within(view).getByRole('option', { name: 'Assigned to me (1)' })).toBeInTheDocument()
+        expect(within(view).getByRole('option', { name: 'Created by me (1)' })).toBeInTheDocument()
+        expect(within(view).getByRole('option', { name: 'All in my departments (3)' })).toBeInTheDocument()
+    })
+
+    it('sums the tasks up in the tiles', async () => {
+        renderPage()
+        await cards()
+        const open = screen.getByTestId('stat-open')
+        expect(within(open).getByText('3')).toBeInTheDocument()
+        expect(within(screen.getByTestId('stat-overdue')).getByText('1')).toBeInTheDocument()
+        expect(within(screen.getByTestId('stat-mine')).getByText('1')).toBeInTheDocument()
     })
 
     it('marks an open task past its due date as overdue', async () => {
         renderPage()
-        const row = (await screen.findAllByTestId('task-row'))[0]
-        expect(within(row).getByText(/Overdue/)).toBeInTheDocument()
+        const card = await cardFor('Mine to do')
+        expect(within(card).getByText(/Overdue by \d+ days/)).toBeInTheDocument()
     })
 
-    it('shows Edit only on tasks the viewer created, and locks status for bystanders', async () => {
+    it('shows the project badge and name on the card', async () => {
         renderPage()
-        await screen.findAllByTestId('task-row')
-        fireEvent.click(screen.getByRole('tab', { name: /All in my departments/ }))
-
-        const rows = await screen.findAllByTestId('task-row')
-        const byTitle = (title: string) => rows.find((r) => within(r).queryByText(title))!
-        expect(within(byTitle('I asked for this')).getByRole('button', { name: 'Task actions' })).toBeInTheDocument()
-        expect(within(byTitle('Mine to do')).queryByRole('button', { name: 'Task actions' })).toBeNull()
-        expect(within(byTitle("Someone else's")).getByRole('combobox', { name: 'Status' })).toHaveAttribute('aria-disabled', 'true')
+        const card = await cardFor('Mine to do')
+        expect(within(card).getByText('CRM')).toBeInTheDocument()
+        expect(within(card).getByText('CRM Rollout')).toBeInTheDocument()
     })
 
-    it('says so when a tab is empty', async () => {
+    it('shows every assignee as an avatar with their name on hover', async () => {
+        renderPage()
+        await cards()
+        showView('created')
+
+        const card = await cardFor('I asked for this')
+        expect(within(card).getByTitle('Xena')).toBeInTheDocument()
+        expect(within(card).getByTitle('Zoe')).toBeInTheDocument()
+        expect(within(card).getByText('2')).toBeInTheDocument()
+    })
+
+    it('offers Edit and Delete only on tasks the viewer may manage, and locks status for bystanders', async () => {
+        renderPage()
+        await cards()
+        showView('all')
+
+        const mine = await cardFor('I asked for this')
+        expect(within(mine).getByRole('button', { name: /Edit/ })).toBeInTheDocument()
+        expect(within(await cardFor('Mine to do')).queryByRole('button', { name: /Edit/ })).toBeNull()
+        expect(within(await cardFor("Someone else's")).getByRole('combobox', { name: 'Status' })).toBeDisabled()
+    })
+
+    it('narrows the grid with the search box', async () => {
+        renderPage()
+        await cards()
+        showView('all')
+        fireEvent.change(screen.getByPlaceholderText('Search tasks…'), { target: { value: 'someone' } })
+
+        await waitFor(async () => expect(await cards()).toHaveLength(1))
+        expect(screen.getByText("Someone else's")).toBeInTheDocument()
+    })
+
+    it('asks before deleting, then deletes', async () => {
+        sweetAlert.fire.mockResolvedValue({ isConfirmed: true } as never)
+        api.deleteWorkTask.mockResolvedValue(undefined)
+        renderPage()
+        await cards()
+        showView('created')
+
+        fireEvent.click(within(await cardFor('I asked for this')).getByRole('button', { name: /Delete/ }))
+
+        await waitFor(() => expect(api.deleteWorkTask).toHaveBeenCalledWith(2))
+        expect(sweetAlert.fire).toHaveBeenCalledWith(expect.objectContaining({ title: 'Delete "I asked for this"?' }))
+    })
+
+    it('says so when a view is empty', async () => {
         api.getWorkTasks.mockResolvedValue([])
         renderPage()
         expect(await screen.findByText('Nothing assigned to you.')).toBeInTheDocument()
-    })
-
-    it("shows the task's project on its row", async () => {
-        renderPage()
-        const row = (await screen.findAllByTestId('task-row'))[0]
-        expect(within(row).getByText('CRM Rollout')).toBeInTheDocument()
-    })
-
-    it('lists every assignee on the row', async () => {
-        renderPage()
-        await screen.findAllByTestId('task-row')
-        fireEvent.click(screen.getByRole('tab', { name: /Created by me/ }))
-
-        const row = (await screen.findAllByTestId('task-row'))[0]
-        expect(within(row).getByText('Xena, Zoe')).toBeInTheDocument()
     })
 })
