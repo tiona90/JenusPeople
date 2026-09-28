@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { WorkTask } from './types'
-import { filterTasks, isOverdue, openCount, overdueDays, taskStats, todayIso } from './work-tasks'
+import { filterTasks, isOverdue, nextStatusAction, openCount, overdueDays, taskStats, todayIso } from './work-tasks'
 
 const base: WorkTask = {
     id: 1, title: 't', description: null, departmentId: 1, departmentName: 'Sales', projectId: 10, projectName: 'CRM Rollout', projectCode: 'CRM', projectColorKey: 'p1',
@@ -86,5 +86,12 @@ describe('work-tasks helpers', () => {
         expect(taskStats(tasks, 'me', '2026-09-28')).toEqual({
             total: 5, open: 2, inProgress: 1, overdue: 1, doneThisMonth: 1, assignedToMeOpen: 1,
         })
+    })
+
+    it('offers the obvious next step for each status', () => {
+        expect(nextStatusAction('ToDo')).toEqual({ label: 'Start', icon: '▶', to: 'InProgress' })
+        expect(nextStatusAction('InProgress')).toEqual({ label: 'Mark done', icon: '✓', to: 'Done' })
+        expect(nextStatusAction('Done')).toEqual({ label: 'Reopen', icon: '↺', to: 'InProgress' })
+        expect(nextStatusAction('Cancelled')).toEqual({ label: 'Reopen', icon: '↺', to: 'ToDo' })
     })
 })

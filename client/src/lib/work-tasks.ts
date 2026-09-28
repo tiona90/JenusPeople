@@ -13,6 +13,21 @@ export const STATUS_LABELS: Record<WorkTaskStatus, string> = {
 
 export const PRIORITY_LABELS: Record<WorkTaskPriority, string> = { Low: 'Low', Normal: 'Normal', High: 'High' }
 
+/**
+ * The one move a card offers as its main button: start it, finish it, or bring it
+ * back. A finished task reopens as In progress (the work was under way); a
+ * cancelled one as To do (it never really started). Every other move is in the
+ * Status menu beside it.
+ */
+export function nextStatusAction(status: WorkTaskStatus): { label: string; icon: string; to: WorkTaskStatus } {
+    switch (status) {
+        case 'ToDo': return { label: 'Start', icon: '▶', to: 'InProgress' }
+        case 'InProgress': return { label: 'Mark done', icon: '✓', to: 'Done' }
+        case 'Done': return { label: 'Reopen', icon: '↺', to: 'InProgress' }
+        case 'Cancelled': return { label: 'Reopen', icon: '↺', to: 'ToDo' }
+    }
+}
+
 export function isOpenTask(task: WorkTask): boolean {
     return task.status === 'ToDo' || task.status === 'InProgress'
 }

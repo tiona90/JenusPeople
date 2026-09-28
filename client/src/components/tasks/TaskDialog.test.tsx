@@ -9,6 +9,7 @@ vi.mock('../../lib/api', () => ({
     getWorkTaskProjects: vi.fn(),
     createWorkTask: vi.fn(),
     updateWorkTask: vi.fn(),
+    updateWorkTaskStatus: vi.fn(),
 }))
 const api = vi.mocked(await import('../../lib/api'))
 
@@ -167,5 +168,38 @@ describe('TaskDialog', () => {
 
         await waitFor(() => expect(onSaved).toHaveBeenCalled())
         expect(api.createWorkTask).toHaveBeenCalledWith(expect.objectContaining({ departmentId: 2, assigneeIds: ['u-hana'] }))
+    })
+
+    it('has no Status field when creating', () => {
+        renderDialog()
+        expect(screen.queryByRole('combobox', { name: /^Status/ })).toBeNull()
+    })
+
+    it('saves a status changed while editing, after the details', async () => {
+        const task = {
+            id: 7, title: 'Chase notes', description: null, departmentId: 1, departmentName: 'Sales',
+            projectId: 10, projectName: 'CRM Rollout', projectCode: 'CRM', projectColorKey: 'p1',
+            assignees: [{ userId: 'u-sam', displayName: 'Sam Sales' }], createdById: 'me', createdByName: 'Me',
+            dueDate: null, priority: 'Normal' as const, status: 'ToDo' as const,
+            createdAtUtc: '2026-09-01T08:00:00', updatedAtUtc: '2026-09-01T08:00:00', completedAtUtc: null,
+            canEdit: true, canChangeStatus: true,
+        }
+        const order: string[] = []
+        api.updateWorkTask.mockImplementation(async () => { order.push('details'); return task })
+        api.updateWorkTaskStatus.mockImplementation(async () => { order.push('status'); return task })
+        const onSaved = vi.fn()
+        const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        render(
+            <QueryClientProvider client={queryClient}>
+                <TaskDialog open task={task} onClose={vi.fn()} onSaved={onSaved} />
+            </QueryClientProvider>,
+        )
+
+        await choose('Status', 'Done')
+        fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+
+        await waitFor(() => expect(onSaved).toHaveBeenCalled())
+        expect(api.updateWorkTaskStatus).toHaveBeenCalledWith(7, 'Done')
+        expect(order).toEqual(['details', 'status'])
     })
 })

@@ -4,19 +4,22 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import CircularProgress from '@mui/material/CircularProgress'
+import Menu from '@mui/material/Menu'
+import MenuItem from '@mui/material/MenuItem'
 import { deleteWorkTask, getWorkTaskDepartments, getWorkTasks, updateWorkTaskStatus } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
 import { useStore } from '../../lib/mobx'
 import { softBg } from '../../lib/theme-tokens'
 import type { WorkTask, WorkTaskPriority, WorkTaskStatus } from '../../lib/types'
 import {
-    PRIORITY_LABELS, STATUS_LABELS, filterTasks, isOpenTask, openCount, overdueDays, taskStats, todayIso,
+    PRIORITY_LABELS, STATUS_LABELS, filterTasks, isOpenTask, nextStatusAction, openCount, overdueDays, taskStats, todayIso,
     type StatusFilter, type TaskTab,
 } from '../../lib/work-tasks'
 import { SweetAlert } from '../ui'
 import { CardStat, OutlineBtn, SectionLabel, SelectFilter, StatCard } from '../ui/CardKit'
 import { CODE_COLORS, avatarBg, initials } from '../../lib/card-kit'
 import TaskDialog from './TaskDialog'
+import { PRIORITY_COLORS, STATUS_COLORS } from './statusStyles'
 
 /* ─── tokens ─────────────────────────────────────────────────────────────── */
 
@@ -25,19 +28,6 @@ const VIEWS: { value: TaskTab; label: string; empty: string }[] = [
     { value: 'created', label: 'Created by me', empty: "You haven't created any tasks." },
     { value: 'all', label: 'All in my departments', empty: 'No tasks in your departments.' },
 ]
-
-const STATUS_COLORS: Record<WorkTaskStatus, { bg: string | ReturnType<typeof softBg>; fg: string; dot: string }> = {
-    ToDo:       { bg: 'divider', fg: 'text.secondary', dot: 'text.disabled' },
-    InProgress: { bg: softBg('primary'), fg: 'primary.dark', dot: 'primary.main' },
-    Done:       { bg: softBg('success'), fg: 'success.dark', dot: 'success.main' },
-    Cancelled:  { bg: 'action.hover', fg: 'text.disabled', dot: 'text.disabled' },
-}
-
-const PRIORITY_COLORS: Record<WorkTaskPriority, { bg: string | ReturnType<typeof softBg>; fg: string }> = {
-    Low:    { bg: 'action.hover', fg: 'text.secondary' },
-    Normal: { bg: softBg('primary'), fg: 'primary.dark' },
-    High:   { bg: softBg('error'), fg: 'error.dark' },
-}
 
 /* ─── helpers ────────────────────────────────────────────────────────────── */
 
@@ -425,15 +415,12 @@ function TaskCard({ task, today, statusPending, onStatus, onEdit, onDelete }: {
 
             {/* Footer */}
             <Box sx={{ display: 'flex', gap: '6px', p: '10px 14px', bgcolor: 'action.hover', alignItems: 'center' }}>
-                <Box sx={{ flex: 1, display: 'flex' }}>
-                    <SelectFilter
-                        ariaLabel="Status"
-                        value={task.status}
-                        disabled={!task.canChangeStatus || statusPending}
-                        onChange={(v) => onStatus(v as WorkTaskStatus)}
-                        options={(Object.keys(STATUS_LABELS) as WorkTaskStatus[]).map((s) => ({ value: s, label: STATUS_LABELS[s] }))}
-                    />
-                </Box>
+                {task.canChangeStatus ? (
+                    <StatusControls status={task.status} pending={statusPending} onStatus={onStatus} />
+                ) : (
+                    <Box sx={{ fontSize: 11, color: 'text.disabled' }}>Only the creator and assignees change the status</Box>
+                )}
+                <Box sx={{ flex: 1 }} />
                 {task.canEdit && (
                     <>
                         <OutlineBtn onClick={onEdit}>✏️ Edit</OutlineBtn>
@@ -442,6 +429,85 @@ function TaskCard({ task, today, statusPending, onStatus, onEdit, onDelete }: {
                 )}
             </Box>
         </Box>
+    )
+}
+
+/**
+ * The card's status controls: the obvious next step as a filled button, and every
+ * status in a menu beside it for the rest (cancelling, stepping back).
+ */
+function StatusControls({ status, pending, onStatus }: {
+    status: WorkTaskStatus
+    pending: boolean
+    onStatus: (next: WorkTaskStatus) => void
+}) {
+    const [anchor, setAnchor] = useState<HTMLElement | null>(null)
+    const next = nextStatusAction(status)
+    return (
+        <>
+            <Box
+                component="button"
+                type="button"
+                disabled={pending}
+                onClick={() => onStatus(next.to)}
+                sx={{
+                    display: 'inline-flex', alignItems: 'center', gap: '6px',
+                    bgcolor: next.to === 'Done' ? 'success.main' : 'primary.main', color: '#fff',
+                    border: 'none', borderRadius: '6px', px: '12px', py: '6px',
+                    fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+                    '&:hover': { bgcolor: next.to === 'Done' ? 'success.dark' : 'primary.dark' },
+                    '&:disabled': { opacity: 0.6, cursor: 'default' },
+                }}
+            >
+                <Box component="span" aria-hidden sx={{ fontSize: 11 }}>{next.icon}</Box>
+                {next.label}
+            </Box>
+            <Box
+                component="button"
+                type="button"
+                aria-haspopup="menu"
+                aria-expanded={anchor != null}
+                disabled={pending}
+                onClick={(e: React.MouseEvent<HTMLElement>) => setAnchor(e.currentTarget)}
+                sx={{
+                    display: 'inline-flex', alignItems: 'center', gap: '6px',
+                    bgcolor: 'background.paper', color: 'text.primary',
+                    border: '1px solid', borderColor: 'divider', borderRadius: '6px', px: '10px', py: '6px',
+                    fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+                    '&:hover': { borderColor: 'primary.main', color: 'primary.main' },
+                    '&:disabled': { opacity: 0.6, cursor: 'default' },
+                }}
+            >
+                Status
+                <Box component="span" aria-hidden sx={{ fontSize: 9, color: 'text.secondary' }}>▼</Box>
+            </Box>
+            <Menu
+                anchorEl={anchor}
+                open={anchor != null}
+                onClose={() => setAnchor(null)}
+                slotProps={{ paper: { sx: { minWidth: 170, borderRadius: '10px', mt: '4px' } } }}
+            >
+                {(Object.keys(STATUS_LABELS) as WorkTaskStatus[]).map((s) => {
+                    const current = s === status
+                    return (
+                        <MenuItem
+                            key={s}
+                            aria-current={current ? 'true' : undefined}
+                            selected={current}
+                            onClick={() => {
+                                setAnchor(null)
+                                if (!current) onStatus(s)
+                            }}
+                            sx={{ fontSize: 13, gap: '10px' }}
+                        >
+                            <Box component="span" aria-hidden sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: STATUS_COLORS[s].dot, flexShrink: 0 }} />
+                            <Box component="span" sx={{ flex: 1 }}>{STATUS_LABELS[s]}</Box>
+                            {current && <Box component="span" aria-hidden sx={{ fontSize: 12, color: 'primary.main' }}>✓</Box>}
+                        </MenuItem>
+                    )
+                })}
+            </Menu>
+        </>
     )
 }
 

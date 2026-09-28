@@ -113,7 +113,9 @@ describe('TasksPage', () => {
         const mine = await cardFor('I asked for this')
         expect(within(mine).getByRole('button', { name: /Edit/ })).toBeInTheDocument()
         expect(within(await cardFor('Mine to do')).queryByRole('button', { name: /Edit/ })).toBeNull()
-        expect(within(await cardFor("Someone else's")).getByRole('combobox', { name: 'Status' })).toBeDisabled()
+        const bystander = await cardFor("Someone else's")
+        expect(within(bystander).queryByRole('button', { name: /Start/ })).toBeNull()
+        expect(within(bystander).queryByRole('button', { name: /Status/ })).toBeNull()
     })
 
     it('narrows the grid with the search box', async () => {
@@ -143,5 +145,29 @@ describe('TasksPage', () => {
         api.getWorkTasks.mockResolvedValue([])
         renderPage()
         expect(await screen.findByText('Nothing assigned to you.')).toBeInTheDocument()
+    })
+
+    it('moves a task on with its next-step button', async () => {
+        api.updateWorkTaskStatus.mockResolvedValue({} as never)
+        renderPage()
+        const card = await cardFor('Mine to do')
+
+        fireEvent.click(within(card).getByRole('button', { name: /Start/ }))
+
+        await waitFor(() => expect(api.updateWorkTaskStatus).toHaveBeenCalledWith(1, 'InProgress'))
+    })
+
+    it('offers every status from the Status menu, marking the current one', async () => {
+        api.updateWorkTaskStatus.mockResolvedValue({} as never)
+        renderPage()
+        const card = await cardFor('Mine to do')
+
+        fireEvent.click(within(card).getByRole('button', { name: /Status/ }))
+        const menu = await screen.findByRole('menu')
+        expect(within(menu).getAllByRole('menuitem').map((i) => i.textContent?.replace('✓', ''))).toEqual(['To do', 'In progress', 'Done', 'Cancelled'])
+        expect(within(menu).getByRole('menuitem', { name: 'To do' })).toHaveAttribute('aria-current', 'true')
+
+        fireEvent.click(within(menu).getByRole('menuitem', { name: 'Cancelled' }))
+        await waitFor(() => expect(api.updateWorkTaskStatus).toHaveBeenCalledWith(1, 'Cancelled'))
     })
 })

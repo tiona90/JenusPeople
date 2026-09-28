@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import {
-    Alert, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormHelperText, InputLabel,
+    Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormHelperText, InputLabel,
     MenuItem, Select, Stack, TextField,
 } from '@mui/material'
-import { createWorkTask, getWorkTaskAssignees, getWorkTaskDepartments, getWorkTaskProjects, updateWorkTask } from '../../lib/api'
+import { createWorkTask, getWorkTaskAssignees, getWorkTaskDepartments, getWorkTaskProjects, updateWorkTask, updateWorkTaskStatus } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
-import type { UpsertWorkTaskRequest, WorkTask, WorkTaskPriority } from '../../lib/types'
-import { PRIORITY_LABELS } from '../../lib/work-tasks'
+import type { UpsertWorkTaskRequest, WorkTask, WorkTaskPriority, WorkTaskStatus } from '../../lib/types'
+import { PRIORITY_LABELS, STATUS_LABELS } from '../../lib/work-tasks'
+import { STATUS_COLORS } from './statusStyles'
 
 const TITLE_MAX = 200
 const DESCRIPTION_MAX = 2000
@@ -28,6 +29,7 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
     const [assigneeIds, setAssigneeIds] = useState<string[]>([])
     const [dueDate, setDueDate] = useState('')
     const [priority, setPriority] = useState<WorkTaskPriority>('Normal')
+    const [status, setStatus] = useState<WorkTaskStatus>('ToDo')
 
     useEffect(() => {
         if (!open) return
@@ -38,6 +40,7 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
         setAssigneeIds(task?.assignees.map((a) => a.userId) ?? [])
         setDueDate(task?.dueDate?.slice(0, 10) ?? '')
         setPriority(task?.priority ?? 'Normal')
+        setStatus(task?.status ?? 'ToDo')
     }, [open, task])
 
     const departments = useQuery({ queryKey: ['work-tasks', 'departments'], queryFn: getWorkTaskDepartments, enabled: open })
@@ -81,7 +84,14 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
     }, [assignees.data, assigneeIds, departmentId, task])
 
     const save = useMutation({
-        mutationFn: (request: UpsertWorkTaskRequest) => (task ? updateWorkTask(task.id, request) : createWorkTask(request)),
+        // Status has its own endpoint (an assignee may move it without editing
+        // anything else), so an edit that changes it is two calls: the details,
+        // then the status — in that order, so a refused edit moves nothing.
+        mutationFn: async (request: UpsertWorkTaskRequest) => {
+            if (!task) return createWorkTask(request)
+            const saved = await updateWorkTask(task.id, request)
+            return status !== task.status ? updateWorkTaskStatus(task.id, status) : saved
+        },
         onSuccess: onSaved,
     })
 
@@ -205,6 +215,24 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
                             ))}
                         </Select>
                     </FormControl>
+                    {task && (
+                        <FormControl>
+                            <InputLabel id="task-status-label">Status</InputLabel>
+                            <Select<WorkTaskStatus>
+                                labelId="task-status-label"
+                                label="Status"
+                                value={status}
+                                onChange={(e) => setStatus(e.target.value as WorkTaskStatus)}
+                            >
+                                {(Object.keys(STATUS_LABELS) as WorkTaskStatus[]).map((s) => (
+                                    <MenuItem key={s} value={s} sx={{ gap: '10px' }}>
+                                        <Box component="span" aria-hidden sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: STATUS_COLORS[s].dot, display: 'inline-block', mr: '8px' }} />
+                                        {STATUS_LABELS[s]}
+                                    </MenuItem>
+                                ))}
+                            </Select>
+                        </FormControl>
+                    )}
                     <Stack direction="row" spacing={2}>
                         <TextField
                             label="Due date"
