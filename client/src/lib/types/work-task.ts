@@ -20,8 +20,10 @@ export interface WorkTask {
     createdByName: string
     /** Calendar date, `YYYY-MM-DD`. */
     dueDate: string | null
-    /** The plan, quoted only: nothing is measured against it. */
+    /** The plan. Measured against loggedHours; going over is allowed. */
     targetHours: number | null
+    /** Hours on every timesheet row linked to the task, any sheet status. Missing from an older API. */
+    loggedHours: number
     /** Null only on a task filed before the question was asked; it must be answered on the next edit. */
     isBillable: boolean | null
     priority: WorkTaskPriority
@@ -56,4 +58,18 @@ export interface UpsertWorkTaskRequest {
     /** Required. */
     isBillable: boolean
     priority: WorkTaskPriority
+}
+
+/** A task a timesheet row may be logged against — the owner's open ones, plus any already on the sheet. */
+export interface TimesheetTaskOption {
+    id: number
+    title: string
+    projectId: number | null
+    projectCode: string | null
+    targetHours: number | null
+    loggedHours: number
+    /** Done or cancelled: listed only because a row on the sheet already names it. */
+    isClosed: boolean
+    /** False on a task the sheet names from before its owner was taken off it. Missing from an older API: read as true. */
+    isAssigned?: boolean
 }

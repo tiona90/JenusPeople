@@ -60,8 +60,9 @@ public class WorkTask
     public DateOnly? DueDate { get; set; }
 
     /// <summary>
-    /// The plan: how many hours of work it should take. Optional and quoted only —
-    /// timesheet entries are not linked to tasks, so nothing is measured against it.
+    /// The plan: how many hours of work it should take. Optional. Measured against
+    /// the timesheet entries linked to the task (<see cref="TimesheetEntries"/>),
+    /// summed on every read and never stored. Going over is allowed; the card says so.
     /// How long it may take is the due date's job.
     /// </summary>
     public int? TargetHours { get; set; }
@@ -81,4 +82,7 @@ public class WorkTask
 
     /// <summary>Set on entering Done, cleared on leaving it.</summary>
     public DateTime? CompletedAtUtc { get; set; }
+
+    /// <summary>Timesheet rows logged against this task, in any timesheet status.</summary>
+    public ICollection<TimesheetEntry> TimesheetEntries { get; set; } = new List<TimesheetEntry>();
 }

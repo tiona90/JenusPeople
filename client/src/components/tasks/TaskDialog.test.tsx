@@ -195,7 +195,7 @@ describe('TaskDialog', () => {
             id: 7, title: 'Chase notes', description: null, departmentId: 1, departmentName: 'Sales',
             projectId: 10, projectName: 'CRM Rollout', projectCode: 'CRM', projectColorKey: 'p1',
             assignees: [{ userId: 'u-sam', displayName: 'Sam Sales' }], createdById: 'me', createdByName: 'Me',
-            dueDate: null, targetHours: null, isBillable: true, priority: 'Normal' as const, status: 'ToDo' as const,
+            dueDate: null, targetHours: null, loggedHours: 0, isBillable: true, priority: 'Normal' as const, status: 'ToDo' as const,
             createdAtUtc: '2026-09-01T08:00:00', updatedAtUtc: '2026-09-01T08:00:00', completedAtUtc: null,
             canEdit: true, canChangeStatus: true,
         }
@@ -273,7 +273,7 @@ describe('TaskDialog', () => {
                 { userId: 'u-sam', displayName: 'Sam Sales', isHrAdministrator: false },
                 { userId: 'u-hr', displayName: 'Hana HR', isHrAdministrator: true },
             ],
-            createdById: 'me', createdByName: 'Me', dueDate: null, targetHours: null, isBillable: true,
+            createdById: 'me', createdByName: 'Me', dueDate: null, targetHours: null, loggedHours: 0, isBillable: true,
             priority: 'Normal' as const, status: 'ToDo' as const,
             createdAtUtc: '2026-09-01T08:00:00', updatedAtUtc: '2026-09-01T08:00:00', completedAtUtc: null,
             canEdit: true, canChangeStatus: true,

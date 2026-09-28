@@ -10,6 +10,7 @@ import {
     getProjects,
     getProjectTypes,
     getTimesheet,
+    getTimesheetTaskOptions,
 } from '../../lib/api'
 import { describeMismatch } from '../../lib/daily-hours'
 import type { Timesheet } from '../../lib/types/timesheet'
@@ -58,6 +59,13 @@ export default function TimesheetDailyBreakdown({ ts, title = 'Daily breakdown' 
     const typeById = useMemo(() => new Map(projectTypes.map((t) => [t.id, t])), [projectTypes])
     const componentById = useMemo(() => new Map(components.map((c) => [c.id, c])), [components])
     const activityById = useMemo(() => new Map(activityTypes.map((a) => [a.id, a])), [activityTypes])
+    // Titles for the rows logged against a task. Same endpoint as the editor's
+    // picker, scoped to this sheet, so it lists every task a row here names.
+    const { data: taskOptions = [] } = useQuery({
+        queryKey: ['work-tasks', 'timesheet-options', ts.id],
+        queryFn: () => getTimesheetTaskOptions(ts.id),
+    })
+    const taskById = useMemo(() => new Map(taskOptions.map((o) => [o.id, o])), [taskOptions])
 
     /* Each card is a calendar date and an entry belongs to the card whose date it
        carries. Both are dates, not instants, so the keys are built in UTC from the
@@ -82,10 +90,11 @@ export default function TimesheetDailyBreakdown({ ts, title = 'Daily breakdown' 
                 const type = e.projectTypeId != null ? typeById.get(e.projectTypeId)?.name : undefined
                 const component = e.projectComponentId != null ? componentById.get(e.projectComponentId)?.name : undefined
                 const activity = e.activityTypeId != null ? activityById.get(e.activityTypeId)?.name : undefined
+                const workTask = e.workTaskId != null ? taskById.get(e.workTaskId) : undefined
                 return {
                     hours: Number(e.hoursWorked),
                     project: project?.code || project?.name || `Project #${e.projectId}`,
-                    detail: [type, component, activity].filter(Boolean).join(' · '),
+                    detail: [workTask && `Task: ${workTask.title}`, type, component, activity].filter(Boolean).join(' · '),
                     notes: e.notes?.trim() ?? '',
                 }
             })
@@ -94,7 +103,7 @@ export default function TimesheetDailyBreakdown({ ts, title = 'Daily breakdown' 
             out.push({ key, name, dateLabel, total, tasks, mismatch, onLeave })
         }
         return out
-    }, [entries, ts.periodStart, projectById, typeById, componentById, activityById, ts.onLeaveDays, ts.attendanceMinutes, ts.dayMismatchMinutes])
+    }, [entries, ts.periodStart, projectById, typeById, componentById, activityById, taskById, ts.onLeaveDays, ts.attendanceMinutes, ts.dayMismatchMinutes])
 
     if (isLoading && entries.length === 0) {
         return (

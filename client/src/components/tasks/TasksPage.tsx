@@ -13,7 +13,7 @@ import { canManageTasks } from '../../lib/roles'
 import { softBg } from '../../lib/theme-tokens'
 import type { WorkTask, WorkTaskPriority, WorkTaskStatus } from '../../lib/types'
 import {
-    PRIORITY_LABELS, STATUS_LABELS, filterTasks, isOpenTask, nextStatusAction, openCount, overdueDays, taskStats, todayIso,
+    PRIORITY_LABELS, STATUS_LABELS, describeTaskProgress, filterTasks, isOpenTask, nextStatusAction, openCount, overdueDays, taskStats, todayIso,
     type StatusFilter, type TaskTab,
 } from '../../lib/work-tasks'
 import { SweetAlert } from '../ui'
@@ -276,6 +276,7 @@ function TaskCard({ task, today, statusPending, onStatus, onEdit, onDelete }: {
 }) {
     const closed = !isOpenTask(task)
     const late = overdueDays(task, today)
+    const progress = describeTaskProgress(task.targetHours, task.loggedHours)
     const status = STATUS_COLORS[task.status]
     const priority = PRIORITY_COLORS[task.priority]
     const codeColor = closed ? 'text.disabled' : (CODE_COLORS[task.projectColorKey ?? ''] ?? CODE_COLORS.p1)
@@ -421,7 +422,8 @@ function TaskCard({ task, today, statusPending, onStatus, onEdit, onDelete }: {
                 <CardStat
                     label="Target"
                     value={task.targetHours != null ? `${task.targetHours}h` : '—'}
-                    sub={task.targetHours != null ? 'of work' : 'no target set'}
+                    sub={task.targetHours == null && progress.text === 'nothing logged' ? 'no target set' : progress.text}
+                    valueColor={progress.over ? 'error.main' : undefined}
                 />
                 <CardStat
                     label={task.status === 'Done' && task.completedAtUtc ? 'Completed' : 'Created'}

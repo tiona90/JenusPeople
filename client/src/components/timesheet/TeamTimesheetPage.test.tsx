@@ -74,6 +74,7 @@ async function renderPage(timesheets: Timesheet[], histories: TimesheetStatusHis
     api.getProjectTypes.mockResolvedValue([])
     api.getProjectComponents.mockResolvedValue([])
     api.getProjectActivityTypes.mockResolvedValue([])
+    api.getTimesheetTaskOptions.mockResolvedValue([])
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(<QueryClientProvider client={queryClient}><TeamTimesheetPage user={manager} /></QueryClientProvider>)
     await screen.findByText(timesheets[0].employeeName)
@@ -163,5 +164,26 @@ describe('the View dialog files each entry under its own day', () => {
         const friday = dialog.querySelector('[data-day="2026-09-25"]') as HTMLElement | null
         expect(within(friday!).getByText('13.0h')).toBeInTheDocument()
         expect(within(dialog).queryByText(/Project #/)).not.toBeInTheDocument()
+    })
+})
+
+describe('the View dialog names the task a row was logged against', () => {
+    it('shows the task title beside the entry', async () => {
+        await renderPage(
+            [sheet({
+                periodStart: '2026-09-21T00:00:00',
+                periodEnd: '2026-09-25T00:00:00',
+                entries: [{ ...entry('2026-09-21', 6, 4), workTaskId: 5 }],
+            })],
+            [],
+        )
+        api.getTimesheetTaskOptions.mockResolvedValue([
+            { id: 5, title: 'Payroll export', projectId: 6, projectCode: 'ELLS-001', targetHours: 24, loggedHours: 4, isClosed: false },
+        ])
+
+        fireEvent.click(screen.getByRole('button', { name: 'View' }))
+        const dialog = await screen.findByRole('dialog')
+
+        expect(await within(dialog).findByText(/Task: Payroll export/)).toBeInTheDocument()
     })
 })

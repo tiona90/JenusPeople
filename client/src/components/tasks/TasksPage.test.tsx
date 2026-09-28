@@ -26,7 +26,7 @@ const base: WorkTask = {
     id: 1, title: 'Mine to do', description: null, departmentId: 1, departmentName: 'Sales',
     projectId: 10, projectName: 'CRM Rollout', projectCode: 'CRM', projectColorKey: 'p1',
     assignees: [{ userId: 'me', displayName: 'Me' }], createdById: 'boss', createdByName: 'Boss',
-    dueDate: '2020-01-01', targetHours: 40, isBillable: true, priority: 'High', status: 'ToDo',
+    dueDate: '2020-01-01', targetHours: 40, loggedHours: 0, isBillable: true, priority: 'High', status: 'ToDo',
     createdAtUtc: '2026-09-01T08:00:00', updatedAtUtc: '2026-09-01T08:00:00', completedAtUtc: null,
     canEdit: false, canChangeStatus: true,
 }
@@ -175,7 +175,7 @@ describe('TasksPage', () => {
         renderPage()
         const planned = await cardFor('Mine to do')
         expect(within(planned).getByText('40h')).toBeInTheDocument()
-        expect(within(planned).getByText('of work')).toBeInTheDocument()
+        expect(within(planned).getByText('0h logged · 40h left')).toBeInTheDocument()
 
         showView('created')
         const unplanned = await cardFor('I asked for this')
@@ -199,5 +199,17 @@ describe('TasksPage', () => {
         expect(screen.queryByText('Create a new task')).toBeNull()
         expect(screen.queryByRole('combobox', { name: 'View' })).toBeNull()
         expect(api.getWorkTaskDepartments).not.toHaveBeenCalled()
+    })
+})
+
+describe('target progress', () => {
+    it('shows the hours logged and left against the target, and how far over', async () => {
+        api.getWorkTasks.mockResolvedValue([
+            { ...base, id: 11, title: 'on track', targetHours: 24, loggedHours: 8 },
+            { ...base, id: 12, title: 'overrun', targetHours: 10, loggedHours: 14 },
+        ])
+        renderPage()
+        expect(within(await cardFor('on track')).getByText('8h logged · 16h left')).toBeInTheDocument()
+        expect(within(await cardFor('overrun')).getByText('4h over')).toBeInTheDocument()
     })
 })

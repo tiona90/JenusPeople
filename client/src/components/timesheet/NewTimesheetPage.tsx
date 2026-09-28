@@ -27,6 +27,7 @@ import {
     getProjectComponents,
     getProjectTypes,
     getTimesheet,
+    getTimesheetTaskOptions,
     submitTimesheet,
     updateTimesheetEntry,
 } from '../../lib/api'
@@ -35,7 +36,8 @@ import { formatElapsed, formatTime12, useAttendanceToday, useLiveElapsedMinutes 
 import { activityOptionsFor, retainedActivityId } from '../../lib/project-activities'
 import { componentOptionsFor, retainedComponentId } from '../../lib/project-components'
 import { projectOptionsFor, retainedProjectId, typeOptionsFrom } from '../../lib/project-types'
-import type { Project, ProjectActivityType, ProjectComponent, ProjectType, UserInfo } from '../../lib/types'
+import { copyableWorkTaskId, isPickable, projectIdForTask, retainedWorkTaskId, taskOptionLabel, taskOptionsForRow } from '../../lib/timesheet-tasks'
+import type { Project, ProjectActivityType, ProjectComponent, ProjectType, TimesheetTaskOption, UserInfo } from '../../lib/types'
 import type { Timesheet, TimesheetStatus } from '../../lib/types/timesheet'
 import type { TimesheetEntry } from '../../lib/types/timesheet-entry'
 import { softBg, type SxColor } from '../../lib/theme-tokens'
@@ -56,10 +58,12 @@ const STATUS_BADGE: Record<TimesheetStatus, { bg: SxColor; color: string; label:
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const FULL_DOW = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
-// Row one of a task card: the four pickers, hours, and the remove button. Description
-// gets its own full-width row underneath, so it is not part of this grid.
-const TASK_GRID = '1.1fr 1.4fr 1.2fr 1.2fr 84px 40px'
+// Row one of a task card: the five pickers, hours, and the remove button. Task comes
+// first because picking one fills in the project. Description gets its own
+// full-width row underneath, so it is not part of this grid.
+const TASK_GRID = '1.4fr 1fr 1.3fr 1.1fr 1.1fr 84px 40px'
 const TASK_HEADERS: { label: string; align?: 'center' }[] = [
+    { label: 'Task' },
     { label: 'Type' },
     { label: 'Project' },
     { label: 'Component' },
@@ -100,6 +104,9 @@ type Task = {
     projectId: string
     projectComponentId: string
     activityTypeId: string
+    // The *work* task the hours went on (a Tasks-page task), not this row — the
+    // editor already calls its rows tasks. '' is none.
+    workTaskId: string
     hours: string
     notes: string
 }
@@ -128,7 +135,7 @@ function addDays(d: Date, n: number) {
 }
 
 function newTask(): Task {
-    return { _id: Math.random().toString(36).slice(2, 11), projectTypeId: '', projectId: '', projectComponentId: '', activityTypeId: '', hours: '', notes: '' }
+    return { _id: Math.random().toString(36).slice(2, 11), projectTypeId: '', projectId: '', projectComponentId: '', activityTypeId: '', workTaskId: '', hours: '', notes: '' }
 }
 
 function newDayBucket(open: boolean): DayBucket {
@@ -180,6 +187,7 @@ function buildBucketsFromEntries(
             projectId: String(entry.projectId),
             projectComponentId: entry.projectComponentId != null ? String(entry.projectComponentId) : '',
             activityTypeId: entry.activityTypeId != null ? String(entry.activityTypeId) : '',
+            workTaskId: entry.workTaskId != null ? String(entry.workTaskId) : '',
             hours: String(entry.hoursWorked),
             notes: entry.notes ?? '',
         })
@@ -270,6 +278,11 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
     const { data: components = [] } = useQuery({ queryKey: ['projectComponents'], queryFn: getProjectComponents })
     const activeComponents = components.filter((c) => c.isActive)
     const { data: projectTypes = [] } = useQuery({ queryKey: ['projectTypes'], queryFn: getProjectTypes })
+    // The Task picker: the owner's open tasks, plus any a row on this sheet names.
+    const { data: taskOptions = [] } = useQuery({
+        queryKey: ['work-tasks', 'timesheet-options', currentTs?.id ?? 'mine'],
+        queryFn: () => getTimesheetTaskOptions(currentTs?.id),
+    })
     // Only types some visible project is classified as — see typeOptionsFrom.
     const activeProjectTypes = useMemo(
         () => typeOptionsFrom(activeProjects, projectTypes.filter((t) => t.isActive)),
@@ -364,7 +377,7 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
         const seen = new Set<string>()
         const template = (buckets[key]?.tasks ?? []).filter((t) => {
             if (!t.projectId) return false
-            const pair = `${t.projectTypeId}|${t.projectId}|${t.projectComponentId}|${t.activityTypeId}`
+            const pair = `${t.projectTypeId}|${t.projectId}|${t.projectComponentId}|${t.activityTypeId}|${t.workTaskId}`
             if (seen.has(pair)) return false
             seen.add(pair)
             return true
@@ -385,6 +398,8 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
                         projectId: t.projectId,
                         projectComponentId: t.projectComponentId,
                         activityTypeId: t.activityTypeId,
+                        // A task closed since, or no longer the owner's, stays behind.
+                        workTaskId: copyableWorkTaskId(t.workTaskId, taskOptions),
                     })),
                 }
             }
@@ -410,13 +425,27 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
                         next.projectId = retainedProjectId(next.projectId, value, activeProjects)
                     }
 
+                    // Task is the row's first pick: it decides the project, and a type
+                    // that project is not classified as goes, rather than hiding the
+                    // project it just set from the Project picker.
+                    if (field === 'workTaskId' && value) {
+                        const taskProjectId = projectIdForTask(value, taskOptions)
+                        if (taskProjectId) {
+                            next.projectId = taskProjectId
+                            if (next.projectTypeId && !retainedProjectId(taskProjectId, next.projectTypeId, activeProjects)) {
+                                next.projectTypeId = ''
+                            }
+                        }
+                    }
+
                     // Switching project can strand an activity or a component the
-                    // new one has not declared, which the server would reject on
-                    // save.
-                    if (field === 'projectId' || field === 'projectTypeId') {
+                    // new one has not declared, or a task on another project, which
+                    // the server would reject on save.
+                    if (field === 'projectId' || field === 'projectTypeId' || field === 'workTaskId') {
                         const project = activeProjects.find((p) => String(p.id) === next.projectId)
                         next.activityTypeId = retainedActivityId(next.activityTypeId, project, activeActivityTypes)
                         next.projectComponentId = retainedComponentId(next.projectComponentId, project, activeComponents)
+                        next.workTaskId = retainedWorkTaskId(next.workTaskId, next.projectId, taskOptions)
                     }
                     return next
                 }),
@@ -503,6 +532,7 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
                     activityTypeId: x.task.activityTypeId ? Number(x.task.activityTypeId) : null,
                     projectTypeId: x.task.projectTypeId ? Number(x.task.projectTypeId) : null,
                     projectComponentId: x.task.projectComponentId ? Number(x.task.projectComponentId) : null,
+                    workTaskId: x.task.workTaskId ? Number(x.task.workTaskId) : null,
                     date: x.date,
                     hoursWorked: parseFloat(x.task.hours),
                     notes: x.task.notes.trim() || null,
@@ -517,6 +547,7 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
                     && String(existing.activityTypeId ?? '') === x.task.activityTypeId
                     && String(existing.projectTypeId ?? '') === x.task.projectTypeId
                     && String(existing.projectComponentId ?? '') === x.task.projectComponentId
+                    && String(existing.workTaskId ?? '') === x.task.workTaskId
                     && Math.abs(Number(existing.hoursWorked) - parseFloat(x.task.hours)) < 0.001
                     && (existing.notes ?? '') === x.task.notes.trim()
                     && isoDateOnly(existing.date) === x.date
@@ -528,6 +559,7 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
                     activityTypeId: x.task.activityTypeId ? Number(x.task.activityTypeId) : null,
                     projectTypeId: x.task.projectTypeId ? Number(x.task.projectTypeId) : null,
                     projectComponentId: x.task.projectComponentId ? Number(x.task.projectComponentId) : null,
+                    workTaskId: x.task.workTaskId ? Number(x.task.workTaskId) : null,
                     date: x.date,
                     hoursWorked: parseFloat(x.task.hours),
                     notes: x.task.notes.trim() || null,
@@ -542,6 +574,7 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
                 queryClient.invalidateQueries({ queryKey: ['timesheets'] }),
                 queryClient.invalidateQueries({ queryKey: ['timesheets', 'mine'] }),
                 queryClient.invalidateQueries({ queryKey: ['timesheet', tsId] }),
+                queryClient.invalidateQueries({ queryKey: ['work-tasks'] }),
             ])
 
             // Reset cache key so the next effect run repopulates from fresh entries.
@@ -668,6 +701,7 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
                                 activeActivityTypes={activeActivityTypes}
                                 activeProjectTypes={activeProjectTypes}
                                 activeComponents={activeComponents}
+                                taskOptions={taskOptions}
                                 onToggle={() => { if (!isFuture) toggleDay(key) }}
                                 onAddTask={() => addTask(key)}
                                 onCopyToWeek={() => copyToRestOfWeek(key)}
@@ -851,6 +885,7 @@ type DayCardProps = {
     activeActivityTypes: ProjectActivityType[]
     activeProjectTypes: ProjectType[]
     activeComponents: ProjectComponent[]
+    taskOptions: TimesheetTaskOption[]
     onToggle: () => void
     onAddTask: () => void
     onCopyToWeek: () => void
@@ -915,6 +950,7 @@ function DayCard({
     activeActivityTypes,
     activeProjectTypes,
     activeComponents,
+    taskOptions,
     onToggle, onAddTask, onCopyToWeek, copyTargetCount, canCopy, onRemoveTask, onUpdateTask,
     disabled, readOnly, banner,
 }: DayCardProps) {
@@ -1061,6 +1097,25 @@ function DayCard({
                                     gap: 1.5,
                                     alignItems: 'center',
                                 }}>
+                                <Select
+                                    size="small"
+                                    displayEmpty
+                                    value={t.workTaskId}
+                                    onChange={(e) => onUpdateTask(t._id, 'workTaskId', e.target.value)}
+                                    disabled={disabled}
+                                    sx={TASK_FIELD_SX}
+                                    inputProps={{ 'aria-label': 'Task' }}
+                                >
+                                    <MenuItem value="">
+                                        <Box component="em" sx={{ color: 'text.disabled' }}>No task</Box>
+                                    </MenuItem>
+                                    {/* A task closed since, or no longer the owner's, still shows as the row's value, but cannot be picked again. */}
+                                    {taskOptionsForRow(taskOptions, t.workTaskId).map((o) => (
+                                        <MenuItem key={o.id} value={String(o.id)} disabled={!isPickable(o)}>
+                                            {taskOptionLabel(o)}
+                                        </MenuItem>
+                                    ))}
+                                </Select>
                                 <Select
                                     size="small"
                                     displayEmpty

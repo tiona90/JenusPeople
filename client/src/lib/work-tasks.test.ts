@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { WorkTask } from './types'
-import { filterTasks, isOverdue, nextStatusAction, openCount, overdueDays, taskStats, todayIso } from './work-tasks'
+import { describeTaskProgress, filterTasks, isOverdue, nextStatusAction, openCount, overdueDays, taskStats, todayIso } from './work-tasks'
 
 const base: WorkTask = {
     id: 1, title: 't', description: null, departmentId: 1, departmentName: 'Sales', projectId: 10, projectName: 'CRM Rollout', projectCode: 'CRM', projectColorKey: 'p1',
     assignees: [{ userId: 'me', displayName: 'Me' }], createdById: 'boss', createdByName: 'Boss',
-    dueDate: null, targetHours: null, isBillable: true, priority: 'Normal', status: 'ToDo',
+    dueDate: null, targetHours: null, loggedHours: 0, isBillable: true, priority: 'Normal', status: 'ToDo',
     createdAtUtc: '2026-09-01T08:00:00', updatedAtUtc: '2026-09-01T08:00:00', completedAtUtc: null,
     canEdit: false, canChangeStatus: true,
 }
@@ -93,5 +93,27 @@ describe('work-tasks helpers', () => {
         expect(nextStatusAction('InProgress')).toEqual({ label: 'Mark done', icon: '✓', to: 'Done' })
         expect(nextStatusAction('Done')).toEqual({ label: 'Reopen', icon: '↺', to: 'InProgress' })
         expect(nextStatusAction('Cancelled')).toEqual({ label: 'Reopen', icon: '↺', to: 'ToDo' })
+    })
+})
+
+describe('describeTaskProgress', () => {
+    it('says what is logged and what is left', () => {
+        expect(describeTaskProgress(24, 8)).toEqual({ text: '8h logged · 16h left', over: false })
+    })
+    it('keeps half hours to one decimal', () => {
+        expect(describeTaskProgress(24, 1.5)).toEqual({ text: '1.5h logged · 22.5h left', over: false })
+    })
+    it('reads exactly on target as nothing left, not over', () => {
+        expect(describeTaskProgress(24, 24)).toEqual({ text: '24h logged · 0h left', over: false })
+    })
+    it('says how far over', () => {
+        expect(describeTaskProgress(24, 28)).toEqual({ text: '4h over', over: true })
+    })
+    it('has no remaining figure without a target', () => {
+        expect(describeTaskProgress(null, 8)).toEqual({ text: '8h logged', over: false })
+        expect(describeTaskProgress(null, 0)).toEqual({ text: 'nothing logged', over: false })
+    })
+    it('reads a missing figure from an older API as nothing logged', () => {
+        expect(describeTaskProgress(24, undefined as unknown as number)).toEqual({ text: '0h logged · 24h left', over: false })
     })
 })

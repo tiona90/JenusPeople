@@ -22,6 +22,8 @@ public class CreateEntryRequest
     public int? ActivityTypeId { get; set; }
     public int? ProjectTypeId { get; set; }
     public int? ProjectComponentId { get; set; }
+    /// <summary>One of the owner's open tasks on this project, or null — see TimesheetEntryTaskRule.</summary>
+    public int? WorkTaskId { get; set; }
 }
 
 [ApiController]
@@ -131,6 +133,7 @@ public class TimesheetEntriesController : ControllerBase
             ActivityTypeId = request.ActivityTypeId,
             ProjectTypeId = request.ProjectTypeId,
             ProjectComponentId = request.ProjectComponentId,
+            WorkTaskId = request.WorkTaskId,
         };
 
         var existing = await _context.TimesheetEntries
@@ -145,6 +148,10 @@ public class TimesheetEntriesController : ControllerBase
             assignedComponentIds: await AssignedComponentIdsAsync(entry.ProjectId, cancellationToken));
         if (!validation.IsValid)
             throw new ArgumentException(validation.Error);
+
+        var taskRefusal = await TimesheetEntryTaskRule.CheckAsync(_context, timesheetId, entry, stored: null, cancellationToken);
+        if (taskRefusal is not null)
+            throw new ArgumentException(taskRefusal);
 
         _context.TimesheetEntries.Add(entry);
         try
@@ -194,6 +201,11 @@ public class TimesheetEntriesController : ControllerBase
             assignedComponentIds: await AssignedComponentIdsAsync(entry.ProjectId, cancellationToken));
         if (!validation.IsValid)
             throw new ArgumentException(validation.Error);
+
+        var taskRefusal = await TimesheetEntryTaskRule.CheckAsync(
+            _context, timesheetId, entry, existing.Single(e => e.Id == entryId), cancellationToken);
+        if (taskRefusal is not null)
+            throw new ArgumentException(taskRefusal);
 
         _context.Entry(entry).State = EntityState.Modified;
         try

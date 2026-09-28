@@ -31,4 +31,10 @@ public class TimesheetEntry
     // same way the activity is, and nullable for the same reasons.
     public int? ProjectComponentId { get; set; }
     public ProjectComponent? ProjectComponent { get; set; }
+
+    // Which of the owner's tasks the hours went on. Optional, and nullable for
+    // every row predating the link. Counted towards WorkTask.TargetHours on every
+    // read; set to null (the hours stay) when the task is deleted.
+    public int? WorkTaskId { get; set; }
+    public WorkTask? WorkTask { get; set; }
 }
