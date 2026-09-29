@@ -39,10 +39,10 @@ public class WorkTaskValidatorTests
         Assert.False(Valid(r));
     }
 
-    [Fact] public void A_missing_project_is_refused()
+    [Fact] public void A_missing_project_is_left_to_the_task_settings()
     {
         var r = Ok(); r.ProjectId = null;
-        Assert.False(Valid(r));
+        Assert.True(Valid(r));
     }
 
     [Fact] public void Several_assignees_pass()
@@ -82,9 +82,9 @@ public class WorkTaskValidatorTests
         Assert.Equal(valid, Valid(r));
     }
 
-    [Fact] public void Billable_or_not_has_to_be_answered()
+    [Fact] public void A_missing_billable_is_left_to_the_task_settings()
     {
         var r = Ok(); r.IsBillable = null;
-        Assert.False(Valid(r));
+        Assert.True(Valid(r));
     }
 }

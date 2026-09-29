@@ -132,7 +132,7 @@ public class WorkTaskAttachmentTests
 
         var result = await Attach(db, id, SalesManager);
 
-        Assert.Equal(AddWorkTaskAttachment.TooManyMessage, result.Error);
+        Assert.Equal(AddWorkTaskAttachment.TooManyMessageFor(WorkTaskAttachment.MaxPerTask), result.Error);
         Assert.Equal(WorkTaskAttachment.MaxPerTask, await db.StoredFiles.CountAsync());
     }
 

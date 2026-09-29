@@ -355,6 +355,7 @@ const Topbar = observer(function Topbar() {
         else if (s === 'reminders-notifications') pageTitle = 'Notification Settings'
         else if (s === 'maintenance') pageTitle = 'Data Maintenance'
         else if (s === 'system-log') pageTitle = 'System Log'
+        else if (s === 'task-settings') pageTitle = 'Task Settings'
         else pageTitle = 'Administration'
     }
 

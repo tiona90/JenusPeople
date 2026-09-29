@@ -84,13 +84,14 @@ export interface UpsertWorkTaskRequest {
     title: string
     description: string | null
     departmentId: number
-    projectId: number
+    /** Null when the Task Settings make Project optional and none is chosen. */
+    projectId: number | null
     /** At least one, no repeats. */
     assigneeIds: string[]
     dueDate: string | null
     targetHours: number | null
-    /** Required. */
-    isBillable: boolean
+    /** Null when the Task Settings hide Billing, or it is not yet answered. */
+    isBillable: boolean | null
     priority: WorkTaskPriority
 }
 

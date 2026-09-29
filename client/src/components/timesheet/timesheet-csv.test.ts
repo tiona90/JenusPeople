@@ -13,7 +13,7 @@ const TIMESHEET = {
     submittedAt: null,
 } as Timesheet
 
-function entry(projectTypeId: number | null, projectComponentId: number | null, hours: number): TimesheetEntry {
+function entry(projectTypeId: number | null, projectComponentId: number | null, hours: number, workTaskId: number | null = null): TimesheetEntry {
     return {
         id: `e-${projectTypeId}-${projectComponentId}-${hours}`,
         timesheetId: 'ts-1',
@@ -23,6 +23,7 @@ function entry(projectTypeId: number | null, projectComponentId: number | null, 
         date: '2026-09-02T00:00:00',
         hoursWorked: hours,
         notes: 'Triage',
+        workTaskId,
     } as TimesheetEntry
 }
 
@@ -33,6 +34,10 @@ function csv(entries: TimesheetEntry[]): string[][] {
         new Map([[1, { code: 'APL', name: 'Apollo' }]]),
         new Map([[10, { name: 'Support' }]]),
         new Map([[20, { name: 'Lasernet' }]]),
+        new Map([
+            [7, { title: 'Call', description: 'Ring the bank', dueDate: '2026-09-29', targetHours: 1, loggedHours: 8, createdAtUtc: '2026-09-29T08:15:00Z' }],
+            [8, { title: 'Report', description: null, dueDate: null, targetHours: 16, loggedHours: 4, createdAtUtc: '2026-09-01T10:00:00Z' }],
+        ]),
     )
         .split('\r\n')
         .map((line) => line.split(','))
@@ -71,5 +76,36 @@ describe('buildTimesheetsCsv', () => {
         for (const row of [...rows, ...empty]) {
             expect(row).toHaveLength(rows[0].length)
         }
+    })
+
+    it('describes the task a row was logged against in place of the project code', () => {
+        const [header, row] = csv([entry(10, 20, 3, 7)])
+
+        expect(header).not.toContain('Project Code')
+        expect(row[col(header, 'Task')]).toBe('Call')
+        expect(row[col(header, 'Task Description')]).toBe('Ring the bank')
+        expect(row[col(header, 'Task Due Date')]).toBe('2026-09-29')
+        expect(row[col(header, 'Task Target Hours')]).toBe('1')
+        expect(row[col(header, 'Task Hours Over Target')]).toBe('7')
+        expect(row[col(header, 'Task Created')]).toBe('2026-09-29')
+        expect(row[col(header, 'Project Name')]).toBe('Apollo')
+    })
+
+    it('leaves "over" blank for a task under its target, and every task cell blank with no task', () => {
+        const [header, under, none] = csv([entry(10, 20, 3, 8), { ...entry(null, null, 2), date: '2026-09-03T00:00:00' }])
+
+        expect(under[col(header, 'Task Target Hours')]).toBe('16')
+        expect(under[col(header, 'Task Hours Over Target')]).toBe('')
+        expect(under[col(header, 'Task Due Date')]).toBe('')
+        for (const name of ['Task', 'Task Description', 'Task Due Date', 'Task Target Hours', 'Task Hours Over Target', 'Task Created']) {
+            expect(none[col(header, name)]).toBe('')
+        }
+    })
+
+    it('puts the empty-timesheet marker under the notes column', () => {
+        const [header, row] = csv([])
+
+        expect(row[col(header, 'Notes (what was worked on)')]).toBe('(no entries)')
+        expect(row[col(header, 'Status')]).toBe('Approved')
     })
 })

@@ -115,7 +115,7 @@ describe('Navigation offered to each administrator role', () => {
         expect(screen.getByText('Attendance')).toBeInTheDocument()
         expect(screen.getByText('Timesheets')).toBeInTheDocument()
 
-        for (const hidden of ['People', 'Users', 'Departments', 'Configuration', 'Projects', 'Leave Types', 'System', 'Organization', 'Notification Settings', 'Data Maintenance', 'System Log']) {
+        for (const hidden of ['People', 'Users', 'Departments', 'Configuration', 'Projects', 'Leave Types', 'Task Settings', 'System', 'Organization', 'Notification Settings', 'Data Maintenance', 'System Log']) {
             expect(screen.queryByText(hidden)).not.toBeInTheDocument()
         }
         expect(screen.getByText('HR Administrator')).toBeInTheDocument()
@@ -124,7 +124,7 @@ describe('Navigation offered to each administrator role', () => {
     it('gives a System Administrator People, Configuration and System, and no Leave & Time', () => {
         renderSidebarAs(ADMIN)
 
-        for (const shown of ['Users', 'Departments', 'Projects', 'Leave Types', 'Organization', 'Notification Settings', 'Data Maintenance', 'System Log']) {
+        for (const shown of ['Users', 'Departments', 'Projects', 'Leave Types', 'Task Settings', 'Organization', 'Notification Settings', 'Data Maintenance', 'System Log']) {
             expect(screen.getByText(shown)).toBeInTheDocument()
         }
         for (const hidden of ['Leave & Time', 'Leave Management', 'Attendance', 'Timesheets']) {

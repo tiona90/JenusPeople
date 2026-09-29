@@ -4,6 +4,8 @@ import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import { CODE_COLORS, avatarBg, initials } from '../../lib/card-kit'
+import { attachmentLimits, isShown } from '../../lib/task-settings'
+import { useWorkTaskSettings } from '../../lib/task-settings-query'
 import { softBg } from '../../lib/theme-tokens'
 import type { WorkTask } from '../../lib/types'
 import { PRIORITY_LABELS, STATUS_LABELS, describeTaskProgress, formatTaskDate, isOpenTask, overdueDays } from '../../lib/work-tasks'
@@ -46,8 +48,11 @@ function Details({ task, today, onClose, onEdit }: {
     onClose: () => void
     onEdit: (task: WorkTask) => void
 }) {
+    const settings = useWorkTaskSettings()
+    const limits = attachmentLimits(settings)
     const closed = !isOpenTask(task)
-    const late = overdueDays(task, today)
+    const showDue = isShown(settings, 'dueDate')
+    const late = overdueDays(task, today, showDue)
     const progress = describeTaskProgress(task.targetHours, task.loggedHours)
     const status = STATUS_COLORS[task.status]
     const priority = PRIORITY_COLORS[task.priority]
@@ -73,7 +78,7 @@ function Details({ task, today, onClose, onEdit }: {
                             <Box sx={{ fontSize: 11, px: '8px', py: '2px', borderRadius: '10px', bgcolor: 'action.hover', color: 'text.secondary' }}>
                                 {task.departmentName}
                             </Box>
-                            {task.isBillable != null && (
+                            {isShown(settings, 'billable') && task.isBillable != null && (
                                 <Box sx={{
                                     fontSize: 11, px: '8px', py: '2px', borderRadius: '10px', fontWeight: 600,
                                     bgcolor: task.isBillable ? softBg('success') : 'action.hover',
@@ -94,27 +99,27 @@ function Details({ task, today, onClose, onEdit }: {
                             <Box component="span" sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: status.dot }} />
                             {STATUS_LABELS[task.status]}
                         </Box>
-                        <Box sx={{
+                        {isShown(settings, 'priority') && <Box sx={{
                             px: '8px', py: '2px', borderRadius: '10px', fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap',
                             bgcolor: priority.bg, color: priority.fg,
-                        }}>{PRIORITY_LABELS[task.priority]} priority</Box>
+                        }}>{PRIORITY_LABELS[task.priority]} priority</Box>}
                     </Box>
                 </Box>
 
                 {/* Facts */}
                 <Box sx={{ display: 'flex', gap: '16px', flexWrap: 'wrap', mt: 3, p: '12px 14px', bgcolor: 'action.hover', borderRadius: '8px' }}>
-                    <Fact
+                    {showDue && <Fact
                         label="Due"
                         value={task.dueDate ? formatTaskDate(task.dueDate) : '—'}
                         sub={task.dueDate ? (late > 0 ? `overdue by ${late} ${late === 1 ? 'day' : 'days'}` : closed ? 'closed' : 'on track') : 'no date set'}
                         danger={late > 0}
-                    />
-                    <Fact
+                    />}
+                    {isShown(settings, 'targetHours') && <Fact
                         label="Target"
                         value={task.targetHours != null ? `${task.targetHours}h` : '—'}
                         sub={task.targetHours == null && progress.text === 'nothing logged' ? 'no target set' : progress.text}
                         danger={progress.over}
-                    />
+                    />}
                     <Fact
                         label={task.status === 'Done' && task.completedAtUtc ? 'Completed' : 'Created'}
                         value={formatTaskDate(task.status === 'Done' && task.completedAtUtc ? task.completedAtUtc : task.createdAtUtc)}
@@ -122,7 +127,7 @@ function Details({ task, today, onClose, onEdit }: {
                 </Box>
 
                 {/* Description */}
-                <Box sx={{ mt: 3 }}>
+                {isShown(settings, 'description') && <Box sx={{ mt: 3 }}>
                     <SectionLabel>Description</SectionLabel>
                     <Box sx={{
                         mt: '6px', fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
@@ -130,19 +135,26 @@ function Details({ task, today, onClose, onEdit }: {
                     }}>
                         {task.description || 'No description'}
                     </Box>
-                </Box>
+                </Box>}
 
-                {/* Attachments */}
-                <Box sx={{ mt: 3 }}>
+                {/* Attachments — shown when the setting offers them, or when the task
+                    already carries files from before they were hidden. */}
+                {(isShown(settings, 'attachments') || attachments.length > 0) && <Box sx={{ mt: 3 }}>
                     <SectionLabel>Attachments{attachments.length > 0 ? ` (${attachments.length})` : ''}</SectionLabel>
                     <Box sx={{ mt: '6px' }}>
                         {attachments.length === 0 && !task.canEdit ? (
                             <Box sx={{ fontSize: 13, color: 'text.disabled', fontStyle: 'italic' }}>No attachments</Box>
                         ) : (
-                            <TaskAttachments taskId={task.id} attachments={attachments} canAttach={task.canEdit} downloadable />
+                            <TaskAttachments
+                                taskId={task.id}
+                                attachments={attachments}
+                                canAttach={task.canEdit && isShown(settings, 'attachments')}
+                                downloadable
+                                limits={limits}
+                            />
                         )}
                     </Box>
-                </Box>
+                </Box>}
 
                 {/* Assignees */}
                 <Box sx={{ mt: 3 }}>

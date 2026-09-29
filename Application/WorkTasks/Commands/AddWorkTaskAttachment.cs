@@ -1,5 +1,6 @@
 using Application.Core;
 using Application.Files.Commands;
+using Application.TaskSettings;
 using Application.WorkTasks.DTOs;
 using Application.WorkTasks.Support;
 using Domain;
@@ -20,8 +21,8 @@ public class AddWorkTaskAttachment
 {
     public const string NotCreatorMessage = "Only the person who created this task can attach files to it.";
 
-    public static readonly string TooManyMessage =
-        $"A task can carry at most {WorkTaskAttachment.MaxPerTask} attachments. Remove one to add another.";
+    public static string TooManyMessageFor(int max) =>
+        $"A task can carry at most {max} attachments. Remove one to add another.";
 
     public class Command : IRequest<Result<WorkTaskDto>>
     {
@@ -45,8 +46,9 @@ public class AddWorkTaskAttachment
             if (!await WorkTaskAccess.CanManageAsync(context, task, request.CallerUserId, cancellationToken, request.AssignedOnly))
                 return Result<WorkTaskDto>.Forbidden(NotCreatorMessage);
 
-            if (await context.WorkTaskAttachments.CountAsync(a => a.WorkTaskId == task.Id, cancellationToken) >= WorkTaskAttachment.MaxPerTask)
-                return Result<WorkTaskDto>.Invalid(TooManyMessage);
+            var settings = await WorkTaskSettingsStore.LoadAsync(context, cancellationToken);
+            if (await context.WorkTaskAttachments.CountAsync(a => a.WorkTaskId == task.Id, cancellationToken) >= settings.MaxAttachmentsPerTask)
+                return Result<WorkTaskDto>.Invalid(TooManyMessageFor(settings.MaxAttachmentsPerTask));
 
             var stored = await new StoreFile.Handler(context).Handle(new StoreFile.Command
             {
@@ -55,6 +57,8 @@ public class AddWorkTaskAttachment
                 DeclaredContentType = request.DeclaredContentType,
                 Purpose = StoredFilePurpose.TaskAttachment,
                 UploadedById = request.CallerUserId,
+                AcceptedKindsOverride = AllowedKinds(settings),
+                MaxSizeBytesOverride = settings.MaxAttachmentSizeMb * 1024 * 1024,
             }, cancellationToken);
             if (!stored.IsSuccess)
                 return Result<WorkTaskDto>.Invalid(stored.Error!);
@@ -69,6 +73,16 @@ public class AddWorkTaskAttachment
 
             return Result<WorkTaskDto>.Success(await WorkTaskProjection.LoadDtoAsync(
                 context, task.Id, request.CallerUserId, cancellationToken, callerManages: !request.AssignedOnly));
+        }
+
+        private static List<FileSignatureValidator.FileKind> AllowedKinds(WorkTaskSettings s)
+        {
+            var kinds = new List<FileSignatureValidator.FileKind>();
+            if (s.AllowImages) kinds.AddRange([FileSignatureValidator.FileKind.Jpeg, FileSignatureValidator.FileKind.Png]);
+            if (s.AllowPdf) kinds.Add(FileSignatureValidator.FileKind.Pdf);
+            if (s.AllowWord) kinds.AddRange([FileSignatureValidator.FileKind.Docx, FileSignatureValidator.FileKind.Doc]);
+            if (s.AllowExcel) kinds.AddRange([FileSignatureValidator.FileKind.Xlsx, FileSignatureValidator.FileKind.Xls]);
+            return kinds;
         }
     }
 }

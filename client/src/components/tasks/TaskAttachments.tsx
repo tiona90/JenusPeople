@@ -4,9 +4,8 @@ import Box from '@mui/material/Box'
 import { addWorkTaskAttachment, removeWorkTaskAttachment } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
 import { resolveFileUrl } from '../../lib/api/file-url'
-import {
-    MAX_TASK_ATTACHMENTS, TASK_ATTACHMENT_ACCEPT, formatFileSize, taskAttachmentError,
-} from '../../lib/task-attachments'
+import { acceptFor, formatFileSize, taskAttachmentError } from '../../lib/task-attachments'
+import type { TaskAttachmentLimits } from '../../lib/task-attachments'
 import type { WorkTask, WorkTaskAttachment } from '../../lib/types'
 
 /* ─── pieces ─────────────────────────────────────────────────────────────── */
@@ -81,7 +80,7 @@ function FileRow({ name, href, detail, download, onRemove, removeLabel, disabled
     )
 }
 
-function AttachButton({ onFiles, disabled, label }: { onFiles: (files: File[]) => void; disabled?: boolean; label: string }) {
+function AttachButton({ onFiles, disabled, label, accept }: { onFiles: (files: File[]) => void; disabled?: boolean; label: string; accept: string }) {
     const input = useRef<HTMLInputElement>(null)
     return (
         <>
@@ -104,7 +103,7 @@ function AttachButton({ onFiles, disabled, label }: { onFiles: (files: File[]) =
                 type="file"
                 multiple
                 hidden
-                accept={TASK_ATTACHMENT_ACCEPT}
+                accept={accept}
                 data-testid="task-attachment-input"
                 onChange={(e) => {
                     const files = Array.from(e.target.files ?? [])
@@ -118,14 +117,14 @@ function AttachButton({ onFiles, disabled, label }: { onFiles: (files: File[]) =
 }
 
 /** Refuses up front what the API is certain to: a wrong kind, too large, or past the limit. */
-function checkFiles(files: File[], alreadyAttached: number): { accepted: File[]; errors: string[] } {
+function checkFiles(files: File[], alreadyAttached: number, limits: TaskAttachmentLimits): { accepted: File[]; errors: string[] } {
     const errors: string[] = []
     const accepted: File[] = []
     for (const file of files) {
-        const error = taskAttachmentError(file)
+        const error = taskAttachmentError(file, limits)
         if (error) errors.push(error)
-        else if (alreadyAttached + accepted.length >= MAX_TASK_ATTACHMENTS)
-            errors.push(`${file.name}: a task can carry at most ${MAX_TASK_ATTACHMENTS} attachments.`)
+        else if (alreadyAttached + accepted.length >= limits.maxFiles)
+            errors.push(`${file.name}: a task can carry at most ${limits.maxFiles} attachments.`)
         else accepted.push(file)
     }
     return { accepted, errors }
@@ -142,7 +141,7 @@ function ErrorLine({ children }: { children: React.ReactNode }) {
  * may edit the task attaches (`canAttach`, the task's `canEdit`); everyone who sees
  * it opens them, and each file's own `canRemove` says who may take it off.
  */
-export default function TaskAttachments({ taskId, attachments, canAttach, downloadable = false, onChanged }: {
+export default function TaskAttachments({ taskId, attachments, canAttach, downloadable = false, onChanged, limits }: {
     taskId: number
     attachments: WorkTaskAttachment[]
     canAttach: boolean
@@ -150,6 +149,8 @@ export default function TaskAttachments({ taskId, attachments, canAttach, downlo
     downloadable?: boolean
     /** The task as the server returns it after each change. */
     onChanged?: (task: WorkTask) => void
+    /** The Task Settings' current limits — required, so an omission cannot silently fall back to today's. */
+    limits: TaskAttachmentLimits
 }) {
     const queryClient = useQueryClient()
     const [errors, setErrors] = useState<string[]>([])
@@ -184,13 +185,13 @@ export default function TaskAttachments({ taskId, attachments, canAttach, downlo
     })
 
     const attach = (files: File[]) => {
-        const { accepted, errors: refused } = checkFiles(files, attachments.length)
+        const { accepted, errors: refused } = checkFiles(files, attachments.length, limits)
         setErrors(refused)
         if (accepted.length > 0) upload.mutate(accepted)
     }
 
     const busy = upload.isPending || remove.isPending
-    const full = attachments.length >= MAX_TASK_ATTACHMENTS
+    const full = attachments.length >= limits.maxFiles
     return (
         <Box>
             {attachments.map((a) => (
@@ -209,7 +210,8 @@ export default function TaskAttachments({ taskId, attachments, canAttach, downlo
                 <AttachButton
                     onFiles={attach}
                     disabled={busy || full}
-                    label={upload.isPending ? 'Uploading…' : full ? `${MAX_TASK_ATTACHMENTS} files attached (the most a task can carry)` : '+ Attach files'}
+                    accept={acceptFor(limits)}
+                    label={upload.isPending ? 'Uploading…' : full ? `${limits.maxFiles} files attached (the most a task can carry)` : '+ Attach files'}
                 />
             </Box>}
             {errors.length > 0 && <ErrorLine>{errors.join('\n')}</ErrorLine>}
@@ -220,12 +222,14 @@ export default function TaskAttachments({ taskId, attachments, canAttach, downlo
 /* ─── staged: a task not yet created ─────────────────────────────────────── */
 
 /** Files picked for a task that does not exist yet; the dialog uploads them once it does. */
-export function StagedTaskAttachments({ files, onChange }: {
+export function StagedTaskAttachments({ files, onChange, limits }: {
     files: File[]
     onChange: (files: File[]) => void
+    /** The Task Settings' current limits — required, so an omission cannot silently fall back to today's. */
+    limits: TaskAttachmentLimits
 }) {
     const [errors, setErrors] = useState<string[]>([])
-    const full = files.length >= MAX_TASK_ATTACHMENTS
+    const full = files.length >= limits.maxFiles
     return (
         <Box>
             {files.map((file, i) => (
@@ -240,12 +244,13 @@ export function StagedTaskAttachments({ files, onChange }: {
             <Box sx={{ mt: files.length > 0 ? '4px' : 0 }}>
                 <AttachButton
                     onFiles={(picked) => {
-                        const { accepted, errors: refused } = checkFiles(picked, files.length)
+                        const { accepted, errors: refused } = checkFiles(picked, files.length, limits)
                         setErrors(refused)
                         if (accepted.length > 0) onChange([...files, ...accepted])
                     }}
                     disabled={full}
-                    label={full ? `${MAX_TASK_ATTACHMENTS} files attached (the most a task can carry)` : '+ Attach files'}
+                    accept={acceptFor(limits)}
+                    label={full ? `${limits.maxFiles} files attached (the most a task can carry)` : '+ Attach files'}
                 />
             </Box>
             {errors.length > 0 && <ErrorLine>{errors.join('\n')}</ErrorLine>}

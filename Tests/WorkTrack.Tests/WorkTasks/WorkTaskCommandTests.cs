@@ -199,6 +199,34 @@ public class WorkTaskCommandTests
     }
 
     [Fact]
+    public async Task Hidden_fields_are_left_out_of_the_assignment_email()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        var task = NewTask(Sales, SalesManager, SalesManager, "Chase notes");
+        task.Description = "Confidential note";
+        task.DueDate = new DateOnly(2026, 10, 1);
+        task.Priority = WorkTaskPriority.High;
+        var id = await Seeded(db, task);
+        var settings = await db.WorkTaskSettings.SingleAsync();
+        settings.DescriptionRequirement = FieldRequirement.Hidden;
+        settings.DueDateRequirement = FieldRequirement.Hidden;
+        settings.ShowPriority = false;
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        // The request carries none of the hidden values; KeepHiddenOnEdit keeps the
+        // stored ones regardless, which is exactly what must not reach the new assignee.
+        var result = await Update(db, id, SalesManager, Request(Sales, Employee, "Chase notes"));
+
+        Assert.True(result.IsSuccess, result.Error);
+        var mail = Assert.Single(_email.Sent);
+        Assert.DoesNotContain("Confidential note", mail.TextBody);
+        Assert.DoesNotContain("Priority", mail.TextBody);
+        Assert.DoesNotContain("Due:", mail.TextBody);
+    }
+
+    [Fact]
     public async Task Editing_title_only_does_not_recheck_an_assignee_who_left_scope()
     {
         await using var db = await TransactionalTestDb.CreateAsync();

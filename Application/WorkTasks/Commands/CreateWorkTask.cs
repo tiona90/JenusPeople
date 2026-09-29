@@ -1,4 +1,5 @@
 using Application.Core;
+using Application.TaskSettings;
 using Application.WorkTasks.DTOs;
 using Application.WorkTasks.Support;
 using Domain;
@@ -29,11 +30,17 @@ public class CreateWorkTask
         public async Task<Result<WorkTaskDto>> Handle(Command request, CancellationToken cancellationToken)
         {
             var input = request.Task;
+            var settings = await WorkTaskSettingsStore.LoadAsync(context, cancellationToken);
+            WorkTaskFieldRules.ApplyHiddenOnCreate(settings, input);
+            if (WorkTaskFieldRules.Check(settings, input) is { } fieldError)
+                return Result<WorkTaskDto>.Invalid(fieldError);
+
             var departmentIds = await WorkTaskAccess.DepartmentIdsAsync(context, request.CallerUserId, cancellationToken);
             if (!departmentIds.Contains(input.DepartmentId))
                 return Result<WorkTaskDto>.Invalid(WorkTaskAccess.DepartmentOutOfScopeMessage);
-            if (input.ProjectId is not { } projectId
-                || !await WorkTaskProjectRule.IsAvailableAsync(context, projectId, input.DepartmentId, cancellationToken))
+            // A project may be optional (a Task Setting); one that is given must be available.
+            if (input.ProjectId is { } projectId
+                && !await WorkTaskProjectRule.IsAvailableAsync(context, projectId, input.DepartmentId, cancellationToken))
                 return Result<WorkTaskDto>.Invalid(WorkTaskProjectRule.NotAvailableMessage);
             var assigneeIds = request.AssignedOnly
                 ? [request.CallerUserId]

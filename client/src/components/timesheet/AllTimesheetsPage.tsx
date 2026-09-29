@@ -19,6 +19,7 @@ import {
     getProjectTypes,
     getTimesheet,
     getTimesheets,
+    getWorkTasks,
     rejectTimesheet,
     reopenTimesheet,
 } from '../../lib/api'
@@ -674,6 +675,14 @@ export default function AllTimesheetsPage() {
             const typeById = new Map(projectTypes.map((t) => [t.id, t]))
             const componentById = new Map(components.map((c) => [c.id, c]))
 
+            /* The task columns. HR reads every task in their departments; a System
+               Administrator is refused the task list, so their export leaves them blank
+               rather than failing. */
+            const tasks = await queryClient
+                .fetchQuery({ queryKey: ['work-tasks'], queryFn: getWorkTasks })
+                .catch(() => [])
+            const taskById = new Map(tasks.map((task) => [task.id, task]))
+
             const details = await Promise.all(
                 filtered.map((t) =>
                     queryClient.fetchQuery({
@@ -689,7 +698,7 @@ export default function AllTimesheetsPage() {
                 departmentName: deptNameOf(t.departmentId, ''),
             }))
 
-            const csv = buildTimesheetsCsv(sources, projectById, typeById, componentById)
+            const csv = buildTimesheetsCsv(sources, projectById, typeById, componentById, taskById)
 
             const blob = new Blob(['﻿', csv], { type: 'text/csv;charset=utf-8;' })
             const url = URL.createObjectURL(blob)

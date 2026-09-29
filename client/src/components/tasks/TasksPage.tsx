@@ -8,8 +8,11 @@ import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import { deleteWorkTask, getWorkTaskDepartments, getWorkTasks, updateWorkTaskStatus } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
+import type { WorkTaskSettings } from '../../lib/api/work-task-settings'
 import { useStore } from '../../lib/mobx'
 import { canManageTasks, canUseTasks, isHrAdministrator } from '../../lib/roles'
+import { ATTACHMENT_REQUIRED_MESSAGE, isShown, needsAttachmentBeforeDone } from '../../lib/task-settings'
+import { useWorkTaskSettings } from '../../lib/task-settings-query'
 import { softBg } from '../../lib/theme-tokens'
 import type { WorkTask, WorkTaskPriority, WorkTaskStatus } from '../../lib/types'
 import {
@@ -46,9 +49,9 @@ function plural(n: number, one: string, many = `${one}s`) {
     return `${n} ${n === 1 ? one : many}`
 }
 
-function downloadTasksCsv(tasks: readonly WorkTask[]) {
+function downloadTasksCsv(tasks: readonly WorkTask[], settings: WorkTaskSettings) {
     // The BOM makes Excel read the file as UTF-8, so names with accents survive.
-    const blob = new Blob(['\uFEFF', tasksToCsv(tasks)], { type: 'text/csv;charset=utf-8;' })
+    const blob = new Blob(['\uFEFF', tasksToCsv(tasks, settings)], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -115,6 +118,7 @@ const TasksPage = observer(function TasksPage() {
     // always be empty: theirs are what they created and what others run, narrowed
     // with the department filter.
     const isHr = isHrAdministrator(authStore.user?.roles)
+    const settings = useWorkTaskSettings()
     const queryClient = useQueryClient()
 
     const [status, setStatus] = useState<StatusFilter>('open')
@@ -141,11 +145,16 @@ const TasksPage = observer(function TasksPage() {
     const remove = useMutation({ mutationFn: (id: number) => deleteWorkTask(id), onSuccess: refresh })
 
     const today = todayIso()
+    // With Due date hidden, nothing is overdue — there is no date left to judge.
+    const showOverdueTile = isShown(settings, 'dueDate')
     const all = useMemo(() => tasks.data ?? [], [tasks.data])
-    const stats = useMemo(() => taskStats(all, userId, today), [all, userId, today])
+    const stats = useMemo(() => taskStats(all, userId, today, showOverdueTile), [all, userId, today, showOverdueTile])
+    // A priority filter left on when the Task Settings hide priority has no control
+    // to clear it — treat it as 'any' rather than silently keep it applied.
+    const effectivePriority = isShown(settings, 'priority') ? priority : 'any'
     const visible = useMemo(
-        () => filterTasks(all, { tab: 'all', status, departmentId, userId, priority, search }),
-        [all, status, departmentId, userId, priority, search],
+        () => filterTasks(all, { tab: 'all', status, departmentId, userId, priority: effectivePriority, search }),
+        [all, status, departmentId, userId, effectivePriority, search],
     )
     // A send-back's own error shows in its dialog, not twice.
     const mutationError = (sendingBack ? null : moveStatus.error) ?? remove.error
@@ -179,6 +188,7 @@ const TasksPage = observer(function TasksPage() {
             today={today}
             statusPending={moveStatus.isPending}
             onStatus={(next) => moveStatus.mutate({ id: task.id, next })}
+            settings={settings}
             onOpen={() => setDetailsId(task.id)}
             onEdit={() => setDialogTask(task)}
             onDelete={() => void confirmDelete(task)}
@@ -205,7 +215,10 @@ const TasksPage = observer(function TasksPage() {
             {/* Stats row */}
             <Box sx={{
                 display: 'grid',
-                gridTemplateColumns: { xs: '1fr 1fr', md: `repeat(${(isHr ? 3 : 4) + (manages ? 1 : 0)}, 1fr)` },
+                gridTemplateColumns: {
+                    xs: '1fr 1fr',
+                    md: `repeat(${(isHr ? 3 : 4) - (showOverdueTile ? 0 : 1) + (manages && settings.requireCompletionConfirmation ? 1 : 0)}, 1fr)`,
+                },
                 gap: '12px', mb: '14px',
             }}>
                 <Box data-testid="stat-open">
@@ -215,7 +228,7 @@ const TasksPage = observer(function TasksPage() {
                         sub={`of ${stats.total} total · ${stats.inProgress} in progress`}
                     />
                 </Box>
-                {manages && <Box data-testid="stat-confirm">
+                {manages && settings.requireCompletionConfirmation && <Box data-testid="stat-confirm">
                     <StatCard
                         label="🕓 To Confirm"
                         value={String(stats.awaitingMyConfirmation)}
@@ -223,14 +236,14 @@ const TasksPage = observer(function TasksPage() {
                         sub="done, waiting for you"
                     />
                 </Box>}
-                <Box data-testid="stat-overdue">
+                {showOverdueTile && <Box data-testid="stat-overdue">
                     <StatCard
                         label="⏰ Overdue"
                         value={String(stats.overdue)}
                         valueColor={stats.overdue > 0 ? 'warning.main' : 'success.main'}
                         sub={stats.overdue === 0 ? 'all on schedule' : `${stats.overdue === 1 ? 'task' : 'tasks'} past the due date`}
                     />
-                </Box>
+                </Box>}
                 <Box data-testid="stat-done">
                     <StatCard
                         label="✅ Done This Month"
@@ -301,22 +314,24 @@ const TasksPage = observer(function TasksPage() {
                         ]}
                     />
                 )}
-                <SelectFilter
-                    ariaLabel="Priority filter"
-                    value={priority}
-                    onChange={(v) => setPriority(v as WorkTaskPriority | 'any')}
-                    options={[
-                        { value: 'any', label: 'Any priority' },
-                        ...(['High', 'Normal', 'Low'] as WorkTaskPriority[]).map((p) => ({ value: p, label: PRIORITY_LABELS[p] })),
-                    ]}
-                />
+                {isShown(settings, 'priority') && (
+                    <SelectFilter
+                        ariaLabel="Priority filter"
+                        value={priority}
+                        onChange={(v) => setPriority(v as WorkTaskPriority | 'any')}
+                        options={[
+                            { value: 'any', label: 'Any priority' },
+                            ...(['High', 'Normal', 'Low'] as WorkTaskPriority[]).map((p) => ({ value: p, label: PRIORITY_LABELS[p] })),
+                        ]}
+                    />
+                )}
                 <Box sx={{ flex: 1 }} />
                 {/* HR reports on the tasks they run; the file is what the filters show. */}
                 {isHr && (
                     <Box
                         component="button"
                         type="button"
-                        onClick={() => downloadTasksCsv(visible)}
+                        onClick={() => downloadTasksCsv(visible, settings)}
                         disabled={visible.length === 0}
                         sx={{
                             bgcolor: 'background.paper', color: 'text.primary',
@@ -400,9 +415,10 @@ export default TasksPage
 /* Card                                                                     */
 /* ════════════════════════════════════════════════════════════════════════ */
 
-function TaskCard({ task, today, statusPending, onStatus, onOpen, onEdit, onDelete, onSendBack }: {
+function TaskCard({ task, today, settings, statusPending, onStatus, onOpen, onEdit, onDelete, onSendBack }: {
     task: WorkTask
     today: string
+    settings: WorkTaskSettings
     statusPending: boolean
     onStatus: (next: WorkTaskStatus) => void
     /** The details dialog: the whole description and the files, which the card only summarises. */
@@ -413,7 +429,8 @@ function TaskCard({ task, today, statusPending, onStatus, onOpen, onEdit, onDele
     onSendBack: () => void
 }) {
     const closed = !isOpenTask(task)
-    const late = overdueDays(task, today)
+    const showDue = isShown(settings, 'dueDate')
+    const late = overdueDays(task, today, showDue)
     const progress = describeTaskProgress(task.targetHours, task.loggedHours)
     const status = STATUS_COLORS[task.status]
     const priority = PRIORITY_COLORS[task.priority]
@@ -422,6 +439,8 @@ function TaskCard({ task, today, statusPending, onStatus, onOpen, onEdit, onDele
     const attachmentCount = task.attachments?.length ?? 0
     const visibleTeam = task.assignees.slice(0, 6)
     const remaining = task.assignees.length - visibleTeam.length
+    const showTarget = isShown(settings, 'targetHours')
+    const fileNeeded = !closed && needsAttachmentBeforeDone(settings, attachmentCount)
 
     return (
         <Box data-testid="task-card" onClick={onOpen} sx={{
@@ -466,7 +485,7 @@ function TaskCard({ task, today, statusPending, onStatus, onOpen, onEdit, onDele
                             fontSize: 11, px: '8px', py: '2px', borderRadius: '10px',
                             bgcolor: 'action.hover', color: 'text.secondary', fontWeight: 500,
                         }}>{task.departmentName}</Box>
-                        {task.isBillable != null && (
+                        {isShown(settings, 'billable') && task.isBillable != null && (
                             <Box sx={{
                                 fontSize: 11, px: '8px', py: '2px', borderRadius: '10px', fontWeight: 600,
                                 bgcolor: task.isBillable ? softBg('success') : 'action.hover',
@@ -491,26 +510,26 @@ function TaskCard({ task, today, statusPending, onStatus, onOpen, onEdit, onDele
                         <Box component="span" sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: status.dot }} />
                         {STATUS_LABELS[task.status]}
                     </Box>
-                    <Box sx={{
+                    {isShown(settings, 'priority') && <Box sx={{
                         px: '8px', py: '2px', borderRadius: '10px',
                         fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap',
                         bgcolor: priority.bg, color: priority.fg,
-                    }}>{PRIORITY_LABELS[task.priority]} priority</Box>
+                    }}>{PRIORITY_LABELS[task.priority]} priority</Box>}
                 </Box>
             </Box>
 
             {/* Summary: always the same height, whatever the description or the files, so
                 every card in the grid lines up. The whole of both is in the details dialog. */}
             <Box data-testid="task-summary" sx={{ p: '12px 18px', borderBottom: '1px solid', borderBottomColor: 'divider' }}>
-                <Box sx={{
+                {isShown(settings, 'description') && <Box sx={{
                     fontSize: 12, lineHeight: 1.5, height: '3em', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
                     color: task.description ? 'text.secondary' : 'text.disabled', fontStyle: task.description ? 'normal' : 'italic',
                     display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
-                }}>{task.description || 'No description'}</Box>
+                }}>{task.description || 'No description'}</Box>}
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: '8px', fontSize: 11 }}>
-                    <Box sx={{ color: attachmentCount > 0 ? 'text.primary' : 'text.disabled', fontWeight: attachmentCount > 0 ? 600 : 400 }}>
+                    {isShown(settings, 'attachments') && <Box sx={{ color: attachmentCount > 0 ? 'text.primary' : 'text.disabled', fontWeight: attachmentCount > 0 ? 600 : 400 }}>
                         📎 {attachmentCount === 0 ? 'No attachments' : plural(attachmentCount, 'attachment')}
-                    </Box>
+                    </Box>}
                     <Box sx={{ color: 'primary.main', fontWeight: 600 }}>View details →</Box>
                 </Box>
             </Box>
@@ -586,21 +605,26 @@ function TaskCard({ task, today, statusPending, onStatus, onOpen, onEdit, onDele
                     Sent back: {task.sentBackReason}
                 </Box>
             )}
+            {fileNeeded && (
+                <Box title={ATTACHMENT_REQUIRED_MESSAGE} sx={{ px: '18px', pt: '8px', fontSize: 11, color: 'warning.dark' }}>
+                    File needed before Done
+                </Box>
+            )}
 
-            {/* Stats triplet */}
-            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1px', bgcolor: 'divider', mt: 'auto' }}>
-                <CardStat
+            {/* Stats triplet — Due and Target drop out with their columns when the Task Settings hide them. */}
+            <Box sx={{ display: 'grid', gridTemplateColumns: `repeat(${1 + (showDue ? 1 : 0) + (showTarget ? 1 : 0)}, 1fr)`, gap: '1px', bgcolor: 'divider', mt: 'auto' }}>
+                {showDue && <CardStat
                     label="Due"
                     value={task.dueDate ? formatDate(task.dueDate) : '—'}
                     sub={task.dueDate ? (late > 0 ? 'past due' : closed ? 'closed' : 'on track') : 'no date set'}
                     valueColor={late > 0 ? 'error.main' : undefined}
-                />
-                <CardStat
+                />}
+                {showTarget && <CardStat
                     label="Target"
                     value={task.targetHours != null ? `${task.targetHours}h` : '—'}
                     sub={task.targetHours == null && progress.text === 'nothing logged' ? 'no target set' : progress.text}
                     valueColor={progress.over ? 'error.main' : undefined}
-                />
+                />}
                 <CardStat
                     label={task.status === 'Done' && task.completedAtUtc ? 'Completed' : 'Created'}
                     value={formatDate(task.status === 'Done' && task.completedAtUtc ? task.completedAtUtc : task.createdAtUtc)}
@@ -612,9 +636,9 @@ function TaskCard({ task, today, statusPending, onStatus, onOpen, onEdit, onDele
                 the portal) are not a click on the card. */}
             <Box onClick={(e) => e.stopPropagation()} sx={{ display: 'flex', gap: '6px', p: '10px 14px', bgcolor: 'action.hover', alignItems: 'center', cursor: 'default' }}>
                 {task.canConfirm ? (
-                    <ReviewControls pending={statusPending} onConfirm={() => onStatus('Done')} onSendBack={onSendBack} />
+                    <ReviewControls pending={statusPending} doneBlocked={fileNeeded} onConfirm={() => onStatus('Done')} onSendBack={onSendBack} />
                 ) : task.canChangeStatus ? (
-                    <StatusControls status={task.status} pending={statusPending} onStatus={onStatus} />
+                    <StatusControls status={task.status} pending={statusPending} doneBlocked={fileNeeded} onStatus={onStatus} />
                 ) : (
                     <Box sx={{ fontSize: 11, color: 'text.disabled' }}>Only the creator and assignees change the status</Box>
                 )}
@@ -631,7 +655,7 @@ function TaskCard({ task, today, statusPending, onStatus, onOpen, onEdit, onDele
 }
 
 /** A reviewer's two answers to a task marked done. */
-function ReviewControls({ pending, onConfirm, onSendBack }: { pending: boolean; onConfirm: () => void; onSendBack: () => void }) {
+function ReviewControls({ pending, doneBlocked, onConfirm, onSendBack }: { pending: boolean; doneBlocked: boolean; onConfirm: () => void; onSendBack: () => void }) {
     const btn = {
         display: 'inline-flex', alignItems: 'center', gap: '6px', borderRadius: '6px', px: '12px', py: '6px',
         fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
@@ -639,7 +663,7 @@ function ReviewControls({ pending, onConfirm, onSendBack }: { pending: boolean; 
     } as const
     return (
         <>
-            <Box component="button" type="button" disabled={pending} onClick={onConfirm}
+            <Box component="button" type="button" disabled={pending || doneBlocked} title={doneBlocked ? ATTACHMENT_REQUIRED_MESSAGE : undefined} onClick={onConfirm}
                 sx={{ ...btn, bgcolor: 'success.main', color: '#fff', border: 'none', '&:hover': { bgcolor: 'success.dark' } }}>
                 <Box component="span" aria-hidden sx={{ fontSize: 11 }}>✓</Box>Confirm
             </Box>
@@ -655,21 +679,24 @@ function ReviewControls({ pending, onConfirm, onSendBack }: { pending: boolean; 
  * The card's status controls: the obvious next step as a filled button, and every
  * status in a menu beside it for the rest (cancelling, stepping back).
  */
-function StatusControls({ status, pending, onStatus }: {
+function StatusControls({ status, pending, doneBlocked, onStatus }: {
     status: WorkTaskStatus
     pending: boolean
+    doneBlocked: boolean
     onStatus: (next: WorkTaskStatus) => void
 }) {
     const [anchor, setAnchor] = useState<HTMLElement | null>(null)
     const next = nextStatusAction(status)
     // An assignee's one move on a task waiting for confirmation is Withdraw; the rest is the reviewer's.
     const waiting = status === 'AwaitingConfirmation'
+    const mainBlocked = doneBlocked && next.to === 'Done'
     return (
         <>
             <Box
                 component="button"
                 type="button"
-                disabled={pending}
+                disabled={pending || mainBlocked}
+                title={mainBlocked ? ATTACHMENT_REQUIRED_MESSAGE : undefined}
                 onClick={() => onStatus(next.to)}
                 sx={{
                     display: 'inline-flex', alignItems: 'center', gap: '6px',
@@ -712,12 +739,16 @@ function StatusControls({ status, pending, onStatus }: {
                 >
                     {SETTABLE_STATUSES.map((s) => {
                         const current = s === status
+                        const itemBlocked = doneBlocked && s === 'Done'
                         return (
                             <MenuItem
                                 key={s}
                                 aria-current={current ? 'true' : undefined}
                                 selected={current}
+                                disabled={itemBlocked}
+                                title={itemBlocked ? ATTACHMENT_REQUIRED_MESSAGE : undefined}
                                 onClick={() => {
+                                    if (itemBlocked) return
                                     setAnchor(null)
                                     if (!current) onStatus(s)
                                 }}

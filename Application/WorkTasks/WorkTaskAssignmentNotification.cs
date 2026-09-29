@@ -1,4 +1,5 @@
 using Application.Core;
+using Application.TaskSettings;
 using Domain;
 using Domain.Interfaces;
 using Microsoft.EntityFrameworkCore;
@@ -30,6 +31,8 @@ public static class WorkTaskAssignmentNotification
             if (!settings.EmailNotificationsEnabled)
                 return;
 
+            var taskSettings = await WorkTaskSettingsStore.LoadAsync(context, cancellationToken);
+
             var wanted = recipientUserIds.Append(task.CreatedById).Distinct().ToList();
             var people = await context.Users.AsNoTracking()
                 .Where(u => wanted.Contains(u.Id))
@@ -48,9 +51,9 @@ public static class WorkTaskAssignmentNotification
                     .To(assignee.Name)
                     .Sentence($"{creatorName} has assigned you a task: {task.Title}.")
                     .Detail("Department", departmentName)
-                    .Detail("Due", task.DueDate?.ToString("dd MMM yyyy"))
-                    .Detail("Priority", task.Priority.ToString())
-                    .Detail("Details", task.Description)
+                    .Detail("Due", taskSettings.DueDateRequirement == FieldRequirement.Hidden ? null : task.DueDate?.ToString("dd MMM yyyy"))
+                    .Detail("Priority", taskSettings.ShowPriority ? task.Priority.ToString() : null)
+                    .Detail("Details", taskSettings.DescriptionRequirement == FieldRequirement.Hidden ? null : task.Description)
                     .Closing("Please log in and open Tasks to see it.")
                     .Build();
 

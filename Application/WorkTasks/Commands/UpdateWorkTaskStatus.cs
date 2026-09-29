@@ -1,9 +1,11 @@
 using Application.Core;
+using Application.TaskSettings;
 using Application.WorkTasks.DTOs;
 using Application.WorkTasks.Support;
 using Domain;
 using Domain.Interfaces;
 using MediatR;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Persistence;
 
@@ -44,6 +46,8 @@ public class UpdateWorkTaskStatus
             if (request.Status == WorkTaskStatus.AwaitingConfirmation && !waiting)
                 return Result<WorkTaskDto>.Failure(WorkTaskReviewRule.StageIsDerivedMessage);
 
+            var settings = await WorkTaskSettingsStore.LoadAsync(context, cancellationToken);
+
             var target = request.Status;
             var sendingBack = false;
             if (waiting && !isReviewer)
@@ -60,6 +64,7 @@ public class UpdateWorkTaskStatus
                 sendingBack = true;
             }
             else if (target == WorkTaskStatus.Done && !waiting && !isReviewer
+                && settings.RequireCompletionConfirmation
                 && WorkTaskReviewRule.NeedsConfirmation(task)
                 && await WorkTaskReviewRule.AnyReviewerAsync(context, task, cancellationToken))
             {
@@ -76,13 +81,22 @@ public class UpdateWorkTaskStatus
                     return Result<WorkTaskDto>.Failure(WorkTaskReviewRule.SendBackReasonTooLongMessage);
             }
 
+            if (target is WorkTaskStatus.Done or WorkTaskStatus.AwaitingConfirmation
+                && task.Status != target
+                && WorkTaskFieldRules.NeedsAttachment(
+                    settings, await context.WorkTaskAttachments.CountAsync(a => a.WorkTaskId == task.Id, cancellationToken)))
+                return Result<WorkTaskDto>.Failure(WorkTaskFieldRules.AttachmentRequiredMessage);
+
             if (task.Status != target)
             {
                 var now = DateTime.UtcNow;
                 if (target == WorkTaskStatus.Done)
                 {
                     task.CompletedAtUtc = now;
-                    task.ConfirmedById = request.CallerUserId;
+                    // Confirmation off and nobody reviewing: the assignee's own Done closed
+                    // it directly, so nobody actually confirmed it. The creator or a
+                    // reviewer closing a task directly still counts as confirming it.
+                    task.ConfirmedById = !settings.RequireCompletionConfirmation && !isReviewer ? null : request.CallerUserId;
                     task.SentBackReason = null;
                     task.SentBackAtUtc = null;
                 }

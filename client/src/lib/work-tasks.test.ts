@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { WorkTask } from './types'
+import { DEFAULT_TASK_SETTINGS } from './task-settings'
 import { SETTABLE_STATUSES, STATUS_LABELS, describeTaskProgress, filterTasks, isAwaitingConfirmation, isOpenTask, isOverdue, nextStatusAction, openCount, overdueDays, taskStats, tasksToCsv, todayIso } from './work-tasks'
 
 const base: WorkTask = {
@@ -21,6 +22,10 @@ describe('work-tasks helpers', () => {
         expect(isOverdue(t({ dueDate: '2026-09-28' }), '2026-09-28')).toBe(false)
         expect(isOverdue(t({ dueDate: '2026-09-27', status: 'Done' }), '2026-09-28')).toBe(false)
         expect(isOverdue(t({ dueDate: null }), '2026-09-28')).toBe(false)
+    })
+
+    it('is never overdue with the due date hidden, whatever the date', () => {
+        expect(isOverdue(t({ dueDate: '2026-09-27' }), '2026-09-28', false)).toBe(false)
     })
 
     it('filters by tab, status and department', () => {
@@ -75,6 +80,10 @@ describe('work-tasks helpers', () => {
         expect(overdueDays(t({ dueDate: '2026-09-25', status: 'Done' }), '2026-09-28')).toBe(0)
     })
 
+    it('counts no days overdue with the due date hidden', () => {
+        expect(overdueDays(t({ dueDate: '2026-09-25' }), '2026-09-28', false)).toBe(0)
+    })
+
     it('adds up the summary tiles', () => {
         const tasks = [
             t({ id: 1, status: 'ToDo', dueDate: '2026-09-01' }),
@@ -86,6 +95,8 @@ describe('work-tasks helpers', () => {
         expect(taskStats(tasks, 'me', '2026-09-28')).toEqual({
             total: 5, open: 2, inProgress: 1, overdue: 1, doneThisMonth: 1, assignedToMeOpen: 1, awaitingMyConfirmation: 0,
         })
+        // With the due date hidden, nothing is overdue.
+        expect(taskStats(tasks, 'me', '2026-09-28', false).overdue).toBe(0)
     })
 
     it('offers the obvious next step for each status', () => {
@@ -138,6 +149,14 @@ describe('tasksToCsv', () => {
     it('leaves an unanswered billing question blank', () => {
         const [, row] = tasksToCsv([t({ isBillable: null })]).split('\r\n')
         expect(row.split(',')[7]).toBe('')
+    })
+
+    it('leaves hidden fields out of the export', () => {
+        const csv = tasksToCsv([t({})], { ...DEFAULT_TASK_SETTINGS, descriptionRequirement: 'Hidden', showPriority: false })
+        const header = csv.split('\r\n')[0]
+        expect(header).not.toMatch(/Description/)
+        expect(header).not.toMatch(/Priority/)
+        expect(header).toMatch(/Title/)
     })
 })
 

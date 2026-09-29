@@ -47,6 +47,7 @@ public class AppDbContext : IdentityDbContext<
     public DbSet<WorkTask> WorkTasks { get; set; }
     public DbSet<WorkTaskAssignee> WorkTaskAssignees { get; set; }
     public DbSet<WorkTaskAttachment> WorkTaskAttachments { get; set; }
+    public DbSet<WorkTaskSettings> WorkTaskSettings { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -625,6 +626,13 @@ public class AppDbContext : IdentityDbContext<
             // One file is attached once; GetStoredFile finds the task by file.
             entity.HasIndex(a => a.StoredFileId).IsUnique();
             entity.HasIndex(a => a.WorkTaskId);
+        });
+
+        builder.Entity<WorkTaskSettings>(entity =>
+        {
+            // One row, and the migration inserts it: the seeder does not run on the deployed host.
+            entity.Property(s => s.Id).ValueGeneratedNever();
+            entity.HasData(new Domain.WorkTaskSettings { Id = Domain.WorkTaskSettings.SingletonId });
         });
 
         builder.Entity<AuditLog>(entity =>
