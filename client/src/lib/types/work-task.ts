@@ -1,4 +1,4 @@
-export type WorkTaskStatus = 'ToDo' | 'InProgress' | 'Done' | 'Cancelled'
+export type WorkTaskStatus = 'ToDo' | 'InProgress' | 'Done' | 'Cancelled' | 'AwaitingConfirmation'
 export type WorkTaskPriority = 'Low' | 'Normal' | 'High'
 
 /** A to-do one Manager or HR Administrator hands another, scoped to one department. */
@@ -35,6 +35,13 @@ export interface WorkTask {
     canEdit: boolean
     /** The caller created it or is assigned it: may move its status. */
     canChangeStatus: boolean
+    /** Waiting for confirmation, and the caller may confirm it or send it back. Missing from an older API. */
+    canConfirm?: boolean
+    /** Who confirmed it; set only on a Done task. */
+    confirmedByName?: string | null
+    /** The last send-back, kept until the task is confirmed. */
+    sentBackReason?: string | null
+    sentBackAtUtc?: string | null
     /** Files attached to explain the work, oldest first. Added by whoever may edit the task (canEdit); anyone who sees it opens them. Missing from an older API. */
     attachments?: WorkTaskAttachment[]
 }

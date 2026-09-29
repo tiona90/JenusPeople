@@ -13,13 +13,14 @@ import { canManageTasks, canUseTasks, isHrAdministrator } from '../../lib/roles'
 import { softBg } from '../../lib/theme-tokens'
 import type { WorkTask, WorkTaskPriority, WorkTaskStatus } from '../../lib/types'
 import {
-    PRIORITY_LABELS, STATUS_LABELS, describeTaskProgress, filterTasks, formatTaskDate as formatDate, isOpenTask, nextStatusAction, openCount, overdueDays, taskStats, tasksToCsv, todayIso,
+    PRIORITY_LABELS, SETTABLE_STATUSES, STATUS_LABELS, describeTaskProgress, filterTasks, formatTaskDate as formatDate, isAwaitingConfirmation, isOpenTask, nextStatusAction, openCount, overdueDays, taskStats, tasksToCsv, todayIso,
     type StatusFilter, type TaskTab,
 } from '../../lib/work-tasks'
 import { SweetAlert } from '../ui'
 import { CardStat, OutlineBtn, SectionLabel, SelectFilter, StatCard } from '../ui/CardKit'
 import { CODE_COLORS, avatarBg, initials } from '../../lib/card-kit'
 import IdlePeoplePanel from './IdlePeoplePanel'
+import SendBackDialog from './SendBackDialog'
 import TaskDetailsDialog from './TaskDetailsDialog'
 import TaskDialog from './TaskDialog'
 import { PRIORITY_COLORS, STATUS_COLORS } from './statusStyles'
@@ -83,9 +84,12 @@ const TasksPage = observer(function TasksPage() {
 
     const refresh = () => queryClient.invalidateQueries({ queryKey: ['work-tasks'] })
     const moveStatus = useMutation({
-        mutationFn: ({ id, next }: { id: number; next: WorkTaskStatus }) => updateWorkTaskStatus(id, next),
+        mutationFn: ({ id, next, reason }: { id: number; next: WorkTaskStatus; reason?: string }) =>
+            reason === undefined ? updateWorkTaskStatus(id, next) : updateWorkTaskStatus(id, next, reason),
         onSuccess: refresh,
     })
+    // The waiting task a reviewer is sending back, while its reason dialog is open.
+    const [sendingBack, setSendingBack] = useState<WorkTask | null>(null)
     const remove = useMutation({ mutationFn: (id: number) => deleteWorkTask(id), onSuccess: refresh })
 
     const today = todayIso()
@@ -95,7 +99,8 @@ const TasksPage = observer(function TasksPage() {
         () => filterTasks(all, { tab: view, status, departmentId, userId, priority, search }),
         [all, view, status, departmentId, userId, priority, search],
     )
-    const mutationError = moveStatus.error ?? remove.error
+    // A send-back's own error shows in its dialog, not twice.
+    const mutationError = (sendingBack ? null : moveStatus.error) ?? remove.error
     // An Employee's page puts the work handed to them first and keeps their own
     // tasks (always assigned to themselves) apart underneath.
     const handedToMe = useMemo(() => visible.filter((t) => t.createdById !== userId), [visible, userId])
@@ -138,7 +143,7 @@ const TasksPage = observer(function TasksPage() {
             {/* Stats row */}
             <Box sx={{
                 display: 'grid',
-                gridTemplateColumns: { xs: '1fr 1fr', md: `repeat(${isHr ? 3 : 4}, 1fr)` },
+                gridTemplateColumns: { xs: '1fr 1fr', md: `repeat(${(isHr ? 3 : 4) + (manages ? 1 : 0)}, 1fr)` },
                 gap: '12px', mb: '14px',
             }}>
                 <Box data-testid="stat-open">
@@ -148,6 +153,14 @@ const TasksPage = observer(function TasksPage() {
                         sub={`of ${stats.total} total · ${stats.inProgress} in progress`}
                     />
                 </Box>
+                {manages && <Box data-testid="stat-confirm">
+                    <StatCard
+                        label="🕓 To Confirm"
+                        value={String(stats.awaitingMyConfirmation)}
+                        valueColor={stats.awaitingMyConfirmation > 0 ? 'warning.main' : undefined}
+                        sub="done, waiting for you"
+                    />
+                </Box>}
                 <Box data-testid="stat-overdue">
                     <StatCard
                         label="⏰ Overdue"
@@ -305,6 +318,7 @@ const TasksPage = observer(function TasksPage() {
                                     onOpen={() => setDetailsId(task.id)}
                                     onEdit={() => setDialogTask(task)}
                                     onDelete={() => void confirmDelete(task)}
+                                    onSendBack={() => { moveStatus.reset(); setSendingBack(task) }}
                                 />
                                 ))}
                             </CardGrid>
@@ -322,6 +336,7 @@ const TasksPage = observer(function TasksPage() {
                                     onOpen={() => setDetailsId(task.id)}
                                     onEdit={() => setDialogTask(task)}
                                     onDelete={() => void confirmDelete(task)}
+                                    onSendBack={() => { moveStatus.reset(); setSendingBack(task) }}
                                 />
                             ))}
                             <AddCard onClick={() => setDialogTask(null)} personal />
@@ -353,11 +368,24 @@ const TasksPage = observer(function TasksPage() {
                             onOpen={() => setDetailsId(task.id)}
                             onEdit={() => setDialogTask(task)}
                             onDelete={() => void confirmDelete(task)}
+                            onSendBack={() => { moveStatus.reset(); setSendingBack(task) }}
                         />
                     ))}
                     {creates && <AddCard onClick={() => setDialogTask(null)} />}
                 </Box>
             )}
+
+            <SendBackDialog
+                open={sendingBack != null}
+                taskTitle={sendingBack?.title ?? ''}
+                pending={moveStatus.isPending}
+                error={sendingBack && moveStatus.error ? getApiErrorMessage(moveStatus.error, 'The task could not be sent back.') : null}
+                onCancel={() => { setSendingBack(null); moveStatus.reset() }}
+                onSubmit={(reason) => moveStatus.mutate(
+                    { id: sendingBack!.id, next: 'InProgress', reason },
+                    { onSuccess: () => setSendingBack(null) },
+                )}
+            />
 
             <TaskDetailsDialog
                 task={detailsId == null ? null : all.find((t) => t.id === detailsId) ?? null}
@@ -383,7 +411,7 @@ export default TasksPage
 /* Card                                                                     */
 /* ════════════════════════════════════════════════════════════════════════ */
 
-function TaskCard({ task, today, statusPending, onStatus, onOpen, onEdit, onDelete }: {
+function TaskCard({ task, today, statusPending, onStatus, onOpen, onEdit, onDelete, onSendBack }: {
     task: WorkTask
     today: string
     statusPending: boolean
@@ -392,6 +420,8 @@ function TaskCard({ task, today, statusPending, onStatus, onOpen, onEdit, onDele
     onOpen: () => void
     onEdit: () => void
     onDelete: () => void
+    /** A reviewer returning a waiting task: opens the reason dialog. */
+    onSendBack: () => void
 }) {
     const closed = !isOpenTask(task)
     const late = overdueDays(task, today)
@@ -549,6 +579,24 @@ function TaskCard({ task, today, statusPending, onStatus, onOpen, onEdit, onDele
                     ⚠ Overdue by {plural(late, 'day')}
                 </Box>
             )}
+            {isAwaitingConfirmation(task) && !task.canConfirm && (
+                <Box sx={{
+                    p: '8px 18px', borderBottom: '1px solid', borderBottomColor: 'divider',
+                    bgcolor: softBg('warning'), borderLeft: '3px solid', borderLeftColor: 'warning.main',
+                    fontSize: 11, color: 'warning.dark', fontWeight: 600,
+                }}>
+                    Waiting for {task.createdByName} to confirm
+                </Box>
+            )}
+            {isOpenTask(task) && !isAwaitingConfirmation(task) && task.sentBackReason && (
+                <Box sx={{
+                    p: '8px 18px', borderBottom: '1px solid', borderBottomColor: 'divider',
+                    bgcolor: softBg('error'), borderLeft: '3px solid', borderLeftColor: 'error.main',
+                    fontSize: 11, color: 'error.dark', fontWeight: 600, whiteSpace: 'pre-wrap',
+                }}>
+                    Sent back: {task.sentBackReason}
+                </Box>
+            )}
 
             {/* Stats triplet */}
             <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1px', bgcolor: 'divider', mt: 'auto' }}>
@@ -574,7 +622,9 @@ function TaskCard({ task, today, statusPending, onStatus, onOpen, onEdit, onDele
             {/* Footer. Its own clicks (the status menu's included, which bubble through
                 the portal) are not a click on the card. */}
             <Box onClick={(e) => e.stopPropagation()} sx={{ display: 'flex', gap: '6px', p: '10px 14px', bgcolor: 'action.hover', alignItems: 'center', cursor: 'default' }}>
-                {task.canChangeStatus ? (
+                {task.canConfirm ? (
+                    <ReviewControls pending={statusPending} onConfirm={() => onStatus('Done')} onSendBack={onSendBack} />
+                ) : task.canChangeStatus ? (
                     <StatusControls status={task.status} pending={statusPending} onStatus={onStatus} />
                 ) : (
                     <Box sx={{ fontSize: 11, color: 'text.disabled' }}>Only the creator and assignees change the status</Box>
@@ -591,6 +641,27 @@ function TaskCard({ task, today, statusPending, onStatus, onOpen, onEdit, onDele
     )
 }
 
+/** A reviewer's two answers to a task marked done. */
+function ReviewControls({ pending, onConfirm, onSendBack }: { pending: boolean; onConfirm: () => void; onSendBack: () => void }) {
+    const btn = {
+        display: 'inline-flex', alignItems: 'center', gap: '6px', borderRadius: '6px', px: '12px', py: '6px',
+        fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+        '&:disabled': { opacity: 0.6, cursor: 'default' },
+    } as const
+    return (
+        <>
+            <Box component="button" type="button" disabled={pending} onClick={onConfirm}
+                sx={{ ...btn, bgcolor: 'success.main', color: '#fff', border: 'none', '&:hover': { bgcolor: 'success.dark' } }}>
+                <Box component="span" aria-hidden sx={{ fontSize: 11 }}>✓</Box>Confirm
+            </Box>
+            <Box component="button" type="button" disabled={pending} onClick={onSendBack}
+                sx={{ ...btn, bgcolor: 'background.paper', color: 'warning.dark', border: '1px solid', borderColor: 'warning.main', '&:hover': { bgcolor: softBg('warning') } }}>
+                <Box component="span" aria-hidden sx={{ fontSize: 11 }}>↩</Box>Send back
+            </Box>
+        </>
+    )
+}
+
 /**
  * The card's status controls: the obvious next step as a filled button, and every
  * status in a menu beside it for the rest (cancelling, stepping back).
@@ -602,6 +673,8 @@ function StatusControls({ status, pending, onStatus }: {
 }) {
     const [anchor, setAnchor] = useState<HTMLElement | null>(null)
     const next = nextStatusAction(status)
+    // An assignee's one move on a task waiting for confirmation is Withdraw; the rest is the reviewer's.
+    const waiting = status === 'AwaitingConfirmation'
     return (
         <>
             <Box
@@ -621,51 +694,55 @@ function StatusControls({ status, pending, onStatus }: {
                 <Box component="span" aria-hidden sx={{ fontSize: 11 }}>{next.icon}</Box>
                 {next.label}
             </Box>
-            <Box
-                component="button"
-                type="button"
-                aria-haspopup="menu"
-                aria-expanded={anchor != null}
-                disabled={pending}
-                onClick={(e: React.MouseEvent<HTMLElement>) => setAnchor(e.currentTarget)}
-                sx={{
-                    display: 'inline-flex', alignItems: 'center', gap: '6px',
-                    bgcolor: 'background.paper', color: 'text.primary',
-                    border: '1px solid', borderColor: 'divider', borderRadius: '6px', px: '10px', py: '6px',
-                    fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
-                    '&:hover': { borderColor: 'primary.main', color: 'primary.main' },
-                    '&:disabled': { opacity: 0.6, cursor: 'default' },
-                }}
-            >
-                Status
-                <Box component="span" aria-hidden sx={{ fontSize: 9, color: 'text.secondary' }}>▼</Box>
-            </Box>
-            <Menu
-                anchorEl={anchor}
-                open={anchor != null}
-                onClose={() => setAnchor(null)}
-                slotProps={{ paper: { sx: { minWidth: 170, borderRadius: '10px', mt: '4px' } } }}
-            >
-                {(Object.keys(STATUS_LABELS) as WorkTaskStatus[]).map((s) => {
-                    const current = s === status
-                    return (
-                        <MenuItem
-                            key={s}
-                            aria-current={current ? 'true' : undefined}
-                            selected={current}
-                            onClick={() => {
-                                setAnchor(null)
-                                if (!current) onStatus(s)
-                            }}
-                            sx={{ fontSize: 13, gap: '10px' }}
-                        >
-                            <Box component="span" aria-hidden sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: STATUS_COLORS[s].dot, flexShrink: 0 }} />
-                            <Box component="span" sx={{ flex: 1 }}>{STATUS_LABELS[s]}</Box>
-                            {current && <Box component="span" aria-hidden sx={{ fontSize: 12, color: 'primary.main' }}>✓</Box>}
-                        </MenuItem>
-                    )
-                })}
-            </Menu>
+            {!waiting && (
+                <>
+                <Box
+                    component="button"
+                    type="button"
+                    aria-haspopup="menu"
+                    aria-expanded={anchor != null}
+                    disabled={pending}
+                    onClick={(e: React.MouseEvent<HTMLElement>) => setAnchor(e.currentTarget)}
+                    sx={{
+                        display: 'inline-flex', alignItems: 'center', gap: '6px',
+                        bgcolor: 'background.paper', color: 'text.primary',
+                        border: '1px solid', borderColor: 'divider', borderRadius: '6px', px: '10px', py: '6px',
+                        fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+                        '&:hover': { borderColor: 'primary.main', color: 'primary.main' },
+                        '&:disabled': { opacity: 0.6, cursor: 'default' },
+                    }}
+                >
+                    Status
+                    <Box component="span" aria-hidden sx={{ fontSize: 9, color: 'text.secondary' }}>▼</Box>
+                </Box>
+                <Menu
+                    anchorEl={anchor}
+                    open={anchor != null}
+                    onClose={() => setAnchor(null)}
+                    slotProps={{ paper: { sx: { minWidth: 170, borderRadius: '10px', mt: '4px' } } }}
+                >
+                    {SETTABLE_STATUSES.map((s) => {
+                        const current = s === status
+                        return (
+                            <MenuItem
+                                key={s}
+                                aria-current={current ? 'true' : undefined}
+                                selected={current}
+                                onClick={() => {
+                                    setAnchor(null)
+                                    if (!current) onStatus(s)
+                                }}
+                                sx={{ fontSize: 13, gap: '10px' }}
+                            >
+                                <Box component="span" aria-hidden sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: STATUS_COLORS[s].dot, flexShrink: 0 }} />
+                                <Box component="span" sx={{ flex: 1 }}>{STATUS_LABELS[s]}</Box>
+                                {current && <Box component="span" aria-hidden sx={{ fontSize: 12, color: 'primary.main' }}>✓</Box>}
+                            </MenuItem>
+                        )
+                    })}
+                </Menu>
+                </>
+            )}
         </>
     )
 }

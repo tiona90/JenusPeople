@@ -39,8 +39,9 @@ export async function updateWorkTask(id: number, request: UpsertWorkTaskRequest)
     return response.data
 }
 
-export async function updateWorkTaskStatus(id: number, status: WorkTaskStatus) {
-    const response = await apiClient.patch<WorkTask>(`/worktasks/${id}/status`, { status })
+/** The server decides what Done means: an assignee's lands in AwaitingConfirmation. `reason` is required to send a waiting task back. */
+export async function updateWorkTaskStatus(id: number, status: WorkTaskStatus, reason?: string) {
+    const response = await apiClient.patch<WorkTask>(`/worktasks/${id}/status`, reason === undefined ? { status } : { status, reason })
     return response.data
 }
 

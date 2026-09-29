@@ -1,12 +1,18 @@
 namespace Domain;
 
-/// <summary>Where a task stands. Any move between them is allowed; reopening a Done task is ordinary.</summary>
+/// <summary>
+/// Where a task stands. Any move between the first four is allowed; reopening a Done
+/// task is ordinary. <see cref="AwaitingConfirmation"/> is never asked for directly:
+/// an assignee's Done lands there when somebody else handed them the task, and a
+/// reviewer's Confirm or Send back takes it out (WorkTaskReviewRule).
+/// </summary>
 public enum WorkTaskStatus
 {
     ToDo = 0,
     InProgress = 1,
     Done = 2,
     Cancelled = 3,
+    AwaitingConfirmation = 4,
 }
 
 public enum WorkTaskPriority
@@ -30,6 +36,7 @@ public class WorkTask
     public const int TitleMaxLength = 200;
     public const int DescriptionMaxLength = 2000;
     public const int MaxTargetHours = 9999;
+    public const int SentBackReasonMaxLength = 500;
 
     public int Id { get; set; }
     public string Title { get; set; } = string.Empty;
@@ -82,6 +89,18 @@ public class WorkTask
 
     /// <summary>Set on entering Done, cleared on leaving it.</summary>
     public DateTime? CompletedAtUtc { get; set; }
+
+    /// <summary>Who moved it to Done — the reviewer who confirmed it. Cleared on leaving Done.</summary>
+    public string? ConfirmedById { get; set; }
+    public User? ConfirmedBy { get; set; }
+
+    /// <summary>
+    /// The last send-back: why a reviewer returned the work, and when. Kept while the
+    /// task is worked on and resubmitted, so the reviewer sees what they asked for;
+    /// cleared once it is confirmed.
+    /// </summary>
+    public string? SentBackReason { get; set; }
+    public DateTime? SentBackAtUtc { get; set; }
 
     /// <summary>Files attached to explain the work; see <see cref="WorkTaskAttachment"/>.</summary>
     public ICollection<WorkTaskAttachment> Attachments { get; set; } = new List<WorkTaskAttachment>();

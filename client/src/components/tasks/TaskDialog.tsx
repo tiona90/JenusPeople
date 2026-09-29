@@ -8,7 +8,7 @@ import {
 import { addWorkTaskAttachment, createWorkTask, getWorkTaskAssignees, getWorkTaskDepartments, getWorkTaskProjects, updateWorkTask, updateWorkTaskStatus } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
 import type { UpsertWorkTaskRequest, WorkTask, WorkTaskAttachment, WorkTaskPriority, WorkTaskStatus } from '../../lib/types'
-import { PRIORITY_LABELS, STATUS_LABELS } from '../../lib/work-tasks'
+import { PRIORITY_LABELS, SETTABLE_STATUSES, STATUS_LABELS } from '../../lib/work-tasks'
 import { STATUS_COLORS } from './statusStyles'
 import TaskAttachments, { StagedTaskAttachments } from './TaskAttachments'
 
@@ -335,14 +335,22 @@ export default function TaskDialog({ open, task, personal = false, onClose, onSa
                                 label="Status"
                                 value={status}
                                 onChange={(e) => setStatus(e.target.value as WorkTaskStatus)}
+                                disabled={task.status === 'AwaitingConfirmation'}
                             >
-                                {(Object.keys(STATUS_LABELS) as WorkTaskStatus[]).map((s) => (
-                                    <MenuItem key={s} value={s} sx={{ gap: '10px' }}>
+                                {/* Awaiting confirmation is reached by marking the task done, never picked;
+                                    it is listed, disabled, only so a waiting task's select is not blank. */}
+                                {(task.status === 'AwaitingConfirmation' ? [...SETTABLE_STATUSES, task.status] : SETTABLE_STATUSES).map((s) => (
+                                    <MenuItem key={s} value={s} disabled={s === 'AwaitingConfirmation'} sx={{ gap: '10px' }}>
                                         <Box component="span" aria-hidden sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: STATUS_COLORS[s].dot, display: 'inline-block', mr: '8px' }} />
                                         {STATUS_LABELS[s]}
                                     </MenuItem>
                                 ))}
                             </Select>
+                            {/* Confirm, Send back (which needs a reason) and Withdraw are the card's; a status
+                                picked here would save the edit and then be refused. */}
+                            {task.status === 'AwaitingConfirmation' && (
+                                <FormHelperText>Waiting for confirmation. Confirm it or send it back from its card.</FormHelperText>
+                            )}
                         </FormControl>
                     )}
                     <Stack direction="row" spacing={2}>

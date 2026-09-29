@@ -322,3 +322,62 @@ describe('target progress', () => {
         expect(within(await cardFor('overrun')).getByText('4h over')).toBeInTheDocument()
     })
 })
+
+describe('TasksPage confirmation', () => {
+    it('gives a reviewer Confirm and Send back on a waiting task', async () => {
+        api.updateWorkTaskStatus.mockResolvedValue({} as never)
+        api.getWorkTasks.mockResolvedValue([{ ...TASKS[1], status: 'AwaitingConfirmation', canConfirm: true }])
+        renderPage()
+        await screen.findByRole('combobox', { name: 'View' })
+        showView('created')
+        const card = await cardFor('I asked for this')
+
+        fireEvent.click(within(card).getByRole('button', { name: /Confirm/ }))
+        await waitFor(() => expect(api.updateWorkTaskStatus).toHaveBeenCalledWith(2, 'Done'))
+    })
+
+    it('asks the reviewer why before sending a task back', async () => {
+        api.updateWorkTaskStatus.mockResolvedValue({} as never)
+        api.getWorkTasks.mockResolvedValue([{ ...TASKS[1], status: 'AwaitingConfirmation', canConfirm: true }])
+        renderPage()
+        await screen.findByRole('combobox', { name: 'View' })
+        showView('created')
+        const card = await cardFor('I asked for this')
+
+        fireEvent.click(within(card).getByRole('button', { name: /Send back/ }))
+        const dialog = await screen.findByRole('dialog')
+        const send = within(dialog).getByRole('button', { name: 'Send back' })
+        expect(send).toBeDisabled()
+        fireEvent.change(within(dialog).getByRole('textbox', { name: /Reason/ }), { target: { value: '   ' } })
+        expect(send).toBeDisabled()
+        fireEvent.change(within(dialog).getByRole('textbox', { name: /Reason/ }), { target: { value: 'Totals are off' } })
+        fireEvent.click(send)
+
+        await waitFor(() => expect(api.updateWorkTaskStatus).toHaveBeenCalledWith(2, 'InProgress', 'Totals are off'))
+        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    })
+
+    it('tells the assignee who will confirm, and lets them withdraw', async () => {
+        api.updateWorkTaskStatus.mockResolvedValue({} as never)
+        api.getWorkTasks.mockResolvedValue([{ ...base, status: 'AwaitingConfirmation', canConfirm: false }])
+        renderPage()
+        const card = await cardFor('Mine to do')
+
+        expect(within(card).getByText('Waiting for Boss to confirm')).toBeInTheDocument()
+        expect(within(card).queryByRole('button', { name: /Confirm/ })).not.toBeInTheDocument()
+        fireEvent.click(within(card).getByRole('button', { name: /Withdraw/ }))
+        await waitFor(() => expect(api.updateWorkTaskStatus).toHaveBeenCalledWith(1, 'InProgress'))
+    })
+
+    it('shows why a task was sent back', async () => {
+        api.getWorkTasks.mockResolvedValue([{ ...base, status: 'InProgress', sentBackReason: 'Totals are off' }])
+        renderPage()
+        expect(within(await cardFor('Mine to do')).getByText('Sent back: Totals are off')).toBeInTheDocument()
+    })
+
+    it('counts the tasks waiting for my confirmation in a tile', async () => {
+        api.getWorkTasks.mockResolvedValue([{ ...TASKS[1], status: 'AwaitingConfirmation', canConfirm: true }])
+        renderPage()
+        expect(within(await screen.findByTestId('stat-confirm')).getByText('1')).toBeInTheDocument()
+    })
+})

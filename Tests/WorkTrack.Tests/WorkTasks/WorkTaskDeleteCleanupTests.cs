@@ -82,4 +82,28 @@ public class WorkTaskDeleteCleanupTests : IAsyncLifetime
         // Still somebody's: the leaver just drops off it.
         Assert.Equal(["u-admin"], left[1].Assignees.Select(a => a.UserId).ToList());
     }
+
+    [Fact]
+    public async Task Deleting_the_user_who_confirmed_a_task_keeps_the_task()
+    {
+        await AddUserAsync("u-admin");
+        await AddUserAsync("u-creator");
+        await AddUserAsync("u-worker");
+        await AddUserAsync("u-confirmer");
+        Db.Departments.Add(new Department { Id = 1, Name = "Sales", Code = "SAL" });
+        var task = NewTask("u-creator", "confirmed", "u-worker");
+        task.Status = WorkTaskStatus.Done;
+        task.ConfirmedById = "u-confirmer";
+        Db.WorkTasks.Add(task);
+        await Db.SaveChangesAsync();
+        Db.ChangeTracker.Clear();
+
+        var result = await new DeleteAdminUser.Handler(Db, Users).Handle(
+            new DeleteAdminUser.Command { Id = "u-confirmer", RequestingUserId = "u-admin" }, CancellationToken.None);
+
+        Assert.True(result.IsSuccess, result.Error);
+        var kept = await Db.WorkTasks.AsNoTracking().SingleAsync();
+        Assert.Null(kept.ConfirmedById);
+        Assert.Equal(WorkTaskStatus.Done, kept.Status);
+    }
 }

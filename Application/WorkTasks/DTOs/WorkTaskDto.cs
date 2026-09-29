@@ -40,6 +40,16 @@ public class WorkTaskDto
     /// <summary>The caller may edit it, or is one of its assignees: may move its status.</summary>
     public bool CanChangeStatus { get; set; }
 
+    /// <summary>The task waits for confirmation and the caller may give it: see WorkTaskReviewRule.IsReviewer.</summary>
+    public bool CanConfirm { get; set; }
+
+    /// <summary>Who confirmed it; null unless Done.</summary>
+    public string? ConfirmedByName { get; set; }
+
+    /// <summary>The last send-back, kept until the task is confirmed.</summary>
+    public string? SentBackReason { get; set; }
+    public DateTime? SentBackAtUtc { get; set; }
+
     /// <summary>Files attached to explain the work, oldest first. Whoever may edit the task adds them; anyone who sees it opens them.</summary>
     public List<WorkTaskAttachmentDto> Attachments { get; set; } = [];
 }
@@ -118,6 +128,9 @@ public class UpsertWorkTaskRequest
 public class UpdateWorkTaskStatusRequest
 {
     public WorkTaskStatus Status { get; set; }
+
+    /// <summary>Required when a reviewer sends a waiting task back.</summary>
+    public string? Reason { get; set; }
 }
 
 /// <summary>One task a timesheet row may be logged against, for the editor's Task picker.</summary>

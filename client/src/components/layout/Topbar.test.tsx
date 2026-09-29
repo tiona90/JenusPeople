@@ -41,6 +41,8 @@ const EMPLOYEE: UserInfo = {
     roles: ['Employee'],
 }
 
+const MANAGER: UserInfo = { ...EMPLOYEE, id: 'u-mgr', roles: ['Manager'] }
+
 const recent = new Date(Date.now() - 60 * 60 * 1000).toISOString().replace('Z', '')
 
 const ERRORS: SystemError[] = [
@@ -53,11 +55,12 @@ const HISTORY: LeaveStatusHistory[] = [
 ]
 
 const navigateToAdminSection = vi.fn()
+const navigateToTasks = vi.fn()
 
 function renderTopbarAs(user: UserInfo) {
     mobx.useStore.mockReturnValue({
         authStore: { user, isAuthenticated: true },
-        uiStore: { themePreference: 'light', setThemePreference: vi.fn(), navigateToAdminSection, navigateToMyLeave: vi.fn(), navigateToTimesheets: vi.fn(), navigateToTeamLeave: vi.fn(), navigateToTeamTimesheets: vi.fn() },
+        uiStore: { themePreference: 'light', setThemePreference: vi.fn(), navigateToAdminSection, navigateToMyLeave: vi.fn(), navigateToTimesheets: vi.fn(), navigateToTeamLeave: vi.fn(), navigateToTeamTimesheets: vi.fn(), navigateToTasks },
     } as never)
 
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -78,6 +81,7 @@ beforeEach(() => {
     api.getTimesheetStatusHistories.mockResolvedValue([])
     api.getAnnualLeaves.mockResolvedValue([])
     api.getTimesheets.mockResolvedValue([])
+    api.getWorkTasks.mockResolvedValue([])
 })
 
 describe("The System Administrator's bell", () => {
@@ -170,5 +174,46 @@ describe("An employee's bell", () => {
 
         expect(api.getSystemErrors).not.toHaveBeenCalled()
         expect(screen.queryByText(/System error/)).not.toBeInTheDocument()
+    })
+
+    it("lists a Manager's tasks waiting for their confirmation, and opens Tasks", async () => {
+        api.getWorkTasks.mockResolvedValue([
+            { id: 5, title: 'Chase notes', status: 'AwaitingConfirmation', canConfirm: true, updatedAtUtc: recent, assignees: [] },
+            { id: 6, title: 'Not mine to confirm', status: 'AwaitingConfirmation', canConfirm: false, updatedAtUtc: recent, assignees: [] },
+        ] as never)
+        renderTopbarAs(MANAGER)
+
+        // The one waiting for them is the badge.
+        await waitFor(() => expect(screen.getByText('1')).toBeInTheDocument())
+        fireEvent.click(screen.getByRole('button', { name: 'Notifications' }))
+        const item = await screen.findByText('Chase notes is waiting for your confirmation')
+        expect(screen.queryByText(/Not mine to confirm/)).not.toBeInTheDocument()
+
+        fireEvent.click(item)
+        expect(navigateToTasks).toHaveBeenCalled()
+    })
+
+    it('does not fetch tasks for an Employee', async () => {
+        renderTopbarAs(EMPLOYEE)
+        await waitFor(() => expect(api.getLeaveStatusHistories).toHaveBeenCalled())
+        expect(api.getWorkTasks).not.toHaveBeenCalled()
+    })
+
+    // The task list is heavy (every task in scope, with logged hours); SignalR's
+    // notificationsUpdated already refreshes it on every task write.
+    it('fetches the tasks once rather than polling them with the rest of the bell', async () => {
+        vi.useFakeTimers({ shouldAdvanceTime: true })
+        try {
+            renderTopbarAs(MANAGER)
+            await waitFor(() => expect(api.getWorkTasks).toHaveBeenCalledTimes(1))
+            const leavePolls = api.getAnnualLeaves.mock.calls.length
+
+            await vi.advanceTimersByTimeAsync(16_000)
+
+            await waitFor(() => expect(api.getAnnualLeaves.mock.calls.length).toBeGreaterThan(leavePolls))
+            expect(api.getWorkTasks).toHaveBeenCalledTimes(1)
+        } finally {
+            vi.useRealTimers()
+        }
     })
 })

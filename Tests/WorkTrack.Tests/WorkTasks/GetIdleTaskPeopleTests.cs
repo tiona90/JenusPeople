@@ -72,4 +72,17 @@ public class GetIdleTaskPeopleTests
         // Ops has only its own manager and a deactivated one.
         Assert.Empty(forOpsManager);
     }
+
+    [Fact]
+    public async Task A_task_waiting_for_confirmation_does_not_count_as_working()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        await Seed(db, NewTask(Sales, SalesManager, Employee, status: WorkTaskStatus.AwaitingConfirmation));
+
+        var idle = await IdleFor(db, Hr);
+
+        var employee = Assert.Single(idle, p => p.UserId == Employee);
+        Assert.Equal(0, employee.ToDoCount);
+    }
 }

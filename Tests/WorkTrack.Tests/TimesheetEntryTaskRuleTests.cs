@@ -27,6 +27,7 @@ public class TimesheetEntryTaskRuleTests
     private const int DoneTask = 101;
     private const int SomeoneElsesTask = 102;
     private const int OtherProjectTask = 103;
+    private const int WaitingTask = 104;
     private static readonly DateTime Day = new(2024, 1, 2);
 
     private static AppDbContext SeedWorld()
@@ -52,7 +53,8 @@ public class TimesheetEntryTaskRuleTests
             Task(OpenTask, ProjectA, OwnerUserId),
             Task(DoneTask, ProjectA, OwnerUserId, WorkTaskStatus.Done),
             Task(SomeoneElsesTask, ProjectA, OtherUserId),
-            Task(OtherProjectTask, ProjectB, OwnerUserId));
+            Task(OtherProjectTask, ProjectB, OwnerUserId),
+            Task(WaitingTask, ProjectA, OwnerUserId, WorkTaskStatus.AwaitingConfirmation));
 
         db.Timesheets.Add(new Timesheet
         {
@@ -181,5 +183,13 @@ public class TimesheetEntryTaskRuleTests
         var error = await Assert.ThrowsAsync<ArgumentException>(() =>
             ControllerFor(db).UpdateEntry(TimesheetId, "e-1", moved, CancellationToken.None));
         Assert.Equal(TimesheetEntryTaskRule.OtherProjectMessage, error.Message);
+    }
+
+    [Fact]
+    public async Task A_task_waiting_for_confirmation_can_still_be_logged()
+    {
+        using var db = SeedWorld();
+        await ControllerFor(db).AddEntry(TimesheetId, Entry(WaitingTask), CancellationToken.None);
+        Assert.Equal(WaitingTask, (await db.TimesheetEntries.SingleAsync()).WorkTaskId);
     }
 }

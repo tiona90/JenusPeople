@@ -93,13 +93,14 @@ public class WorkTaskEmployeeTests
         var other = await Seeded(db, NewTask(Sales, SalesManager, SalesManager));
 
         Task<Result<Application.WorkTasks.DTOs.WorkTaskDto>> Move(int id) =>
-            new UpdateWorkTaskStatus.Handler(db).Handle(
+            new UpdateWorkTaskStatus.Handler(db, _email, NullLogger<UpdateWorkTaskStatus.Handler>.Instance).Handle(
                 new UpdateWorkTaskStatus.Command { Id = id, CallerUserId = Employee, Status = WorkTaskStatus.Done, AssignedOnly = true },
                 CancellationToken.None);
 
         var moved = await Move(mine);
         Assert.True(moved.IsSuccess, moved.Error);
-        Assert.Equal(WorkTaskStatus.Done, moved.Value!.Status);
+        // Somebody else handed it to them, so their Done waits for confirmation.
+        Assert.Equal(WorkTaskStatus.AwaitingConfirmation, moved.Value!.Status);
         Assert.False(moved.Value.CanEdit);
 
         // A task in their department they are not on is not theirs to see at all.

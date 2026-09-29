@@ -1,15 +1,22 @@
 import type { WorkTask, WorkTaskPriority, WorkTaskStatus } from './types'
 
 export type TaskTab = 'assigned' | 'created' | 'all'
-/** `open` is To do + In progress, the page's default; `any` is everything. */
+/** `open` is To do, In progress and Awaiting confirmation, the page's default; `any` is everything. */
 export type StatusFilter = 'open' | 'any' | WorkTaskStatus
 
 export const STATUS_LABELS: Record<WorkTaskStatus, string> = {
     ToDo: 'To do',
     InProgress: 'In progress',
+    AwaitingConfirmation: 'Awaiting confirmation',
     Done: 'Done',
     Cancelled: 'Cancelled',
 }
+
+/** What a Status menu or select may offer. Awaiting confirmation is reached by marking a task done, never picked. */
+export const SETTABLE_STATUSES: WorkTaskStatus[] = ['ToDo', 'InProgress', 'Done', 'Cancelled']
+
+/** Mirrors WorkTask.SentBackReasonMaxLength. */
+export const SEND_BACK_REASON_MAX = 500
 
 export const PRIORITY_LABELS: Record<WorkTaskPriority, string> = { Low: 'Low', Normal: 'Normal', High: 'High' }
 
@@ -25,11 +32,16 @@ export function nextStatusAction(status: WorkTaskStatus): { label: string; icon:
         case 'InProgress': return { label: 'Mark done', icon: '✓', to: 'Done' }
         case 'Done': return { label: 'Reopen', icon: '↺', to: 'InProgress' }
         case 'Cancelled': return { label: 'Reopen', icon: '↺', to: 'ToDo' }
+        case 'AwaitingConfirmation': return { label: 'Withdraw', icon: '↺', to: 'InProgress' }
     }
 }
 
+export function isAwaitingConfirmation(task: WorkTask): boolean {
+    return task.status === 'AwaitingConfirmation'
+}
+
 export function isOpenTask(task: WorkTask): boolean {
-    return task.status === 'ToDo' || task.status === 'InProgress'
+    return task.status === 'ToDo' || task.status === 'InProgress' || task.status === 'AwaitingConfirmation'
 }
 
 /**
@@ -41,9 +53,9 @@ export function todayIso(now: Date = new Date()): string {
     return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
 }
 
-/** Due dates are `YYYY-MM-DD`, so a string comparison is a date comparison. */
+/** Due dates are `YYYY-MM-DD`, so a string comparison is a date comparison. A task waiting for confirmation is handed in, so it is never late. */
 export function isOverdue(task: WorkTask, today: string): boolean {
-    return isOpenTask(task) && task.dueDate != null && task.dueDate.slice(0, 10) < today
+    return isOpenTask(task) && !isAwaitingConfirmation(task) && task.dueDate != null && task.dueDate.slice(0, 10) < today
 }
 
 function inTab(task: WorkTask, tab: TaskTab, userId: string): boolean {
@@ -105,6 +117,7 @@ export function taskStats(tasks: readonly WorkTask[], userId: string, today: str
         overdue: tasks.filter((t) => isOverdue(t, today)).length,
         doneThisMonth: tasks.filter((t) => t.status === 'Done' && (t.completedAtUtc ?? '').slice(0, 7) === month).length,
         assignedToMeOpen: openCount(tasks, 'assigned', userId),
+        awaitingMyConfirmation: tasks.filter((t) => t.canConfirm === true).length,
     }
 }
 
