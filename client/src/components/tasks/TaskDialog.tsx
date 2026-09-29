@@ -7,6 +7,9 @@ import {
 } from '@mui/material'
 import { addWorkTaskAttachment, createWorkTask, getWorkTaskAssignees, getWorkTaskDepartments, getWorkTaskProjects, updateWorkTask, updateWorkTaskStatus } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
+import { describeKinds } from '../../lib/task-attachments'
+import { fieldRequirementError, isShown, requirementOf, attachmentLimits } from '../../lib/task-settings'
+import { useWorkTaskSettings } from '../../lib/task-settings-query'
 import type { UpsertWorkTaskRequest, WorkTask, WorkTaskAttachment, WorkTaskPriority, WorkTaskStatus } from '../../lib/types'
 import { PRIORITY_LABELS, SETTABLE_STATUSES, STATUS_LABELS } from '../../lib/work-tasks'
 import { STATUS_COLORS } from './statusStyles'
@@ -44,6 +47,8 @@ interface Props {
 }
 
 export default function TaskDialog({ open, task, personal = false, currentUserId, onClose, onSaved }: Props) {
+    const settings = useWorkTaskSettings()
+    const limits = attachmentLimits(settings)
     const [title, setTitle] = useState('')
     const [description, setDescription] = useState('')
     const [departmentId, setDepartmentId] = useState<number | ''>('')
@@ -152,16 +157,22 @@ export default function TaskDialog({ open, task, personal = false, currentUserId
 
     const trimmedTitle = title.trim()
     const hours = parseTarget(targetHours, TARGET_HOURS_MAX)
+    const fieldError = fieldRequirementError(settings, {
+        description,
+        dueDate,
+        targetHours: typeof hours === 'number' ? hours : null,
+        projectId: projectId === '' ? null : projectId,
+        isBillable,
+    })
     const canSave =
         trimmedTitle.length > 0 &&
         trimmedTitle.length <= TITLE_MAX &&
         description.length <= DESCRIPTION_MAX &&
         departmentId !== '' &&
-        projectId !== '' &&
+        fieldError === null &&
         // Empty means everyone in the department, which is only somebody once the list says so.
         (personal || assigneeIds.length > 0 || (assignees.data?.length ?? 0) > 0) &&
         hours !== 'invalid' &&
-        isBillable !== null &&
         !save.isPending
 
     const submit = () => {
@@ -170,11 +181,11 @@ export default function TaskDialog({ open, task, personal = false, currentUserId
             title: trimmedTitle,
             description: description.trim() === '' ? null : description.trim(),
             departmentId: departmentId as number,
-            projectId: projectId as number,
+            projectId: projectId === '' ? null : projectId,
             assigneeIds: personal ? [] : assigneeIds,
             dueDate: dueDate === '' ? null : dueDate,
             targetHours: typeof hours === 'number' ? hours : null,
-            isBillable: isBillable as boolean,
+            isBillable,
             priority,
         })
     }
@@ -219,26 +230,27 @@ export default function TaskDialog({ open, task, personal = false, currentUserId
                         required
                         slotProps={{ htmlInput: { maxLength: TITLE_MAX } }}
                     />
-                    <TextField
+                    {isShown(settings, 'description') && <TextField
                         label="Description"
                         value={description}
                         onChange={(e) => setDescription(e.target.value)}
                         multiline
                         minRows={3}
+                        required={requirementOf(settings, 'description') === 'Required'}
                         helperText={`${description.length}/${DESCRIPTION_MAX}`}
                         error={description.length > DESCRIPTION_MAX}
-                    />
-                    <Box>
+                    />}
+                    {isShown(settings, 'attachments') && <Box>
                         <FormLabel sx={{ fontSize: 13 }}>Attachments</FormLabel>
                         <Box sx={{ mt: 0.5 }}>
                             {task ? (
-                                <TaskAttachments taskId={task.id} attachments={attachments} canAttach onChanged={(saved) => setAttachments(saved.attachments ?? [])} />
+                                <TaskAttachments taskId={task.id} attachments={attachments} canAttach onChanged={(saved) => setAttachments(saved.attachments ?? [])} limits={limits} />
                             ) : (
-                                <StagedTaskAttachments files={stagedFiles} onChange={setStagedFiles} />
+                                <StagedTaskAttachments files={stagedFiles} onChange={setStagedFiles} limits={limits} />
                             )}
                         </Box>
-                        <FormHelperText>PDF, Word, Excel, JPG or PNG, up to 10MB each</FormHelperText>
-                    </Box>
+                        <FormHelperText>{`${describeKinds(limits)}, up to ${settings.maxAttachmentSizeMb}MB each`}</FormHelperText>
+                    </Box>}
                     {onlyDepartment ? (
                         <TextField
                             label="Department"
@@ -263,7 +275,7 @@ export default function TaskDialog({ open, task, personal = false, currentUserId
                             ))}
                         </Select>
                     </FormControl>}
-                    <FormControl required disabled={departmentId === ''} error={noProjects}>
+                    {isShown(settings, 'project') && <FormControl required={requirementOf(settings, 'project') === 'Required'} disabled={departmentId === ''} error={noProjects}>
                         <InputLabel id="task-project-label">Project</InputLabel>
                         <Select
                             labelId="task-project-label"
@@ -274,12 +286,13 @@ export default function TaskDialog({ open, task, personal = false, currentUserId
                                 setProjectId(value === '' ? '' : Number(value))
                             }}
                         >
+                            {requirementOf(settings, 'project') === 'Optional' && <MenuItem value="">No project</MenuItem>}
                             {projectOptions.map((p) => (
                                 <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>
                             ))}
                         </Select>
                         {noProjects && <FormHelperText>No active projects in this department</FormHelperText>}
-                    </FormControl>
+                    </FormControl>}
                     {!personal && <FormControl disabled={departmentId === ''} error={nobodyToAssign}>
                         <InputLabel id="task-assignee-label" shrink={everyone || assigneeIds.length > 0}>Assignees</InputLabel>
                         <Select<string[]>
@@ -318,7 +331,7 @@ export default function TaskDialog({ open, task, personal = false, currentUserId
                             </FormHelperText>
                         )}
                     </FormControl>}
-                    <FormControl required error={task != null && isBillable === null}>
+                    {isShown(settings, 'billable') && <FormControl required error={task != null && isBillable === null}>
                         <FormLabel id="task-billing-label" sx={{ fontSize: 13 }}>Billing</FormLabel>
                         <RadioGroup
                             row
@@ -332,7 +345,7 @@ export default function TaskDialog({ open, task, personal = false, currentUserId
                         {task != null && isBillable === null && (
                             <FormHelperText>This task was filed before billing was asked — choose one to save.</FormHelperText>
                         )}
-                    </FormControl>
+                    </FormControl>}
                     {task && (
                         <FormControl>
                             <InputLabel id="task-status-label">Status</InputLabel>
@@ -360,25 +373,27 @@ export default function TaskDialog({ open, task, personal = false, currentUserId
                         </FormControl>
                     )}
                     <Stack direction="row" spacing={2}>
-                        <TextField
+                        {isShown(settings, 'dueDate') && <TextField
                             label="Due date"
                             type="date"
                             value={dueDate}
                             onChange={(e) => setDueDate(e.target.value)}
+                            required={requirementOf(settings, 'dueDate') === 'Required'}
                             slotProps={{ inputLabel: { shrink: true } }}
                             sx={{ flex: 1 }}
-                        />
-                        <TextField
+                        />}
+                        {isShown(settings, 'targetHours') && <TextField
                             label="Target hours"
                             type="number"
                             value={targetHours}
                             onChange={(e) => setTargetHours(e.target.value)}
+                            required={requirementOf(settings, 'targetHours') === 'Required'}
                             error={hours === 'invalid'}
                             helperText={hours === 'invalid' ? `1 to ${TARGET_HOURS_MAX}` : 'Estimated effort'}
                             slotProps={{ htmlInput: { min: 1, max: TARGET_HOURS_MAX, step: 1 } }}
                             sx={{ flex: 1 }}
-                        />
-                        <FormControl sx={{ flex: 1 }}>
+                        />}
+                        {isShown(settings, 'priority') && <FormControl sx={{ flex: 1 }}>
                             <InputLabel id="task-priority-label">Priority</InputLabel>
                             <Select
                                 labelId="task-priority-label"
@@ -390,8 +405,9 @@ export default function TaskDialog({ open, task, personal = false, currentUserId
                                     <MenuItem key={p} value={p}>{PRIORITY_LABELS[p]}</MenuItem>
                                 ))}
                             </Select>
-                        </FormControl>
+                        </FormControl>}
                     </Stack>
+                    {fieldError && trimmedTitle.length > 0 && <FormHelperText error>{fieldError}</FormHelperText>}
                 </Stack>
             </DialogContent>
             <DialogActions>

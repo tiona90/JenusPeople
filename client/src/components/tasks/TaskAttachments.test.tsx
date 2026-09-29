@@ -102,4 +102,23 @@ describe('StagedTaskAttachments', () => {
         expect(onChange).toHaveBeenCalledWith([expect.objectContaining({ name: 'a.pdf' })])
         expect(api.addWorkTaskAttachment).not.toHaveBeenCalled()
     })
+
+    it('refuses by the configured limits', async () => {
+        const onChange = vi.fn()
+        render(
+            <StagedTaskAttachments
+                files={[]}
+                onChange={onChange}
+                limits={{ maxFiles: 1, maxBytes: 2 * 1024 * 1024, extensions: ['.pdf'] }}
+            />,
+        )
+
+        pick(file('big.pdf', 3 * 1024 * 1024), file('shot.png'), file('ok.pdf'))
+
+        const alert = await screen.findByRole('alert')
+        expect(alert).toHaveTextContent('big.pdf is larger than the 2MB limit.')
+        expect(alert).toHaveTextContent('shot.png: only PDF files can be attached.')
+        expect(onChange).toHaveBeenCalledWith([expect.objectContaining({ name: 'ok.pdf' })])
+        expect(screen.getByTestId('task-attachment-input')).toHaveAttribute('accept', '.pdf')
+    })
 })

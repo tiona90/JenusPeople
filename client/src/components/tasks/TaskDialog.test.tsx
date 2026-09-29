@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import TaskDialog from './TaskDialog'
+import { DEFAULT_TASK_SETTINGS } from '../../lib/task-settings'
 
 vi.mock('../../lib/api', () => ({
     getWorkTaskDepartments: vi.fn(),
@@ -11,6 +12,8 @@ vi.mock('../../lib/api', () => ({
     addWorkTaskAttachment: vi.fn(),
     updateWorkTask: vi.fn(),
     updateWorkTaskStatus: vi.fn(),
+    getWorkTaskSettings: vi.fn(),
+    WORK_TASK_SETTINGS_KEY: ['work-tasks', 'settings'],
 }))
 const api = vi.mocked(await import('../../lib/api'))
 
@@ -52,6 +55,7 @@ beforeEach(() => {
             : [{ userId: 'u-olga', displayName: 'Olga Ops' }, { userId: 'u-hana', displayName: 'Hana HR' }])
     api.getWorkTaskProjects.mockImplementation(async (departmentId: number) =>
         departmentId === 1 ? [{ id: 10, name: 'CRM Rollout', code: 'CRM' }] : [{ id: 12, name: 'Ops Tooling', code: 'OPT' }])
+    api.getWorkTaskSettings.mockResolvedValue(DEFAULT_TASK_SETTINGS)
 })
 
 describe('TaskDialog', () => {
@@ -437,5 +441,59 @@ describe('TaskDialog', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
         await waitFor(() => expect(onSaved).toHaveBeenCalled())
         expect(api.updateWorkTask).toHaveBeenCalledWith(8, expect.objectContaining({ assigneeIds: ['u-sam'] }))
+    })
+
+    it('holds Save until a required due date is given, and says why', async () => {
+        api.getWorkTaskSettings.mockResolvedValue({ ...DEFAULT_TASK_SETTINGS, dueDateRequirement: 'Required' })
+        renderDialog()
+        fireEvent.change(screen.getByRole('textbox', { name: /^Title/ }), { target: { value: 'Chase notes' } })
+        await choose('Department', 'Sales')
+        await choose('Project', 'CRM Rollout')
+        pickBilling('Billable')
+
+        expect(await screen.findByText('Due date is required.')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Create task' })).toBeDisabled()
+
+        fireEvent.change(screen.getByLabelText(/Due date/), { target: { value: '2026-10-01' } })
+        expect(screen.getByRole('button', { name: 'Create task' })).toBeEnabled()
+    })
+
+    it('leaves hidden fields off the form', async () => {
+        api.getWorkTaskSettings.mockResolvedValue({
+            ...DEFAULT_TASK_SETTINGS,
+            descriptionRequirement: 'Hidden', dueDateRequirement: 'Hidden', targetHoursRequirement: 'Hidden',
+            attachmentsRequirement: 'Hidden', billableRequirement: 'Hidden', showPriority: false,
+        })
+        renderDialog()
+
+        await screen.findByLabelText(/Title/)
+        await waitFor(() => expect(screen.queryByLabelText(/Description/)).toBeNull())
+        expect(screen.queryByLabelText(/Due date/)).toBeNull()
+        expect(screen.queryByLabelText(/Target hours/)).toBeNull()
+        expect(screen.queryByText('Attachments')).toBeNull()
+        expect(screen.queryByText('Billing')).toBeNull()
+        expect(screen.queryByLabelText(/Priority/)).toBeNull()
+    })
+
+    it('lets an optional project be left out and sends null', async () => {
+        api.getWorkTaskSettings.mockResolvedValue({ ...DEFAULT_TASK_SETTINGS, projectRequirement: 'Optional' })
+        api.createWorkTask.mockResolvedValue({} as never)
+        const { onSaved } = renderDialog()
+        fireEvent.change(await screen.findByRole('textbox', { name: /^Title/ }), { target: { value: 'No project' } })
+        await choose('Department', 'Sales')
+        pickBilling('Billable')
+        fireEvent.click(screen.getByRole('button', { name: 'Create task' }))
+
+        await waitFor(() => expect(onSaved).toHaveBeenCalled())
+        expect(api.createWorkTask).toHaveBeenCalledWith(expect.objectContaining({ projectId: null }))
+    })
+
+    it("falls back to today's rules when the settings cannot be read", async () => {
+        api.getWorkTaskSettings.mockRejectedValue(new Error('404'))
+        renderDialog()
+
+        expect(await screen.findByLabelText(/Description/)).toBeInTheDocument()
+        expect(screen.getByText('Billing')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Create task' })).toBeDisabled() // project and billable still required
     })
 })

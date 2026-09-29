@@ -3,6 +3,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { WorkTask } from '../../lib/types'
+import { DEFAULT_TASK_SETTINGS } from '../../lib/task-settings'
 import TasksPage from './TasksPage'
 
 vi.mock('../../lib/api', () => ({
@@ -15,6 +16,8 @@ vi.mock('../../lib/api', () => ({
     updateWorkTaskStatus: vi.fn(),
     deleteWorkTask: vi.fn(),
     getIdleTaskPeople: vi.fn(),
+    getWorkTaskSettings: vi.fn(),
+    WORK_TASK_SETTINGS_KEY: ['work-tasks', 'settings'],
 }))
 vi.mock('../../lib/mobx')
 vi.mock('../ui/SweetAlert', () => ({ default: { fire: vi.fn() } }))
@@ -57,6 +60,7 @@ beforeEach(() => {
     api.getWorkTasks.mockResolvedValue(TASKS)
     api.getWorkTaskDepartments.mockResolvedValue([{ id: 1, name: 'Sales' }])
     api.getIdleTaskPeople.mockResolvedValue([])
+    api.getWorkTaskSettings.mockResolvedValue(DEFAULT_TASK_SETTINGS)
 })
 
 describe('TasksPage', () => {
