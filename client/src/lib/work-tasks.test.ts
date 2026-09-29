@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { WorkTask } from './types'
 import { DEFAULT_TASK_SETTINGS } from './task-settings'
-import { SETTABLE_STATUSES, STATUS_LABELS, describeTaskProgress, filterTasks, isAwaitingConfirmation, isOpenTask, isOverdue, nextStatusAction, openCount, overdueDays, taskStats, tasksToCsv, todayIso } from './work-tasks'
+import { SETTABLE_STATUSES, STATUS_LABELS, boardStatuses, describeTaskProgress, filterTasks, isAwaitingConfirmation, isOpenTask, isOverdue, nextStatusAction, openCount, overdueDays, taskStats, tasksToCsv, todayIso } from './work-tasks'
 
 const base: WorkTask = {
     id: 1, title: 't', description: null, departmentId: 1, departmentName: 'Sales', projectId: 10, projectName: 'CRM Rollout', projectCode: 'CRM', projectColorKey: 'p1',
@@ -181,5 +181,18 @@ describe('awaiting confirmation', () => {
         const tasks = [t({ id: 1, status: 'AwaitingConfirmation', canConfirm: true }), t({ id: 2, status: 'AwaitingConfirmation' }), t({ id: 3 })]
         expect(taskStats(tasks, 'me', '2026-09-29').awaitingMyConfirmation).toBe(1)
         expect(filterTasks(tasks, { tab: 'all', status: 'AwaitingConfirmation', departmentId: null, userId: 'me' }).map((x) => x.id)).toEqual([1, 2])
+    })
+})
+
+describe('boardStatuses', () => {
+    it('follows the status filter, in workflow order', () => {
+        expect(boardStatuses('open', true, [])).toEqual(['ToDo', 'InProgress', 'AwaitingConfirmation'])
+        expect(boardStatuses('any', true, [])).toEqual(['ToDo', 'InProgress', 'AwaitingConfirmation', 'Done', 'Cancelled'])
+        expect(boardStatuses('Done', true, [])).toEqual(['Done'])
+    })
+
+    it('drops the waiting column when confirmation is off and nothing waits', () => {
+        expect(boardStatuses('open', false, [])).toEqual(['ToDo', 'InProgress'])
+        expect(boardStatuses('open', false, [t({ status: 'AwaitingConfirmation' })])).toEqual(['ToDo', 'InProgress', 'AwaitingConfirmation'])
     })
 })

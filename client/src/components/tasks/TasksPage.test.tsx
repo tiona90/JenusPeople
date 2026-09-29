@@ -57,6 +57,8 @@ const cardFor = async (title: string) => (await cards()).find((c) => within(c).q
 
 beforeEach(() => {
     vi.clearAllMocks()
+    // The layout and the folded groups are remembered per viewer.
+    window.localStorage.clear()
     api.getWorkTasks.mockResolvedValue(TASKS)
     api.getWorkTaskDepartments.mockResolvedValue([{ id: 1, name: 'Sales' }])
     api.getIdleTaskPeople.mockResolvedValue([])
@@ -463,5 +465,65 @@ describe('TasksPage task settings', () => {
         const card = await cardFor('Mine to do')
         expect(within(card).queryByText(/Overdue by \d+ days/)).toBeNull()
         expect(screen.queryByTestId('stat-overdue')).toBeNull()
+    })
+})
+
+describe('TasksPage layouts', () => {
+    it('shows an empty group as one line with a way to fill it, below the groups with work in them', async () => {
+        const hr = ['HR Administrator']
+        api.getWorkTasks.mockResolvedValue([TASKS[0], TASKS[2]])
+        renderPage(hr)
+
+        const created = await screen.findByRole('region', { name: 'Created by you' })
+        expect(within(created).getByText("You haven't handed out a task yet.")).toBeInTheDocument()
+        expect(within(created).queryAllByTestId('task-card')).toHaveLength(0)
+        expect(within(created).getByRole('button', { name: /Create a new task/ })).toBeInTheDocument()
+
+        const regions = screen.getAllByRole('region').map((r) => r.getAttribute('aria-label'))
+        expect(regions.indexOf('Created by others')).toBeLessThan(regions.indexOf('Created by you'))
+    })
+
+    it('folds a group away from its header, and remembers it', async () => {
+        renderPage()
+        const created = await screen.findByRole('region', { name: 'Created by you' })
+        const header = within(created).getByRole('button', { name: /Created by you/ })
+        expect(header).toHaveAttribute('aria-expanded', 'true')
+
+        fireEvent.click(header)
+        expect(header).toHaveAttribute('aria-expanded', 'false')
+        expect(within(created).queryByText('I asked for this')).toBeNull()
+        expect(JSON.parse(window.localStorage.getItem('tasks-collapsed-sections:me')!)).toEqual(['Created by you'])
+    })
+
+    it('lays the groups out as rows in the list view, with the same moves', async () => {
+        renderPage()
+        await cards()
+        fireEvent.click(screen.getByRole('button', { name: /List/ }))
+
+        const assigned = screen.getByRole('region', { name: 'Assigned to you' })
+        const row = within(assigned).getByTestId('task-row')
+        expect(within(row).getByText('Mine to do')).toBeInTheDocument()
+        expect(screen.queryAllByTestId('task-card')).toHaveLength(0)
+        expect(window.localStorage.getItem('tasks-layout')).toBe('list')
+
+        api.updateWorkTaskStatus.mockResolvedValue(undefined as never)
+        fireEvent.click(within(row).getByRole('button', { name: /Start/ }))
+        await waitFor(() => expect(api.updateWorkTaskStatus).toHaveBeenCalledWith(1, 'InProgress'))
+    })
+
+    it('lays every task out by status on the board, one column per open status', async () => {
+        api.getWorkTasks.mockResolvedValue([TASKS[0], { ...TASKS[1], status: 'InProgress' }])
+        renderPage()
+        await cards()
+        fireEvent.click(screen.getByRole('button', { name: /Board/ }))
+
+        const todo = screen.getByRole('region', { name: 'To do' })
+        const doing = screen.getByRole('region', { name: 'In progress' })
+        expect(within(todo).getByText('Mine to do')).toBeInTheDocument()
+        expect(within(doing).getByText('I asked for this')).toBeInTheDocument()
+        expect(screen.getByRole('region', { name: 'Awaiting confirmation' })).toBeInTheDocument()
+        expect(screen.queryByRole('region', { name: 'Done' })).toBeNull()
+        // The board is about where tasks stand, not whose they are.
+        expect(screen.queryByRole('region', { name: 'Assigned to you' })).toBeNull()
     })
 })

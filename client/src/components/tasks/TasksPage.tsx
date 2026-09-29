@@ -4,29 +4,28 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import CircularProgress from '@mui/material/CircularProgress'
-import Menu from '@mui/material/Menu'
-import MenuItem from '@mui/material/MenuItem'
 import { deleteWorkTask, getWorkTaskDepartments, getWorkTasks, updateWorkTaskStatus } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
 import type { WorkTaskSettings } from '../../lib/api/work-task-settings'
 import { useStore } from '../../lib/mobx'
 import { canManageTasks, canUseTasks, isHrAdministrator } from '../../lib/roles'
-import { ATTACHMENT_REQUIRED_MESSAGE, isShown, needsAttachmentBeforeDone } from '../../lib/task-settings'
+import { isShown } from '../../lib/task-settings'
 import { useWorkTaskSettings } from '../../lib/task-settings-query'
 import { softBg } from '../../lib/theme-tokens'
 import type { WorkTask, WorkTaskPriority, WorkTaskStatus } from '../../lib/types'
 import {
-    PRIORITY_LABELS, SETTABLE_STATUSES, STATUS_LABELS, describeTaskProgress, filterTasks, formatTaskDate as formatDate, isAwaitingConfirmation, isOpenTask, nextStatusAction, overdueDays, taskStats, tasksToCsv, todayIso,
-    type StatusFilter,
+    PRIORITY_LABELS, STATUS_LABELS, boardStatuses, filterTasks, isOpenTask, taskStats, tasksToCsv, todayIso,
+    type StatusFilter, type TaskLayout,
 } from '../../lib/work-tasks'
 import { SweetAlert } from '../ui'
-import { CardStat, OutlineBtn, SectionLabel, SelectFilter, StatCard } from '../ui/CardKit'
-import { CODE_COLORS, avatarBg, initials } from '../../lib/card-kit'
+import { SelectFilter, StatCard } from '../ui/CardKit'
 import IdlePeoplePanel from './IdlePeoplePanel'
 import SendBackDialog from './SendBackDialog'
+import TaskBoard from './TaskBoard'
+import { TaskCard, type TaskItemProps } from './TaskCard'
 import TaskDetailsDialog from './TaskDetailsDialog'
 import TaskDialog from './TaskDialog'
-import { PRIORITY_COLORS, STATUS_COLORS } from './statusStyles'
+import TaskList from './TaskList'
 
 /* ─── tokens ─────────────────────────────────────────────────────────────── */
 
@@ -37,7 +36,7 @@ interface Section {
     subtitle: string
     accent: boolean
     tasks: WorkTask[]
-    /** Shown in place of the cards when the group is empty and has no add card. */
+    /** The one-line strip shown in place of the cards when the group is empty. */
     empty: string
     /** Where the "create" card sits: the group of tasks the viewer runs themselves. */
     add: boolean
@@ -45,8 +44,29 @@ interface Section {
 
 /* ─── helpers ────────────────────────────────────────────────────────────── */
 
-function plural(n: number, one: string, many = `${one}s`) {
-    return `${n} ${n === 1 ? one : many}`
+// Per-viewer conveniences, so a reload keeps the layout and the folded groups. Storage
+// can be missing or throw (a private window, blocked site data): the page then just
+// opens on the defaults.
+const LAYOUT_KEY = 'tasks-layout'
+const collapsedKey = (userId: string) => `tasks-collapsed-sections:${userId}`
+
+function readStored<T>(key: string, parse: (raw: string) => T | null, fallback: T): T {
+    try {
+        const raw = window.localStorage.getItem(key)
+        return raw == null ? fallback : (parse(raw) ?? fallback)
+    } catch {
+        return fallback
+    }
+}
+
+function writeStored(key: string, value: string) {
+    try { window.localStorage.setItem(key, value) } catch { /* nothing to keep it in */ }
+}
+
+const parseLayout = (raw: string): TaskLayout | null => (raw === 'cards' || raw === 'list' || raw === 'board' ? raw : null)
+const parseTitles = (raw: string): string[] | null => {
+    const parsed: unknown = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.filter((t): t is string => typeof t === 'string') : null
 }
 
 function downloadTasksCsv(tasks: readonly WorkTask[], settings: WorkTaskSettings) {
@@ -60,6 +80,15 @@ function downloadTasksCsv(tasks: readonly WorkTask[], settings: WorkTaskSettings
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
+}
+
+/**
+ * The groups in the order the page draws them: those with something to show first,
+ * so an empty group — an HR Administrator's "Created by you", say — is a one-line
+ * strip under the work rather than a gap above it. Otherwise the order is kept.
+ */
+function orderSections(sections: Section[]): Section[] {
+    return [...sections.filter((s) => s.tasks.length > 0), ...sections.filter((s) => s.tasks.length === 0)]
 }
 
 /**
@@ -78,14 +107,14 @@ function buildSections(all: readonly WorkTask[], visible: readonly WorkTask[], u
         const handed = (t: WorkTask) => !created(t)
         return [
             { title: 'From your manager & HR', subtitle: 'Work handed to you comes first.', accent: true, tasks: visible.filter(handed), empty: empty(handed, 'Nothing has been handed to you yet.'), add: false },
-            { title: 'My own tasks', subtitle: 'Tasks you created for yourself.', accent: false, tasks: visible.filter(created), empty: '', add: true },
+            { title: 'My own tasks', subtitle: 'Tasks you created for yourself.', accent: false, tasks: visible.filter(created), empty: empty(created, "You haven't added a task of your own yet."), add: true },
         ]
     }
 
     if (audience === 'hr') {
         const others = (t: WorkTask) => !created(t)
         return [
-            { title: 'Created by you', subtitle: 'Tasks you handed out.', accent: true, tasks: visible.filter(created), empty: '', add: true },
+            { title: 'Created by you', subtitle: 'Tasks you handed out.', accent: true, tasks: visible.filter(created), empty: empty(created, "You haven't handed out a task yet."), add: true },
             ...(all.some(others)
                 ? [{ title: 'Created by others', subtitle: 'Run by managers, other HR and employees in your departments.', accent: false, tasks: visible.filter(others), empty: noMatch, add: false }]
                 : []),
@@ -96,7 +125,7 @@ function buildSections(all: readonly WorkTask[], visible: readonly WorkTask[], u
     const others = (t: WorkTask) => !created(t) && !assigned(t)
     return [
         { title: 'Assigned to you', subtitle: 'Work on your plate comes first.', accent: true, tasks: visible.filter(assigned), empty: empty(assigned, 'Nothing assigned to you.'), add: false },
-        { title: 'Created by you', subtitle: 'Tasks you handed to your team.', accent: false, tasks: visible.filter(handedOut), empty: '', add: true },
+        { title: 'Created by you', subtitle: 'Tasks you handed to your team.', accent: false, tasks: visible.filter(handedOut), empty: empty(handedOut, "You haven't handed out a task yet."), add: true },
         ...(all.some(others)
             ? [{ title: 'Others in your departments', subtitle: 'Run by other managers, HR and employees.', accent: false, tasks: visible.filter(others), empty: noMatch, add: false }]
             : []),
@@ -163,8 +192,22 @@ const TasksPage = observer(function TasksPage() {
         [all, userId],
     )
     const sections = useMemo(
-        () => buildSections(all, visible, userId, manages ? (isHr ? 'hr' : 'manager') : 'employee'),
+        () => orderSections(buildSections(all, visible, userId, manages ? (isHr ? 'hr' : 'manager') : 'employee')),
         [all, visible, userId, manages, isHr],
+    )
+
+    const [layout, setLayoutState] = useState<TaskLayout>(() => readStored(LAYOUT_KEY, parseLayout, 'cards'))
+    const setLayout = (next: TaskLayout) => { setLayoutState(next); writeStored(LAYOUT_KEY, next) }
+    // Folded groups, by title, per viewer.
+    const [collapsed, setCollapsed] = useState<string[]>(() => readStored(collapsedKey(userId), parseTitles, []))
+    const toggleSection = (title: string) => {
+        const next = collapsed.includes(title) ? collapsed.filter((t) => t !== title) : [...collapsed, title]
+        setCollapsed(next)
+        writeStored(collapsedKey(userId), JSON.stringify(next))
+    }
+    const columns = useMemo(
+        () => boardStatuses(status, settings.requireCompletionConfirmation, visible),
+        [status, settings.requireCompletionConfirmation, visible],
     )
 
     const confirmDelete = async (task: WorkTask) => {
@@ -181,20 +224,18 @@ const TasksPage = observer(function TasksPage() {
         if (result.isConfirmed) remove.mutate(task.id)
     }
 
-    const renderCard = (task: WorkTask) => (
-        <TaskCard
-            key={task.id}
-            task={task}
-            today={today}
-            statusPending={moveStatus.isPending}
-            onStatus={(next) => moveStatus.mutate({ id: task.id, next })}
-            settings={settings}
-            onOpen={() => setDetailsId(task.id)}
-            onEdit={() => setDialogTask(task)}
-            onDelete={() => void confirmDelete(task)}
-            onSendBack={() => { moveStatus.reset(); setSendingBack(task) }}
-        />
-    )
+    // What every card, board card and list row is handed besides the task.
+    const itemProps = (task: WorkTask): TaskItemProps => ({
+        task,
+        today,
+        settings,
+        statusPending: moveStatus.isPending,
+        onStatus: (next) => moveStatus.mutate({ id: task.id, next }),
+        onOpen: () => setDetailsId(task.id),
+        onEdit: () => setDialogTask(task),
+        onDelete: () => void confirmDelete(task),
+        onSendBack: () => { moveStatus.reset(); setSendingBack(task) },
+    })
 
     if (tasks.isLoading) {
         return <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress size={28} /></Box>
@@ -326,6 +367,7 @@ const TasksPage = observer(function TasksPage() {
                     />
                 )}
                 <Box sx={{ flex: 1 }} />
+                <LayoutToggle value={layout} onChange={setLayout} />
                 {/* HR reports on the tasks they run; the file is what the filters show. */}
                 {isHr && (
                     <Box
@@ -362,21 +404,41 @@ const TasksPage = observer(function TasksPage() {
 
             {manages && <IdlePeoplePanel departmentId={departmentId} />}
 
-            {/* Grid, in groups: an Employee's work handed to them and their own; a
+            {/* The board lays every visible task out by status; the cards and the list
+                keep the groups: an Employee's work handed to them and their own; a
                 Manager's work on their plate, what they handed out, and the rest of their
                 departments; an HR Administrator's own tasks and everybody else's. */}
-            {sections.map((section) => (
-                <TaskSection key={section.title} title={section.title} subtitle={section.subtitle} count={section.tasks.length} accent={section.accent}>
-                    {section.tasks.length === 0 && !section.add ? (
-                        <SectionEmpty>{section.empty}</SectionEmpty>
-                    ) : (
-                        <CardGrid>
-                            {section.tasks.map(renderCard)}
-                            {section.add && <AddCard onClick={() => setDialogTask(null)} personal={!manages} />}
-                        </CardGrid>
-                    )}
-                </TaskSection>
-            ))}
+            {layout === 'board' ? (
+                <TaskBoard tasks={visible} statuses={columns} renderProps={itemProps} />
+            ) : sections.map((section) => {
+                const isCollapsed = collapsed.includes(section.title)
+                return (
+                    <TaskSection
+                        key={section.title}
+                        title={section.title}
+                        subtitle={section.subtitle}
+                        count={section.tasks.length}
+                        accent={section.accent}
+                        collapsed={isCollapsed}
+                        onToggle={() => toggleSection(section.title)}
+                    >
+                        {section.tasks.length === 0 ? (
+                            <SectionEmpty
+                                action={section.add && creates ? { label: manages ? 'Create a new task' : 'Add a task of your own', onClick: () => setDialogTask(null) } : undefined}
+                            >
+                                {section.empty}
+                            </SectionEmpty>
+                        ) : layout === 'list' ? (
+                            <TaskList tasks={section.tasks} settings={settings} renderProps={itemProps} />
+                        ) : (
+                            <CardGrid>
+                                {section.tasks.map((task) => <TaskCard key={task.id} {...itemProps(task)} />)}
+                                {section.add && <AddCard onClick={() => setDialogTask(null)} personal={!manages} />}
+                            </CardGrid>
+                        )}
+                    </TaskSection>
+                )
+            })}
 
             <SendBackDialog
                 open={sendingBack != null}
@@ -411,362 +473,44 @@ const TasksPage = observer(function TasksPage() {
 
 export default TasksPage
 
-/* ════════════════════════════════════════════════════════════════════════ */
-/* Card                                                                     */
-/* ════════════════════════════════════════════════════════════════════════ */
-
-function TaskCard({ task, today, settings, statusPending, onStatus, onOpen, onEdit, onDelete, onSendBack }: {
-    task: WorkTask
-    today: string
-    settings: WorkTaskSettings
-    statusPending: boolean
-    onStatus: (next: WorkTaskStatus) => void
-    /** The details dialog: the whole description and the files, which the card only summarises. */
-    onOpen: () => void
-    onEdit: () => void
-    onDelete: () => void
-    /** A reviewer returning a waiting task: opens the reason dialog. */
-    onSendBack: () => void
-}) {
-    const closed = !isOpenTask(task)
-    const showDue = isShown(settings, 'dueDate')
-    const late = overdueDays(task, today, showDue)
-    const progress = describeTaskProgress(task.targetHours, task.loggedHours)
-    const status = STATUS_COLORS[task.status]
-    const priority = PRIORITY_COLORS[task.priority]
-    const codeColor = closed ? 'text.disabled' : (CODE_COLORS[task.projectColorKey ?? ''] ?? CODE_COLORS.p1)
-
-    const attachmentCount = task.attachments?.length ?? 0
-    const visibleTeam = task.assignees.slice(0, 6)
-    const remaining = task.assignees.length - visibleTeam.length
-    const showTarget = isShown(settings, 'targetHours')
-    const fileNeeded = !closed && needsAttachmentBeforeDone(settings, attachmentCount)
-
+/** Cards, list or board: three buttons, the current one pressed. */
+function LayoutToggle({ value, onChange }: { value: TaskLayout; onChange: (next: TaskLayout) => void }) {
+    const options: { value: TaskLayout; label: string; icon: string }[] = [
+        { value: 'cards', label: 'Cards', icon: '▦' },
+        { value: 'list', label: 'List', icon: '☰' },
+        { value: 'board', label: 'Board', icon: '▥' },
+    ]
     return (
-        <Box data-testid="task-card" onClick={onOpen} sx={{
-            bgcolor: closed ? 'action.hover' : 'background.paper',
-            border: '1px solid', borderColor: late > 0 ? 'warning.main' : 'divider', borderRadius: '12px',
-            overflow: 'hidden', transition: 'all 0.15s', cursor: 'pointer',
-            display: 'flex', flexDirection: 'column',
-            opacity: closed ? 0.75 : 1,
-            '&:hover': { transform: 'translateY(-2px)', borderColor: late > 0 ? 'warning.main' : 'primary.main' },
-        }}>
-            {/* Header */}
-            <Box sx={{
-                p: '16px 18px', borderBottom: '1px solid', borderBottomColor: 'divider',
-                display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px',
-            }}>
-                <Box sx={{ flex: 1, minWidth: 0 }}>
-                    {task.projectCode && (
-                        <Box sx={{
-                            display: 'inline-block', bgcolor: codeColor, color: '#fff',
-                            fontSize: 11, fontWeight: 700, px: '8px', py: '3px',
-                            borderRadius: '6px', letterSpacing: '0.02em', mb: '6px',
-                        }}>{task.projectCode}</Box>
-                    )}
-                    {/* A real button, so the details open from the keyboard too; one line, so a long title never grows the card. */}
+        <Box role="group" aria-label="Layout" sx={{ display: 'inline-flex', border: '1px solid', borderColor: 'divider', borderRadius: '6px', overflow: 'hidden' }}>
+            {options.map((o, i) => {
+                const pressed = o.value === value
+                return (
                     <Box
+                        key={o.value}
                         component="button"
                         type="button"
-                        title={task.title}
-                        onClick={(e: React.MouseEvent) => { e.stopPropagation(); onOpen() }}
+                        aria-pressed={pressed}
+                        title={`${o.label} view`}
+                        onClick={() => onChange(o.value)}
                         sx={{
-                            display: 'block', maxWidth: '100%', p: 0, border: 'none', bgcolor: 'transparent', textAlign: 'left',
-                            fontFamily: 'inherit', cursor: 'pointer',
-                            fontSize: 16, fontWeight: 700, color: 'text.primary', lineHeight: 1.3, mb: '6px',
-                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                            display: 'inline-flex', alignItems: 'center', gap: '5px',
+                            px: '10px', py: '6px', border: 'none', fontFamily: 'inherit', fontSize: 12, cursor: 'pointer',
+                            borderLeft: i === 0 ? 'none' : '1px solid', borderLeftColor: 'divider',
+                            bgcolor: pressed ? softBg('primary') : 'background.paper',
+                            color: pressed ? 'primary.main' : 'text.secondary', fontWeight: pressed ? 700 : 500,
                             '&:hover': { color: 'primary.main' },
                         }}
                     >
-                        {task.title}
+                        <Box component="span" aria-hidden sx={{ fontSize: 13, lineHeight: 1 }}>{o.icon}</Box>
+                        {o.label}
                     </Box>
-                    <Box sx={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                        <Box sx={{
-                            fontSize: 11, px: '8px', py: '2px', borderRadius: '10px',
-                            bgcolor: 'action.hover', color: 'text.secondary', fontWeight: 500,
-                        }}>{task.departmentName}</Box>
-                        {isShown(settings, 'billable') && task.isBillable != null && (
-                            <Box sx={{
-                                fontSize: 11, px: '8px', py: '2px', borderRadius: '10px', fontWeight: 600,
-                                bgcolor: task.isBillable ? softBg('success') : 'action.hover',
-                                color: task.isBillable ? 'success.dark' : 'text.secondary',
-                            }}>{task.isBillable ? 'Billable' : 'Non-billable'}</Box>
-                        )}
-                        {task.projectName && (
-                            <Box sx={{ fontSize: 11, color: 'text.secondary' }}>{task.projectName}</Box>
-                        )}
-                    </Box>
-                    <Box sx={{ fontSize: 11, color: 'text.secondary', mt: '6px' }}>
-                        From: <Box component="strong" sx={{ color: 'text.primary', fontWeight: 600 }}>{task.createdByName}</Box>
-                    </Box>
-                </Box>
-                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
-                    <Box sx={{
-                        display: 'inline-flex', alignItems: 'center', gap: '4px',
-                        px: '10px', py: '4px', borderRadius: '12px',
-                        fontSize: 11, fontWeight: 600,
-                        bgcolor: status.bg, color: status.fg, whiteSpace: 'nowrap',
-                    }}>
-                        <Box component="span" sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: status.dot }} />
-                        {STATUS_LABELS[task.status]}
-                    </Box>
-                    {isShown(settings, 'priority') && <Box sx={{
-                        px: '8px', py: '2px', borderRadius: '10px',
-                        fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap',
-                        bgcolor: priority.bg, color: priority.fg,
-                    }}>{PRIORITY_LABELS[task.priority]} priority</Box>}
-                </Box>
-            </Box>
-
-            {/* Summary: always the same height, whatever the description or the files, so
-                every card in the grid lines up. The whole of both is in the details dialog. */}
-            <Box data-testid="task-summary" sx={{ p: '12px 18px', borderBottom: '1px solid', borderBottomColor: 'divider' }}>
-                {isShown(settings, 'description') && <Box sx={{
-                    fontSize: 12, lineHeight: 1.5, height: '3em', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                    color: task.description ? 'text.secondary' : 'text.disabled', fontStyle: task.description ? 'normal' : 'italic',
-                    display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
-                }}>{task.description || 'No description'}</Box>}
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: '8px', fontSize: 11 }}>
-                    {isShown(settings, 'attachments') && <Box sx={{ color: attachmentCount > 0 ? 'text.primary' : 'text.disabled', fontWeight: attachmentCount > 0 ? 600 : 400 }}>
-                        📎 {attachmentCount === 0 ? 'No attachments' : plural(attachmentCount, 'attachment')}
-                    </Box>}
-                    <Box sx={{ color: 'primary.main', fontWeight: 600 }}>View details →</Box>
-                </Box>
-            </Box>
-
-            {/* Assignees */}
-            <Box sx={{ p: '12px 18px', borderBottom: '1px solid', borderBottomColor: 'divider' }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', mb: '8px' }}>
-                    <SectionLabel>Assignees</SectionLabel>
-                    <Box sx={{ fontSize: 13, fontWeight: 700, color: 'text.primary' }}>
-                        {task.assignees.length}
-                        <Box component="span" sx={{ fontSize: 11, color: 'text.secondary', fontWeight: 500, ml: '4px' }}>
-                            {task.assignees.length === 1 ? 'person' : 'people'}
-                        </Box>
-                    </Box>
-                </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    {visibleTeam.map((m) => (
-                        <Box
-                            key={m.userId}
-                            title={m.displayName}
-                            sx={{
-                                width: 32, height: 32, borderRadius: '50%',
-                                bgcolor: avatarBg(m.displayName || m.userId), color: '#fff',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                fontSize: 11, fontWeight: 600,
-                                border: '2px solid', borderColor: 'background.paper',
-                                marginLeft: '-6px', '&:first-of-type': { marginLeft: 0 },
-                            }}
-                        >{initials(m.displayName)}</Box>
-                    ))}
-                    {remaining > 0 && (
-                        <Box sx={{
-                            width: 32, height: 32, borderRadius: '50%',
-                            bgcolor: 'action.hover', color: 'text.secondary',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            fontSize: 10, fontWeight: 600,
-                            border: '2px solid', borderColor: 'background.paper', marginLeft: '-6px',
-                        }}>+{remaining}</Box>
-                    )}
-                    {task.assignees.length === 1 && (
-                        <Box sx={{ fontSize: 12, color: 'text.primary', fontWeight: 500, ml: '10px' }}>
-                            {task.assignees[0].displayName}
-                        </Box>
-                    )}
-                </Box>
-            </Box>
-
-            {/* Overdue banner */}
-            {late > 0 && (
-                <Box sx={{
-                    p: '8px 18px', borderBottom: '1px solid', borderBottomColor: 'divider',
-                    bgcolor: softBg('warning'), borderLeft: '3px solid', borderLeftColor: 'warning.main',
-                    fontSize: 11, color: 'warning.dark', fontWeight: 600,
-                }}>
-                    ⚠ Overdue by {plural(late, 'day')}
-                </Box>
-            )}
-            {isAwaitingConfirmation(task) && !task.canConfirm && (
-                <Box sx={{
-                    p: '8px 18px', borderBottom: '1px solid', borderBottomColor: 'divider',
-                    bgcolor: softBg('warning'), borderLeft: '3px solid', borderLeftColor: 'warning.main',
-                    fontSize: 11, color: 'warning.dark', fontWeight: 600,
-                }}>
-                    Waiting for {task.createdByName} to confirm
-                </Box>
-            )}
-            {isOpenTask(task) && !isAwaitingConfirmation(task) && task.sentBackReason && (
-                <Box sx={{
-                    p: '8px 18px', borderBottom: '1px solid', borderBottomColor: 'divider',
-                    bgcolor: softBg('error'), borderLeft: '3px solid', borderLeftColor: 'error.main',
-                    fontSize: 11, color: 'error.dark', fontWeight: 600, whiteSpace: 'pre-wrap',
-                }}>
-                    Sent back: {task.sentBackReason}
-                </Box>
-            )}
-            {fileNeeded && (
-                <Box title={ATTACHMENT_REQUIRED_MESSAGE} sx={{ px: '18px', pt: '8px', fontSize: 11, color: 'warning.dark' }}>
-                    File needed before Done
-                </Box>
-            )}
-
-            {/* Stats triplet — Due and Target drop out with their columns when the Task Settings hide them. */}
-            <Box sx={{ display: 'grid', gridTemplateColumns: `repeat(${1 + (showDue ? 1 : 0) + (showTarget ? 1 : 0)}, 1fr)`, gap: '1px', bgcolor: 'divider', mt: 'auto' }}>
-                {showDue && <CardStat
-                    label="Due"
-                    value={task.dueDate ? formatDate(task.dueDate) : '—'}
-                    sub={task.dueDate ? (late > 0 ? 'past due' : closed ? 'closed' : 'on track') : 'no date set'}
-                    valueColor={late > 0 ? 'error.main' : undefined}
-                />}
-                {showTarget && <CardStat
-                    label="Target"
-                    value={task.targetHours != null ? `${task.targetHours}h` : '—'}
-                    sub={task.targetHours == null && progress.text === 'nothing logged' ? 'no target set' : progress.text}
-                    valueColor={progress.over ? 'error.main' : undefined}
-                />}
-                <CardStat
-                    label={task.status === 'Done' && task.completedAtUtc ? 'Completed' : 'Created'}
-                    value={formatDate(task.status === 'Done' && task.completedAtUtc ? task.completedAtUtc : task.createdAtUtc)}
-                    sub={task.status === 'Done' ? 'finished' : 'opened'}
-                />
-            </Box>
-
-            {/* Footer. Its own clicks (the status menu's included, which bubble through
-                the portal) are not a click on the card. */}
-            <Box onClick={(e) => e.stopPropagation()} sx={{ display: 'flex', gap: '6px', p: '10px 14px', bgcolor: 'action.hover', alignItems: 'center', cursor: 'default' }}>
-                {task.canConfirm ? (
-                    <ReviewControls pending={statusPending} doneBlocked={fileNeeded} onConfirm={() => onStatus('Done')} onSendBack={onSendBack} />
-                ) : task.canChangeStatus ? (
-                    <StatusControls status={task.status} pending={statusPending} doneBlocked={fileNeeded} onStatus={onStatus} />
-                ) : (
-                    <Box sx={{ fontSize: 11, color: 'text.disabled' }}>Only the creator and assignees change the status</Box>
-                )}
-                <Box sx={{ flex: 1 }} />
-                {task.canEdit && (
-                    <>
-                        <OutlineBtn onClick={onEdit}>✏️ Edit</OutlineBtn>
-                        <OutlineBtn danger onClick={onDelete}>🗑 Delete</OutlineBtn>
-                    </>
-                )}
-            </Box>
+                )
+            })}
         </Box>
     )
 }
 
-/** A reviewer's two answers to a task marked done. */
-function ReviewControls({ pending, doneBlocked, onConfirm, onSendBack }: { pending: boolean; doneBlocked: boolean; onConfirm: () => void; onSendBack: () => void }) {
-    const btn = {
-        display: 'inline-flex', alignItems: 'center', gap: '6px', borderRadius: '6px', px: '12px', py: '6px',
-        fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
-        '&:disabled': { opacity: 0.6, cursor: 'default' },
-    } as const
-    return (
-        <>
-            <Box component="button" type="button" disabled={pending || doneBlocked} title={doneBlocked ? ATTACHMENT_REQUIRED_MESSAGE : undefined} onClick={onConfirm}
-                sx={{ ...btn, bgcolor: 'success.main', color: '#fff', border: 'none', '&:hover': { bgcolor: 'success.dark' } }}>
-                <Box component="span" aria-hidden sx={{ fontSize: 11 }}>✓</Box>Confirm
-            </Box>
-            <Box component="button" type="button" disabled={pending} onClick={onSendBack}
-                sx={{ ...btn, bgcolor: 'background.paper', color: 'warning.dark', border: '1px solid', borderColor: 'warning.main', '&:hover': { bgcolor: softBg('warning') } }}>
-                <Box component="span" aria-hidden sx={{ fontSize: 11 }}>↩</Box>Send back
-            </Box>
-        </>
-    )
-}
-
-/**
- * The card's status controls: the obvious next step as a filled button, and every
- * status in a menu beside it for the rest (cancelling, stepping back).
- */
-function StatusControls({ status, pending, doneBlocked, onStatus }: {
-    status: WorkTaskStatus
-    pending: boolean
-    doneBlocked: boolean
-    onStatus: (next: WorkTaskStatus) => void
-}) {
-    const [anchor, setAnchor] = useState<HTMLElement | null>(null)
-    const next = nextStatusAction(status)
-    // An assignee's one move on a task waiting for confirmation is Withdraw; the rest is the reviewer's.
-    const waiting = status === 'AwaitingConfirmation'
-    const mainBlocked = doneBlocked && next.to === 'Done'
-    return (
-        <>
-            <Box
-                component="button"
-                type="button"
-                disabled={pending || mainBlocked}
-                title={mainBlocked ? ATTACHMENT_REQUIRED_MESSAGE : undefined}
-                onClick={() => onStatus(next.to)}
-                sx={{
-                    display: 'inline-flex', alignItems: 'center', gap: '6px',
-                    bgcolor: next.to === 'Done' ? 'success.main' : 'primary.main', color: '#fff',
-                    border: 'none', borderRadius: '6px', px: '12px', py: '6px',
-                    fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
-                    '&:hover': { bgcolor: next.to === 'Done' ? 'success.dark' : 'primary.dark' },
-                    '&:disabled': { opacity: 0.6, cursor: 'default' },
-                }}
-            >
-                <Box component="span" aria-hidden sx={{ fontSize: 11 }}>{next.icon}</Box>
-                {next.label}
-            </Box>
-            {!waiting && (
-                <>
-                <Box
-                    component="button"
-                    type="button"
-                    aria-haspopup="menu"
-                    aria-expanded={anchor != null}
-                    disabled={pending}
-                    onClick={(e: React.MouseEvent<HTMLElement>) => setAnchor(e.currentTarget)}
-                    sx={{
-                        display: 'inline-flex', alignItems: 'center', gap: '6px',
-                        bgcolor: 'background.paper', color: 'text.primary',
-                        border: '1px solid', borderColor: 'divider', borderRadius: '6px', px: '10px', py: '6px',
-                        fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
-                        '&:hover': { borderColor: 'primary.main', color: 'primary.main' },
-                        '&:disabled': { opacity: 0.6, cursor: 'default' },
-                    }}
-                >
-                    Status
-                    <Box component="span" aria-hidden sx={{ fontSize: 9, color: 'text.secondary' }}>▼</Box>
-                </Box>
-                <Menu
-                    anchorEl={anchor}
-                    open={anchor != null}
-                    onClose={() => setAnchor(null)}
-                    slotProps={{ paper: { sx: { minWidth: 170, borderRadius: '10px', mt: '4px' } } }}
-                >
-                    {SETTABLE_STATUSES.map((s) => {
-                        const current = s === status
-                        const itemBlocked = doneBlocked && s === 'Done'
-                        return (
-                            <MenuItem
-                                key={s}
-                                aria-current={current ? 'true' : undefined}
-                                selected={current}
-                                disabled={itemBlocked}
-                                title={itemBlocked ? ATTACHMENT_REQUIRED_MESSAGE : undefined}
-                                onClick={() => {
-                                    if (itemBlocked) return
-                                    setAnchor(null)
-                                    if (!current) onStatus(s)
-                                }}
-                                sx={{ fontSize: 13, gap: '10px' }}
-                            >
-                                <Box component="span" aria-hidden sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: STATUS_COLORS[s].dot, flexShrink: 0 }} />
-                                <Box component="span" sx={{ flex: 1 }}>{STATUS_LABELS[s]}</Box>
-                                {current && <Box component="span" aria-hidden sx={{ fontSize: 12, color: 'primary.main' }}>✓</Box>}
-                            </MenuItem>
-                        )
-                    })}
-                </Menu>
-                </>
-            )}
-        </>
-    )
-}
-
+/** The grid's last cell in a group the viewer runs: sized like the cards beside it, not taller. */
 function AddCard({ onClick, personal = false }: { onClick: () => void; personal?: boolean }) {
     return (
         <Box
@@ -774,24 +518,18 @@ function AddCard({ onClick, personal = false }: { onClick: () => void; personal?
             type="button"
             onClick={onClick}
             sx={{
-                bgcolor: 'action.hover', border: '2px dashed', borderColor: 'divider',
-                borderRadius: '12px', p: '40px 20px', minHeight: 280,
-                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                bgcolor: 'transparent', border: '2px dashed', borderColor: 'divider',
+                borderRadius: '12px', p: '20px', minHeight: 140,
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '6px',
                 cursor: 'pointer', fontFamily: 'inherit', textAlign: 'center',
-                ...(personal && { minHeight: 180, p: '28px 20px' }),
-                color: 'text.secondary', transition: 'all 0.15s',
-                '&:hover': { borderColor: 'primary.main', bgcolor: softBg('primary'), transform: 'translateY(-2px)' },
+                color: 'text.secondary', transition: 'border-color 0.15s, background-color 0.15s',
+                '&:hover': { borderColor: 'primary.main', bgcolor: softBg('primary') },
             }}
         >
-            <Box sx={{
-                width: 56, height: 56, borderRadius: '50%',
-                bgcolor: 'background.paper', border: '2px dashed', borderColor: 'divider',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 24, color: 'text.secondary', mb: '12px',
-            }}>+</Box>
-            <Box sx={{ fontSize: 14, fontWeight: 600, color: 'text.primary', mb: '4px' }}>{personal ? 'Add a task of your own' : 'Create a new task'}</Box>
-            <Box sx={{ fontSize: 12, color: 'text.secondary', lineHeight: 1.5 }}>
-                {personal ? <>Pick a project and track<br />your own work to done</> : <>Pick a project, assign the people,<br />and track it to done</>}
+            <Box sx={{ fontSize: 22, lineHeight: 1, color: 'primary.main' }}>+</Box>
+            <Box sx={{ fontSize: 13, fontWeight: 600, color: 'text.primary' }}>{personal ? 'Add a task of your own' : 'Create a new task'}</Box>
+            <Box sx={{ fontSize: 12, color: 'text.secondary' }}>
+                {personal ? 'Pick a project and track your own work to done' : 'Pick a project, assign the people, track it to done'}
             </Box>
         </Box>
     )
@@ -799,26 +537,44 @@ function AddCard({ onClick, personal = false }: { onClick: () => void; personal?
 
 function CardGrid({ children }: { children: React.ReactNode }) {
     return (
-        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '14px' }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 320px), 1fr))', gap: '14px' }}>
             {children}
         </Box>
     )
 }
 
-/** One of the page's groups of cards; the first, accented, is the viewer's own work. */
-function TaskSection({ title, subtitle, count, accent = false, children }: {
+/**
+ * One of the page's groups; the first, accented, is the viewer's own work. The
+ * header folds it away, and the fold is remembered per viewer.
+ */
+function TaskSection({ title, subtitle, count, accent = false, collapsed, onToggle, children }: {
     title: string
     subtitle: string
     count: number
     accent?: boolean
+    collapsed: boolean
+    onToggle: () => void
     children: React.ReactNode
 }) {
     return (
-        <Box component="section" aria-label={title} sx={{ mb: '22px' }}>
-            <Box sx={{
-                display: 'flex', alignItems: 'baseline', gap: '10px', flexWrap: 'wrap', mb: '10px', pl: '10px',
-                borderLeft: '3px solid', borderLeftColor: accent ? 'primary.main' : 'divider',
-            }}>
+        <Box component="section" aria-label={title} sx={{ mb: collapsed ? '12px' : '22px' }}>
+            <Box
+                component="button"
+                type="button"
+                aria-expanded={!collapsed}
+                onClick={onToggle}
+                sx={{
+                    display: 'flex', alignItems: 'baseline', gap: '10px', flexWrap: 'wrap', width: '100%',
+                    mb: collapsed ? 0 : '10px', pl: '10px', py: '2px', pr: 0,
+                    border: 'none', borderLeft: '3px solid', borderLeftColor: accent ? 'primary.main' : 'divider',
+                    bgcolor: 'transparent', fontFamily: 'inherit', textAlign: 'left', cursor: 'pointer',
+                    '&:hover .section-chevron': { color: 'primary.main' },
+                }}
+            >
+                <Box component="span" className="section-chevron" aria-hidden sx={{
+                    fontSize: 10, color: 'text.secondary', display: 'inline-block', width: 10,
+                    transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform 0.15s',
+                }}>▼</Box>
                 <Box component="h2" sx={{ m: 0, fontSize: accent ? 16 : 14, fontWeight: 700, color: accent ? 'text.primary' : 'text.secondary' }}>
                     {title}
                 </Box>
@@ -828,20 +584,37 @@ function TaskSection({ title, subtitle, count, accent = false, children }: {
                 }}>
                     {count}
                 </Box>
-                <Box sx={{ fontSize: 12, color: 'text.secondary' }}>{subtitle}</Box>
+                <Box component="span" sx={{ fontSize: 12, color: 'text.secondary' }}>{subtitle}</Box>
             </Box>
-            {children}
+            {!collapsed && children}
         </Box>
     )
 }
 
-function SectionEmpty({ children }: { children: React.ReactNode }) {
+/** An empty group: one line, with the way to fill it when there is one. */
+function SectionEmpty({ children, action }: { children: React.ReactNode; action?: { label: string; onClick: () => void } }) {
     return (
         <Box sx={{
-            bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider', borderRadius: '10px',
-            py: 4, textAlign: 'center', color: 'text.secondary', fontSize: 13,
+            bgcolor: 'background.paper', border: '1px dashed', borderColor: 'divider', borderRadius: '10px',
+            px: '16px', py: '12px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap',
+            color: 'text.secondary', fontSize: 13,
         }}>
-            {children}
+            <Box sx={{ flex: 1, minWidth: 0 }}>{children}</Box>
+            {action && (
+                <Box
+                    component="button"
+                    type="button"
+                    onClick={action.onClick}
+                    sx={{
+                        bgcolor: 'transparent', color: 'primary.main', border: '1px solid', borderColor: 'primary.main',
+                        borderRadius: '6px', px: '12px', py: '5px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                        fontFamily: 'inherit', whiteSpace: 'nowrap',
+                        '&:hover': { bgcolor: softBg('primary') },
+                    }}
+                >
+                    + {action.label}
+                </Box>
+            )}
         </Box>
     )
 }
