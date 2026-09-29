@@ -59,6 +59,18 @@ export interface WorkTaskAssignee {
     isHrAdministrator?: boolean
 }
 export interface WorkTaskDepartment { id: number; name: string }
+
+/** Somebody in the caller's departments with no task In Progress (`GET /worktasks/idle-people`). */
+export interface WorkTaskIdlePerson {
+    userId: string
+    displayName: string
+    isManager: boolean
+    /** The caller's departments they cover, in step with departmentNames. */
+    departmentIds: number[]
+    departmentNames: string[]
+    /** Tasks they are on that have not started; 0 means no open task at all. */
+    toDoCount: number
+}
 export interface WorkTaskProject { id: number; name: string; code: string }
 
 export interface UpsertWorkTaskRequest {

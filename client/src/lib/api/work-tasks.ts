@@ -1,5 +1,5 @@
 import apiClient from './client'
-import type { TimesheetTaskOption, UpsertWorkTaskRequest, WorkTask, WorkTaskAssignee, WorkTaskDepartment, WorkTaskProject, WorkTaskStatus } from '../types'
+import type { TimesheetTaskOption, UpsertWorkTaskRequest, WorkTask, WorkTaskAssignee, WorkTaskDepartment, WorkTaskIdlePerson, WorkTaskProject, WorkTaskStatus } from '../types'
 
 // Every task in the caller's departments. Zero-arg so it is safe as a queryFn.
 export async function getWorkTasks() {
@@ -14,6 +14,12 @@ export async function getWorkTaskDepartments() {
 
 export async function getWorkTaskAssignees(departmentId: number) {
     const response = await apiClient.get<WorkTaskAssignee[]>('/worktasks/assignees', { params: { departmentId } })
+    return response.data
+}
+
+// Who in the caller's departments has no task In Progress. Managers and HR only.
+export async function getIdleTaskPeople() {
+    const response = await apiClient.get<WorkTaskIdlePerson[]>('/worktasks/idle-people')
     return response.data
 }
 

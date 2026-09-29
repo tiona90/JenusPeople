@@ -15,7 +15,8 @@ namespace WorkTrack.Tests.WorkTasks;
 /// </summary>
 public class WorkTaskSurfaceTests
 {
-    private static readonly string[] ManagingActions = [nameof(WorkTasksController.GetAssignees)];
+    private static readonly string[] ManagingActions =
+        [nameof(WorkTasksController.GetAssignees), nameof(WorkTasksController.GetIdlePeople)];
 
     private static IEnumerable<MethodInfo> Actions() =>
         typeof(WorkTasksController).GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly);

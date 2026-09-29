@@ -14,6 +14,7 @@ import DashboardHome from './DashboardHome'
  * per-child type as 0.
  */
 vi.mock('../../lib/api', () => ({
+    getIdleTaskPeople: vi.fn(async () => []),
     getAnnualLeaves: vi.fn(),
     getAppSettings: vi.fn(),
     getChildLeaveEntitlements: vi.fn(),
