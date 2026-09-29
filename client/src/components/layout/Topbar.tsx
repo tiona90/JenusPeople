@@ -26,12 +26,16 @@ import { isAdministrator, isHrAdministrator, isSystemAdministrator } from '../..
 import { formatServerDateTime as formatChangedAt, parseServerDate } from '../../lib/server-date'
 import { shortExceptionType, systemErrorRowId } from '../../lib/system-errors'
 import type { ThemePreference } from '../../lib/mobx/uiStore'
+import type { WorkTask } from '../../lib/types/work-task'
 import AttendanceWidget from './AttendanceWidget'
 
 const recentWindowDays = 7
 const managerReadPrefix = 'manager-read-leave-notifications:'
 const managerTsReadPrefix = 'manager-read-timesheet-notifications:'
 const managerTaskReadPrefix = 'manager-read-task-confirm-notifications:'
+// A task somebody else put the caller on, or sent back to them. Read by the Employee's
+// and the Manager's bell alike — an HR Administrator is never handed one.
+const assignedTaskReadPrefix = 'assignee-read-task-notifications:'
 const employeeReadPrefix = 'employee-read-status-notifications:'
 const employeeTsReadPrefix = 'employee-read-timesheet-status-notifications:'
 // A System Administrator's bell lists system errors, not leave. Keyed by row id plus
@@ -77,6 +81,7 @@ const Topbar = observer(function Topbar() {
     const managerKey = `${managerReadPrefix}${authStore.user?.id ?? ''}`
     const managerTsKey = `${managerTsReadPrefix}${authStore.user?.id ?? ''}`
     const managerTaskKey = `${managerTaskReadPrefix}${authStore.user?.id ?? ''}`
+    const assignedTaskKey = `${assignedTaskReadPrefix}${authStore.user?.id ?? ''}`
     const employeeKey = `${employeeReadPrefix}${authStore.user?.id ?? ''}`
     const employeeTsKey = `${employeeTsReadPrefix}${authStore.user?.id ?? ''}`
     const systemKey = `${systemReadPrefix}${authStore.user?.id ?? ''}`
@@ -85,6 +90,7 @@ const Topbar = observer(function Topbar() {
     const [readManagerIds, setReadManagerIds] = useState<string[]>(() => getStoredIds(managerKey))
     const [readManagerTsIds, setReadManagerTsIds] = useState<string[]>(() => getStoredIds(managerTsKey))
     const [readManagerTaskKeys, setReadManagerTaskKeys] = useState<string[]>(() => getStoredIds(managerTaskKey))
+    const [readAssignedTaskKeys, setReadAssignedTaskKeys] = useState<string[]>(() => getStoredIds(assignedTaskKey))
     const [readEmployeeIds, setReadEmployeeIds] = useState<string[]>(() => getStoredIds(employeeKey))
     const [readEmployeeTsIds, setReadEmployeeTsIds] = useState<string[]>(() => getStoredIds(employeeTsKey))
     const [readSystemKeys, setReadSystemKeys] = useState<string[]>(() => getStoredIds(systemKey))
@@ -124,11 +130,13 @@ const Topbar = observer(function Topbar() {
     // The Tasks page's key, so its mutations and the SignalR notificationsUpdated
     // invalidation (sent on every task write) refresh the bell. Not polled like the
     // rest: the list is every task in scope with its logged hours, heavy to fetch
-    // every 15 seconds for the few rows the bell shows.
+    // every 15 seconds for the few rows the bell shows. Fetched for an Employee too,
+    // for the tasks handed to them (their list is only the tasks they are on).
+    const shouldFetchTasks = shouldUseManagerNotifications || shouldUseEmployeeNotifications
     const { data: workTasks, isLoading: isLoadingTasks } = useQuery({
         queryKey: ['work-tasks'],
         queryFn: getWorkTasks,
-        enabled: authStore.isAuthenticated && shouldUseManagerNotifications,
+        enabled: authStore.isAuthenticated && shouldFetchTasks,
     })
 
     const { data: systemErrors, isLoading: isLoadingSystemErrors } = useQuery({
@@ -175,8 +183,23 @@ const Topbar = observer(function Topbar() {
         .filter((t) => t.canConfirm === true)
         .sort((a, b) => tsTime(b.updatedAtUtc) - tsTime(a.updatedAtUtc))
 
+    // Tasks somebody else put the caller on: a new one while it is still To Do, and one
+    // sent back to them (keyed by the send-back time, so a second send-back is news again).
+    // No assignment time is stored, so a newcomer added by an edit reads the task's creation.
+    const myId = authStore.user?.id
+    type MyTaskItem = { kind: 'assigned' | 'sent-back'; key: string; task: WorkTask; ts: number }
+    const myTaskItems = (workTasks ?? [])
+        .filter((t) => t.createdById !== myId && t.assignees.some((a) => a.userId === myId))
+        .flatMap((t): MyTaskItem[] => {
+            if (t.status === 'ToDo') return [{ kind: 'assigned', key: `assigned:${t.id}`, task: t, ts: tsTime(t.createdAtUtc) }]
+            if (t.status === 'InProgress' && t.sentBackAtUtc) return [{ kind: 'sent-back', key: `sent-back:${t.id}@${t.sentBackAtUtc}`, task: t, ts: tsTime(t.sentBackAtUtc) }]
+            return []
+        })
+        .sort((a, b) => b.ts - a.ts)
+
     const readManagerSet = useMemo(() => new Set(readManagerIds), [readManagerIds])
     const readManagerTaskSet = useMemo(() => new Set(readManagerTaskKeys), [readManagerTaskKeys])
+    const readAssignedTaskSet = useMemo(() => new Set(readAssignedTaskKeys), [readAssignedTaskKeys])
     const readManagerTsSet = useMemo(() => new Set(readManagerTsIds), [readManagerTsIds])
     const readEmployeeSet = useMemo(() => new Set(readEmployeeIds), [readEmployeeIds])
     const readEmployeeTsSet = useMemo(() => new Set(readEmployeeTsIds), [readEmployeeTsIds])
@@ -185,6 +208,7 @@ const Topbar = observer(function Topbar() {
     const unreadManagerRequests = managerPendingRequests.filter((item) => !readManagerSet.has(item.id))
     const unreadManagerTimesheets = managerPendingTimesheets.filter((item) => !readManagerTsSet.has(item.id))
     const unreadManagerTasks = managerTasksToConfirm.filter((t) => !readManagerTaskSet.has(taskConfirmReadKey(t)))
+    const unreadMyTasks = myTaskItems.filter((item) => !readAssignedTaskSet.has(item.key))
     const unreadEmployeeNotifs = employeeNotifications.filter((item) => !readEmployeeSet.has(item.id))
     const unreadEmployeeTsNotifs = employeeTsNotifications.filter((item) => !readEmployeeTsSet.has(item.id))
     const recentThreshold = Date.now() - recentWindowDays * 24 * 60 * 60 * 1000
@@ -192,24 +216,27 @@ const Topbar = observer(function Topbar() {
     const isSystemErrorUnread = (id: number, lastOccurredAtUtc: string) => !readSystemSet.has(systemErrorReadKey(id, lastOccurredAtUtc))
     const unreadSystemErrors = systemNotifications.filter((e) => isSystemErrorUnread(e.id, e.lastOccurredAtUtc))
     const unreadCount = shouldUseManagerNotifications
-        ? unreadManagerRequests.length + unreadManagerTimesheets.length + unreadManagerTasks.length
+        ? unreadManagerRequests.length + unreadManagerTimesheets.length + unreadManagerTasks.length + unreadMyTasks.length
         : shouldUseSystemNotifications
             ? unreadSystemErrors.filter((e) => tsTime(e.lastOccurredAtUtc) >= recentThreshold).length
             : unreadEmployeeNotifs.filter((item) => new Date(item.changedAt).getTime() >= recentThreshold).length
               + unreadEmployeeTsNotifs.filter((item) => new Date(item.changedAt).getTime() >= recentThreshold).length
+              + unreadMyTasks.length
 
     const managerNotifications = unreadManagerRequests.slice(0, 6)
     const managerTsNotifications = unreadManagerTimesheets.slice(0, 6)
     const managerTaskNotifications = unreadManagerTasks.slice(0, 6)
+    const myTaskNotifications = shouldFetchTasks ? unreadMyTasks.slice(0, 6) : []
     const isLoading = shouldUseManagerNotifications
         ? (isLoadingLeaves || isLoadingTimesheets || isLoadingTasks)
         : shouldUseSystemNotifications
             ? isLoadingSystemErrors
-            : (isLoadingStatus || isLoadingTsStatus)
+            : (isLoadingStatus || isLoadingTsStatus || isLoadingTasks)
 
     useEffect(() => { setReadManagerIds(getStoredIds(managerKey)) }, [managerKey])
     useEffect(() => { setReadManagerTsIds(getStoredIds(managerTsKey)) }, [managerTsKey])
     useEffect(() => { setReadManagerTaskKeys(getStoredIds(managerTaskKey)) }, [managerTaskKey])
+    useEffect(() => { setReadAssignedTaskKeys(getStoredIds(assignedTaskKey)) }, [assignedTaskKey])
     useEffect(() => { setReadEmployeeIds(getStoredIds(employeeKey)) }, [employeeKey])
     useEffect(() => { setReadEmployeeTsIds(getStoredIds(employeeTsKey)) }, [employeeTsKey])
     useEffect(() => { setReadSystemKeys(getStoredIds(systemKey)) }, [systemKey])
@@ -243,6 +270,16 @@ const Topbar = observer(function Topbar() {
             window.localStorage.setItem(managerTaskKey, JSON.stringify(pruned))
         }
     }, [workTasks, isLoadingTasks, managerTasksToConfirm, managerTaskKey, readManagerTaskKeys, shouldUseManagerNotifications])
+
+    useEffect(() => {
+        if (!shouldFetchTasks || isLoadingTasks || !workTasks) return
+        const liveKeys = new Set(myTaskItems.map((item) => item.key))
+        const pruned = readAssignedTaskKeys.filter((key) => liveKeys.has(key))
+        if (pruned.length !== readAssignedTaskKeys.length) {
+            setReadAssignedTaskKeys(pruned)
+            window.localStorage.setItem(assignedTaskKey, JSON.stringify(pruned))
+        }
+    }, [workTasks, isLoadingTasks, myTaskItems, assignedTaskKey, readAssignedTaskKeys, shouldFetchTasks])
 
     useEffect(() => {
         if (!statusHistories) return
@@ -296,6 +333,14 @@ const Topbar = observer(function Topbar() {
         const updated = Array.from(new Set([...readManagerTaskKeys, key]))
         setReadManagerTaskKeys(updated)
         window.localStorage.setItem(managerTaskKey, JSON.stringify(updated))
+        setAnchorEl(null)
+        uiStore.navigateToTasks()
+    }
+
+    const handleMyTaskClick = (key: string) => {
+        const updated = Array.from(new Set([...readAssignedTaskKeys, key]))
+        setReadAssignedTaskKeys(updated)
+        window.localStorage.setItem(assignedTaskKey, JSON.stringify(updated))
         setAnchorEl(null)
         uiStore.navigateToTasks()
     }
@@ -446,12 +491,26 @@ const Topbar = observer(function Topbar() {
                 {isLoading && (
                     <MenuItem disabled><ListItemText primary="Loading notifications..." /></MenuItem>
                 )}
-                {!isLoading && shouldUseManagerNotifications && managerNotifications.length === 0 && managerTsNotifications.length === 0 && managerTaskNotifications.length === 0 && (
+                {!isLoading && shouldUseManagerNotifications && managerNotifications.length === 0 && managerTsNotifications.length === 0 && managerTaskNotifications.length === 0 && myTaskNotifications.length === 0 && (
                     <MenuItem disabled><ListItemText primary="No notifications yet" /></MenuItem>
                 )}
-                {!isLoading && shouldUseEmployeeNotifications && employeeMerged.length === 0 && (
+                {!isLoading && shouldUseEmployeeNotifications && employeeMerged.length === 0 && myTaskNotifications.length === 0 && (
                     <MenuItem disabled><ListItemText primary="No notifications yet" /></MenuItem>
                 )}
+                {!isLoading && myTaskNotifications.map(({ kind, key, task }) => (
+                    <MenuItem key={key} onClick={() => handleMyTaskClick(key)}>
+                        <ListItemIcon>
+                            <CircleRoundedIcon sx={{ fontSize: 10, color: kind === 'sent-back' ? 'warning.main' : 'error.main' }} />
+                        </ListItemIcon>
+                        <ListItemText
+                            primary={kind === 'sent-back' ? `${task.title} was sent back to you` : `New task: ${task.title}`}
+                            secondary={kind === 'sent-back'
+                                ? `Sent back ${formatChangedAt(task.sentBackAtUtc ?? task.updatedAtUtc)}`
+                                : `From ${task.createdByName} · ${formatChangedAt(task.createdAtUtc)}`}
+                            slotProps={{ primary: { sx: { whiteSpace: 'normal', wordBreak: 'break-word' } } }}
+                        />
+                    </MenuItem>
+                ))}
                 {!isLoading && shouldUseSystemNotifications && systemNotifications.length === 0 && (
                     <MenuItem disabled><ListItemText primary="No system errors" secondary="Errors the system hits are listed here and emailed to you" /></MenuItem>
                 )}
