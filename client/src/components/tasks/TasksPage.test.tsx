@@ -430,4 +430,38 @@ describe('TasksPage task settings', () => {
         expect(within(card).queryByText('High priority')).toBeNull()
         expect(screen.queryByRole('combobox', { name: 'Priority filter' })).toBeNull()
     })
+
+    it('ignores an active priority filter once priority is hidden, instead of leaving it stuck', async () => {
+        api.getWorkTasks.mockResolvedValue([
+            { ...base, id: 21, title: 'high one', priority: 'High' },
+            { ...base, id: 22, title: 'low one', priority: 'Low' },
+        ])
+        const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        mobx.useStore.mockReturnValue({ authStore: { user: { id: 'me', roles: ['Manager'] } } } as never)
+        render(
+            <MemoryRouter initialEntries={['/tasks']}>
+                <QueryClientProvider client={queryClient}>
+                    <TasksPage />
+                </QueryClientProvider>
+            </MemoryRouter>,
+        )
+        await cards()
+        fireEvent.change(screen.getByRole('combobox', { name: 'Priority filter' }), { target: { value: 'High' } })
+        await waitFor(async () => expect(await cards()).toHaveLength(1))
+
+        api.getWorkTaskSettings.mockResolvedValue({ ...DEFAULT_TASK_SETTINGS, showPriority: false })
+        await queryClient.invalidateQueries({ queryKey: ['work-tasks', 'settings'] })
+
+        await waitFor(() => expect(screen.queryByRole('combobox', { name: 'Priority filter' })).toBeNull())
+        expect(await cards()).toHaveLength(2)
+    })
+
+    it('shows no Overdue tile and marks nothing overdue when Due date is hidden', async () => {
+        api.getWorkTaskSettings.mockResolvedValue({ ...DEFAULT_TASK_SETTINGS, dueDateRequirement: 'Hidden' })
+        renderPage()
+
+        const card = await cardFor('Mine to do')
+        expect(within(card).queryByText(/Overdue by \d+ days/)).toBeNull()
+        expect(screen.queryByTestId('stat-overdue')).toBeNull()
+    })
 })

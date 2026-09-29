@@ -145,11 +145,16 @@ const TasksPage = observer(function TasksPage() {
     const remove = useMutation({ mutationFn: (id: number) => deleteWorkTask(id), onSuccess: refresh })
 
     const today = todayIso()
+    // With Due date hidden, nothing is overdue — there is no date left to judge.
+    const showOverdueTile = isShown(settings, 'dueDate')
     const all = useMemo(() => tasks.data ?? [], [tasks.data])
-    const stats = useMemo(() => taskStats(all, userId, today), [all, userId, today])
+    const stats = useMemo(() => taskStats(all, userId, today, showOverdueTile), [all, userId, today, showOverdueTile])
+    // A priority filter left on when the Task Settings hide priority has no control
+    // to clear it — treat it as 'any' rather than silently keep it applied.
+    const effectivePriority = isShown(settings, 'priority') ? priority : 'any'
     const visible = useMemo(
-        () => filterTasks(all, { tab: 'all', status, departmentId, userId, priority, search }),
-        [all, status, departmentId, userId, priority, search],
+        () => filterTasks(all, { tab: 'all', status, departmentId, userId, priority: effectivePriority, search }),
+        [all, status, departmentId, userId, effectivePriority, search],
     )
     // A send-back's own error shows in its dialog, not twice.
     const mutationError = (sendingBack ? null : moveStatus.error) ?? remove.error
@@ -210,7 +215,10 @@ const TasksPage = observer(function TasksPage() {
             {/* Stats row */}
             <Box sx={{
                 display: 'grid',
-                gridTemplateColumns: { xs: '1fr 1fr', md: `repeat(${(isHr ? 3 : 4) + (manages && settings.requireCompletionConfirmation ? 1 : 0)}, 1fr)` },
+                gridTemplateColumns: {
+                    xs: '1fr 1fr',
+                    md: `repeat(${(isHr ? 3 : 4) - (showOverdueTile ? 0 : 1) + (manages && settings.requireCompletionConfirmation ? 1 : 0)}, 1fr)`,
+                },
                 gap: '12px', mb: '14px',
             }}>
                 <Box data-testid="stat-open">
@@ -228,14 +236,14 @@ const TasksPage = observer(function TasksPage() {
                         sub="done, waiting for you"
                     />
                 </Box>}
-                <Box data-testid="stat-overdue">
+                {showOverdueTile && <Box data-testid="stat-overdue">
                     <StatCard
                         label="⏰ Overdue"
                         value={String(stats.overdue)}
                         valueColor={stats.overdue > 0 ? 'warning.main' : 'success.main'}
                         sub={stats.overdue === 0 ? 'all on schedule' : `${stats.overdue === 1 ? 'task' : 'tasks'} past the due date`}
                     />
-                </Box>
+                </Box>}
                 <Box data-testid="stat-done">
                     <StatCard
                         label="✅ Done This Month"
@@ -421,7 +429,8 @@ function TaskCard({ task, today, settings, statusPending, onStatus, onOpen, onEd
     onSendBack: () => void
 }) {
     const closed = !isOpenTask(task)
-    const late = overdueDays(task, today)
+    const showDue = isShown(settings, 'dueDate')
+    const late = overdueDays(task, today, showDue)
     const progress = describeTaskProgress(task.targetHours, task.loggedHours)
     const status = STATUS_COLORS[task.status]
     const priority = PRIORITY_COLORS[task.priority]
@@ -430,7 +439,6 @@ function TaskCard({ task, today, settings, statusPending, onStatus, onOpen, onEd
     const attachmentCount = task.attachments?.length ?? 0
     const visibleTeam = task.assignees.slice(0, 6)
     const remaining = task.assignees.length - visibleTeam.length
-    const showDue = isShown(settings, 'dueDate')
     const showTarget = isShown(settings, 'targetHours')
     const fileNeeded = !closed && needsAttachmentBeforeDone(settings, attachmentCount)
 

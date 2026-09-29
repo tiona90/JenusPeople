@@ -55,9 +55,13 @@ export function todayIso(now: Date = new Date()): string {
     return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
 }
 
-/** Due dates are `YYYY-MM-DD`, so a string comparison is a date comparison. A task waiting for confirmation is handed in, so it is never late. */
-export function isOverdue(task: WorkTask, today: string): boolean {
-    return isOpenTask(task) && !isAwaitingConfirmation(task) && task.dueDate != null && task.dueDate.slice(0, 10) < today
+/**
+ * Due dates are `YYYY-MM-DD`, so a string comparison is a date comparison. A task
+ * waiting for confirmation is handed in, so it is never late. With the due date
+ * hidden by the Task Settings, nothing is overdue — there is no date left to judge.
+ */
+export function isOverdue(task: WorkTask, today: string, dueDateShown = true): boolean {
+    return dueDateShown && isOpenTask(task) && !isAwaitingConfirmation(task) && task.dueDate != null && task.dueDate.slice(0, 10) < today
 }
 
 function inTab(task: WorkTask, tab: TaskTab, userId: string): boolean {
@@ -102,21 +106,21 @@ export function filterTasks(
 }
 
 /** Whole days an open task is past its due date; 0 when it is not overdue. */
-export function overdueDays(task: WorkTask, today: string): number {
-    if (!isOverdue(task, today)) return 0
+export function overdueDays(task: WorkTask, today: string, dueDateShown = true): number {
+    if (!isOverdue(task, today, dueDateShown)) return 0
     const [y1, m1, d1] = task.dueDate!.slice(0, 10).split('-').map(Number)
     const [y2, m2, d2] = today.split('-').map(Number)
     return Math.round((Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / 86_400_000)
 }
 
 /** The figures the summary tiles show, over every task the viewer can see. */
-export function taskStats(tasks: readonly WorkTask[], userId: string, today: string) {
+export function taskStats(tasks: readonly WorkTask[], userId: string, today: string, dueDateShown = true) {
     const month = today.slice(0, 7)
     return {
         total: tasks.length,
         open: tasks.filter(isOpenTask).length,
         inProgress: tasks.filter((t) => t.status === 'InProgress').length,
-        overdue: tasks.filter((t) => isOverdue(t, today)).length,
+        overdue: tasks.filter((t) => isOverdue(t, today, dueDateShown)).length,
         doneThisMonth: tasks.filter((t) => t.status === 'Done' && (t.completedAtUtc ?? '').slice(0, 7) === month).length,
         assignedToMeOpen: openCount(tasks, 'assigned', userId),
         awaitingMyConfirmation: tasks.filter((t) => t.canConfirm === true).length,
