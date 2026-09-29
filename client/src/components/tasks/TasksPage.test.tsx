@@ -200,6 +200,20 @@ describe('TasksPage', () => {
         expect(screen.queryByRole('combobox', { name: 'View' })).toBeNull()
         expect(api.getWorkTaskDepartments).not.toHaveBeenCalled()
     })
+
+    it('gives an HR Administrator no Assigned to me, opens on their departments, and filters by department', async () => {
+        renderPage(['HR Administrator'])
+        expect(await cards()).toHaveLength(3)
+
+        const view = screen.getByRole('combobox', { name: 'View' })
+        expect(within(view).queryByRole('option', { name: /Assigned to me/ })).toBeNull()
+        expect(within(view).getByRole('option', { name: 'Created by me (1)' })).toBeInTheDocument()
+        expect(view).toHaveValue('all')
+        expect(screen.queryByTestId('stat-mine')).toBeNull()
+
+        const department = await screen.findByRole('combobox', { name: 'Department filter' })
+        expect(within(department).getByRole('option', { name: 'Sales' })).toBeInTheDocument()
+    })
 })
 
 describe('target progress', () => {

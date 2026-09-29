@@ -9,7 +9,7 @@ import MenuItem from '@mui/material/MenuItem'
 import { deleteWorkTask, getWorkTaskDepartments, getWorkTasks, updateWorkTaskStatus } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
 import { useStore } from '../../lib/mobx'
-import { canManageTasks } from '../../lib/roles'
+import { canManageTasks, isHrAdministrator } from '../../lib/roles'
 import { softBg } from '../../lib/theme-tokens'
 import type { WorkTask, WorkTaskPriority, WorkTaskStatus } from '../../lib/types'
 import {
@@ -49,9 +49,13 @@ const TasksPage = observer(function TasksPage() {
     // An Employee works the tasks they are given: no creating, and no views to pick
     // between, since the server sends them only their own.
     const manages = canManageTasks(authStore.user?.roles)
+    // An HR Administrator is never handed a task, so "Assigned to me" would always be
+    // empty: they open on their departments and filter by department instead.
+    const isHr = isHrAdministrator(authStore.user?.roles)
+    const views = isHr ? VIEWS.filter((v) => v.value !== 'assigned') : VIEWS
     const queryClient = useQueryClient()
 
-    const [view, setView] = useState<TaskTab>('assigned')
+    const [view, setView] = useState<TaskTab>(isHr ? 'all' : 'assigned')
     const [status, setStatus] = useState<StatusFilter>('open')
     const [departmentId, setDepartmentId] = useState<number | null>(null)
     const [priority, setPriority] = useState<WorkTaskPriority | 'any'>('any')
@@ -107,7 +111,7 @@ const TasksPage = observer(function TasksPage() {
             {/* Stats row */}
             <Box sx={{
                 display: 'grid',
-                gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, 1fr)' },
+                gridTemplateColumns: { xs: '1fr 1fr', md: `repeat(${isHr ? 3 : 4}, 1fr)` },
                 gap: '12px', mb: '14px',
             }}>
                 <Box data-testid="stat-open">
@@ -133,14 +137,14 @@ const TasksPage = observer(function TasksPage() {
                         sub="completed since the 1st"
                     />
                 </Box>
-                <Box data-testid="stat-mine">
+                {!isHr && <Box data-testid="stat-mine">
                     <StatCard
                         label="👤 Assigned To Me"
                         value={String(stats.assignedToMeOpen)}
                         valueColor="primary.main"
                         sub="open tasks on your plate"
                     />
-                </Box>
+                </Box>}
             </Box>
 
             {/* Toolbar */}
@@ -170,7 +174,7 @@ const TasksPage = observer(function TasksPage() {
                         ariaLabel="View"
                         value={view}
                         onChange={(v) => setView(v as TaskTab)}
-                        options={VIEWS.map((v) => ({ value: v.value, label: `${v.label} (${openCount(all, v.value, userId)})` }))}
+                        options={views.map((v) => ({ value: v.value, label: `${v.label} (${openCount(all, v.value, userId)})` }))}
                     />
                 )}
                 <SelectFilter
@@ -183,7 +187,7 @@ const TasksPage = observer(function TasksPage() {
                         { value: 'any', label: 'Everything' },
                     ]}
                 />
-                {(departments.data?.length ?? 0) > 1 && (
+                {(departments.data?.length ?? 0) > (isHr ? 0 : 1) && (
                     <SelectFilter
                         ariaLabel="Department filter"
                         value={departmentId == null ? 'all' : String(departmentId)}
