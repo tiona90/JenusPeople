@@ -19,7 +19,7 @@ import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import { getAnnualLeaves, getLeaveStatusHistories, getSystemErrors, getTimesheets, getTimesheetStatusHistories } from '../../lib/api'
+import { getAnnualLeaves, getLeaveStatusHistories, getSystemErrors, getTimesheets, getTimesheetStatusHistories, getWorkTasks } from '../../lib/api'
 import { canDecide, isTimesheetWithManager, statusPhrase } from '../../lib/approval-stage'
 import { useStore } from '../../lib/mobx'
 import { isAdministrator, isHrAdministrator, isSystemAdministrator } from '../../lib/roles'
@@ -31,6 +31,7 @@ import AttendanceWidget from './AttendanceWidget'
 const recentWindowDays = 7
 const managerReadPrefix = 'manager-read-leave-notifications:'
 const managerTsReadPrefix = 'manager-read-timesheet-notifications:'
+const managerTaskReadPrefix = 'manager-read-task-confirm-notifications:'
 const employeeReadPrefix = 'employee-read-status-notifications:'
 const employeeTsReadPrefix = 'employee-read-timesheet-status-notifications:'
 // A System Administrator's bell lists system errors, not leave. Keyed by row id plus
@@ -65,7 +66,8 @@ const Topbar = observer(function Topbar() {
     // an Employee's lists what happened to their own leave and timesheets; a System
     // Administrator's lists the errors the system hit — the role neither files nor
     // decides leave, so the status feed was everyone else's news, and the one thing
-    // the role is emailed about (SystemErrorNotifier) never reached it.
+    // the role is emailed about (SystemErrorNotifier) never reached it. The manager's
+    // and HR's bell also lists the tasks marked done that wait for their confirmation.
     const isSystemAdminUser = isSystemAdministrator(authStore.user?.roles)
     const isHrAdminUser = isHrAdministrator(authStore.user?.roles)
     const shouldUseManagerNotifications = (isManagerUser && !isAdminUser) || isHrAdminUser
@@ -74,6 +76,7 @@ const Topbar = observer(function Topbar() {
 
     const managerKey = `${managerReadPrefix}${authStore.user?.id ?? ''}`
     const managerTsKey = `${managerTsReadPrefix}${authStore.user?.id ?? ''}`
+    const managerTaskKey = `${managerTaskReadPrefix}${authStore.user?.id ?? ''}`
     const employeeKey = `${employeeReadPrefix}${authStore.user?.id ?? ''}`
     const employeeTsKey = `${employeeTsReadPrefix}${authStore.user?.id ?? ''}`
     const systemKey = `${systemReadPrefix}${authStore.user?.id ?? ''}`
@@ -81,6 +84,7 @@ const Topbar = observer(function Topbar() {
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
     const [readManagerIds, setReadManagerIds] = useState<string[]>(() => getStoredIds(managerKey))
     const [readManagerTsIds, setReadManagerTsIds] = useState<string[]>(() => getStoredIds(managerTsKey))
+    const [readManagerTaskKeys, setReadManagerTaskKeys] = useState<string[]>(() => getStoredIds(managerTaskKey))
     const [readEmployeeIds, setReadEmployeeIds] = useState<string[]>(() => getStoredIds(employeeKey))
     const [readEmployeeTsIds, setReadEmployeeTsIds] = useState<string[]>(() => getStoredIds(employeeTsKey))
     const [readSystemKeys, setReadSystemKeys] = useState<string[]>(() => getStoredIds(systemKey))
@@ -112,6 +116,15 @@ const Topbar = observer(function Topbar() {
     const { data: timesheets, isLoading: isLoadingTimesheets } = useQuery({
         queryKey: ['timesheets'],
         queryFn: () => getTimesheets(),
+        enabled: authStore.isAuthenticated && shouldUseManagerNotifications,
+        refetchInterval: authStore.isAuthenticated && shouldUseManagerNotifications ? notificationRefreshMs : false,
+        refetchIntervalInBackground: true,
+    })
+
+    // The Tasks page's key, so its mutations and the SignalR invalidation refresh the bell too.
+    const { data: workTasks, isLoading: isLoadingTasks } = useQuery({
+        queryKey: ['work-tasks'],
+        queryFn: getWorkTasks,
         enabled: authStore.isAuthenticated && shouldUseManagerNotifications,
         refetchInterval: authStore.isAuthenticated && shouldUseManagerNotifications ? notificationRefreshMs : false,
         refetchIntervalInBackground: true,
@@ -155,7 +168,14 @@ const Topbar = observer(function Topbar() {
             return new Date(bDate).getTime() - new Date(aDate).getTime()
         })
 
+    // Keyed by id and last update, so a task sent back and marked done again is news again.
+    const taskConfirmReadKey = (t: { id: number; updatedAtUtc: string }) => `${t.id}:${t.updatedAtUtc}`
+    const managerTasksToConfirm = (workTasks ?? [])
+        .filter((t) => t.canConfirm === true)
+        .sort((a, b) => tsTime(b.updatedAtUtc) - tsTime(a.updatedAtUtc))
+
     const readManagerSet = useMemo(() => new Set(readManagerIds), [readManagerIds])
+    const readManagerTaskSet = useMemo(() => new Set(readManagerTaskKeys), [readManagerTaskKeys])
     const readManagerTsSet = useMemo(() => new Set(readManagerTsIds), [readManagerTsIds])
     const readEmployeeSet = useMemo(() => new Set(readEmployeeIds), [readEmployeeIds])
     const readEmployeeTsSet = useMemo(() => new Set(readEmployeeTsIds), [readEmployeeTsIds])
@@ -163,6 +183,7 @@ const Topbar = observer(function Topbar() {
 
     const unreadManagerRequests = managerPendingRequests.filter((item) => !readManagerSet.has(item.id))
     const unreadManagerTimesheets = managerPendingTimesheets.filter((item) => !readManagerTsSet.has(item.id))
+    const unreadManagerTasks = managerTasksToConfirm.filter((t) => !readManagerTaskSet.has(taskConfirmReadKey(t)))
     const unreadEmployeeNotifs = employeeNotifications.filter((item) => !readEmployeeSet.has(item.id))
     const unreadEmployeeTsNotifs = employeeTsNotifications.filter((item) => !readEmployeeTsSet.has(item.id))
     const recentThreshold = Date.now() - recentWindowDays * 24 * 60 * 60 * 1000
@@ -170,7 +191,7 @@ const Topbar = observer(function Topbar() {
     const isSystemErrorUnread = (id: number, lastOccurredAtUtc: string) => !readSystemSet.has(systemErrorReadKey(id, lastOccurredAtUtc))
     const unreadSystemErrors = systemNotifications.filter((e) => isSystemErrorUnread(e.id, e.lastOccurredAtUtc))
     const unreadCount = shouldUseManagerNotifications
-        ? unreadManagerRequests.length + unreadManagerTimesheets.length
+        ? unreadManagerRequests.length + unreadManagerTimesheets.length + unreadManagerTasks.length
         : shouldUseSystemNotifications
             ? unreadSystemErrors.filter((e) => tsTime(e.lastOccurredAtUtc) >= recentThreshold).length
             : unreadEmployeeNotifs.filter((item) => new Date(item.changedAt).getTime() >= recentThreshold).length
@@ -178,14 +199,16 @@ const Topbar = observer(function Topbar() {
 
     const managerNotifications = unreadManagerRequests.slice(0, 6)
     const managerTsNotifications = unreadManagerTimesheets.slice(0, 6)
+    const managerTaskNotifications = unreadManagerTasks.slice(0, 6)
     const isLoading = shouldUseManagerNotifications
-        ? (isLoadingLeaves || isLoadingTimesheets)
+        ? (isLoadingLeaves || isLoadingTimesheets || isLoadingTasks)
         : shouldUseSystemNotifications
             ? isLoadingSystemErrors
             : (isLoadingStatus || isLoadingTsStatus)
 
     useEffect(() => { setReadManagerIds(getStoredIds(managerKey)) }, [managerKey])
     useEffect(() => { setReadManagerTsIds(getStoredIds(managerTsKey)) }, [managerTsKey])
+    useEffect(() => { setReadManagerTaskKeys(getStoredIds(managerTaskKey)) }, [managerTaskKey])
     useEffect(() => { setReadEmployeeIds(getStoredIds(employeeKey)) }, [employeeKey])
     useEffect(() => { setReadEmployeeTsIds(getStoredIds(employeeTsKey)) }, [employeeTsKey])
     useEffect(() => { setReadSystemKeys(getStoredIds(systemKey)) }, [systemKey])
@@ -209,6 +232,16 @@ const Topbar = observer(function Topbar() {
             window.localStorage.setItem(managerTsKey, JSON.stringify(pruned))
         }
     }, [timesheets, isLoadingTimesheets, managerPendingTimesheets, managerTsKey, readManagerTsIds, shouldUseManagerNotifications])
+
+    useEffect(() => {
+        if (!shouldUseManagerNotifications || isLoadingTasks || !workTasks) return
+        const liveKeys = new Set(managerTasksToConfirm.map(taskConfirmReadKey))
+        const pruned = readManagerTaskKeys.filter((key) => liveKeys.has(key))
+        if (pruned.length !== readManagerTaskKeys.length) {
+            setReadManagerTaskKeys(pruned)
+            window.localStorage.setItem(managerTaskKey, JSON.stringify(pruned))
+        }
+    }, [workTasks, isLoadingTasks, managerTasksToConfirm, managerTaskKey, readManagerTaskKeys, shouldUseManagerNotifications])
 
     useEffect(() => {
         if (!statusHistories) return
@@ -256,6 +289,14 @@ const Topbar = observer(function Topbar() {
         window.localStorage.setItem(managerTsKey, JSON.stringify(updated))
         setAnchorEl(null)
         uiStore.navigateToTeamTimesheets()
+    }
+
+    const handleManagerTaskClick = (key: string) => {
+        const updated = Array.from(new Set([...readManagerTaskKeys, key]))
+        setReadManagerTaskKeys(updated)
+        window.localStorage.setItem(managerTaskKey, JSON.stringify(updated))
+        setAnchorEl(null)
+        uiStore.navigateToTasks()
     }
 
     const handleEmployeeClick = (notifId: string, leaveId: string) => {
@@ -403,7 +444,7 @@ const Topbar = observer(function Topbar() {
                 {isLoading && (
                     <MenuItem disabled><ListItemText primary="Loading notifications..." /></MenuItem>
                 )}
-                {!isLoading && shouldUseManagerNotifications && managerNotifications.length === 0 && managerTsNotifications.length === 0 && (
+                {!isLoading && shouldUseManagerNotifications && managerNotifications.length === 0 && managerTsNotifications.length === 0 && managerTaskNotifications.length === 0 && (
                     <MenuItem disabled><ListItemText primary="No notifications yet" /></MenuItem>
                 )}
                 {!isLoading && shouldUseEmployeeNotifications && employeeMerged.length === 0 && (
@@ -449,6 +490,18 @@ const Topbar = observer(function Topbar() {
                         <ListItemText
                             primary={`${item.status === 'Resubmitted' ? 'Resubmitted' : 'New'} timesheet from ${item.employeeName}`}
                             secondary={`Submitted ${formatChangedAt(item.submittedAt ?? item.createdAt)}`}
+                        />
+                    </MenuItem>
+                ))}
+                {!isLoading && shouldUseManagerNotifications && managerTaskNotifications.map((task) => (
+                    <MenuItem key={`task-${task.id}`} onClick={() => handleManagerTaskClick(taskConfirmReadKey(task))}>
+                        <ListItemIcon>
+                            <CircleRoundedIcon sx={{ fontSize: 10, color: 'warning.main' }} />
+                        </ListItemIcon>
+                        <ListItemText
+                            primary={`${task.title} is waiting for your confirmation`}
+                            secondary={`Marked done ${formatChangedAt(task.updatedAtUtc)}`}
+                            slotProps={{ primary: { sx: { whiteSpace: 'normal', wordBreak: 'break-word' } } }}
                         />
                     </MenuItem>
                 ))}
