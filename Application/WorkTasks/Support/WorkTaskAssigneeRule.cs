@@ -20,6 +20,9 @@ public static class WorkTaskAssigneeRule
     public const string HrNotAssignableMessage =
         "HR Administrators can't be assigned tasks. Take them off the task to save it.";
 
+    public const string NobodyEligibleMessage =
+        "Nobody in this department can be assigned the task. Add an active Manager or Employee to it first.";
+
     // The people who do the work. An HR Administrator hands tasks out and a System
     // Administrator configures the workspace; neither is ever handed one.
     private static readonly List<string> EligibleRoles = [AppRoles.Manager, AppRoles.Employee];
@@ -57,6 +60,19 @@ public static class WorkTaskAssigneeRule
             .OrderBy(a => a.DisplayName)
             .ToList();
     }
+
+    /// <summary>
+    /// The assignee list a save stores. An empty list means everyone in the department:
+    /// it is expanded here to every eligible person at the moment of saving — a snapshot,
+    /// so somebody who joins the department later is not added, and anyone may be taken
+    /// off afterwards like any other assignee. Empty again when the department has nobody
+    /// eligible; the caller refuses that with <see cref="NobodyEligibleMessage"/>.
+    /// </summary>
+    public static async Task<List<string>> ResolveAsync(
+        AppDbContext context, IReadOnlyCollection<string> userIds, int departmentId, CancellationToken cancellationToken) =>
+        userIds.Count > 0
+            ? [.. userIds]
+            : (await EligibleAsync(context, departmentId, cancellationToken)).Select(a => a.UserId).ToList();
 
     /// <summary>
     /// Whether any of <paramref name="userIds"/> holds the HR Administrator role. Checked

@@ -29,9 +29,12 @@ public class CreateWorkTask
             if (input.ProjectId is not { } projectId
                 || !await WorkTaskProjectRule.IsAvailableAsync(context, projectId, input.DepartmentId, cancellationToken))
                 return Result<WorkTaskDto>.Invalid(WorkTaskProjectRule.NotAvailableMessage);
-            if (await WorkTaskAssigneeRule.AnyHrAdministratorAsync(context, input.AssigneeIds, cancellationToken))
+            var assigneeIds = await WorkTaskAssigneeRule.ResolveAsync(context, input.AssigneeIds, input.DepartmentId, cancellationToken);
+            if (assigneeIds.Count == 0)
+                return Result<WorkTaskDto>.Invalid(WorkTaskAssigneeRule.NobodyEligibleMessage);
+            if (await WorkTaskAssigneeRule.AnyHrAdministratorAsync(context, assigneeIds, cancellationToken))
                 return Result<WorkTaskDto>.Invalid(WorkTaskAssigneeRule.HrNotAssignableMessage);
-            if (!await WorkTaskAssigneeRule.AllEligibleAsync(context, input.AssigneeIds, input.DepartmentId, cancellationToken))
+            if (!await WorkTaskAssigneeRule.AllEligibleAsync(context, assigneeIds, input.DepartmentId, cancellationToken))
                 return Result<WorkTaskDto>.Invalid(WorkTaskAssigneeRule.NotEligibleMessage);
 
             var now = DateTime.UtcNow;
@@ -41,7 +44,7 @@ public class CreateWorkTask
                 Description = string.IsNullOrWhiteSpace(input.Description) ? null : input.Description.Trim(),
                 DepartmentId = input.DepartmentId,
                 ProjectId = input.ProjectId,
-                Assignees = [.. input.AssigneeIds.Select(id => new WorkTaskAssignee { UserId = id })],
+                Assignees = [.. assigneeIds.Select(id => new WorkTaskAssignee { UserId = id })],
                 CreatedById = request.CallerUserId,
                 DueDate = input.DueDate,
                 TargetHours = input.TargetHours,
@@ -54,7 +57,7 @@ public class CreateWorkTask
             await context.SaveChangesAsync(cancellationToken);
 
             // Nobody is emailed about a task they assigned themselves.
-            var recipients = input.AssigneeIds.Where(id => id != request.CallerUserId).ToList();
+            var recipients = assigneeIds.Where(id => id != request.CallerUserId).ToList();
             await WorkTaskAssignmentNotification.SendAsync(context, emailService, logger, task, recipients, cancellationToken);
 
             return Result<WorkTaskDto>.Success(

@@ -66,6 +66,48 @@ describe('TaskDialog', () => {
         expect(within(screen.getByRole('combobox', { name: /^Assignees/ })).queryByText('Sam Sales')).toBeNull()
     })
 
+    it('sends no assignees for everyone in the department, and says so', async () => {
+        api.createWorkTask.mockResolvedValue({} as never)
+        const { onSaved } = renderDialog()
+        fireEvent.change(screen.getByRole('textbox', { name: /^Title/ }), { target: { value: 'Chase notes' } })
+        await choose('Department', 'Sales')
+        await choose('Project', 'CRM Rollout')
+        pickBilling('Billable')
+
+        expect(await screen.findByText(/All 2 Managers and Employees in the department/)).toBeInTheDocument()
+        expect(within(screen.getByRole('combobox', { name: /^Assignees/ })).getByText('Everyone in the department')).toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'Create task' }))
+
+        await waitFor(() => expect(onSaved).toHaveBeenCalled())
+        expect(api.createWorkTask).toHaveBeenCalledWith(expect.objectContaining({ assigneeIds: [] }))
+    })
+
+    it('clears a picked list back to everyone from the menu', async () => {
+        api.createWorkTask.mockResolvedValue({} as never)
+        renderDialog()
+        fireEvent.change(screen.getByRole('textbox', { name: /^Title/ }), { target: { value: 'Chase notes' } })
+        await choose('Department', 'Sales')
+        await choose('Project', 'CRM Rollout')
+        await choose('Assignees', 'Sam Sales')
+        await choose('Assignees', 'Everyone in the department')
+        pickBilling('Billable')
+        fireEvent.click(screen.getByRole('button', { name: 'Create task' }))
+
+        await waitFor(() => expect(api.createWorkTask).toHaveBeenCalledWith(expect.objectContaining({ assigneeIds: [] })))
+    })
+
+    it('holds Create when the department has nobody to assign', async () => {
+        api.getWorkTaskAssignees.mockResolvedValue([])
+        renderDialog()
+        fireEvent.change(screen.getByRole('textbox', { name: /^Title/ }), { target: { value: 'Chase notes' } })
+        await choose('Department', 'Sales')
+        await choose('Project', 'CRM Rollout')
+        pickBilling('Billable')
+
+        expect(await screen.findByText('Nobody in this department can be assigned a task')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Create task' })).toBeDisabled()
+    })
+
     it('holds Create until title, department and assignee are set', async () => {
         renderDialog()
         const create = screen.getByRole('button', { name: 'Create task' })

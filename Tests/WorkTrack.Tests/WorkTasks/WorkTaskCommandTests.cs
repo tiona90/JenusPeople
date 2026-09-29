@@ -132,6 +132,59 @@ public class WorkTaskCommandTests
     }
 
     [Fact]
+    public async Task No_assignees_assigns_everyone_eligible_in_the_department()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        var request = Request(Sales, SalesManager);
+        request.AssigneeIds = [];
+
+        var result = await Create(db, Hr, request);
+
+        Assert.True(result.IsSuccess, result.Error);
+        // The Sales manager and employee; not HR (covers Sales but is never assigned),
+        // nor anybody in Ops.
+        Assert.Equal([Employee, SalesManager], result.Value!.Assignees.Select(a => a.UserId).Order().ToList());
+        Assert.Equal([$"{Employee}@t", $"{SalesManager}@t"], _email.Sent.Select(m => m.Recipient).Order().ToList());
+    }
+
+    [Fact]
+    public async Task No_assignees_in_a_department_with_nobody_eligible_is_refused()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        var olga = await db.Users.SingleAsync(u => u.Id == OpsManager);
+        olga.IsActive = false;
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        db.UserDepartments.Add(new UserDepartment { UserId = Hr, DepartmentId = Ops });
+        await db.SaveChangesAsync();
+        var request = Request(Ops, OpsManager);
+        request.AssigneeIds = [];
+
+        var result = await Create(db, Hr, request);
+
+        Assert.Equal(ResultErrorKind.Invalid, result.ErrorKind);
+        Assert.Equal(WorkTaskAssigneeRule.NobodyEligibleMessage, result.Error);
+    }
+
+    [Fact]
+    public async Task Clearing_the_assignees_on_edit_adds_the_rest_of_the_department()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        var id = await Seeded(db, NewTask(Sales, Hr, SalesManager));
+        var request = Request(Sales, SalesManager);
+        request.AssigneeIds = [];
+
+        var result = await Update(db, id, Hr, request);
+
+        Assert.True(result.IsSuccess, result.Error);
+        Assert.Equal([Employee, SalesManager], result.Value!.Assignees.Select(a => a.UserId).Order().ToList());
+        Assert.Equal($"{Employee}@t", Assert.Single(_email.Sent).Recipient);
+    }
+
+    [Fact]
     public async Task Reassigning_emails_the_new_assignee_only()
     {
         await using var db = await TransactionalTestDb.CreateAsync();

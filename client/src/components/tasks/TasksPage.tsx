@@ -13,7 +13,7 @@ import { canManageTasks, isHrAdministrator } from '../../lib/roles'
 import { softBg } from '../../lib/theme-tokens'
 import type { WorkTask, WorkTaskPriority, WorkTaskStatus } from '../../lib/types'
 import {
-    PRIORITY_LABELS, STATUS_LABELS, describeTaskProgress, filterTasks, isOpenTask, nextStatusAction, openCount, overdueDays, taskStats, todayIso,
+    PRIORITY_LABELS, STATUS_LABELS, describeTaskProgress, filterTasks, isOpenTask, nextStatusAction, openCount, overdueDays, taskStats, tasksToCsv, todayIso,
     type StatusFilter, type TaskTab,
 } from '../../lib/work-tasks'
 import { SweetAlert } from '../ui'
@@ -41,6 +41,19 @@ function plural(n: number, one: string, many = `${one}s`) {
     return `${n} ${n === 1 ? one : many}`
 }
 
+function downloadTasksCsv(tasks: readonly WorkTask[]) {
+    // The BOM makes Excel read the file as UTF-8, so names with accents survive.
+    const blob = new Blob(['\uFEFF', tasksToCsv(tasks)], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `tasks-${todayIso()}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+}
+
 /* ════════════════════════════════════════════════════════════════════════ */
 
 const TasksPage = observer(function TasksPage() {
@@ -50,9 +63,9 @@ const TasksPage = observer(function TasksPage() {
     // between, since the server sends them only their own.
     const manages = canManageTasks(authStore.user?.roles)
     // An HR Administrator is never handed a task, so "Assigned to me" would always be
-    // empty: they open on their departments and filter by department instead.
+    // empty: they see everything in their departments, with no view picker, and
+    // narrow it with the department filter instead.
     const isHr = isHrAdministrator(authStore.user?.roles)
-    const views = isHr ? VIEWS.filter((v) => v.value !== 'assigned') : VIEWS
     const queryClient = useQueryClient()
 
     const [view, setView] = useState<TaskTab>(isHr ? 'all' : 'assigned')
@@ -169,12 +182,12 @@ const TasksPage = observer(function TasksPage() {
                         }}
                     />
                 </Box>
-                {manages && (
+                {manages && !isHr && (
                     <SelectFilter
                         ariaLabel="View"
                         value={view}
                         onChange={(v) => setView(v as TaskTab)}
-                        options={views.map((v) => ({ value: v.value, label: `${v.label} (${openCount(all, v.value, userId)})` }))}
+                        options={VIEWS.map((v) => ({ value: v.value, label: `${v.label} (${openCount(all, v.value, userId)})` }))}
                     />
                 )}
                 <SelectFilter
@@ -208,6 +221,25 @@ const TasksPage = observer(function TasksPage() {
                     ]}
                 />
                 <Box sx={{ flex: 1 }} />
+                {/* HR reports on the tasks they run; the file is what the filters show. */}
+                {isHr && (
+                    <Box
+                        component="button"
+                        type="button"
+                        onClick={() => downloadTasksCsv(visible)}
+                        disabled={visible.length === 0}
+                        sx={{
+                            bgcolor: 'background.paper', color: 'text.primary',
+                            border: '1px solid', borderColor: 'divider', borderRadius: '6px',
+                            px: '14px', py: '7px', fontSize: 13, fontWeight: 500, cursor: 'pointer',
+                            fontFamily: 'inherit', whiteSpace: 'nowrap',
+                            '&:hover:not(:disabled)': { bgcolor: 'action.hover', borderColor: 'primary.main', color: 'primary.main' },
+                            '&:disabled': { cursor: 'default', color: 'text.disabled' },
+                        }}
+                    >
+                        ⤓ Export CSV
+                    </Box>
+                )}
                 {manages && <Box
                     component="button"
                     type="button"

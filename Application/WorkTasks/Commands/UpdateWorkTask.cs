@@ -15,7 +15,8 @@ namespace Application.WorkTasks.Commands;
 /// department changes — and the project only when the department or the project
 /// changes: an assignee who has since left the department, or a project since
 /// switched off, must not stop the creator fixing a typo in the title. Only the
-/// newcomers are emailed.
+/// newcomers are emailed. An empty assignee list is everyone in the department,
+/// expanded at save time (<see cref="WorkTaskAssigneeRule.ResolveAsync"/>).
 /// </summary>
 public class UpdateWorkTask
 {
@@ -39,8 +40,11 @@ public class UpdateWorkTask
 
             var input = request.Task;
             var departmentChanged = input.DepartmentId != task.DepartmentId;
+            var assigneeIds = await WorkTaskAssigneeRule.ResolveAsync(context, input.AssigneeIds, input.DepartmentId, cancellationToken);
+            if (assigneeIds.Count == 0)
+                return Result<WorkTaskDto>.Invalid(WorkTaskAssigneeRule.NobodyEligibleMessage);
             var current = task.Assignees.Select(a => a.UserId).ToHashSet();
-            var added = input.AssigneeIds.Where(id => !current.Contains(id)).ToList();
+            var added = assigneeIds.Where(id => !current.Contains(id)).ToList();
             var projectChanged = input.ProjectId != task.ProjectId;
 
             if (departmentChanged)
@@ -53,17 +57,17 @@ public class UpdateWorkTask
                 && (input.ProjectId is not { } projectId
                     || !await WorkTaskProjectRule.IsAvailableAsync(context, projectId, input.DepartmentId, cancellationToken)))
                 return Result<WorkTaskDto>.Invalid(WorkTaskProjectRule.NotAvailableMessage);
-            if (await WorkTaskAssigneeRule.AnyHrAdministratorAsync(context, input.AssigneeIds, cancellationToken))
+            if (await WorkTaskAssigneeRule.AnyHrAdministratorAsync(context, assigneeIds, cancellationToken))
                 return Result<WorkTaskDto>.Invalid(WorkTaskAssigneeRule.HrNotAssignableMessage);
             if (!await WorkTaskAssigneeRule.AllEligibleAsync(
-                    context, departmentChanged ? input.AssigneeIds : added, input.DepartmentId, cancellationToken))
+                    context, departmentChanged ? assigneeIds : added, input.DepartmentId, cancellationToken))
                 return Result<WorkTaskDto>.Invalid(WorkTaskAssigneeRule.NotEligibleMessage);
 
             task.Title = input.Title.Trim();
             task.Description = string.IsNullOrWhiteSpace(input.Description) ? null : input.Description.Trim();
             task.DepartmentId = input.DepartmentId;
             task.ProjectId = input.ProjectId;
-            var requested = input.AssigneeIds.ToHashSet();
+            var requested = assigneeIds.ToHashSet();
             foreach (var gone in task.Assignees.Where(a => !requested.Contains(a.UserId)).ToList())
                 task.Assignees.Remove(gone);
             foreach (var id in added)

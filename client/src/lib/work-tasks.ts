@@ -129,3 +129,45 @@ export function describeTaskProgress(targetHours: number | null, loggedHours: nu
     if (left < 0) return { text: `${formatHours(-left)}h over`, over: true }
     return { text: `${formatHours(logged)}h logged · ${formatHours(left)}h left`, over: false }
 }
+
+/**
+ * A text cell for a CSV. Quoted when it holds a comma, quote or line break, and
+ * prefixed with an apostrophe when it opens with a character a spreadsheet would
+ * read as a formula — a task titled "=HYPERLINK(...)" must arrive as text.
+ */
+function csvText(value: string | null | undefined): string {
+    let text = value ?? ''
+    if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`
+    return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
+}
+
+const CSV_HEADER = [
+    'Title', 'Description', 'Department', 'Project code', 'Project', 'Status', 'Priority', 'Billable',
+    'Assignees', 'Created by', 'Due date', 'Target hours', 'Logged hours', 'Created', 'Completed',
+]
+
+/**
+ * The tasks as CSV, one row per task, in the order given (the page passes what it
+ * is showing, so the file matches the filters). Assignees share one cell, joined
+ * by "; ". Dates are `YYYY-MM-DD`; a legacy task with no billing answer is blank.
+ */
+export function tasksToCsv(tasks: readonly WorkTask[]): string {
+    const rows = tasks.map((t) => [
+        csvText(t.title),
+        csvText(t.description),
+        csvText(t.departmentName),
+        csvText(t.projectCode),
+        csvText(t.projectName),
+        csvText(STATUS_LABELS[t.status]),
+        csvText(PRIORITY_LABELS[t.priority]),
+        t.isBillable == null ? '' : t.isBillable ? 'Yes' : 'No',
+        csvText(t.assignees.map((a) => a.displayName).join('; ')),
+        csvText(t.createdByName),
+        t.dueDate?.slice(0, 10) ?? '',
+        t.targetHours == null ? '' : String(t.targetHours),
+        formatHours(Number(t.loggedHours) || 0),
+        t.createdAtUtc.slice(0, 10),
+        t.completedAtUtc?.slice(0, 10) ?? '',
+    ].join(','))
+    return [CSV_HEADER.join(','), ...rows].join('\r\n')
+}
