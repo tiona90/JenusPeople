@@ -201,18 +201,39 @@ describe('TasksPage', () => {
         expect(api.getWorkTaskDepartments).not.toHaveBeenCalled()
     })
 
-    it('gives an HR Administrator no Assigned to me, opens on their departments, and filters by department', async () => {
+    it('shows an HR Administrator everything in their departments with no view picker, and filters by department', async () => {
         renderPage(['HR Administrator'])
         expect(await cards()).toHaveLength(3)
 
-        const view = screen.getByRole('combobox', { name: 'View' })
-        expect(within(view).queryByRole('option', { name: /Assigned to me/ })).toBeNull()
-        expect(within(view).getByRole('option', { name: 'Created by me (1)' })).toBeInTheDocument()
-        expect(view).toHaveValue('all')
+        expect(screen.queryByRole('combobox', { name: 'View' })).toBeNull()
         expect(screen.queryByTestId('stat-mine')).toBeNull()
 
         const department = await screen.findByRole('combobox', { name: 'Department filter' })
         expect(within(department).getByRole('option', { name: 'Sales' })).toBeInTheDocument()
+    })
+
+    it('offers an HR Administrator a CSV of the tasks the filters show, and nobody else', async () => {
+        URL.createObjectURL = vi.fn(() => 'blob:tasks')
+        URL.revokeObjectURL = vi.fn()
+        const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+        renderPage(['HR Administrator'])
+        await cards()
+        fireEvent.change(screen.getByPlaceholderText('Search tasks…'), { target: { value: 'asked' } })
+
+        fireEvent.click(screen.getByRole('button', { name: /Export CSV/ }))
+
+        expect(click).toHaveBeenCalled()
+        const blob = vi.mocked(URL.createObjectURL).mock.calls[0][0] as Blob
+        const lines = (await new Promise<string>((resolve) => { const r = new FileReader(); r.onload = () => resolve(r.result as string); r.readAsText(blob) })).replace('\uFEFF', '').split('\r\n')
+        expect(lines).toHaveLength(2)
+        expect(lines[1]).toMatch(/^I asked for this,/)
+        click.mockRestore()
+    })
+
+    it('gives a Manager no CSV export', async () => {
+        renderPage(['Manager'])
+        await cards()
+        expect(screen.queryByRole('button', { name: /Export CSV/ })).toBeNull()
     })
 })
 

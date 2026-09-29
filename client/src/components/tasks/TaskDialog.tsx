@@ -15,6 +15,9 @@ const TITLE_MAX = 200
 const DESCRIPTION_MAX = 2000
 // Mirrors WorkTask.MaxTargetHours on the server.
 const TARGET_HOURS_MAX = 9999
+// The assignee menu's first item. Picking it empties the selection, and an empty
+// selection is sent as-is: the server assigns everyone eligible in the department.
+const EVERYONE = '__everyone__'
 
 /** A target field's text as a whole number in range, null when blank, or 'invalid'. */
 function parseTarget(text: string, max: number): number | null | 'invalid' {
@@ -127,7 +130,8 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
         description.length <= DESCRIPTION_MAX &&
         departmentId !== '' &&
         projectId !== '' &&
-        assigneeIds.length > 0 &&
+        // Empty means everyone in the department, which is only somebody once the list says so.
+        (assigneeIds.length > 0 || (assignees.data?.length ?? 0) > 0) &&
         hours !== 'invalid' &&
         isBillable !== null &&
         !save.isPending
@@ -159,6 +163,8 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
         if (assigneeIds.includes(existing.userId) && !assigneeOptions.some((a) => a.userId === existing.userId))
             assigneeOptions.push(existing)
     const nameOf = (id: string) => assigneeOptions.find((a) => a.userId === id)?.displayName ?? id
+    const everyone = departmentId !== '' && assigneeIds.length === 0
+    const nobodyToAssign = everyone && assignees.data?.length === 0
 
     return (
         <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
@@ -215,27 +221,43 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
                         </Select>
                         {noProjects && <FormHelperText>No active projects in this department</FormHelperText>}
                     </FormControl>
-                    <FormControl required disabled={departmentId === ''}>
-                        <InputLabel id="task-assignee-label">Assignees</InputLabel>
+                    <FormControl disabled={departmentId === ''} error={nobodyToAssign}>
+                        <InputLabel id="task-assignee-label" shrink={everyone || assigneeIds.length > 0}>Assignees</InputLabel>
                         <Select<string[]>
                             multiple
+                            displayEmpty={everyone}
+                            notched={everyone || assigneeIds.length > 0}
                             labelId="task-assignee-label"
                             label="Assignees"
                             value={assigneeIds.filter((id) => assigneeOptions.some((a) => a.userId === id))}
                             onChange={(e) => {
-                                const value = e.target.value
-                                setAssigneeIds(typeof value === 'string' ? value.split(',') : value)
+                                const value = typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value
+                                setAssigneeIds(value.includes(EVERYONE) ? [] : value)
                             }}
-                            renderValue={(selected) => (
-                                <Stack direction="row" spacing={0.5} useFlexGap sx={{ flexWrap: 'wrap' }}>
-                                    {selected.map((id) => <Chip key={id} size="small" label={nameOf(id)} />)}
-                                </Stack>
-                            )}
+                            renderValue={(selected) =>
+                                selected.length === 0 ? (
+                                    <Chip size="small" label="Everyone in the department" />
+                                ) : (
+                                    <Stack direction="row" spacing={0.5} useFlexGap sx={{ flexWrap: 'wrap' }}>
+                                        {selected.map((id) => <Chip key={id} size="small" label={nameOf(id)} />)}
+                                    </Stack>
+                                )
+                            }
                         >
+                            <MenuItem value={EVERYONE} divider>Everyone in the department</MenuItem>
                             {assigneeOptions.map((a) => (
                                 <MenuItem key={a.userId} value={a.userId}>{a.displayName}</MenuItem>
                             ))}
                         </Select>
+                        {everyone && (
+                            <FormHelperText>
+                                {nobodyToAssign
+                                    ? 'Nobody in this department can be assigned a task'
+                                    : assignees.data
+                                      ? `All ${assignees.data.length} Managers and Employees in the department as of saving. Pick names to narrow it.`
+                                      : 'Everyone in the department as of saving. Pick names to narrow it.'}
+                            </FormHelperText>
+                        )}
                     </FormControl>
                     <FormControl required error={task != null && isBillable === null}>
                         <FormLabel id="task-billing-label" sx={{ fontSize: 13 }}>Billing</FormLabel>

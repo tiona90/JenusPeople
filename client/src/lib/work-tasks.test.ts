@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { WorkTask } from './types'
-import { describeTaskProgress, filterTasks, isOverdue, nextStatusAction, openCount, overdueDays, taskStats, todayIso } from './work-tasks'
+import { describeTaskProgress, filterTasks, isOverdue, nextStatusAction, openCount, overdueDays, taskStats, tasksToCsv, todayIso } from './work-tasks'
 
 const base: WorkTask = {
     id: 1, title: 't', description: null, departmentId: 1, departmentName: 'Sales', projectId: 10, projectName: 'CRM Rollout', projectCode: 'CRM', projectColorKey: 'p1',
@@ -115,5 +115,28 @@ describe('describeTaskProgress', () => {
     })
     it('reads a missing figure from an older API as nothing logged', () => {
         expect(describeTaskProgress(24, undefined as unknown as number)).toEqual({ text: '0h logged · 24h left', over: false })
+    })
+})
+
+describe('tasksToCsv', () => {
+    it('writes a header and one row per task', () => {
+        const csv = tasksToCsv([t({
+            title: 'Chase notes', assignees: [{ userId: 'a', displayName: 'Ann' }, { userId: 'b', displayName: 'Bob' }],
+            dueDate: '2026-10-09', targetHours: 24, loggedHours: 26.25, status: 'InProgress', priority: 'High',
+            completedAtUtc: null,
+        })])
+        const [header, row] = csv.split('\r\n')
+        expect(header).toBe('Title,Description,Department,Project code,Project,Status,Priority,Billable,Assignees,Created by,Due date,Target hours,Logged hours,Created,Completed')
+        expect(row).toBe('Chase notes,,Sales,CRM,CRM Rollout,In progress,High,Yes,Ann; Bob,Boss,2026-10-09,24,26.3,2026-09-01,')
+    })
+
+    it('quotes commas, quotes and line breaks, and defuses formulas', () => {
+        const [, row] = tasksToCsv([t({ title: '=HYPERLINK("x")', description: 'one, two\nthree' })]).split('\r\n')
+        expect(row.startsWith(`"'=HYPERLINK(""x"")","one, two\nthree",`)).toBe(true)
+    })
+
+    it('leaves an unanswered billing question blank', () => {
+        const [, row] = tasksToCsv([t({ isBillable: null })]).split('\r\n')
+        expect(row.split(',')[7]).toBe('')
     })
 })

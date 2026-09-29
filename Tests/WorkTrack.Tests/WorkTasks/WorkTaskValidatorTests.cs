@@ -26,11 +26,12 @@ public class WorkTaskValidatorTests
         Assert.False(Valid(r));
     }
 
-    [Fact] public void A_missing_department_or_assignee_is_refused()
-    {
+    [Fact] public void A_missing_department_is_refused() =>
         Assert.False(Valid(new UpsertWorkTaskRequest { Title = "x", DepartmentId = 0, ProjectId = 10, AssigneeIds = ["u"], IsBillable = true }));
-        Assert.False(Valid(new UpsertWorkTaskRequest { Title = "x", DepartmentId = 1, ProjectId = 10, AssigneeIds = [], IsBillable = true }));
-    }
+
+    // Empty is "everyone in the department"; the handler expands it.
+    [Fact] public void No_assignees_passes() =>
+        Assert.True(Valid(new UpsertWorkTaskRequest { Title = "x", DepartmentId = 1, ProjectId = 10, AssigneeIds = [], IsBillable = true }));
 
     [Fact] public void An_unknown_priority_is_refused()
     {
