@@ -1,3 +1,5 @@
+import type { WorkTaskSettings } from './api/work-task-settings'
+import { DEFAULT_TASK_SETTINGS, isShown } from './task-settings'
 import type { WorkTask, WorkTaskPriority, WorkTaskStatus } from './types'
 
 export type TaskTab = 'assigned' | 'created' | 'all'
@@ -154,35 +156,33 @@ function csvText(value: string | null | undefined): string {
     return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
 }
 
-const CSV_HEADER = [
-    'Title', 'Description', 'Department', 'Project code', 'Project', 'Status', 'Priority', 'Billable',
-    'Assignees', 'Created by', 'Due date', 'Target hours', 'Logged hours', 'Created', 'Completed',
-]
-
 /**
  * The tasks as CSV, one row per task, in the order given (the page passes what it
  * is showing, so the file matches the filters). Assignees share one cell, joined
  * by "; ". Dates are `YYYY-MM-DD`; a legacy task with no billing answer is blank.
+ * A column whose field the Task Settings hide drops out of the header and every
+ * row together, built from the one list below.
  */
-export function tasksToCsv(tasks: readonly WorkTask[]): string {
-    const rows = tasks.map((t) => [
-        csvText(t.title),
-        csvText(t.description),
-        csvText(t.departmentName),
-        csvText(t.projectCode),
-        csvText(t.projectName),
-        csvText(STATUS_LABELS[t.status]),
-        csvText(PRIORITY_LABELS[t.priority]),
-        t.isBillable == null ? '' : t.isBillable ? 'Yes' : 'No',
-        csvText(t.assignees.map((a) => a.displayName).join('; ')),
-        csvText(t.createdByName),
-        t.dueDate?.slice(0, 10) ?? '',
-        t.targetHours == null ? '' : String(t.targetHours),
-        formatHours(Number(t.loggedHours) || 0),
-        t.createdAtUtc.slice(0, 10),
-        t.completedAtUtc?.slice(0, 10) ?? '',
-    ].join(','))
-    return [CSV_HEADER.join(','), ...rows].join('\r\n')
+export function tasksToCsv(tasks: readonly WorkTask[], settings: WorkTaskSettings = DEFAULT_TASK_SETTINGS): string {
+    const columns: { header: string; shown: boolean; value: (t: WorkTask) => string }[] = [
+        { header: 'Title', shown: true, value: (t) => csvText(t.title) },
+        { header: 'Description', shown: isShown(settings, 'description'), value: (t) => csvText(t.description) },
+        { header: 'Department', shown: true, value: (t) => csvText(t.departmentName) },
+        { header: 'Project code', shown: true, value: (t) => csvText(t.projectCode) },
+        { header: 'Project', shown: true, value: (t) => csvText(t.projectName) },
+        { header: 'Status', shown: true, value: (t) => csvText(STATUS_LABELS[t.status]) },
+        { header: 'Priority', shown: isShown(settings, 'priority'), value: (t) => csvText(PRIORITY_LABELS[t.priority]) },
+        { header: 'Billable', shown: isShown(settings, 'billable'), value: (t) => (t.isBillable == null ? '' : t.isBillable ? 'Yes' : 'No') },
+        { header: 'Assignees', shown: true, value: (t) => csvText(t.assignees.map((a) => a.displayName).join('; ')) },
+        { header: 'Created by', shown: true, value: (t) => csvText(t.createdByName) },
+        { header: 'Due date', shown: isShown(settings, 'dueDate'), value: (t) => t.dueDate?.slice(0, 10) ?? '' },
+        { header: 'Target hours', shown: isShown(settings, 'targetHours'), value: (t) => (t.targetHours == null ? '' : String(t.targetHours)) },
+        { header: 'Logged hours', shown: true, value: (t) => formatHours(Number(t.loggedHours) || 0) },
+        { header: 'Created', shown: true, value: (t) => t.createdAtUtc.slice(0, 10) },
+        { header: 'Completed', shown: true, value: (t) => t.completedAtUtc?.slice(0, 10) ?? '' },
+    ]
+    const shown = columns.filter((c) => c.shown)
+    return [shown.map((c) => c.header).join(','), ...tasks.map((t) => shown.map((c) => c.value(t)).join(','))].join('\r\n')
 }
 
 /** A task's date (`YYYY-MM-DD`, or an instant whose calendar day is read from its first ten characters) as "Sep 29, 2026". */

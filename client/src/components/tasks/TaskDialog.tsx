@@ -8,7 +8,7 @@ import {
 import { addWorkTaskAttachment, createWorkTask, getWorkTaskAssignees, getWorkTaskDepartments, getWorkTaskProjects, updateWorkTask, updateWorkTaskStatus } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
 import { describeKinds } from '../../lib/task-attachments'
-import { fieldRequirementError, isShown, requirementOf, attachmentLimits } from '../../lib/task-settings'
+import { fieldRequirementError, isShown, needsAttachmentBeforeDone, requirementOf, attachmentLimits } from '../../lib/task-settings'
 import { useWorkTaskSettings } from '../../lib/task-settings-query'
 import type { UpsertWorkTaskRequest, WorkTask, WorkTaskAttachment, WorkTaskPriority, WorkTaskStatus } from '../../lib/types'
 import { PRIORITY_LABELS, SETTABLE_STATUSES, STATUS_LABELS } from '../../lib/work-tasks'
@@ -359,7 +359,12 @@ export default function TaskDialog({ open, task, personal = false, currentUserId
                                 {/* Awaiting confirmation is reached by marking the task done, never picked;
                                     it is listed, disabled, only so a waiting task's select is not blank. */}
                                 {(task.status === 'AwaitingConfirmation' ? [...SETTABLE_STATUSES, task.status] : SETTABLE_STATUSES).map((s) => (
-                                    <MenuItem key={s} value={s} disabled={s === 'AwaitingConfirmation'} sx={{ gap: '10px' }}>
+                                    <MenuItem
+                                        key={s}
+                                        value={s}
+                                        disabled={s === 'AwaitingConfirmation' || (s === 'Done' && needsAttachmentBeforeDone(settings, attachments.length))}
+                                        sx={{ gap: '10px' }}
+                                    >
                                         <Box component="span" aria-hidden sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: STATUS_COLORS[s].dot, display: 'inline-block', mr: '8px' }} />
                                         {STATUS_LABELS[s]}
                                     </MenuItem>

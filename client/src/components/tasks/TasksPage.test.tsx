@@ -393,3 +393,41 @@ describe('TasksPage confirmation', () => {
         expect(within(await screen.findByTestId('stat-confirm')).getByText('1')).toBeInTheDocument()
     })
 })
+
+describe('TasksPage task settings', () => {
+    it('holds Done on a card until a required file is attached', async () => {
+        api.getWorkTaskSettings.mockResolvedValue({ ...DEFAULT_TASK_SETTINGS, attachmentsRequirement: 'Required' })
+        api.getWorkTasks.mockResolvedValue([{ ...base, status: 'InProgress', attachments: [] }])
+        renderPage()
+
+        const card = await cardFor('Mine to do')
+        expect(within(card).getByText('File needed before Done')).toBeInTheDocument()
+        expect(within(card).getByRole('button', { name: /Mark done/ })).toBeDisabled()
+    })
+
+    it('holds Confirm on a waiting task with no file when one is required', async () => {
+        api.getWorkTaskSettings.mockResolvedValue({ ...DEFAULT_TASK_SETTINGS, attachmentsRequirement: 'Required' })
+        api.getWorkTasks.mockResolvedValue([{ ...TASKS[1], status: 'AwaitingConfirmation', canConfirm: true, attachments: [] }])
+        renderPage()
+
+        const card = await cardFor('I asked for this')
+        expect(within(card).getByRole('button', { name: /Confirm/ })).toBeDisabled()
+    })
+
+    it('drops the To Confirm tile when confirmation is off', async () => {
+        api.getWorkTaskSettings.mockResolvedValue({ ...DEFAULT_TASK_SETTINGS, requireCompletionConfirmation: false })
+        renderPage()
+
+        await screen.findByTestId('stat-open')
+        expect(screen.queryByTestId('stat-confirm')).toBeNull()
+    })
+
+    it('hides the priority chip and filter when priority is hidden', async () => {
+        api.getWorkTaskSettings.mockResolvedValue({ ...DEFAULT_TASK_SETTINGS, showPriority: false })
+        renderPage()
+
+        const card = await cardFor('Mine to do')
+        expect(within(card).queryByText('High priority')).toBeNull()
+        expect(screen.queryByRole('combobox', { name: 'Priority filter' })).toBeNull()
+    })
+})
