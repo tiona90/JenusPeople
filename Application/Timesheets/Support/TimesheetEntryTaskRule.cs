@@ -45,7 +45,8 @@ public static class TimesheetEntryTaskRule
             .FirstOrDefaultAsync(cancellationToken);
 
         if (task is null || !task.Assigned) return NotYoursMessage;
-        if (task.Status is not (WorkTaskStatus.ToDo or WorkTaskStatus.InProgress)) return ClosedMessage;
+        // Waiting for confirmation is still open: hours from that week may be logged after the Done.
+        if (task.Status is not (WorkTaskStatus.ToDo or WorkTaskStatus.InProgress or WorkTaskStatus.AwaitingConfirmation)) return ClosedMessage;
         if (task.ProjectId != candidate.ProjectId) return OtherProjectMessage;
         return null;
     }

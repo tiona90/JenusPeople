@@ -142,4 +142,19 @@ public class GetTimesheetTaskOptionsTests
         Assert.False(result.Value!.Single(o => o.Title == "reassigned").IsAssigned);
         Assert.True(result.Value!.Single(o => o.Title == "still mine").IsAssigned);
     }
+
+    [Fact]
+    public async Task A_task_waiting_for_confirmation_is_still_offered()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        db.WorkTasks.Add(NewTask(Sales, Hr, Employee, "handed in", WorkTaskStatus.AwaitingConfirmation));
+        await db.SaveChangesAsync();
+
+        var result = await Run(db, Employee);
+
+        var option = Assert.Single(result.Value!);
+        Assert.Equal("handed in", option.Title);
+        Assert.False(option.IsClosed);
+    }
 }

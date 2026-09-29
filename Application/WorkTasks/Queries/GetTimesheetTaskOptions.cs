@@ -71,7 +71,8 @@ public class GetTimesheetTaskOptions
                 .AsNoTracking()
                 .Where(t => onSheet.Contains(t.Id)
                     || (readingOwnSheet
-                        && (t.Status == WorkTaskStatus.ToDo || t.Status == WorkTaskStatus.InProgress)
+                        && (t.Status == WorkTaskStatus.ToDo || t.Status == WorkTaskStatus.InProgress
+                            || t.Status == WorkTaskStatus.AwaitingConfirmation)
                         && t.Assignees.Any(a => a.UserId == ownerUserId)))
                 .OrderBy(t => t.Title)
                 .Select(t => new TimesheetTaskOptionDto
