@@ -554,7 +554,7 @@ public class AppDbContext : IdentityDbContext<
             entity.Property(t => t.Description).HasMaxLength(WorkTask.DescriptionMaxLength);
             entity.Property(t => t.CreatedById).IsRequired().HasMaxLength(450);
 
-            // All three Restrict: DeleteDepartment counts tasks as a blocker, and
+            // All Restrict: DeleteDepartment counts tasks as a blocker, and
             // DeleteAdminUser (plus DbInitializer.CleanupUserDependencies) removes
             // or hands back a leaver's tasks before the user row goes.
             entity.HasOne(t => t.Department)
@@ -570,6 +570,15 @@ public class AppDbContext : IdentityDbContext<
             entity.HasOne(t => t.CreatedBy)
                 .WithMany()
                 .HasForeignKey(t => t.CreatedById)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.Property(t => t.ConfirmedById).HasMaxLength(450);
+            entity.Property(t => t.SentBackReason).HasMaxLength(WorkTask.SentBackReasonMaxLength);
+            // Restrict like the others: DeleteAdminUser (and its DbInitializer mirror)
+            // nulls it before the user row goes.
+            entity.HasOne(t => t.ConfirmedBy)
+                .WithMany()
+                .HasForeignKey(t => t.ConfirmedById)
                 .OnDelete(DeleteBehavior.Restrict);
 
             // The list reads by department; the tabs by person.

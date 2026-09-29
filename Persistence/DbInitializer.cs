@@ -541,7 +541,16 @@ public class DbInitializer
             leave.DelegateId = null;
         }
 
-        // Tasks. Both foreign keys onto User are Restrict. The ones this user
+        // A task they confirmed stays; only the record of who confirmed it goes.
+        var confirmedTasks = await context.WorkTasks
+            .Where(t => t.ConfirmedById == userId)
+            .ToListAsync(cancellationToken);
+        foreach (var task in confirmedTasks)
+        {
+            task.ConfirmedById = null;
+        }
+
+        // Tasks. All three foreign keys onto User are Restrict. The ones this user
         // created go with them (their assignee rows cascade); for the rest, see below.
         var createdTasks = await context.WorkTasks
             .Where(t => t.CreatedById == userId)
