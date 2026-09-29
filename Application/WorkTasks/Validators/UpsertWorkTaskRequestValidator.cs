@@ -18,14 +18,15 @@ public class UpsertWorkTaskRequestValidator : AbstractValidator<UpsertWorkTaskRe
             .MaximumLength(WorkTask.TitleMaxLength);
         RuleFor(x => x.Description).MaximumLength(WorkTask.DescriptionMaxLength);
         RuleFor(x => x.DepartmentId).GreaterThan(0).WithMessage("Department is required.");
-        RuleFor(x => x.ProjectId).NotNull().GreaterThan(0).WithMessage("Project is required.");
+        // Whether a project is required is a Task Setting (WorkTaskFieldRules); a given one must be real.
+        RuleFor(x => x.ProjectId).GreaterThan(0).When(x => x.ProjectId.HasValue).WithMessage("Project is required.");
         RuleFor(x => x.AssigneeIds)
             .NotNull()
             .Must(ids => ids.Count <= MaxAssignees).WithMessage($"A task can have at most {MaxAssignees} assignees.")
             .Must(ids => ids.All(id => !string.IsNullOrWhiteSpace(id))).WithMessage("An assignee is blank.")
             .Must(ids => ids.Distinct().Count() == ids.Count).WithMessage("The same person is assigned twice.");
         RuleFor(x => x.Priority).IsInEnum();
-        RuleFor(x => x.IsBillable).NotNull().WithMessage("Say whether the task is billable.");
+        // Billable is now a Task Setting as well; see WorkTaskFieldRules.
         RuleFor(x => x.TargetHours).InclusiveBetween(1, WorkTask.MaxTargetHours)
             .When(x => x.TargetHours.HasValue)
             .WithMessage($"Target hours must be between 1 and {WorkTask.MaxTargetHours}.");

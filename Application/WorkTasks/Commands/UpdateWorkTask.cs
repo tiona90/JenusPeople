@@ -1,4 +1,5 @@
 using Application.Core;
+using Application.TaskSettings;
 using Application.WorkTasks.DTOs;
 using Application.WorkTasks.Support;
 using Domain;
@@ -45,6 +46,11 @@ public class UpdateWorkTask
                 return Result<WorkTaskDto>.Forbidden(WorkTaskAccess.NotCreatorMessage);
 
             var input = request.Task;
+            var settings = await WorkTaskSettingsStore.LoadAsync(context, cancellationToken);
+            WorkTaskFieldRules.KeepHiddenOnEdit(settings, input, task);
+            if (WorkTaskFieldRules.Check(settings, input) is { } fieldError)
+                return Result<WorkTaskDto>.Invalid(fieldError);
+
             var departmentChanged = input.DepartmentId != task.DepartmentId;
             var assigneeIds = request.AssignedOnly
                 ? [request.CallerUserId]
@@ -62,8 +68,8 @@ public class UpdateWorkTask
                     return Result<WorkTaskDto>.Invalid(WorkTaskAccess.DepartmentOutOfScopeMessage);
             }
             if ((departmentChanged || projectChanged)
-                && (input.ProjectId is not { } projectId
-                    || !await WorkTaskProjectRule.IsAvailableAsync(context, projectId, input.DepartmentId, cancellationToken)))
+                && input.ProjectId is { } projectId
+                && !await WorkTaskProjectRule.IsAvailableAsync(context, projectId, input.DepartmentId, cancellationToken))
                 return Result<WorkTaskDto>.Invalid(WorkTaskProjectRule.NotAvailableMessage);
             if (await WorkTaskAssigneeRule.AnyHrAdministratorAsync(context, assigneeIds, cancellationToken))
                 return Result<WorkTaskDto>.Invalid(WorkTaskAssigneeRule.HrNotAssignableMessage);
