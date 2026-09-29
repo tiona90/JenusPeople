@@ -13,8 +13,8 @@ import { canManageTasks, canUseTasks, isHrAdministrator } from '../../lib/roles'
 import { softBg } from '../../lib/theme-tokens'
 import type { WorkTask, WorkTaskPriority, WorkTaskStatus } from '../../lib/types'
 import {
-    PRIORITY_LABELS, SETTABLE_STATUSES, STATUS_LABELS, describeTaskProgress, filterTasks, formatTaskDate as formatDate, isAwaitingConfirmation, isOpenTask, nextStatusAction, openCount, overdueDays, taskStats, tasksToCsv, todayIso,
-    type StatusFilter, type TaskTab,
+    PRIORITY_LABELS, SETTABLE_STATUSES, STATUS_LABELS, describeTaskProgress, filterTasks, formatTaskDate as formatDate, isAwaitingConfirmation, isOpenTask, nextStatusAction, overdueDays, taskStats, tasksToCsv, todayIso,
+    type StatusFilter,
 } from '../../lib/work-tasks'
 import { SweetAlert } from '../ui'
 import { CardStat, OutlineBtn, SectionLabel, SelectFilter, StatCard } from '../ui/CardKit'
@@ -27,11 +27,18 @@ import { PRIORITY_COLORS, STATUS_COLORS } from './statusStyles'
 
 /* ─── tokens ─────────────────────────────────────────────────────────────── */
 
-const VIEWS: { value: TaskTab; label: string; empty: string }[] = [
-    { value: 'assigned', label: 'Assigned to me', empty: 'Nothing assigned to you.' },
-    { value: 'created', label: 'Created by me', empty: "You haven't created any tasks." },
-    { value: 'all', label: 'All in my departments', empty: 'No tasks in your departments.' },
-]
+type Audience = 'employee' | 'manager' | 'hr'
+
+interface Section {
+    title: string
+    subtitle: string
+    accent: boolean
+    tasks: WorkTask[]
+    /** Shown in place of the cards when the group is empty and has no add card. */
+    empty: string
+    /** Where the "create" card sits: the group of tasks the viewer runs themselves. */
+    add: boolean
+}
 
 /* ─── helpers ────────────────────────────────────────────────────────────── */
 
@@ -52,23 +59,64 @@ function downloadTasksCsv(tasks: readonly WorkTask[]) {
     URL.revokeObjectURL(url)
 }
 
+/**
+ * The page's groups, each over the filtered tasks. A task lands in the first group
+ * that claims it, so a Manager's task on their own plate shows once, under
+ * "Assigned to you", even when they created it. `all` only tells an empty group
+ * apart from one the filters emptied, and hides a trailing group with nothing in it.
+ */
+function buildSections(all: readonly WorkTask[], visible: readonly WorkTask[], userId: string, audience: Audience): Section[] {
+    const assigned = (t: WorkTask) => t.assignees.some((a) => a.userId === userId)
+    const created = (t: WorkTask) => t.createdById === userId
+    const noMatch = 'No tasks match the current filters.'
+    const empty = (claims: (t: WorkTask) => boolean, never: string) => (all.some(claims) ? noMatch : never)
+
+    if (audience === 'employee') {
+        const handed = (t: WorkTask) => !created(t)
+        return [
+            { title: 'From your manager & HR', subtitle: 'Work handed to you comes first.', accent: true, tasks: visible.filter(handed), empty: empty(handed, 'Nothing has been handed to you yet.'), add: false },
+            { title: 'My own tasks', subtitle: 'Tasks you created for yourself.', accent: false, tasks: visible.filter(created), empty: '', add: true },
+        ]
+    }
+
+    if (audience === 'hr') {
+        const others = (t: WorkTask) => !created(t)
+        return [
+            { title: 'Created by you', subtitle: 'Tasks you handed out.', accent: true, tasks: visible.filter(created), empty: '', add: true },
+            ...(all.some(others)
+                ? [{ title: 'Created by others', subtitle: 'Run by managers, other HR and employees in your departments.', accent: false, tasks: visible.filter(others), empty: noMatch, add: false }]
+                : []),
+        ]
+    }
+
+    const handedOut = (t: WorkTask) => created(t) && !assigned(t)
+    const others = (t: WorkTask) => !created(t) && !assigned(t)
+    return [
+        { title: 'Assigned to you', subtitle: 'Work on your plate comes first.', accent: true, tasks: visible.filter(assigned), empty: empty(assigned, 'Nothing assigned to you.'), add: false },
+        { title: 'Created by you', subtitle: 'Tasks you handed to your team.', accent: false, tasks: visible.filter(handedOut), empty: '', add: true },
+        ...(all.some(others)
+            ? [{ title: 'Others in your departments', subtitle: 'Run by other managers, HR and employees.', accent: false, tasks: visible.filter(others), empty: noMatch, add: false }]
+            : []),
+    ]
+}
+
 /* ════════════════════════════════════════════════════════════════════════ */
 
 const TasksPage = observer(function TasksPage() {
     const { authStore } = useStore()
     const userId = authStore.user?.id ?? ''
     // An Employee works the tasks they are given and creates their own, always
-    // assigned to themselves: no views to pick between, since the server sends them
-    // only the tasks they are on, and no assignee picker in the dialog.
+    // assigned to themselves: the server sends them only the tasks they are on, and
+    // the dialog has no assignee picker. Every role sees the grid split into groups
+    // (`buildSections`) rather than picking a view.
     const manages = canManageTasks(authStore.user?.roles)
     const creates = canUseTasks(authStore.user?.roles)
-    // An HR Administrator is never handed a task, so "Assigned to me" would always be
-    // empty: they see everything in their departments, with no view picker, and
-    // narrow it with the department filter instead.
+    // An HR Administrator is never handed a task, so an "Assigned to you" group would
+    // always be empty: theirs are what they created and what others run, narrowed
+    // with the department filter.
     const isHr = isHrAdministrator(authStore.user?.roles)
     const queryClient = useQueryClient()
 
-    const [view, setView] = useState<TaskTab>(isHr ? 'all' : 'assigned')
     const [status, setStatus] = useState<StatusFilter>('open')
     const [departmentId, setDepartmentId] = useState<number | null>(null)
     const [priority, setPriority] = useState<WorkTaskPriority | 'any'>('any')
@@ -96,18 +144,18 @@ const TasksPage = observer(function TasksPage() {
     const all = useMemo(() => tasks.data ?? [], [tasks.data])
     const stats = useMemo(() => taskStats(all, userId, today), [all, userId, today])
     const visible = useMemo(
-        () => filterTasks(all, { tab: view, status, departmentId, userId, priority, search }),
-        [all, view, status, departmentId, userId, priority, search],
+        () => filterTasks(all, { tab: 'all', status, departmentId, userId, priority, search }),
+        [all, status, departmentId, userId, priority, search],
     )
     // A send-back's own error shows in its dialog, not twice.
     const mutationError = (sendingBack ? null : moveStatus.error) ?? remove.error
-    // An Employee's page puts the work handed to them first and keeps their own
-    // tasks (always assigned to themselves) apart underneath.
-    const handedToMe = useMemo(() => visible.filter((t) => t.createdById !== userId), [visible, userId])
-    const myOwn = useMemo(() => visible.filter((t) => t.createdById === userId), [visible, userId])
     const handedToMeOpen = useMemo(
         () => all.filter((t) => t.createdById !== userId && isOpenTask(t)).length,
         [all, userId],
+    )
+    const sections = useMemo(
+        () => buildSections(all, visible, userId, manages ? (isHr ? 'hr' : 'manager') : 'employee'),
+        [all, visible, userId, manages, isHr],
     )
 
     const confirmDelete = async (task: WorkTask) => {
@@ -123,6 +171,20 @@ const TasksPage = observer(function TasksPage() {
         })
         if (result.isConfirmed) remove.mutate(task.id)
     }
+
+    const renderCard = (task: WorkTask) => (
+        <TaskCard
+            key={task.id}
+            task={task}
+            today={today}
+            statusPending={moveStatus.isPending}
+            onStatus={(next) => moveStatus.mutate({ id: task.id, next })}
+            onOpen={() => setDetailsId(task.id)}
+            onEdit={() => setDialogTask(task)}
+            onDelete={() => void confirmDelete(task)}
+            onSendBack={() => { moveStatus.reset(); setSendingBack(task) }}
+        />
+    )
 
     if (tasks.isLoading) {
         return <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress size={28} /></Box>
@@ -218,14 +280,6 @@ const TasksPage = observer(function TasksPage() {
                         }}
                     />
                 </Box>
-                {manages && !isHr && (
-                    <SelectFilter
-                        ariaLabel="View"
-                        value={view}
-                        onChange={(v) => setView(v as TaskTab)}
-                        options={VIEWS.map((v) => ({ value: v.value, label: `${v.label} (${openCount(all, v.value, userId)})` }))}
-                    />
-                )}
                 <SelectFilter
                     ariaLabel="Status filter"
                     value={status}
@@ -293,87 +347,21 @@ const TasksPage = observer(function TasksPage() {
 
             {manages && <IdlePeoplePanel departmentId={departmentId} />}
 
-            {/* Grid */}
-            {!manages ? (
-                <>
-                    <TaskSection
-                        title="From your manager & HR"
-                        subtitle="Work handed to you comes first."
-                        count={handedToMe.length}
-                        accent
-                    >
-                        {handedToMe.length === 0 ? (
-                            <SectionEmpty>
-                                {all.some((t) => t.createdById !== userId) ? 'No tasks match the current filters.' : 'Nothing has been handed to you yet.'}
-                            </SectionEmpty>
-                        ) : (
-                            <CardGrid>
-                                {handedToMe.map((task) => (
-                                    <TaskCard
-                                    key={task.id}
-                                    task={task}
-                                    today={today}
-                                    statusPending={moveStatus.isPending}
-                                    onStatus={(next) => moveStatus.mutate({ id: task.id, next })}
-                                    onOpen={() => setDetailsId(task.id)}
-                                    onEdit={() => setDialogTask(task)}
-                                    onDelete={() => void confirmDelete(task)}
-                                    onSendBack={() => { moveStatus.reset(); setSendingBack(task) }}
-                                />
-                                ))}
-                            </CardGrid>
-                        )}
-                    </TaskSection>
-                    <TaskSection title="My own tasks" subtitle="Tasks you created for yourself." count={myOwn.length}>
+            {/* Grid, in groups: an Employee's work handed to them and their own; a
+                Manager's work on their plate, what they handed out, and the rest of their
+                departments; an HR Administrator's own tasks and everybody else's. */}
+            {sections.map((section) => (
+                <TaskSection key={section.title} title={section.title} subtitle={section.subtitle} count={section.tasks.length} accent={section.accent}>
+                    {section.tasks.length === 0 && !section.add ? (
+                        <SectionEmpty>{section.empty}</SectionEmpty>
+                    ) : (
                         <CardGrid>
-                            {myOwn.map((task) => (
-                                <TaskCard
-                                    key={task.id}
-                                    task={task}
-                                    today={today}
-                                    statusPending={moveStatus.isPending}
-                                    onStatus={(next) => moveStatus.mutate({ id: task.id, next })}
-                                    onOpen={() => setDetailsId(task.id)}
-                                    onEdit={() => setDialogTask(task)}
-                                    onDelete={() => void confirmDelete(task)}
-                                    onSendBack={() => { moveStatus.reset(); setSendingBack(task) }}
-                                />
-                            ))}
-                            <AddCard onClick={() => setDialogTask(null)} personal />
+                            {section.tasks.map(renderCard)}
+                            {section.add && <AddCard onClick={() => setDialogTask(null)} personal={!manages} />}
                         </CardGrid>
-                    </TaskSection>
-                </>
-            ) : visible.length === 0 ? (
-                <Box sx={{
-                    bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider', borderRadius: '10px',
-                    py: 6, textAlign: 'center', color: 'text.secondary', fontSize: 13,
-                }}>
-                    {all.length === 0 || (search.trim() === '' && status === 'open' && priority === 'any' && departmentId == null)
-                        ? VIEWS.find((v) => v.value === view)!.empty
-                        : 'No tasks match the current filters.'}
-                </Box>
-            ) : (
-                <Box sx={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
-                    gap: '14px',
-                }}>
-                    {visible.map((task) => (
-                        <TaskCard
-                            key={task.id}
-                            task={task}
-                            today={today}
-                            statusPending={moveStatus.isPending}
-                            onStatus={(next) => moveStatus.mutate({ id: task.id, next })}
-                            onOpen={() => setDetailsId(task.id)}
-                            onEdit={() => setDialogTask(task)}
-                            onDelete={() => void confirmDelete(task)}
-                            onSendBack={() => { moveStatus.reset(); setSendingBack(task) }}
-                        />
-                    ))}
-                    {creates && <AddCard onClick={() => setDialogTask(null)} />}
-                </Box>
-            )}
+                    )}
+                </TaskSection>
+            ))}
 
             <SendBackDialog
                 open={sendingBack != null}
@@ -786,7 +774,7 @@ function CardGrid({ children }: { children: React.ReactNode }) {
     )
 }
 
-/** One of an Employee's two groups: the work handed to them (accented), and their own. */
+/** One of the page's groups of cards; the first, accented, is the viewer's own work. */
 function TaskSection({ title, subtitle, count, accent = false, children }: {
     title: string
     subtitle: string
