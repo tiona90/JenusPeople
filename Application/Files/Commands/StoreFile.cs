@@ -24,6 +24,12 @@ public class StoreFile
 
         public required StoredFilePurpose Purpose { get; set; }
         public required string UploadedById { get; set; }
+
+        /// <summary>A caller's own, narrower list (Task Settings). Intersected with the purpose's; never widens it.</summary>
+        public IReadOnlyCollection<FileSignatureValidator.FileKind>? AcceptedKindsOverride { get; set; }
+
+        /// <summary>A caller's own, lower ceiling (Task Settings). The smaller of it and the purpose's wins.</summary>
+        public int? MaxSizeBytesOverride { get; set; }
     }
 
     /// <summary>What each purpose will accept. Anything not listed is refused.</summary>
@@ -82,6 +88,11 @@ public class StoreFile
             {
                 return Result<string>.Invalid("Unsupported upload purpose.");
             }
+
+            if (request.AcceptedKindsOverride is { } narrowed)
+                policy = policy with { AcceptedKinds = policy.AcceptedKinds.Where(narrowed.Contains).ToArray() };
+            if (request.MaxSizeBytesOverride is { } ceiling && ceiling < policy.MaxSizeBytes)
+                policy = policy with { MaxSizeBytes = ceiling };
 
             // The caller's file name is untrusted. Reduce it to a bare leaf before
             // it can contribute any directory structure to anything downstream —

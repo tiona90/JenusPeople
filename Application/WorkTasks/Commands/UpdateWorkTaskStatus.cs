@@ -1,9 +1,11 @@
 using Application.Core;
+using Application.TaskSettings;
 using Application.WorkTasks.DTOs;
 using Application.WorkTasks.Support;
 using Domain;
 using Domain.Interfaces;
 using MediatR;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Persistence;
 
@@ -44,6 +46,8 @@ public class UpdateWorkTaskStatus
             if (request.Status == WorkTaskStatus.AwaitingConfirmation && !waiting)
                 return Result<WorkTaskDto>.Failure(WorkTaskReviewRule.StageIsDerivedMessage);
 
+            var settings = await WorkTaskSettingsStore.LoadAsync(context, cancellationToken);
+
             var target = request.Status;
             var sendingBack = false;
             if (waiting && !isReviewer)
@@ -60,6 +64,7 @@ public class UpdateWorkTaskStatus
                 sendingBack = true;
             }
             else if (target == WorkTaskStatus.Done && !waiting && !isReviewer
+                && settings.RequireCompletionConfirmation
                 && WorkTaskReviewRule.NeedsConfirmation(task)
                 && await WorkTaskReviewRule.AnyReviewerAsync(context, task, cancellationToken))
             {
@@ -75,6 +80,12 @@ public class UpdateWorkTaskStatus
                 if (reason.Length > WorkTask.SentBackReasonMaxLength)
                     return Result<WorkTaskDto>.Failure(WorkTaskReviewRule.SendBackReasonTooLongMessage);
             }
+
+            if (target is WorkTaskStatus.Done or WorkTaskStatus.AwaitingConfirmation
+                && task.Status != target
+                && WorkTaskFieldRules.NeedsAttachment(
+                    settings, await context.WorkTaskAttachments.CountAsync(a => a.WorkTaskId == task.Id, cancellationToken)))
+                return Result<WorkTaskDto>.Failure(WorkTaskFieldRules.AttachmentRequiredMessage);
 
             if (task.Status != target)
             {
