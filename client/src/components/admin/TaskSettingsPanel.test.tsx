@@ -55,4 +55,42 @@ describe('TaskSettingsPanel', () => {
         expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()
         expect(screen.getByText('Allow at least one kind of file.')).toBeInTheDocument()
     })
+
+    it('holds Save when the files-per-task count is out of range, and clears at the bounds', async () => {
+        renderPanel()
+        const input = await screen.findByLabelText('Files per task')
+
+        fireEvent.change(input, { target: { value: '0' } })
+        expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()
+        expect(screen.getByText('A task can be allowed 1 to 20 attachments.')).toBeInTheDocument()
+
+        fireEvent.change(input, { target: { value: '21' } })
+        expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()
+        expect(screen.getByText('A task can be allowed 1 to 20 attachments.')).toBeInTheDocument()
+
+        fireEvent.change(input, { target: { value: '20' } })
+        expect(screen.getByRole('button', { name: 'Save changes' })).not.toBeDisabled()
+        expect(screen.queryByText('A task can be allowed 1 to 20 attachments.')).toBeNull()
+    })
+
+    it('holds Save when the size limit is out of range or not a whole number, and clears at the bound', async () => {
+        renderPanel()
+        const input = await screen.findByLabelText('Size limit (MB)')
+
+        fireEvent.change(input, { target: { value: '0' } })
+        expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()
+        expect(screen.getByText('The size limit must be 1 to 10 MB.')).toBeInTheDocument()
+
+        fireEvent.change(input, { target: { value: '11' } })
+        expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()
+        expect(screen.getByText('The size limit must be 1 to 10 MB.')).toBeInTheDocument()
+
+        fireEvent.change(input, { target: { value: '2.5' } })
+        expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled()
+        expect(screen.getByText('The size limit must be 1 to 10 MB.')).toBeInTheDocument()
+
+        fireEvent.change(input, { target: { value: '10' } })
+        expect(screen.getByRole('button', { name: 'Save changes' })).not.toBeDisabled()
+        expect(screen.queryByText('The size limit must be 1 to 10 MB.')).toBeNull()
+    })
 })
