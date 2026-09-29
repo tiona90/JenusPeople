@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import TaskAttachments, { StagedTaskAttachments } from './TaskAttachments'
+import { DEFAULT_ATTACHMENT_LIMITS } from '../../lib/task-attachments'
 import type { WorkTask, WorkTaskAttachment } from '../../lib/types'
 
 vi.mock('../../lib/api', () => ({
@@ -19,7 +20,7 @@ function renderLive(attachments: WorkTaskAttachment[], onChanged = vi.fn(), canA
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
         <QueryClientProvider client={queryClient}>
-            <TaskAttachments taskId={3} attachments={attachments} canAttach={canAttach} onChanged={onChanged} />
+            <TaskAttachments taskId={3} attachments={attachments} canAttach={canAttach} onChanged={onChanged} limits={DEFAULT_ATTACHMENT_LIMITS} />
         </QueryClientProvider>,
     )
     return { onChanged }
@@ -95,7 +96,7 @@ describe('TaskAttachments', () => {
 describe('StagedTaskAttachments', () => {
     it('holds picked files without uploading them', () => {
         const onChange = vi.fn()
-        render(<StagedTaskAttachments files={[]} onChange={onChange} />)
+        render(<StagedTaskAttachments files={[]} onChange={onChange} limits={DEFAULT_ATTACHMENT_LIMITS} />)
 
         pick(file('a.pdf'))
 

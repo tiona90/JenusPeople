@@ -4,9 +4,7 @@ import Box from '@mui/material/Box'
 import { addWorkTaskAttachment, removeWorkTaskAttachment } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
 import { resolveFileUrl } from '../../lib/api/file-url'
-import {
-    DEFAULT_ATTACHMENT_LIMITS, acceptFor, formatFileSize, taskAttachmentError,
-} from '../../lib/task-attachments'
+import { acceptFor, formatFileSize, taskAttachmentError } from '../../lib/task-attachments'
 import type { TaskAttachmentLimits } from '../../lib/task-attachments'
 import type { WorkTask, WorkTaskAttachment } from '../../lib/types'
 
@@ -143,7 +141,7 @@ function ErrorLine({ children }: { children: React.ReactNode }) {
  * may edit the task attaches (`canAttach`, the task's `canEdit`); everyone who sees
  * it opens them, and each file's own `canRemove` says who may take it off.
  */
-export default function TaskAttachments({ taskId, attachments, canAttach, downloadable = false, onChanged, limits = DEFAULT_ATTACHMENT_LIMITS }: {
+export default function TaskAttachments({ taskId, attachments, canAttach, downloadable = false, onChanged, limits }: {
     taskId: number
     attachments: WorkTaskAttachment[]
     canAttach: boolean
@@ -151,8 +149,8 @@ export default function TaskAttachments({ taskId, attachments, canAttach, downlo
     downloadable?: boolean
     /** The task as the server returns it after each change. */
     onChanged?: (task: WorkTask) => void
-    /** The Task Settings' current limits; defaults to today's behaviour. */
-    limits?: TaskAttachmentLimits
+    /** The Task Settings' current limits — required, so an omission cannot silently fall back to today's. */
+    limits: TaskAttachmentLimits
 }) {
     const queryClient = useQueryClient()
     const [errors, setErrors] = useState<string[]>([])
@@ -224,11 +222,11 @@ export default function TaskAttachments({ taskId, attachments, canAttach, downlo
 /* ─── staged: a task not yet created ─────────────────────────────────────── */
 
 /** Files picked for a task that does not exist yet; the dialog uploads them once it does. */
-export function StagedTaskAttachments({ files, onChange, limits = DEFAULT_ATTACHMENT_LIMITS }: {
+export function StagedTaskAttachments({ files, onChange, limits }: {
     files: File[]
     onChange: (files: File[]) => void
-    /** The Task Settings' current limits; defaults to today's behaviour. */
-    limits?: TaskAttachmentLimits
+    /** The Task Settings' current limits — required, so an omission cannot silently fall back to today's. */
+    limits: TaskAttachmentLimits
 }) {
     const [errors, setErrors] = useState<string[]>([])
     const full = files.length >= limits.maxFiles
