@@ -93,7 +93,10 @@ public class UpdateWorkTaskStatus
                 if (target == WorkTaskStatus.Done)
                 {
                     task.CompletedAtUtc = now;
-                    task.ConfirmedById = request.CallerUserId;
+                    // Confirmation off and nobody reviewing: the assignee's own Done closed
+                    // it directly, so nobody actually confirmed it. The creator or a
+                    // reviewer closing a task directly still counts as confirming it.
+                    task.ConfirmedById = !settings.RequireCompletionConfirmation && !isReviewer ? null : request.CallerUserId;
                     task.SentBackReason = null;
                     task.SentBackAtUtc = null;
                 }

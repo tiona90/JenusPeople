@@ -46,6 +46,9 @@ public class WorkTaskCompletionSettingsTests
         return task.Id;
     }
 
+    private static async Task<WorkTask> Reload(AppDbContext db, int id) =>
+        await db.WorkTasks.AsNoTracking().SingleAsync(t => t.Id == id);
+
     // A real PNG signature padded past StoreFile's 100-byte floor.
     private static byte[] Png() => [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, .. new byte[200]];
 
@@ -72,6 +75,8 @@ public class WorkTaskCompletionSettingsTests
         Assert.Equal(WorkTaskStatus.Done, result.Value!.Status);
         Assert.NotNull(result.Value.CompletedAtUtc);
         Assert.Empty(_email.Sent);
+        // Nobody confirmed it — confirmation is off and the closer is a plain assignee.
+        Assert.Null((await Reload(db, id)).ConfirmedById);
     }
 
     [Fact]
