@@ -22,6 +22,9 @@ describe('taskOptionsForRow', () => {
     it('drops a legacy task with no project, which no row could save', () => {
         expect(taskOptionsForRow([payroll, opt({ id: 5, projectId: null })], '').map((o) => o.id)).toEqual([1])
     })
+    it('keeps the row own task even once its project is cleared, so the picker does not open blank', () => {
+        expect(taskOptionsForRow([payroll, opt({ id: 5, projectId: null })], '5').map((o) => o.id)).toEqual([1, 5])
+    })
 })
 
 describe('projectIdForTask', () => {
