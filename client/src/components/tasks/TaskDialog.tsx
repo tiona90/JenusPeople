@@ -335,6 +335,7 @@ export default function TaskDialog({ open, task, personal = false, onClose, onSa
                                 label="Status"
                                 value={status}
                                 onChange={(e) => setStatus(e.target.value as WorkTaskStatus)}
+                                disabled={task.status === 'AwaitingConfirmation'}
                             >
                                 {/* Awaiting confirmation is reached by marking the task done, never picked;
                                     it is listed, disabled, only so a waiting task's select is not blank. */}
@@ -345,6 +346,11 @@ export default function TaskDialog({ open, task, personal = false, onClose, onSa
                                     </MenuItem>
                                 ))}
                             </Select>
+                            {/* Confirm, Send back (which needs a reason) and Withdraw are the card's; a status
+                                picked here would save the edit and then be refused. */}
+                            {task.status === 'AwaitingConfirmation' && (
+                                <FormHelperText>Waiting for confirmation. Confirm it or send it back from its card.</FormHelperText>
+                            )}
                         </FormControl>
                     )}
                     <Stack direction="row" spacing={2}>

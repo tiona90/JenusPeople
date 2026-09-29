@@ -312,6 +312,34 @@ describe('TaskDialog', () => {
         expect(order).toEqual(['details', 'status'])
     })
 
+    // Confirm, Send back (which needs a reason) and Withdraw live on the card; a status
+    // picked here would save the edit and then be refused.
+    it('leaves the status of a task waiting for confirmation to the card', async () => {
+        const task = {
+            id: 7, title: 'Chase notes', description: null, departmentId: 1, departmentName: 'Sales',
+            projectId: 10, projectName: 'CRM Rollout', projectCode: 'CRM', projectColorKey: 'p1',
+            assignees: [{ userId: 'u-sam', displayName: 'Sam Sales' }], createdById: 'me', createdByName: 'Me',
+            dueDate: null, targetHours: null, loggedHours: 0, isBillable: true, priority: 'Normal' as const, status: 'AwaitingConfirmation' as const,
+            createdAtUtc: '2026-09-01T08:00:00', updatedAtUtc: '2026-09-01T08:00:00', completedAtUtc: null,
+            canEdit: true, canChangeStatus: true, canConfirm: true,
+        }
+        api.updateWorkTask.mockResolvedValue(task)
+        const onSaved = vi.fn()
+        const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        render(
+            <QueryClientProvider client={queryClient}>
+                <TaskDialog open task={task} onClose={vi.fn()} onSaved={onSaved} />
+            </QueryClientProvider>,
+        )
+
+        expect(screen.getByRole('combobox', { name: /^Status/ })).toHaveAttribute('aria-disabled', 'true')
+        expect(screen.getByText(/Confirm it or send it back from its card/)).toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+
+        await waitFor(() => expect(onSaved).toHaveBeenCalled())
+        expect(api.updateWorkTaskStatus).not.toHaveBeenCalled()
+    })
+
     it('sends the target hours typed in, and offers no target weeks beside the due date', async () => {
         api.createWorkTask.mockResolvedValue({} as never)
         const { onSaved } = renderDialog()

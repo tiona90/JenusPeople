@@ -121,13 +121,14 @@ const Topbar = observer(function Topbar() {
         refetchIntervalInBackground: true,
     })
 
-    // The Tasks page's key, so its mutations and the SignalR invalidation refresh the bell too.
+    // The Tasks page's key, so its mutations and the SignalR notificationsUpdated
+    // invalidation (sent on every task write) refresh the bell. Not polled like the
+    // rest: the list is every task in scope with its logged hours, heavy to fetch
+    // every 15 seconds for the few rows the bell shows.
     const { data: workTasks, isLoading: isLoadingTasks } = useQuery({
         queryKey: ['work-tasks'],
         queryFn: getWorkTasks,
         enabled: authStore.isAuthenticated && shouldUseManagerNotifications,
-        refetchInterval: authStore.isAuthenticated && shouldUseManagerNotifications ? notificationRefreshMs : false,
-        refetchIntervalInBackground: true,
     })
 
     const { data: systemErrors, isLoading: isLoadingSystemErrors } = useQuery({

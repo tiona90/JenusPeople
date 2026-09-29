@@ -198,4 +198,22 @@ describe("An employee's bell", () => {
         await waitFor(() => expect(api.getLeaveStatusHistories).toHaveBeenCalled())
         expect(api.getWorkTasks).not.toHaveBeenCalled()
     })
+
+    // The task list is heavy (every task in scope, with logged hours); SignalR's
+    // notificationsUpdated already refreshes it on every task write.
+    it('fetches the tasks once rather than polling them with the rest of the bell', async () => {
+        vi.useFakeTimers({ shouldAdvanceTime: true })
+        try {
+            renderTopbarAs(MANAGER)
+            await waitFor(() => expect(api.getWorkTasks).toHaveBeenCalledTimes(1))
+            const leavePolls = api.getAnnualLeaves.mock.calls.length
+
+            await vi.advanceTimersByTimeAsync(16_000)
+
+            await waitFor(() => expect(api.getAnnualLeaves.mock.calls.length).toBeGreaterThan(leavePolls))
+            expect(api.getWorkTasks).toHaveBeenCalledTimes(1)
+        } finally {
+            vi.useRealTimers()
+        }
+    })
 })
