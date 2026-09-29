@@ -57,6 +57,15 @@ public class StoreFile
                 FileSignatureValidator.FileKind.Xlsx, FileSignatureValidator.FileKind.Xls,
             ],
             10 * 1024 * 1024),
+
+        // A file explaining a task: the handover's kinds, for the same reasons.
+        [StoredFilePurpose.TaskAttachment] = new(
+            [
+                FileSignatureValidator.FileKind.Jpeg, FileSignatureValidator.FileKind.Png, FileSignatureValidator.FileKind.Pdf,
+                FileSignatureValidator.FileKind.Docx, FileSignatureValidator.FileKind.Doc,
+                FileSignatureValidator.FileKind.Xlsx, FileSignatureValidator.FileKind.Xls,
+            ],
+            10 * 1024 * 1024),
     };
 
     /// <summary>

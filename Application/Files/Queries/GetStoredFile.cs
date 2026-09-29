@@ -1,4 +1,5 @@
 using Application.Core;
+using Application.WorkTasks.Support;
 using Domain;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -53,6 +54,9 @@ public class GetStoredFile
 
                 StoredFilePurpose.CoverageHandover =>
                     await CanReadHandoverAsync(request, file, cancellationToken),
+
+                StoredFilePurpose.TaskAttachment =>
+                    await CanReadTaskAttachmentAsync(request, file, cancellationToken),
 
                 // A purpose this handler has no rule for is refused rather than
                 // defaulted open, so adding one to the enum cannot silently
@@ -183,6 +187,35 @@ public class GetStoredFile
                         || scope.DirectReportUserIds.Contains(al.EmployeeId)
                         || (request.IsHrAdministrator && al.DepartmentId == null)),
                 cancellationToken);
+        }
+
+        /// <summary>
+        /// A task's attachment is for whoever can see the task: the task list's own
+        /// rule (<see cref="WorkTaskAccess.FindVisibleAsync"/>), with an Employee
+        /// narrowed to the tasks they are on or created. Plus the uploader and a
+        /// System Administrator, as for the other purposes.
+        /// </summary>
+        private async Task<bool> CanReadTaskAttachmentAsync(
+            Query request,
+            StoredFile file,
+            CancellationToken cancellationToken)
+        {
+            if (request.IsAdmin || file.UploadedById == request.RequestingUserId)
+            {
+                return true;
+            }
+
+            var taskId = await context.WorkTaskAttachments
+                .Where(a => a.StoredFileId == file.Id)
+                .Select(a => (int?)a.WorkTaskId)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (taskId is null)
+            {
+                return false;
+            }
+
+            return await WorkTaskAccess.FindVisibleAsync(
+                context, taskId.Value, request.RequestingUserId, cancellationToken, assignedOnly: !request.IsManager) is not null;
         }
 
         private static Result<StoredFileDto> NotFound() =>

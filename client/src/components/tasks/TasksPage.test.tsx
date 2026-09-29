@@ -87,6 +87,39 @@ describe('TasksPage', () => {
         expect(within(card).getByText(/Overdue by \d+ days/)).toBeInTheDocument()
     })
 
+    it('keeps the card to a summary and opens the whole task, files to download, on a click', async () => {
+        const long = 'Line one of the brief.\nLine two.\nLine three, which the card never shows in full.'
+        api.getWorkTasks.mockResolvedValue([{
+            ...base, description: long,
+            attachments: [{
+                id: 5, fileName: 'brief.pdf', contentType: 'application/pdf', sizeBytes: 2048, url: '/api/files/f1',
+                uploadedByName: 'Boss', createdAtUtc: '2026-09-01T08:00:00', canRemove: false,
+            }],
+        }])
+        renderPage()
+        const card = await cardFor('Mine to do')
+
+        // The card names the files but lists none of them.
+        expect(within(card).getByText(/1 attachment/)).toBeInTheDocument()
+        expect(within(card).queryByRole('link', { name: 'brief.pdf' })).toBeNull()
+
+        fireEvent.click(card)
+        const dialog = await screen.findByRole('dialog')
+        expect(within(dialog).getByText((_, el) => el?.textContent === long && el.children.length === 0)).toBeInTheDocument()
+        expect(within(dialog).getByRole('link', { name: 'Download brief.pdf' })).toHaveAttribute('download', 'brief.pdf')
+        expect(within(dialog).getByRole('link', { name: 'brief.pdf' })).toHaveAttribute('href', '/api/files/f1')
+        // Somebody else's task: nothing to attach, and no Edit.
+        expect(within(dialog).queryByRole('button', { name: /Attach files/ })).toBeNull()
+        expect(within(dialog).queryByRole('button', { name: 'Edit task' })).toBeNull()
+    })
+
+    it('does not open the details for a click on the status controls', async () => {
+        renderPage()
+        const card = await cardFor('Mine to do')
+        fireEvent.click(within(card).getByRole('button', { name: /Start/ }))
+        expect(screen.queryByRole('dialog')).toBeNull()
+    })
+
     it('shows the project badge and name on the card', async () => {
         renderPage()
         const card = await cardFor('Mine to do')
@@ -189,16 +222,30 @@ describe('TasksPage', () => {
         expect(within(await cardFor('I asked for this')).getByText('Non-billable')).toBeInTheDocument()
     })
 
-    it('gives an Employee their tasks to work, and nothing to create or pick between', async () => {
-        api.getWorkTasks.mockResolvedValue([base])
+    it('gives an Employee their tasks to work and their own to create, with no views to pick between', async () => {
+        api.getWorkTasks.mockResolvedValue([base, { ...base, id: 4, title: 'My own', createdById: 'me', createdByName: 'Me', canEdit: true }])
         renderPage(['Employee'])
 
         const card = await cardFor('Mine to do')
         expect(within(card).getByRole('button', { name: /Start/ })).toBeInTheDocument()
-        expect(screen.queryByRole('button', { name: /New task/ })).toBeNull()
-        expect(screen.queryByText('Create a new task')).toBeNull()
+        expect(within(card).queryByRole('button', { name: /Edit/ })).toBeNull()
+        expect(within(await cardFor('My own')).getByRole('button', { name: /Edit/ })).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: /New task/ })).toBeInTheDocument()
         expect(screen.queryByRole('combobox', { name: 'View' })).toBeNull()
-        expect(api.getWorkTaskDepartments).not.toHaveBeenCalled()
+    })
+
+    it("puts the work handed to an Employee first and their own tasks apart underneath", async () => {
+        api.getWorkTasks.mockResolvedValue([base, { ...base, id: 4, title: 'My own', createdById: 'me', createdByName: 'Me', canEdit: true }])
+        renderPage(['Employee'])
+
+        const handed = await screen.findByRole('region', { name: 'From your manager & HR' })
+        const own = screen.getByRole('region', { name: 'My own tasks' })
+        expect(within(handed).getByText('Mine to do')).toBeInTheDocument()
+        expect(within(handed).queryByText('My own')).toBeNull()
+        expect(within(own).getByText('My own')).toBeInTheDocument()
+        expect(within(own).getByText('Add a task of your own')).toBeInTheDocument()
+        expect(handed.compareDocumentPosition(own) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+        expect(within(screen.getByTestId('stat-mine')).getByText(/From Manager & HR/)).toBeInTheDocument()
     })
 
     it('shows an HR Administrator everything in their departments with no view picker, and filters by department', async () => {

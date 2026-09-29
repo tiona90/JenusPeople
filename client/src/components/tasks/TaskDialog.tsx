@@ -5,11 +5,12 @@ import {
     Radio, RadioGroup,
     MenuItem, Select, Stack, TextField,
 } from '@mui/material'
-import { createWorkTask, getWorkTaskAssignees, getWorkTaskDepartments, getWorkTaskProjects, updateWorkTask, updateWorkTaskStatus } from '../../lib/api'
+import { addWorkTaskAttachment, createWorkTask, getWorkTaskAssignees, getWorkTaskDepartments, getWorkTaskProjects, updateWorkTask, updateWorkTaskStatus } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
-import type { UpsertWorkTaskRequest, WorkTask, WorkTaskPriority, WorkTaskStatus } from '../../lib/types'
+import type { UpsertWorkTaskRequest, WorkTask, WorkTaskAttachment, WorkTaskPriority, WorkTaskStatus } from '../../lib/types'
 import { PRIORITY_LABELS, STATUS_LABELS } from '../../lib/work-tasks'
 import { STATUS_COLORS } from './statusStyles'
+import TaskAttachments, { StagedTaskAttachments } from './TaskAttachments'
 
 const TITLE_MAX = 200
 const DESCRIPTION_MAX = 2000
@@ -30,11 +31,17 @@ interface Props {
     open: boolean
     /** Null creates; a task edits it (creator only — the page never opens this otherwise). */
     task: WorkTask | null
+    /**
+     * An Employee's own task: no assignee picker, since the server assigns it to
+     * the caller alone whatever the request says.
+     */
+    personal?: boolean
     onClose: () => void
-    onSaved: () => void
+    /** A warning when the task saved but some of the files picked for it did not attach. */
+    onSaved: (warning?: string) => void
 }
 
-export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
+export default function TaskDialog({ open, task, personal = false, onClose, onSaved }: Props) {
     const [title, setTitle] = useState('')
     const [description, setDescription] = useState('')
     const [departmentId, setDepartmentId] = useState<number | ''>('')
@@ -46,6 +53,9 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
     const [targetHours, setTargetHours] = useState('')
     // No default on purpose: billable or not is a decision, not an unticked box.
     const [isBillable, setIsBillable] = useState<boolean | null>(null)
+    // A saved task's files change on the server as they are picked; a new task's wait here.
+    const [attachments, setAttachments] = useState<WorkTaskAttachment[]>([])
+    const [stagedFiles, setStagedFiles] = useState<File[]>([])
 
     useEffect(() => {
         if (!open) return
@@ -61,6 +71,8 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
         setStatus(task?.status ?? 'ToDo')
         setTargetHours(task?.targetHours != null ? String(task.targetHours) : '')
         setIsBillable(task?.isBillable ?? null)
+        setAttachments(task?.attachments ?? [])
+        setStagedFiles([])
     }, [open, task])
 
     const departments = useQuery({ queryKey: ['work-tasks', 'departments'], queryFn: getWorkTaskDepartments, enabled: open })
@@ -88,7 +100,7 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
     const assignees = useQuery({
         queryKey: ['work-tasks', 'assignees', departmentId],
         queryFn: () => getWorkTaskAssignees(departmentId as number),
-        enabled: open && departmentId !== '',
+        enabled: open && !personal && departmentId !== '',
     })
 
     // A department change can leave some of the chosen people outside it. Keep
@@ -107,12 +119,26 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
         // Status has its own endpoint (an assignee may move it without editing
         // anything else), so an edit that changes it is two calls: the details,
         // then the status — in that order, so a refused edit moves nothing.
-        mutationFn: async (request: UpsertWorkTaskRequest) => {
-            if (!task) return createWorkTask(request)
-            const saved = await updateWorkTask(task.id, request)
-            return status !== task.status ? updateWorkTaskStatus(task.id, status) : saved
+        // A new task's files go up once it exists. One that is refused does not undo
+        // the task: it is reported, and can be attached again from the card.
+        mutationFn: async (request: UpsertWorkTaskRequest): Promise<string | undefined> => {
+            if (!task) {
+                const created = await createWorkTask(request)
+                const failed: string[] = []
+                for (const file of stagedFiles) {
+                    try {
+                        await addWorkTaskAttachment(created.id, file)
+                    } catch (error) {
+                        failed.push(`${file.name}: ${getApiErrorMessage(error, 'could not be attached.')}`)
+                    }
+                }
+                return failed.length > 0 ? `The task was created, but some files were not attached. ${failed.join(' ')}` : undefined
+            }
+            await updateWorkTask(task.id, request)
+            if (status !== task.status) await updateWorkTaskStatus(task.id, status)
+            return undefined
         },
-        onSuccess: onSaved,
+        onSuccess: (warning) => onSaved(warning),
     })
 
     // The dialog stays mounted between uses, so a refused save from last time
@@ -131,7 +157,7 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
         departmentId !== '' &&
         projectId !== '' &&
         // Empty means everyone in the department, which is only somebody once the list says so.
-        (assigneeIds.length > 0 || (assignees.data?.length ?? 0) > 0) &&
+        (personal || assigneeIds.length > 0 || (assignees.data?.length ?? 0) > 0) &&
         hours !== 'invalid' &&
         isBillable !== null &&
         !save.isPending
@@ -143,13 +169,21 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
             description: description.trim() === '' ? null : description.trim(),
             departmentId: departmentId as number,
             projectId: projectId as number,
-            assigneeIds,
+            assigneeIds: personal ? [] : assigneeIds,
             dueDate: dueDate === '' ? null : dueDate,
             targetHours: typeof hours === 'number' ? hours : null,
             isBillable: isBillable as boolean,
             priority,
         })
     }
+
+    // One department in scope — an Employee, or a Manager covering only their own —
+    // leaves nothing to pick, so the field is read-only. An edited task sitting in a
+    // department the caller no longer covers keeps the select, so it shows as it is.
+    const onlyDepartment =
+        departments.data?.length === 1 && (task == null || task.departmentId === departments.data[0].id)
+            ? departments.data[0]
+            : null
 
     // Keep an edited task's own project selectable after it was switched off.
     const projectOptions = [...(projects.data ?? [])]
@@ -188,7 +222,26 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
                         helperText={`${description.length}/${DESCRIPTION_MAX}`}
                         error={description.length > DESCRIPTION_MAX}
                     />
-                    <FormControl required>
+                    <Box>
+                        <FormLabel sx={{ fontSize: 13 }}>Attachments</FormLabel>
+                        <Box sx={{ mt: 0.5 }}>
+                            {task ? (
+                                <TaskAttachments taskId={task.id} attachments={attachments} canAttach onChanged={(saved) => setAttachments(saved.attachments ?? [])} />
+                            ) : (
+                                <StagedTaskAttachments files={stagedFiles} onChange={setStagedFiles} />
+                            )}
+                        </Box>
+                        <FormHelperText>PDF, Word, Excel, JPG or PNG, up to 10MB each</FormHelperText>
+                    </Box>
+                    {onlyDepartment ? (
+                        <TextField
+                            label="Department"
+                            value={onlyDepartment.name}
+                            required
+                            helperText="Tasks are filed under your department"
+                            slotProps={{ input: { readOnly: true } }}
+                        />
+                    ) : <FormControl required>
                         <InputLabel id="task-department-label">Department</InputLabel>
                         <Select
                             labelId="task-department-label"
@@ -203,7 +256,7 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
                                 <MenuItem key={d.id} value={d.id}>{d.name}</MenuItem>
                             ))}
                         </Select>
-                    </FormControl>
+                    </FormControl>}
                     <FormControl required disabled={departmentId === ''} error={noProjects}>
                         <InputLabel id="task-project-label">Project</InputLabel>
                         <Select
@@ -221,7 +274,7 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
                         </Select>
                         {noProjects && <FormHelperText>No active projects in this department</FormHelperText>}
                     </FormControl>
-                    <FormControl disabled={departmentId === ''} error={nobodyToAssign}>
+                    {!personal && <FormControl disabled={departmentId === ''} error={nobodyToAssign}>
                         <InputLabel id="task-assignee-label" shrink={everyone || assigneeIds.length > 0}>Assignees</InputLabel>
                         <Select<string[]>
                             multiple
@@ -258,7 +311,7 @@ export default function TaskDialog({ open, task, onClose, onSaved }: Props) {
                                       : 'Everyone in the department as of saving. Pick names to narrow it.'}
                             </FormHelperText>
                         )}
-                    </FormControl>
+                    </FormControl>}
                     <FormControl required error={task != null && isBillable === null}>
                         <FormLabel id="task-billing-label" sx={{ fontSize: 13 }}>Billing</FormLabel>
                         <RadioGroup

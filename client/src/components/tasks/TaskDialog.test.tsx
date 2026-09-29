@@ -8,6 +8,7 @@ vi.mock('../../lib/api', () => ({
     getWorkTaskAssignees: vi.fn(),
     getWorkTaskProjects: vi.fn(),
     createWorkTask: vi.fn(),
+    addWorkTaskAttachment: vi.fn(),
     updateWorkTask: vi.fn(),
     updateWorkTaskStatus: vi.fn(),
 }))
@@ -17,12 +18,12 @@ const api = vi.mocked(await import('../../lib/api'))
 // takes ~4s, so under a loaded machine the 5s default is a coin toss, not a signal.
 vi.setConfig({ testTimeout: 15_000 })
 
-function renderDialog() {
+function renderDialog({ personal = false }: { personal?: boolean } = {}) {
     const onSaved = vi.fn()
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
         <QueryClientProvider client={queryClient}>
-            <TaskDialog open task={null} onClose={vi.fn()} onSaved={onSaved} />
+            <TaskDialog open task={null} personal={personal} onClose={vi.fn()} onSaved={onSaved} />
         </QueryClientProvider>,
     )
     return { onSaved }
@@ -54,6 +55,57 @@ beforeEach(() => {
 })
 
 describe('TaskDialog', () => {
+    it('uploads the files picked for a new task once it exists, and reports any refused', async () => {
+        api.createWorkTask.mockResolvedValue({ id: 42 } as never)
+        api.addWorkTaskAttachment
+            .mockResolvedValueOnce({} as never)
+            .mockRejectedValueOnce({ response: { data: { message: 'Only PDF files are accepted here.' } } })
+        const { onSaved } = renderDialog()
+        fireEvent.change(screen.getByRole('textbox', { name: /^Title/ }), { target: { value: 'Brief' } })
+        await choose('Department', 'Sales')
+        await choose('Project', 'CRM Rollout')
+        pickBilling('Billable')
+        fireEvent.change(screen.getByTestId('task-attachment-input'), {
+            target: { files: [new File(['x'], 'brief.pdf'), new File(['y'], 'photo.png')] },
+        })
+        expect(screen.getByText('photo.png')).toBeInTheDocument()
+        expect(api.addWorkTaskAttachment).not.toHaveBeenCalled()
+
+        fireEvent.click(screen.getByRole('button', { name: 'Create task' }))
+
+        await waitFor(() => expect(onSaved).toHaveBeenCalled())
+        expect(api.addWorkTaskAttachment).toHaveBeenNthCalledWith(1, 42, expect.objectContaining({ name: 'brief.pdf' }))
+        expect(api.addWorkTaskAttachment).toHaveBeenNthCalledWith(2, 42, expect.objectContaining({ name: 'photo.png' }))
+        expect(onSaved.mock.calls[0][0]).toMatch(/photo\.png/)
+    })
+
+    it('shows the department read-only when the caller covers only one', async () => {
+        api.getWorkTaskDepartments.mockResolvedValue([{ id: 1, name: 'Sales' }])
+        renderDialog({ personal: true })
+
+        const department = await screen.findByRole('textbox', { name: /^Department/ })
+        await waitFor(() => expect(department).toHaveValue('Sales'))
+        expect(department).toHaveAttribute('readonly')
+        expect(screen.queryByRole('combobox', { name: /^Department/ })).toBeNull()
+        await waitFor(() => expect(api.getWorkTaskProjects).toHaveBeenCalledWith(1))
+    })
+
+    it("offers an Employee's own task no assignee picker and lets the server assign it to them", async () => {
+        api.createWorkTask.mockResolvedValue({} as never)
+        const { onSaved } = renderDialog({ personal: true })
+        fireEvent.change(screen.getByRole('textbox', { name: /^Title/ }), { target: { value: 'My own' } })
+        await choose('Department', 'Sales')
+        await choose('Project', 'CRM Rollout')
+        pickBilling('Non-billable')
+
+        expect(screen.queryByRole('combobox', { name: /^Assignees/ })).toBeNull()
+        fireEvent.click(screen.getByRole('button', { name: 'Create task' }))
+
+        await waitFor(() => expect(onSaved).toHaveBeenCalled())
+        expect(api.createWorkTask).toHaveBeenCalledWith(expect.objectContaining({ title: 'My own', assigneeIds: [] }))
+        expect(api.getWorkTaskAssignees).not.toHaveBeenCalled()
+    })
+
     it('loads assignees for the chosen department and clears one that no longer fits', async () => {
         renderDialog()
         await choose('Department', 'Sales')

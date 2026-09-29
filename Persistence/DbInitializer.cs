@@ -548,6 +548,16 @@ public class DbInitializer
             .ToListAsync(cancellationToken);
         context.WorkTasks.RemoveRange(createdTasks);
 
+        // Mirror of DeleteAdminUser: files colleagues attached to the leaver's tasks
+        // go with the tasks (the leaver's own uploads go in ReleaseUploadedFiles).
+        var createdTaskIds = createdTasks.Select(t => t.Id).ToList();
+        var colleagueFileIds = await context.WorkTaskAttachments
+            .Where(a => createdTaskIds.Contains(a.WorkTaskId) && a.StoredFile!.UploadedById != userId)
+            .Select(a => a.StoredFileId)
+            .ToListAsync(cancellationToken);
+        foreach (var fileId in colleagueFileIds)
+            context.StoredFiles.Remove(new StoredFile { Id = fileId });
+
         // The leaver comes off every task they were on. A task somebody else
         // created that would be left with nobody goes back to its creator; one
         // still shared with others just loses the leaver. The check reads the
@@ -672,6 +682,12 @@ public class DbInitializer
             .Where(p => p is not null && p.StartsWith(prefix, StringComparison.Ordinal))
             .Select(p => p![prefix.Length..])
             .ToHashSet();
+
+        // A file the leaver attached to somebody else's task stays with the task.
+        keep.UnionWith(await context.WorkTaskAttachments
+            .Where(a => uploadedIds.Contains(a.StoredFileId) && a.WorkTask!.CreatedById != userId)
+            .Select(a => a.StoredFileId)
+            .ToListAsync(cancellationToken));
 
         var canReassign = !string.IsNullOrWhiteSpace(reassignTo)
             && !string.Equals(reassignTo, userId, StringComparison.Ordinal);

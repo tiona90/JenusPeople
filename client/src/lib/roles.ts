@@ -47,8 +47,9 @@ export function isHrAdministrator(roles: readonly string[] | null | undefined): 
 
 /**
  * Who opens Tasks: everyone in Leave & Time, mirroring `AppRoles.LeaveAndTimeRoles`
- * on `WorkTasksController`. An Employee works the tasks they are given; running
- * them — creating, editing, deleting — is `canManageTasks`.
+ * on `WorkTasksController`. An Employee works the tasks they are given and runs
+ * their own (always assigned to themselves); running the department's — assigning
+ * others, the view picker — is `canManageTasks`.
  */
 export const TASK_ROLES: readonly UserRole[] = ['HR Administrator', 'Manager', 'Employee']
 

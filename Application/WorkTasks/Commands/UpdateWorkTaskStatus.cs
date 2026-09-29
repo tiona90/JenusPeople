@@ -15,7 +15,7 @@ public class UpdateWorkTaskStatus
         public string CallerUserId { get; set; } = string.Empty;
         public WorkTaskStatus Status { get; set; }
 
-        /// <summary>An Employee: only a task they are on is visible, and only as its assignee.</summary>
+        /// <summary>An Employee: only a task they are on or created is visible.</summary>
         public bool AssignedOnly { get; set; }
     }
 
@@ -27,7 +27,7 @@ public class UpdateWorkTaskStatus
             if (task is null)
                 return Result<WorkTaskDto>.Failure(WorkTaskAccess.NotFoundMessage);
             if (!task.Assignees.Any(a => a.UserId == request.CallerUserId)
-                && !await WorkTaskAccess.CanManageAsync(context, task, request.CallerUserId, cancellationToken))
+                && !await WorkTaskAccess.CanManageAsync(context, task, request.CallerUserId, cancellationToken, request.AssignedOnly))
                 return Result<WorkTaskDto>.Forbidden(WorkTaskAccess.NotParticipantMessage);
 
             if (task.Status != request.Status)

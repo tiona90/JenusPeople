@@ -7,17 +7,15 @@ using Xunit;
 namespace WorkTrack.Tests.WorkTasks;
 
 /// <summary>
-/// Tasks are for the three Leave &amp; Time roles, but only two of them run them.
-/// Every action is gated on the class to Manager, HR Administrator and Employee;
-/// everything but reading your tasks and moving their status is gated again, on
-/// the action, to Manager and HR Administrator — the two gates AND together.
+/// Tasks are for the three Leave &amp; Time roles. Every action is gated on the
+/// class to Manager, HR Administrator and Employee; only the assignee picker is
+/// gated again, on the action, to Manager and HR Administrator — the two gates AND
+/// together. An Employee creates, edits and deletes their own tasks (always
+/// assigned to themselves), so they never pick anybody.
 /// </summary>
 public class WorkTaskSurfaceTests
 {
-    private static readonly string[] EmployeeActions =
-        [nameof(WorkTasksController.GetWorkTasks), nameof(WorkTasksController.UpdateWorkTaskStatus),
-            // The timesheet Task picker: every timesheet writer logs against their own tasks.
-            nameof(WorkTasksController.GetTimesheetOptions)];
+    private static readonly string[] ManagingActions = [nameof(WorkTasksController.GetAssignees)];
 
     private static IEnumerable<MethodInfo> Actions() =>
         typeof(WorkTasksController).GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly);
@@ -31,22 +29,22 @@ public class WorkTaskSurfaceTests
     }
 
     [Fact]
-    public void Running_tasks_is_for_managers_and_hr_only()
+    public void Picking_assignees_is_for_managers_and_hr_only()
     {
-        var managing = Actions().Where(a => !EmployeeActions.Contains(a.Name)).ToList();
-        Assert.NotEmpty(managing);
-        foreach (var action in managing)
+        foreach (var name in ManagingActions)
+        {
+            var action = typeof(WorkTasksController).GetMethod(name)!;
             Assert.Contains(action.GetCustomAttributes<AuthorizeAttribute>(), a => a.Roles == AppRoles.LeaveAndTimeDecisionRoles);
+        }
     }
 
     [Fact]
-    public void An_employee_can_read_their_tasks_and_move_their_status()
+    public void An_employee_can_reach_every_other_action()
     {
-        foreach (var name in EmployeeActions)
-        {
-            var action = typeof(WorkTasksController).GetMethod(name)!;
+        var employee = Actions().Where(a => !ManagingActions.Contains(a.Name)).ToList();
+        Assert.Contains(employee, a => a.Name == nameof(WorkTasksController.CreateWorkTask));
+        foreach (var action in employee)
             Assert.Empty(action.GetCustomAttributes<AuthorizeAttribute>());
-        }
     }
 
     [Fact]
