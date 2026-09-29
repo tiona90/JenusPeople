@@ -9,16 +9,17 @@ import MenuItem from '@mui/material/MenuItem'
 import { deleteWorkTask, getWorkTaskDepartments, getWorkTasks, updateWorkTaskStatus } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
 import { useStore } from '../../lib/mobx'
-import { canManageTasks, isHrAdministrator } from '../../lib/roles'
+import { canManageTasks, canUseTasks, isHrAdministrator } from '../../lib/roles'
 import { softBg } from '../../lib/theme-tokens'
 import type { WorkTask, WorkTaskPriority, WorkTaskStatus } from '../../lib/types'
 import {
-    PRIORITY_LABELS, STATUS_LABELS, describeTaskProgress, filterTasks, isOpenTask, nextStatusAction, openCount, overdueDays, taskStats, tasksToCsv, todayIso,
+    PRIORITY_LABELS, STATUS_LABELS, describeTaskProgress, filterTasks, formatTaskDate as formatDate, isOpenTask, nextStatusAction, openCount, overdueDays, taskStats, tasksToCsv, todayIso,
     type StatusFilter, type TaskTab,
 } from '../../lib/work-tasks'
 import { SweetAlert } from '../ui'
 import { CardStat, OutlineBtn, SectionLabel, SelectFilter, StatCard } from '../ui/CardKit'
 import { CODE_COLORS, avatarBg, initials } from '../../lib/card-kit'
+import TaskDetailsDialog from './TaskDetailsDialog'
 import TaskDialog from './TaskDialog'
 import { PRIORITY_COLORS, STATUS_COLORS } from './statusStyles'
 
@@ -31,11 +32,6 @@ const VIEWS: { value: TaskTab; label: string; empty: string }[] = [
 ]
 
 /* ─── helpers ────────────────────────────────────────────────────────────── */
-
-function formatDate(iso: string) {
-    const [y, m, d] = iso.slice(0, 10).split('-').map(Number)
-    return new Date(y, m - 1, d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
-}
 
 function plural(n: number, one: string, many = `${one}s`) {
     return `${n} ${n === 1 ? one : many}`
@@ -59,9 +55,11 @@ function downloadTasksCsv(tasks: readonly WorkTask[]) {
 const TasksPage = observer(function TasksPage() {
     const { authStore } = useStore()
     const userId = authStore.user?.id ?? ''
-    // An Employee works the tasks they are given: no creating, and no views to pick
-    // between, since the server sends them only their own.
+    // An Employee works the tasks they are given and creates their own, always
+    // assigned to themselves: no views to pick between, since the server sends them
+    // only the tasks they are on, and no assignee picker in the dialog.
     const manages = canManageTasks(authStore.user?.roles)
+    const creates = canUseTasks(authStore.user?.roles)
     // An HR Administrator is never handed a task, so "Assigned to me" would always be
     // empty: they see everything in their departments, with no view picker, and
     // narrow it with the department filter instead.
@@ -74,9 +72,13 @@ const TasksPage = observer(function TasksPage() {
     const [priority, setPriority] = useState<WorkTaskPriority | 'any'>('any')
     const [search, setSearch] = useState('')
     const [dialogTask, setDialogTask] = useState<WorkTask | null | undefined>(undefined) // undefined = closed
+    // The task whose details are open, by id so the dialog follows the list as it refreshes.
+    const [detailsId, setDetailsId] = useState<number | null>(null)
+    // A task saved without some of the files picked for it.
+    const [saveWarning, setSaveWarning] = useState<string | null>(null)
 
     const tasks = useQuery({ queryKey: ['work-tasks'], queryFn: getWorkTasks })
-    const departments = useQuery({ queryKey: ['work-tasks', 'departments'], queryFn: getWorkTaskDepartments, enabled: manages })
+    const departments = useQuery({ queryKey: ['work-tasks', 'departments'], queryFn: getWorkTaskDepartments, enabled: creates })
 
     const refresh = () => queryClient.invalidateQueries({ queryKey: ['work-tasks'] })
     const moveStatus = useMutation({
@@ -93,6 +95,14 @@ const TasksPage = observer(function TasksPage() {
         [all, view, status, departmentId, userId, priority, search],
     )
     const mutationError = moveStatus.error ?? remove.error
+    // An Employee's page puts the work handed to them first and keeps their own
+    // tasks (always assigned to themselves) apart underneath.
+    const handedToMe = useMemo(() => visible.filter((t) => t.createdById !== userId), [visible, userId])
+    const myOwn = useMemo(() => visible.filter((t) => t.createdById === userId), [visible, userId])
+    const handedToMeOpen = useMemo(
+        () => all.filter((t) => t.createdById !== userId && isOpenTask(t)).length,
+        [all, userId],
+    )
 
     const confirmDelete = async (task: WorkTask) => {
         const result = await SweetAlert.fire({
@@ -119,6 +129,9 @@ const TasksPage = observer(function TasksPage() {
         <Box sx={{ p: { xs: 2, md: 3 } }}>
             {mutationError && (
                 <Alert severity="error" sx={{ mb: 2 }}>{getApiErrorMessage(mutationError, 'The task could not be updated.')}</Alert>
+            )}
+            {saveWarning && (
+                <Alert severity="warning" sx={{ mb: 2 }} onClose={() => setSaveWarning(null)}>{saveWarning}</Alert>
             )}
 
             {/* Stats row */}
@@ -151,12 +164,21 @@ const TasksPage = observer(function TasksPage() {
                     />
                 </Box>
                 {!isHr && <Box data-testid="stat-mine">
-                    <StatCard
-                        label="👤 Assigned To Me"
-                        value={String(stats.assignedToMeOpen)}
-                        valueColor="primary.main"
-                        sub="open tasks on your plate"
-                    />
+                    {manages ? (
+                        <StatCard
+                            label="👤 Assigned To Me"
+                            value={String(stats.assignedToMeOpen)}
+                            valueColor="primary.main"
+                            sub="open tasks on your plate"
+                        />
+                    ) : (
+                        <StatCard
+                            label="📥 From Manager & HR"
+                            value={String(handedToMeOpen)}
+                            valueColor="primary.main"
+                            sub="open tasks handed to you"
+                        />
+                    )}
                 </Box>}
             </Box>
 
@@ -240,7 +262,7 @@ const TasksPage = observer(function TasksPage() {
                         ⤓ Export CSV
                     </Box>
                 )}
-                {manages && <Box
+                {creates && <Box
                     component="button"
                     type="button"
                     onClick={() => setDialogTask(null)}
@@ -256,7 +278,54 @@ const TasksPage = observer(function TasksPage() {
             </Box>
 
             {/* Grid */}
-            {visible.length === 0 ? (
+            {!manages ? (
+                <>
+                    <TaskSection
+                        title="From your manager & HR"
+                        subtitle="Work handed to you comes first."
+                        count={handedToMe.length}
+                        accent
+                    >
+                        {handedToMe.length === 0 ? (
+                            <SectionEmpty>
+                                {all.some((t) => t.createdById !== userId) ? 'No tasks match the current filters.' : 'Nothing has been handed to you yet.'}
+                            </SectionEmpty>
+                        ) : (
+                            <CardGrid>
+                                {handedToMe.map((task) => (
+                                    <TaskCard
+                                    key={task.id}
+                                    task={task}
+                                    today={today}
+                                    statusPending={moveStatus.isPending}
+                                    onStatus={(next) => moveStatus.mutate({ id: task.id, next })}
+                                    onOpen={() => setDetailsId(task.id)}
+                                    onEdit={() => setDialogTask(task)}
+                                    onDelete={() => void confirmDelete(task)}
+                                />
+                                ))}
+                            </CardGrid>
+                        )}
+                    </TaskSection>
+                    <TaskSection title="My own tasks" subtitle="Tasks you created for yourself." count={myOwn.length}>
+                        <CardGrid>
+                            {myOwn.map((task) => (
+                                <TaskCard
+                                    key={task.id}
+                                    task={task}
+                                    today={today}
+                                    statusPending={moveStatus.isPending}
+                                    onStatus={(next) => moveStatus.mutate({ id: task.id, next })}
+                                    onOpen={() => setDetailsId(task.id)}
+                                    onEdit={() => setDialogTask(task)}
+                                    onDelete={() => void confirmDelete(task)}
+                                />
+                            ))}
+                            <AddCard onClick={() => setDialogTask(null)} personal />
+                        </CardGrid>
+                    </TaskSection>
+                </>
+            ) : visible.length === 0 ? (
                 <Box sx={{
                     bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider', borderRadius: '10px',
                     py: 6, textAlign: 'center', color: 'text.secondary', fontSize: 13,
@@ -278,19 +347,28 @@ const TasksPage = observer(function TasksPage() {
                             today={today}
                             statusPending={moveStatus.isPending}
                             onStatus={(next) => moveStatus.mutate({ id: task.id, next })}
+                            onOpen={() => setDetailsId(task.id)}
                             onEdit={() => setDialogTask(task)}
                             onDelete={() => void confirmDelete(task)}
                         />
                     ))}
-                    {manages && <AddCard onClick={() => setDialogTask(null)} />}
+                    {creates && <AddCard onClick={() => setDialogTask(null)} />}
                 </Box>
             )}
+
+            <TaskDetailsDialog
+                task={detailsId == null ? null : all.find((t) => t.id === detailsId) ?? null}
+                today={today}
+                onClose={() => setDetailsId(null)}
+                onEdit={(task) => { setDetailsId(null); setDialogTask(task) }}
+            />
 
             <TaskDialog
                 open={dialogTask !== undefined}
                 task={dialogTask ?? null}
+                personal={!manages}
                 onClose={() => setDialogTask(undefined)}
-                onSaved={() => { setDialogTask(undefined); void refresh() }}
+                onSaved={(warning) => { setDialogTask(undefined); setSaveWarning(warning ?? null); void refresh() }}
             />
         </Box>
     )
@@ -302,11 +380,13 @@ export default TasksPage
 /* Card                                                                     */
 /* ════════════════════════════════════════════════════════════════════════ */
 
-function TaskCard({ task, today, statusPending, onStatus, onEdit, onDelete }: {
+function TaskCard({ task, today, statusPending, onStatus, onOpen, onEdit, onDelete }: {
     task: WorkTask
     today: string
     statusPending: boolean
     onStatus: (next: WorkTaskStatus) => void
+    /** The details dialog: the whole description and the files, which the card only summarises. */
+    onOpen: () => void
     onEdit: () => void
     onDelete: () => void
 }) {
@@ -317,17 +397,18 @@ function TaskCard({ task, today, statusPending, onStatus, onEdit, onDelete }: {
     const priority = PRIORITY_COLORS[task.priority]
     const codeColor = closed ? 'text.disabled' : (CODE_COLORS[task.projectColorKey ?? ''] ?? CODE_COLORS.p1)
 
+    const attachmentCount = task.attachments?.length ?? 0
     const visibleTeam = task.assignees.slice(0, 6)
     const remaining = task.assignees.length - visibleTeam.length
 
     return (
-        <Box data-testid="task-card" sx={{
+        <Box data-testid="task-card" onClick={onOpen} sx={{
             bgcolor: closed ? 'action.hover' : 'background.paper',
             border: '1px solid', borderColor: late > 0 ? 'warning.main' : 'divider', borderRadius: '12px',
-            overflow: 'hidden', transition: 'all 0.15s',
+            overflow: 'hidden', transition: 'all 0.15s', cursor: 'pointer',
             display: 'flex', flexDirection: 'column',
             opacity: closed ? 0.75 : 1,
-            '&:hover': { transform: 'translateY(-2px)' },
+            '&:hover': { transform: 'translateY(-2px)', borderColor: late > 0 ? 'warning.main' : 'primary.main' },
         }}>
             {/* Header */}
             <Box sx={{
@@ -342,7 +423,20 @@ function TaskCard({ task, today, statusPending, onStatus, onEdit, onDelete }: {
                             borderRadius: '6px', letterSpacing: '0.02em', mb: '6px',
                         }}>{task.projectCode}</Box>
                     )}
-                    <Box sx={{ fontSize: 16, fontWeight: 700, color: 'text.primary', lineHeight: 1.3, mb: '6px', wordBreak: 'break-word' }}>
+                    {/* A real button, so the details open from the keyboard too; one line, so a long title never grows the card. */}
+                    <Box
+                        component="button"
+                        type="button"
+                        title={task.title}
+                        onClick={(e: React.MouseEvent) => { e.stopPropagation(); onOpen() }}
+                        sx={{
+                            display: 'block', maxWidth: '100%', p: 0, border: 'none', bgcolor: 'transparent', textAlign: 'left',
+                            fontFamily: 'inherit', cursor: 'pointer',
+                            fontSize: 16, fontWeight: 700, color: 'text.primary', lineHeight: 1.3, mb: '6px',
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                            '&:hover': { color: 'primary.main' },
+                        }}
+                    >
                         {task.title}
                     </Box>
                     <Box sx={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -383,15 +477,21 @@ function TaskCard({ task, today, statusPending, onStatus, onEdit, onDelete }: {
                 </Box>
             </Box>
 
-            {/* Description */}
-            {task.description && (
-                <Box sx={{ p: '12px 18px', borderBottom: '1px solid', borderBottomColor: 'divider' }}>
-                    <Box sx={{
-                        fontSize: 12, color: 'text.secondary', lineHeight: 1.5, whiteSpace: 'pre-wrap',
-                        display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden',
-                    }}>{task.description}</Box>
+            {/* Summary: always the same height, whatever the description or the files, so
+                every card in the grid lines up. The whole of both is in the details dialog. */}
+            <Box data-testid="task-summary" sx={{ p: '12px 18px', borderBottom: '1px solid', borderBottomColor: 'divider' }}>
+                <Box sx={{
+                    fontSize: 12, lineHeight: 1.5, height: '3em', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                    color: task.description ? 'text.secondary' : 'text.disabled', fontStyle: task.description ? 'normal' : 'italic',
+                    display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+                }}>{task.description || 'No description'}</Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: '8px', fontSize: 11 }}>
+                    <Box sx={{ color: attachmentCount > 0 ? 'text.primary' : 'text.disabled', fontWeight: attachmentCount > 0 ? 600 : 400 }}>
+                        📎 {attachmentCount === 0 ? 'No attachments' : plural(attachmentCount, 'attachment')}
+                    </Box>
+                    <Box sx={{ color: 'primary.main', fontWeight: 600 }}>View details →</Box>
                 </Box>
-            )}
+            </Box>
 
             {/* Assignees */}
             <Box sx={{ p: '12px 18px', borderBottom: '1px solid', borderBottomColor: 'divider' }}>
@@ -468,8 +568,9 @@ function TaskCard({ task, today, statusPending, onStatus, onEdit, onDelete }: {
                 />
             </Box>
 
-            {/* Footer */}
-            <Box sx={{ display: 'flex', gap: '6px', p: '10px 14px', bgcolor: 'action.hover', alignItems: 'center' }}>
+            {/* Footer. Its own clicks (the status menu's included, which bubble through
+                the portal) are not a click on the card. */}
+            <Box onClick={(e) => e.stopPropagation()} sx={{ display: 'flex', gap: '6px', p: '10px 14px', bgcolor: 'action.hover', alignItems: 'center', cursor: 'default' }}>
                 {task.canChangeStatus ? (
                     <StatusControls status={task.status} pending={statusPending} onStatus={onStatus} />
                 ) : (
@@ -566,7 +667,7 @@ function StatusControls({ status, pending, onStatus }: {
     )
 }
 
-function AddCard({ onClick }: { onClick: () => void }) {
+function AddCard({ onClick, personal = false }: { onClick: () => void; personal?: boolean }) {
     return (
         <Box
             component="button"
@@ -577,6 +678,7 @@ function AddCard({ onClick }: { onClick: () => void }) {
                 borderRadius: '12px', p: '40px 20px', minHeight: 280,
                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                 cursor: 'pointer', fontFamily: 'inherit', textAlign: 'center',
+                ...(personal && { minHeight: 180, p: '28px 20px' }),
                 color: 'text.secondary', transition: 'all 0.15s',
                 '&:hover': { borderColor: 'primary.main', bgcolor: softBg('primary'), transform: 'translateY(-2px)' },
             }}
@@ -587,10 +689,59 @@ function AddCard({ onClick }: { onClick: () => void }) {
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: 24, color: 'text.secondary', mb: '12px',
             }}>+</Box>
-            <Box sx={{ fontSize: 14, fontWeight: 600, color: 'text.primary', mb: '4px' }}>Create a new task</Box>
+            <Box sx={{ fontSize: 14, fontWeight: 600, color: 'text.primary', mb: '4px' }}>{personal ? 'Add a task of your own' : 'Create a new task'}</Box>
             <Box sx={{ fontSize: 12, color: 'text.secondary', lineHeight: 1.5 }}>
-                Pick a project, assign the people,<br />and track it to done
+                {personal ? <>Pick a project and track<br />your own work to done</> : <>Pick a project, assign the people,<br />and track it to done</>}
             </Box>
+        </Box>
+    )
+}
+
+function CardGrid({ children }: { children: React.ReactNode }) {
+    return (
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '14px' }}>
+            {children}
+        </Box>
+    )
+}
+
+/** One of an Employee's two groups: the work handed to them (accented), and their own. */
+function TaskSection({ title, subtitle, count, accent = false, children }: {
+    title: string
+    subtitle: string
+    count: number
+    accent?: boolean
+    children: React.ReactNode
+}) {
+    return (
+        <Box component="section" aria-label={title} sx={{ mb: '22px' }}>
+            <Box sx={{
+                display: 'flex', alignItems: 'baseline', gap: '10px', flexWrap: 'wrap', mb: '10px', pl: '10px',
+                borderLeft: '3px solid', borderLeftColor: accent ? 'primary.main' : 'divider',
+            }}>
+                <Box component="h2" sx={{ m: 0, fontSize: accent ? 16 : 14, fontWeight: 700, color: accent ? 'text.primary' : 'text.secondary' }}>
+                    {title}
+                </Box>
+                <Box data-testid="section-count" sx={{
+                    fontSize: 11, fontWeight: 700, px: '8px', py: '1px', borderRadius: '10px',
+                    bgcolor: accent ? softBg('primary') : 'action.hover', color: accent ? 'primary.main' : 'text.secondary',
+                }}>
+                    {count}
+                </Box>
+                <Box sx={{ fontSize: 12, color: 'text.secondary' }}>{subtitle}</Box>
+            </Box>
+            {children}
+        </Box>
+    )
+}
+
+function SectionEmpty({ children }: { children: React.ReactNode }) {
+    return (
+        <Box sx={{
+            bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider', borderRadius: '10px',
+            py: 4, textAlign: 'center', color: 'text.secondary', fontSize: 13,
+        }}>
+            {children}
         </Box>
     )
 }

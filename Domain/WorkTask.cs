@@ -83,6 +83,9 @@ public class WorkTask
     /// <summary>Set on entering Done, cleared on leaving it.</summary>
     public DateTime? CompletedAtUtc { get; set; }
 
+    /// <summary>Files attached to explain the work; see <see cref="WorkTaskAttachment"/>.</summary>
+    public ICollection<WorkTaskAttachment> Attachments { get; set; } = new List<WorkTaskAttachment>();
+
     /// <summary>Timesheet rows logged against this task, in any timesheet status.</summary>
     public ICollection<TimesheetEntry> TimesheetEntries { get; set; } = new List<TimesheetEntry>();
 }

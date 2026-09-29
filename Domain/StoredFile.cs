@@ -18,6 +18,13 @@ public enum StoredFilePurpose
     /// open this, and must not thereby be able to open a medical certificate.
     /// </summary>
     CoverageHandover = 2,
+
+    /// <summary>
+    /// A file attached to a task (<see cref="WorkTaskAttachment"/>). Readable by
+    /// whoever can see the task, which is a different set again from either of the
+    /// leave purposes.
+    /// </summary>
+    TaskAttachment = 3,
 }
 
 /// <summary>

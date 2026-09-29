@@ -190,4 +190,51 @@ public class DeleteUserStoredFileCleanupTests : IAsyncLifetime
 
         Assert.Equal(DeleteBehavior.Restrict, fk.DeleteBehavior);
     }
+
+    private async Task<WorkTask> TaskWithAttachmentAsync(string createdBy, string attachedBy)
+    {
+        if (!await Db.Departments.AnyAsync(d => d.Id == 1))
+            Db.Departments.Add(new Department { Id = 1, Name = "Sales", Code = "SAL" });
+        var file = FileUploadedBy(attachedBy, StoredFilePurpose.TaskAttachment);
+        var task = new WorkTask
+        {
+            Title = "Brief", DepartmentId = 1, CreatedById = createdBy,
+            Assignees = [new WorkTaskAssignee { UserId = createdBy }],
+            Attachments = [new WorkTaskAttachment { StoredFile = file }],
+        };
+        Db.WorkTasks.Add(task);
+        await Db.SaveChangesAsync();
+        Db.ChangeTracker.Clear();
+        return task;
+    }
+
+    [Fact]
+    public async Task A_file_the_user_attached_to_a_colleagues_task_stays_with_the_task()
+    {
+        await AddUserAsync(AdminUserId, "admin");
+        await AddUserAsync(EmployeeUserId, "employee");
+        await AddUserAsync(OtherAdminUserId, "colleague");
+        var task = await TaskWithAttachmentAsync(createdBy: OtherAdminUserId, attachedBy: EmployeeUserId);
+
+        var result = await DeleteAsync(EmployeeUserId);
+
+        Assert.True(result.IsSuccess, result.Error);
+        var attachment = await Db.WorkTaskAttachments.Include(a => a.StoredFile).SingleAsync(a => a.WorkTaskId == task.Id);
+        Assert.Equal(AdminUserId, attachment.StoredFile!.UploadedById);
+    }
+
+    [Fact]
+    public async Task Files_colleagues_attached_to_the_users_own_task_go_with_the_task()
+    {
+        await AddUserAsync(AdminUserId, "admin");
+        await AddUserAsync(EmployeeUserId, "employee");
+        await AddUserAsync(OtherAdminUserId, "colleague");
+        var task = await TaskWithAttachmentAsync(createdBy: EmployeeUserId, attachedBy: OtherAdminUserId);
+
+        var result = await DeleteAsync(EmployeeUserId);
+
+        Assert.True(result.IsSuccess, result.Error);
+        Assert.False(await Db.WorkTasks.AnyAsync(t => t.Id == task.Id));
+        Assert.False(await Db.StoredFiles.AnyAsync(f => f.Purpose == StoredFilePurpose.TaskAttachment));
+    }
 }

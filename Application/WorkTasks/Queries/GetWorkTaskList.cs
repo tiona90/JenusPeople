@@ -17,7 +17,7 @@ public class GetWorkTaskList
     {
         public string CallerUserId { get; set; } = string.Empty;
 
-        /// <summary>An Employee's view: only the tasks they are on, and none of them editable.</summary>
+        /// <summary>An Employee's view: only the tasks they are on or created, and only the latter editable.</summary>
         public bool AssignedOnly { get; set; }
     }
 
@@ -30,7 +30,8 @@ public class GetWorkTaskList
             var tasks = await WorkTaskProjection
                 .Project(
                     context.WorkTasks.AsNoTracking().Where(t => departmentIds.Contains(t.DepartmentId)
-                        && (!request.AssignedOnly || t.Assignees.Any(a => a.UserId == request.CallerUserId))),
+                        && (!request.AssignedOnly || t.CreatedById == request.CallerUserId
+                            || t.Assignees.Any(a => a.UserId == request.CallerUserId))),
                     request.CallerUserId,
                     callerManages: !request.AssignedOnly)
                 .ToListAsync(cancellationToken);

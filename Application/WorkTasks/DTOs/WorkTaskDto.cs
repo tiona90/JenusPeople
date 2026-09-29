@@ -39,6 +39,23 @@ public class WorkTaskDto
 
     /// <summary>The caller may edit it, or is one of its assignees: may move its status.</summary>
     public bool CanChangeStatus { get; set; }
+
+    /// <summary>Files attached to explain the work, oldest first. Whoever may edit the task adds them; anyone who sees it opens them.</summary>
+    public List<WorkTaskAttachmentDto> Attachments { get; set; } = [];
+}
+
+public class WorkTaskAttachmentDto
+{
+    public int Id { get; set; }
+    public string FileName { get; set; } = string.Empty;
+    public string ContentType { get; set; } = string.Empty;
+    public long SizeBytes { get; set; }
+    /// <summary>The relative <c>/api/files/{id}</c> path the file is served from.</summary>
+    public string Url { get; set; } = string.Empty;
+    public string UploadedByName { get; set; } = string.Empty;
+    public DateTime CreatedAtUtc { get; set; }
+    /// <summary>The caller attached it, or may edit the task.</summary>
+    public bool CanRemove { get; set; }
 }
 
 public class WorkTaskAssigneeDto

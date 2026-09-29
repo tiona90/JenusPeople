@@ -14,10 +14,11 @@ namespace API.Controllers;
 /// <summary>
 /// Tasks Managers and HR Administrators hand out — to each other and to the
 /// Employees in their departments. Two gates, ANDed: the class admits the three
-/// Leave &amp; Time roles, and every action but reading your tasks and moving their
-/// status is gated again to Managers and HR Administrators. An Employee sees only
-/// the tasks they are on (<c>AssignedOnly</c>). The handlers scope every task to
-/// the caller's departments and decide who may change what.
+/// Leave &amp; Time roles, and the assignee picker is gated again to Managers and
+/// HR Administrators. An Employee (<c>AssignedOnly</c>) sees the tasks they are on
+/// or created, and may create their own — always assigned to themselves — and
+/// edit or delete only those. The handlers scope every task to the caller's
+/// departments and decide who may change what.
 /// </summary>
 [ApiVersion("1.0")]
 [Authorize(Roles = AppRoles.LeaveAndTimeRoles)]
@@ -25,7 +26,7 @@ public class WorkTasksController(IHubContext<NotificationsHub> notificationsHub)
 {
     private string CallerUserId => User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
 
-    /// <summary>An Employee works their own tasks; a Manager or HR Administrator runs the department's.</summary>
+    /// <summary>An Employee works the tasks they are on and runs the ones they created; a Manager or HR Administrator runs the department's.</summary>
     private bool AssignedOnly => !User.IsDepartmentScoped();
 
     [HttpGet]
@@ -48,7 +49,6 @@ public class WorkTasksController(IHubContext<NotificationsHub> notificationsHub)
         }));
 
     [HttpGet("departments")]
-    [Authorize(Roles = AppRoles.LeaveAndTimeDecisionRoles)]
     public async Task<ActionResult<List<WorkTaskDepartmentDto>>> GetDepartments() =>
         HandleResult(await Mediator.Send(new GetWorkTaskDepartments.Query { CallerUserId = CallerUserId }));
 
@@ -58,24 +58,21 @@ public class WorkTasksController(IHubContext<NotificationsHub> notificationsHub)
         HandleResult(await Mediator.Send(new GetWorkTaskAssignees.Query { CallerUserId = CallerUserId, DepartmentId = departmentId }));
 
     [HttpGet("projects")]
-    [Authorize(Roles = AppRoles.LeaveAndTimeDecisionRoles)]
     public async Task<ActionResult<List<WorkTaskProjectDto>>> GetProjects([FromQuery] int departmentId) =>
         HandleResult(await Mediator.Send(new GetWorkTaskProjects.Query { CallerUserId = CallerUserId, DepartmentId = departmentId }));
 
     [HttpPost]
-    [Authorize(Roles = AppRoles.LeaveAndTimeDecisionRoles)]
     public async Task<ActionResult<WorkTaskDto>> CreateWorkTask(UpsertWorkTaskRequest request, CancellationToken cancellationToken)
     {
-        var result = await Mediator.Send(new CreateWorkTask.Command { CallerUserId = CallerUserId, Task = request }, cancellationToken);
+        var result = await Mediator.Send(new CreateWorkTask.Command { CallerUserId = CallerUserId, Task = request, AssignedOnly = AssignedOnly }, cancellationToken);
         if (result.IsSuccess) await NotifyAsync(result.Value!, cancellationToken);
         return HandleResult(result);
     }
 
     [HttpPut("{id:int}")]
-    [Authorize(Roles = AppRoles.LeaveAndTimeDecisionRoles)]
     public async Task<ActionResult<WorkTaskDto>> UpdateWorkTask(int id, UpsertWorkTaskRequest request, CancellationToken cancellationToken)
     {
-        var result = await Mediator.Send(new UpdateWorkTask.Command { Id = id, CallerUserId = CallerUserId, Task = request }, cancellationToken);
+        var result = await Mediator.Send(new UpdateWorkTask.Command { Id = id, CallerUserId = CallerUserId, Task = request, AssignedOnly = AssignedOnly }, cancellationToken);
         if (result.IsSuccess) await NotifyAsync(result.Value!, cancellationToken);
         return HandleResult(result);
     }
@@ -91,11 +88,45 @@ public class WorkTasksController(IHubContext<NotificationsHub> notificationsHub)
         return HandleResult(result);
     }
 
+    /// <summary>Attaches one file. Anyone who can see the task may; see <see cref="AddWorkTaskAttachment"/>.</summary>
+    [HttpPost("{id:int}/attachments")]
+    [RequestSizeLimit(11_000_000)]
+    public async Task<ActionResult<WorkTaskDto>> AddAttachment(int id, [FromForm] IFormFile file, CancellationToken cancellationToken)
+    {
+        if (file is null || file.Length == 0)
+            return BadRequest(new { message = "Please select a file to attach." });
+
+        using var buffer = new MemoryStream();
+        await file.CopyToAsync(buffer, cancellationToken);
+
+        var result = await Mediator.Send(new AddWorkTaskAttachment.Command
+        {
+            Id = id,
+            CallerUserId = CallerUserId,
+            Content = buffer.ToArray(),
+            FileName = file.FileName,
+            DeclaredContentType = file.ContentType,
+            AssignedOnly = AssignedOnly,
+        }, cancellationToken);
+        if (result.IsSuccess) await NotifyAsync(result.Value!, cancellationToken);
+        return HandleResult(result);
+    }
+
+    [HttpDelete("{id:int}/attachments/{attachmentId:int}")]
+    public async Task<ActionResult<WorkTaskDto>> RemoveAttachment(int id, int attachmentId, CancellationToken cancellationToken)
+    {
+        var result = await Mediator.Send(new RemoveWorkTaskAttachment.Command
+        {
+            Id = id, AttachmentId = attachmentId, CallerUserId = CallerUserId, AssignedOnly = AssignedOnly,
+        }, cancellationToken);
+        if (result.IsSuccess) await NotifyAsync(result.Value!, cancellationToken);
+        return HandleResult(result);
+    }
+
     [HttpDelete("{id:int}")]
-    [Authorize(Roles = AppRoles.LeaveAndTimeDecisionRoles)]
     public async Task<ActionResult> DeleteWorkTask(int id, CancellationToken cancellationToken)
     {
-        var result = await Mediator.Send(new DeleteWorkTask.Command { Id = id, CallerUserId = CallerUserId }, cancellationToken);
+        var result = await Mediator.Send(new DeleteWorkTask.Command { Id = id, CallerUserId = CallerUserId, AssignedOnly = AssignedOnly }, cancellationToken);
         if (!result.IsSuccess) return HandleResult(result);
         await NotifyDepartmentAsync(result.Value, cancellationToken);
         return NoContent();

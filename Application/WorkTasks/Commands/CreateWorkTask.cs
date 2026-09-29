@@ -15,6 +15,12 @@ public class CreateWorkTask
     {
         public string CallerUserId { get; set; } = string.Empty;
         public required UpsertWorkTaskRequest Task { get; set; }
+
+        /// <summary>
+        /// An Employee: the task is their own, assigned to themselves whatever the
+        /// request's assignee list says — an Employee hands nobody else work.
+        /// </summary>
+        public bool AssignedOnly { get; set; }
     }
 
     public class Handler(AppDbContext context, IEmailService emailService, ILogger<Handler> logger)
@@ -29,7 +35,9 @@ public class CreateWorkTask
             if (input.ProjectId is not { } projectId
                 || !await WorkTaskProjectRule.IsAvailableAsync(context, projectId, input.DepartmentId, cancellationToken))
                 return Result<WorkTaskDto>.Invalid(WorkTaskProjectRule.NotAvailableMessage);
-            var assigneeIds = await WorkTaskAssigneeRule.ResolveAsync(context, input.AssigneeIds, input.DepartmentId, cancellationToken);
+            var assigneeIds = request.AssignedOnly
+                ? [request.CallerUserId]
+                : await WorkTaskAssigneeRule.ResolveAsync(context, input.AssigneeIds, input.DepartmentId, cancellationToken);
             if (assigneeIds.Count == 0)
                 return Result<WorkTaskDto>.Invalid(WorkTaskAssigneeRule.NobodyEligibleMessage);
             if (await WorkTaskAssigneeRule.AnyHrAdministratorAsync(context, assigneeIds, cancellationToken))

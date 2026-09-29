@@ -171,3 +171,9 @@ export function tasksToCsv(tasks: readonly WorkTask[]): string {
     ].join(','))
     return [CSV_HEADER.join(','), ...rows].join('\r\n')
 }
+
+/** A task's date (`YYYY-MM-DD`, or an instant whose calendar day is read from its first ten characters) as "Sep 29, 2026". */
+export function formatTaskDate(iso: string): string {
+    const [y, m, d] = iso.slice(0, 10).split('-').map(Number)
+    return new Date(y, m - 1, d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+}

@@ -1,3 +1,4 @@
+using Application.Files;
 using Application.WorkTasks.DTOs;
 using Domain;
 using Microsoft.EntityFrameworkCore;
@@ -8,8 +9,8 @@ namespace Application.WorkTasks.Support;
 public static class WorkTaskProjection
 {
     /// <param name="callerManages">
-    /// False for an Employee: they never create, edit or delete, so CanEdit is off
-    /// whoever created the task — a deactivated creator's takeover is for Managers and HR.
+    /// False for an Employee: they edit and delete only the tasks they created
+    /// themselves — a deactivated creator's takeover is for Managers and HR.
     /// </param>
     public static IQueryable<WorkTaskDto> Project(IQueryable<WorkTask> tasks, string callerUserId, bool callerManages = true) =>
         tasks.Select(t => new WorkTaskDto
@@ -43,9 +44,28 @@ public static class WorkTaskProjection
             UpdatedAtUtc = t.UpdatedAtUtc,
             CompletedAtUtc = t.CompletedAtUtc,
             // Mirrors WorkTaskAccess.CanManageAsync: an inactive creator opens the task to everyone in scope.
-            CanEdit = callerManages && (t.CreatedById == callerUserId || !t.CreatedBy!.IsActive),
-            CanChangeStatus = (callerManages && (t.CreatedById == callerUserId || !t.CreatedBy!.IsActive))
+            CanEdit = t.CreatedById == callerUserId || (callerManages && !t.CreatedBy!.IsActive),
+            CanChangeStatus = t.CreatedById == callerUserId || (callerManages && !t.CreatedBy!.IsActive)
                 || t.Assignees.Any(a => a.UserId == callerUserId),
+            // Never the bytes: only the file's columns are selected.
+            Attachments = t.Attachments
+                .OrderBy(a => a.CreatedAtUtc).ThenBy(a => a.Id)
+                .Select(a => new WorkTaskAttachmentDto
+                {
+                    Id = a.Id,
+                    FileName = a.StoredFile!.FileName,
+                    ContentType = a.StoredFile.ContentType,
+                    SizeBytes = a.StoredFile.SizeBytes,
+                    Url = StoredFilePath.Prefix + a.StoredFileId,
+                    UploadedByName = !string.IsNullOrWhiteSpace(a.StoredFile.UploadedBy!.DisplayName)
+                        ? a.StoredFile.UploadedBy.DisplayName : (a.StoredFile.UploadedBy.Email ?? ""),
+                    CreatedAtUtc = a.CreatedAtUtc,
+                    // The uploader here; whoever may edit the task is folded in by
+                    // WithLoggedHoursAsync, since a reference back to the task from
+                    // inside this list needs an APPLY that SQLite cannot run.
+                    CanRemove = a.StoredFile.UploadedById == callerUserId,
+                })
+                .ToList(),
         });
 
     public static async Task<WorkTaskDto> LoadDtoAsync(
@@ -75,7 +95,12 @@ public static class WorkTaskProjection
         AppDbContext context, List<WorkTaskDto> tasks, CancellationToken cancellationToken)
     {
         var logged = await LoggedHoursAsync(context, tasks.Select(t => t.Id).ToList(), cancellationToken);
-        foreach (var task in tasks) task.LoggedHours = logged.GetValueOrDefault(task.Id);
+        foreach (var task in tasks)
+        {
+            task.LoggedHours = logged.GetValueOrDefault(task.Id);
+            // Mirrors RemoveWorkTaskAttachment: the uploader, or whoever may edit the task.
+            foreach (var attachment in task.Attachments) attachment.CanRemove |= task.CanEdit;
+        }
         return tasks;
     }
 

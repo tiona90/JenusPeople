@@ -27,12 +27,16 @@ public static class WorkTaskAccess
     /// deactivated rather than deleted, so without this their tasks would freeze with
     /// nobody able to touch them.
     /// </summary>
+    /// <param name="assignedOnly">
+    /// An Employee: their own tasks only. The deactivated-creator takeover is for
+    /// Managers and HR Administrators, who run the department's tasks.
+    /// </param>
     public static async Task<bool> CanManageAsync(
-        AppDbContext context, WorkTask task, string callerUserId, CancellationToken cancellationToken) =>
+        AppDbContext context, WorkTask task, string callerUserId, CancellationToken cancellationToken, bool assignedOnly = false) =>
         task.CreatedById == callerUserId
-        || !await context.Users.AnyAsync(u => u.Id == task.CreatedById && u.IsActive, cancellationToken);
+        || (!assignedOnly && !await context.Users.AnyAsync(u => u.Id == task.CreatedById && u.IsActive, cancellationToken));
 
-    /// <param name="assignedOnly">An Employee's view: of the tasks in scope, only the ones they are on.</param>
+    /// <param name="assignedOnly">An Employee's view: of the tasks in scope, only the ones they are on or created.</param>
     public static async Task<WorkTask?> FindVisibleAsync(
         AppDbContext context, int id, string callerUserId, CancellationToken cancellationToken, bool assignedOnly = false)
     {
@@ -41,6 +45,6 @@ public static class WorkTaskAccess
             .Include(t => t.Assignees)
             .FirstOrDefaultAsync(t => t.Id == id
                 && departmentIds.Contains(t.DepartmentId)
-                && (!assignedOnly || t.Assignees.Any(a => a.UserId == callerUserId)), cancellationToken);
+                && (!assignedOnly || t.CreatedById == callerUserId || t.Assignees.Any(a => a.UserId == callerUserId)), cancellationToken);
     }
 }

@@ -118,6 +118,19 @@ public class DeleteAdminUser
                 .ToListAsync(cancellationToken);
             context.WorkTasks.RemoveRange(createdTasks);
 
+            // Their attachment rows cascade with them, but the files would not. Files
+            // the leaver uploaded go in ReleaseUploadedFilesAsync; these are the ones
+            // colleagues attached to the leaver's tasks, which nothing else refers to.
+            var createdTaskIds = createdTasks.Select(t => t.Id).ToList();
+            var colleagueFileIds = await context.WorkTaskAttachments
+                .Where(a => createdTaskIds.Contains(a.WorkTaskId) && a.StoredFile!.UploadedById != userId)
+                .Select(a => a.StoredFileId)
+                .ToListAsync(cancellationToken);
+            foreach (var fileId in colleagueFileIds)
+            {
+                context.StoredFiles.Remove(new StoredFile { Id = fileId });
+            }
+
             // The leaver comes off every task they were on. A task somebody else
             // created that would be left with nobody goes back to its creator; one
             // still shared with others just loses the leaver. The check reads the
@@ -254,6 +267,12 @@ public class DeleteAdminUser
                 .Select(StoredFilePath.TryParseId)
                 .Where(id => id is not null)
                 .ToHashSet();
+
+            // A file the leaver attached to somebody else's task stays with the task.
+            keep.UnionWith(await context.WorkTaskAttachments
+                .Where(a => uploadedIds.Contains(a.StoredFileId) && a.WorkTask!.CreatedById != userId)
+                .Select(a => a.StoredFileId)
+                .ToListAsync(cancellationToken));
 
             // With nobody to hand them to they are deleted like the rest, and the
             // surviving row is left pointing at a path that no longer resolves. Only

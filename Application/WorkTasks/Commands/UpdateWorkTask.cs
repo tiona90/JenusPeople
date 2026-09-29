@@ -25,6 +25,12 @@ public class UpdateWorkTask
         public int Id { get; set; }
         public string CallerUserId { get; set; } = string.Empty;
         public required UpsertWorkTaskRequest Task { get; set; }
+
+        /// <summary>
+        /// An Employee: only a task they created, which stays assigned to them alone
+        /// whatever the request's assignee list says.
+        /// </summary>
+        public bool AssignedOnly { get; set; }
     }
 
     public class Handler(AppDbContext context, IEmailService emailService, ILogger<Handler> logger)
@@ -32,15 +38,17 @@ public class UpdateWorkTask
     {
         public async Task<Result<WorkTaskDto>> Handle(Command request, CancellationToken cancellationToken)
         {
-            var task = await WorkTaskAccess.FindVisibleAsync(context, request.Id, request.CallerUserId, cancellationToken);
+            var task = await WorkTaskAccess.FindVisibleAsync(context, request.Id, request.CallerUserId, cancellationToken, request.AssignedOnly);
             if (task is null)
                 return Result<WorkTaskDto>.Failure(WorkTaskAccess.NotFoundMessage);
-            if (!await WorkTaskAccess.CanManageAsync(context, task, request.CallerUserId, cancellationToken))
+            if (!await WorkTaskAccess.CanManageAsync(context, task, request.CallerUserId, cancellationToken, request.AssignedOnly))
                 return Result<WorkTaskDto>.Forbidden(WorkTaskAccess.NotCreatorMessage);
 
             var input = request.Task;
             var departmentChanged = input.DepartmentId != task.DepartmentId;
-            var assigneeIds = await WorkTaskAssigneeRule.ResolveAsync(context, input.AssigneeIds, input.DepartmentId, cancellationToken);
+            var assigneeIds = request.AssignedOnly
+                ? [request.CallerUserId]
+                : await WorkTaskAssigneeRule.ResolveAsync(context, input.AssigneeIds, input.DepartmentId, cancellationToken);
             if (assigneeIds.Count == 0)
                 return Result<WorkTaskDto>.Invalid(WorkTaskAssigneeRule.NobodyEligibleMessage);
             var current = task.Assignees.Select(a => a.UserId).ToHashSet();

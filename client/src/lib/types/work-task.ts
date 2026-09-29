@@ -35,6 +35,21 @@ export interface WorkTask {
     canEdit: boolean
     /** The caller created it or is assigned it: may move its status. */
     canChangeStatus: boolean
+    /** Files attached to explain the work, oldest first. Added by whoever may edit the task (canEdit); anyone who sees it opens them. Missing from an older API. */
+    attachments?: WorkTaskAttachment[]
+}
+
+export interface WorkTaskAttachment {
+    id: number
+    fileName: string
+    contentType: string
+    sizeBytes: number
+    /** The relative `/api/files/{id}` path; pass it through `resolveFileUrl`. */
+    url: string
+    uploadedByName: string
+    createdAtUtc: string
+    /** The caller attached it, or may edit the task. */
+    canRemove: boolean
 }
 
 export interface WorkTaskAssignee {

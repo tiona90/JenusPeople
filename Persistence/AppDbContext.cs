@@ -46,6 +46,7 @@ public class AppDbContext : IdentityDbContext<
     public DbSet<SystemError> SystemErrors { get; set; }
     public DbSet<WorkTask> WorkTasks { get; set; }
     public DbSet<WorkTaskAssignee> WorkTaskAssignees { get; set; }
+    public DbSet<WorkTaskAttachment> WorkTaskAttachments { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -594,6 +595,27 @@ public class AppDbContext : IdentityDbContext<
 
             // "Assigned to me" and the user-delete sweep read by person.
             entity.HasIndex(a => a.UserId);
+        });
+
+        builder.Entity<WorkTaskAttachment>(entity =>
+        {
+            entity.Property(a => a.StoredFileId).IsRequired().HasMaxLength(450);
+
+            // Both cascade. A task going takes its attachment rows, but not the
+            // files: DeleteWorkTask and the user-delete sweeps remove those, and a
+            // file going takes its row.
+            entity.HasOne(a => a.WorkTask)
+                .WithMany(t => t.Attachments)
+                .HasForeignKey(a => a.WorkTaskId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(a => a.StoredFile)
+                .WithMany()
+                .HasForeignKey(a => a.StoredFileId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // One file is attached once; GetStoredFile finds the task by file.
+            entity.HasIndex(a => a.StoredFileId).IsUnique();
+            entity.HasIndex(a => a.WorkTaskId);
         });
 
         builder.Entity<AuditLog>(entity =>

@@ -38,6 +38,21 @@ export async function updateWorkTaskStatus(id: number, status: WorkTaskStatus) {
     return response.data
 }
 
+/** Attaches one file; the server checks its kind and size (StoreFile) and returns the task. */
+export async function addWorkTaskAttachment(id: number, file: File) {
+    const formData = new FormData()
+    formData.append('file', file)
+    const response = await apiClient.post<WorkTask>(`/worktasks/${id}/attachments`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return response.data
+}
+
+export async function removeWorkTaskAttachment(id: number, attachmentId: number) {
+    const response = await apiClient.delete<WorkTask>(`/worktasks/${id}/attachments/${attachmentId}`)
+    return response.data
+}
+
 export async function deleteWorkTask(id: number) {
     await apiClient.delete(`/worktasks/${id}`)
 }
