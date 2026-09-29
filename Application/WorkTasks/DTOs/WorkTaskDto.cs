@@ -71,6 +71,19 @@ public class WorkTaskAssigneeDto
     public bool IsHrAdministrator { get; set; }
 }
 
+/// <summary>Somebody in the caller's departments with no task In Progress (<c>GetIdleTaskPeople</c>).</summary>
+public class WorkTaskIdlePersonDto
+{
+    public string UserId { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+    public bool IsManager { get; set; }
+    /// <summary>The caller's departments this person covers, in step with <see cref="DepartmentNames"/>.</summary>
+    public List<int> DepartmentIds { get; set; } = [];
+    public List<string> DepartmentNames { get; set; } = [];
+    /// <summary>Tasks they are on that have not started. 0 means no open task at all.</summary>
+    public int ToDoCount { get; set; }
+}
+
 public class WorkTaskProjectDto
 {
     public int Id { get; set; }

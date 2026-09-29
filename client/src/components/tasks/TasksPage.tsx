@@ -19,6 +19,7 @@ import {
 import { SweetAlert } from '../ui'
 import { CardStat, OutlineBtn, SectionLabel, SelectFilter, StatCard } from '../ui/CardKit'
 import { CODE_COLORS, avatarBg, initials } from '../../lib/card-kit'
+import IdlePeoplePanel from './IdlePeoplePanel'
 import TaskDetailsDialog from './TaskDetailsDialog'
 import TaskDialog from './TaskDialog'
 import { PRIORITY_COLORS, STATUS_COLORS } from './statusStyles'
@@ -276,6 +277,8 @@ const TasksPage = observer(function TasksPage() {
                     + New task
                 </Box>}
             </Box>
+
+            {manages && <IdlePeoplePanel departmentId={departmentId} />}
 
             {/* Grid */}
             {!manages ? (

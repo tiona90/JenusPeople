@@ -20,6 +20,7 @@ vi.mock('../../lib/api', () => ({
     getCompanyAttendance: vi.fn(),
     getDepartments: vi.fn(),
     getEmployeeProfiles: vi.fn(),
+    getIdleTaskPeople: vi.fn(),
     getLeaveTypes: vi.fn(),
     getProjectActivityTypes: vi.fn(),
     getProjectComponents: vi.fn(),
@@ -89,6 +90,9 @@ beforeEach(() => {
         { id: 'u-2', userName: 'andreas@worktrack.com', email: 'andreas@worktrack.com', displayName: 'Andreas Georgiou', imageUrl: '', emailConfirmed: false, isActive: true, roles: ['Manager'] },
     ] as never)
     api.getProjects.mockResolvedValue([])
+    api.getIdleTaskPeople.mockResolvedValue([
+        { userId: 'u-1', displayName: 'Maria Ioannou', isManager: false, departmentIds: [1], departmentNames: ['Engineering'], toDoCount: 0 },
+    ])
     api.getProjectActivityTypes.mockResolvedValue([])
     api.getProjectComponents.mockResolvedValue([])
     api.getProjectTypes.mockResolvedValue([])
@@ -132,6 +136,15 @@ describe('The HR Administrator dashboard', () => {
         expect(screen.getByText("Today's issues")).toBeInTheDocument()
         expect(screen.getByText('Recent activity')).toBeInTheDocument()
         expect(screen.queryByText('Workspace overview')).not.toBeInTheDocument()
+    })
+
+    it('lists who is not working on a task', async () => {
+        renderAs(HR)
+
+        const panel = await screen.findByRole('region', { name: 'Not working on a task' })
+        expect(panel).toHaveTextContent('Maria Ioannou')
+        expect(panel).toHaveTextContent('No tasks')
+        expect(screen.getByRole('button', { name: 'Go to Tasks →' })).toBeInTheDocument()
     })
 
     it('lists who is away across every department, with when they are back', async () => {

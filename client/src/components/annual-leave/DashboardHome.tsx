@@ -28,6 +28,7 @@ import { isAdministrator, isSystemAdministrator } from '../../lib/roles'
 import { activityIcon } from '../../lib/hooks/useAttendance'
 import { describeBreakVariance } from '../../lib/break-policy'
 import ShortDaysNote from '../attendance/ShortDaysNote'
+import IdlePeoplePanel from '../tasks/IdlePeoplePanel'
 import { useOfferedLeaveTypes } from '../../lib/hooks'
 import { buildLeaveBalanceRows, type LeaveBalanceRow } from '../../lib/leave-balance-rows'
 import { useStore } from '../../lib/mobx'
@@ -536,6 +537,9 @@ function ManagerDashboard({ user }: { user: UserInfo }) {
                 onViewAllLeave={() => uiStore.navigateToTeamLeave()}
                 onViewAllTs={() => uiStore.navigateToTeamTimesheets()}
             />
+
+            {/* Who in the departments has no task In progress — the same list as on Tasks. */}
+            <IdlePeoplePanel onViewTasks={() => uiStore.navigateToTasks()} />
 
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: '14px', mb: '14px' }}>
                 <TeamStatusNowCard team={team ?? null} />
@@ -1054,6 +1058,9 @@ function HrDashboard({ user }: { user: UserInfo }) {
                 onViewAllLeave={() => uiStore.navigateToTeamLeave()}
                 onViewAllTs={() => uiStore.navigateToTeamTimesheets()}
             />
+
+            {/* Who in the departments has no task In progress — the same list as on Tasks. */}
+            <IdlePeoplePanel onViewTasks={() => uiStore.navigateToTasks()} />
 
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: '14px', mb: '14px' }}>
                 <WhosAwayCard

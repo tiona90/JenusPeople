@@ -14,6 +14,7 @@ vi.mock('../../lib/api', () => ({
     updateWorkTask: vi.fn(),
     updateWorkTaskStatus: vi.fn(),
     deleteWorkTask: vi.fn(),
+    getIdleTaskPeople: vi.fn(),
 }))
 vi.mock('../../lib/mobx')
 vi.mock('../ui/SweetAlert', () => ({ default: { fire: vi.fn() } }))
@@ -57,6 +58,7 @@ beforeEach(() => {
     vi.clearAllMocks()
     api.getWorkTasks.mockResolvedValue(TASKS)
     api.getWorkTaskDepartments.mockResolvedValue([{ id: 1, name: 'Sales' }])
+    api.getIdleTaskPeople.mockResolvedValue([])
 })
 
 describe('TasksPage', () => {
@@ -111,6 +113,31 @@ describe('TasksPage', () => {
         // Somebody else's task: nothing to attach, and no Edit.
         expect(within(dialog).queryByRole('button', { name: /Attach files/ })).toBeNull()
         expect(within(dialog).queryByRole('button', { name: 'Edit task' })).toBeNull()
+    })
+
+    it('lists for a manager who is not working on a task, following the department filter', async () => {
+        api.getWorkTaskDepartments.mockResolvedValue([{ id: 1, name: 'Sales' }, { id: 2, name: 'Ops' }])
+        api.getIdleTaskPeople.mockResolvedValue([
+            { userId: 'a', displayName: 'Ann Idle', isManager: false, departmentIds: [1], departmentNames: ['Sales'], toDoCount: 0 },
+            { userId: 'b', displayName: 'Ben Waiting', isManager: true, departmentIds: [2], departmentNames: ['Ops'], toDoCount: 2 },
+        ])
+        renderPage()
+
+        const panel = await screen.findByRole('region', { name: 'Not working on a task' })
+        expect(within(panel).getByTestId('idle-count')).toHaveTextContent('2')
+        expect(within(panel).getByText('No tasks')).toBeInTheDocument()
+        expect(within(panel).getByText('2 to do, none started')).toBeInTheDocument()
+
+        fireEvent.change(await screen.findByRole('combobox', { name: 'Department filter' }), { target: { value: '2' } })
+        expect(within(panel).queryByText('Ann Idle')).toBeNull()
+        expect(within(panel).getByText('Ben Waiting')).toBeInTheDocument()
+    })
+
+    it('shows an Employee no idle-people panel', async () => {
+        renderPage(['Employee'])
+        await cards()
+        expect(screen.queryByRole('region', { name: 'Not working on a task' })).toBeNull()
+        expect(api.getIdleTaskPeople).not.toHaveBeenCalled()
     })
 
     it('does not open the details for a click on the status controls', async () => {

@@ -57,6 +57,12 @@ public class WorkTasksController(IHubContext<NotificationsHub> notificationsHub)
     public async Task<ActionResult<List<WorkTaskAssigneeDto>>> GetAssignees([FromQuery] int departmentId) =>
         HandleResult(await Mediator.Send(new GetWorkTaskAssignees.Query { CallerUserId = CallerUserId, DepartmentId = departmentId }));
 
+    /// <summary>Who in the caller's departments has no task In Progress. Managers and HR only.</summary>
+    [HttpGet("idle-people")]
+    [Authorize(Roles = AppRoles.LeaveAndTimeDecisionRoles)]
+    public async Task<ActionResult<List<WorkTaskIdlePersonDto>>> GetIdlePeople() =>
+        HandleResult(await Mediator.Send(new GetIdleTaskPeople.Query { CallerUserId = CallerUserId }));
+
     [HttpGet("projects")]
     public async Task<ActionResult<List<WorkTaskProjectDto>>> GetProjects([FromQuery] int departmentId) =>
         HandleResult(await Mediator.Send(new GetWorkTaskProjects.Query { CallerUserId = CallerUserId, DepartmentId = departmentId }));
