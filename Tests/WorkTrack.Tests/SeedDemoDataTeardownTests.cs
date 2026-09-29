@@ -17,8 +17,8 @@ namespace WorkTrack.Tests;
 /// Every FK into a user row is DeleteBehavior.Restrict, so the database refuses the
 /// DELETE rather than tidying up after it. DbInitializer.CleanupUserDependencies had
 /// drifted behind the equivalent code in DeleteAdminUser and no longer detached
-/// Project.OwnerId — which the seeded demo projects set to manager1/manager2. So
-/// deleting manager1 threw, Program.cs logged it and carried on, and all ten demo
+/// Project.OwnerId (since removed) — which the seeded demo projects set to
+/// manager1/manager2. So deleting manager1 threw, Program.cs logged it and carried on, and all ten demo
 /// accounts survived the restart that was supposed to remove them.
 ///
 /// These run on SQLite rather than the EF in-memory provider on purpose: the
@@ -120,24 +120,18 @@ public class SeedDemoDataTeardownTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// Deleting the owner must detach the project, not delete it. A project is real
-    /// work — losing it because the account that happened to own it was removed would
-    /// be a worse bug than the one this fixes.
+    /// Removing the demo accounts must not take the projects with them. A project is
+    /// real work, whoever happened to be seeded alongside it.
     /// </summary>
     [Fact]
-    public async Task Projects_owned_by_a_removed_demo_account_survive_it_unowned()
+    public async Task Projects_survive_the_removal_of_the_demo_accounts()
     {
         await StartupAsync(SeedPolicy.Unrestricted(demoData: true));
-
-        var manager1 = await Users.FindByEmailAsync("manager1@annualleave.com");
-        Assert.NotNull(manager1);
-        Assert.Contains(await Db.Projects.ToListAsync(), p => p.OwnerId == manager1!.Id);
+        Assert.Equal(3, await Db.Projects.CountAsync());
 
         await StartupAsync(SeedPolicy.Unrestricted(demoData: false));
 
-        var projects = await Db.Projects.ToListAsync();
-        Assert.Equal(3, projects.Count);
-        Assert.DoesNotContain(projects, p => p.OwnerId == manager1!.Id);
+        Assert.Equal(3, await Db.Projects.CountAsync());
     }
 
     /// <summary>

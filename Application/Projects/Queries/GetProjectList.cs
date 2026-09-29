@@ -31,7 +31,7 @@ public class GetProjectList
 
             var visible = await ProjectScope.ApplyAsync(
                 context,
-                context.Projects.AsNoTracking().Include(p => p.Owner),
+                context.Projects.AsNoTracking(),
                 request.RequestingUserId,
                 request.IsAdmin,
                 request.IsManager,
@@ -155,11 +155,7 @@ public class GetProjectList
                     IsActive = p.IsActive,
                     Status = p.Status,
                     Departments = departmentAssignments.Where(a => a.ProjectId == p.Id).Select(a => a.Department).ToList(),
-                    OwnerId = p.OwnerId,
-                    OwnerName = p.Owner?.DisplayName,
                     ColorKey = string.IsNullOrEmpty(p.ColorKey) ? "p1" : p.ColorKey,
-                    TargetWeeklyHours = p.TargetWeeklyHours,
-                    TargetMonthlyHours = p.TargetMonthlyHours,
                     CreatedAt = p.CreatedAt,
                     HoursThisWeek = weekly,
                     HoursThisMonth = monthly,

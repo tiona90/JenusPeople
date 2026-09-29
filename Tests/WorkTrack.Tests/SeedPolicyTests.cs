@@ -368,7 +368,7 @@ public class SeedPolicyTests : IDisposable
     [Fact]
     public async Task Real_project_rows_are_repaired_even_when_demo_data_is_off()
     {
-        var admin = await GivenExistingAdminAsync(OperatorPassword);
+        await GivenExistingAdminAsync(OperatorPassword);
         Db.Departments.Add(new Department { Name = "Engineering", Code = "ENG", IsActive = true });
         await Db.SaveChangesAsync();
 
@@ -380,8 +380,6 @@ public class SeedPolicyTests : IDisposable
             Status = ProjectStatus.Active,
             IsActive = true,
             ColorKey = string.Empty,
-            TargetWeeklyHours = 0,
-            TargetMonthlyHours = 0,
         });
         await Db.SaveChangesAsync();
 
@@ -389,8 +387,5 @@ public class SeedPolicyTests : IDisposable
 
         var project = await Db.Projects.SingleAsync();
         Assert.False(string.IsNullOrEmpty(project.ColorKey));
-        Assert.NotEqual(0, project.TargetWeeklyHours);
-        Assert.NotEqual(0, project.TargetMonthlyHours);
-        Assert.Equal(admin.Id, project.OwnerId);
     }
 }

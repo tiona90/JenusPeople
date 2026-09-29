@@ -20,7 +20,6 @@ import {
 import {
     createProject,
     deleteProject,
-    getAdminUsers,
     getDepartments,
     getProjectActivityTypes,
     getProjectComponents,
@@ -33,7 +32,6 @@ import { softBg } from '../../lib/theme-tokens'
 import { CardStat, OutlineBtn, SelectFilter, StatCard } from '../ui/CardKit'
 import { CODE_COLORS, avatarBg, initials } from '../../lib/card-kit'
 import type {
-    AdminUser,
     Department,
     Project,
     ProjectActivityType,
@@ -58,11 +56,11 @@ type DeptFilter = 'all' | number | 'cross'
 /** Which window of logged hours the cards and the low-activity tile report on. */
 type HoursPeriod = 'week' | 'month'
 
-/** The target, the hours logged against it, and how to name that window. */
+/** The hours logged in the chosen window, and how to name that window. */
 function hoursFor(p: Project, period: HoursPeriod) {
     return period === 'week'
-        ? { target: p.targetWeeklyHours, logged: p.hoursThisWeek, noun: 'this week', targetLabel: 'weekly' }
-        : { target: p.targetMonthlyHours, logged: p.hoursThisMonth, noun: 'this month', targetLabel: 'monthly' }
+        ? { logged: p.hoursThisWeek, noun: 'this week' }
+        : { logged: p.hoursThisMonth, noun: 'this month' }
 }
 
 /* ─── helpers ────────────────────────────────────────────────────────────── */
@@ -94,10 +92,6 @@ function ProjectsPanel() {
     const { data: departments = [] } = useQuery({
         queryKey: ['departments'],
         queryFn: getDepartments,
-    })
-    const { data: adminUsers = [] } = useQuery({
-        queryKey: ['adminUsers'],
-        queryFn: getAdminUsers,
     })
     const { data: activityTypes = [] } = useQuery({
         queryKey: ['projectActivityTypes'],
@@ -140,8 +134,7 @@ function ProjectsPanel() {
         const allMemberIds = new Set<string>()
         for (const p of projects) for (const t of p.team) allMemberIds.add(t.userId)
         const lowActivity = projects.filter((p) => {
-            const { target, logged } = hoursFor(p, period)
-            return p.status === 'Active' && target > 0 && logged < target * 0.5
+            return p.status === 'Active' && hoursFor(p, period).logged === 0
         }).length
         return { active, onHold, inactive, totalHoursYTD, members: allMemberIds.size, lowActivity }
     }, [projects, period])
@@ -211,7 +204,7 @@ function ProjectsPanel() {
                     valueColor={counts.lowActivity > 0 ? 'warning.main' : 'success.main'}
                     sub={counts.lowActivity === 0
                         ? 'all projects on track'
-                        : `project${counts.lowActivity === 1 ? '' : 's'} < 50% target`}
+                        : `active project${counts.lowActivity === 1 ? '' : 's'} with no hours ${period === 'week' ? 'this week' : 'this month'}`}
                 />
             </Box>
 
@@ -324,7 +317,6 @@ function ProjectsPanel() {
                 open={createOpen}
                 title="New Project"
                 departments={departments}
-                users={adminUsers}
                 activityTypes={activityTypes}
                 components={components}
                 projectTypes={projectTypes}
@@ -339,7 +331,6 @@ function ProjectsPanel() {
                 title="Edit Project"
                 initial={editProject ?? undefined}
                 departments={departments}
-                users={adminUsers}
                 activityTypes={activityTypes}
                 components={components}
                 projectTypes={projectTypes}
@@ -367,9 +358,7 @@ function ProjectCard({ project, period, onEdit, onDelete }: {
     const status = STATUS_COLORS[p.status]
     // Everything in the hours block reads off the chosen window; the team
     // figures below it stay weekly, since that is the only per-member total.
-    const { target, logged, noun, targetLabel } = hoursFor(p, period)
-    const pct = target > 0 ? (logged / target) * 100 : 0
-    const fillColor = pct < 50 ? 'warning.main' : pct >= 100 ? 'success.main' : 'primary.main'
+    const { logged, noun } = hoursFor(p, period)
     const avgPerPerson = p.teamSize > 0 ? +(p.hoursThisWeek / p.teamSize).toFixed(1) : 0
 
     const visibleTeam = p.team.slice(0, 6)
@@ -407,11 +396,6 @@ function ProjectCard({ project, period, onEdit, onDelete }: {
                             fontSize: 11, px: '8px', py: '2px', borderRadius: '10px',
                             bgcolor: 'action.hover', color: 'text.secondary', fontWeight: 500,
                         }}>{deptName}</Box>
-                        {p.ownerName && (
-                            <Box sx={{ fontSize: 11, color: 'text.secondary' }}>
-                                Owner: <Box component="strong" sx={{ color: 'text.primary', fontWeight: 600 }}>{p.ownerName}</Box>
-                            </Box>
-                        )}
                     </Box>
                 </Box>
                 <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
@@ -513,28 +497,12 @@ function ProjectCard({ project, period, onEdit, onDelete }: {
                 <Box sx={{ fontSize: 26, fontWeight: 700, color: 'text.primary', lineHeight: 1, mb: '8px' }}>
                     {logged}
                     <Box component="span" sx={{ fontSize: 13, fontWeight: 500, color: 'text.secondary', ml: '4px' }}>
-                        / {target}h
+                        h
                     </Box>
                 </Box>
-                {target > 0 ? (
-                    <>
-                        <Box sx={{ height: 8, bgcolor: 'action.hover', borderRadius: '4px', overflow: 'hidden', mb: '10px' }}>
-                            <Box sx={{
-                                height: '100%', bgcolor: fillColor, borderRadius: '4px',
-                                width: `${Math.min(100, pct)}%`, transition: 'width 0.3s',
-                            }} />
-                        </Box>
-                        <Box sx={{ fontSize: 11, color: 'text.secondary' }}>
-                            {pct < 50
-                                ? `⚠ ${Math.max(0, target - logged).toFixed(0)}h below target · may need attention`
-                                : pct >= 100
-                                    ? `✓ ${(logged - target).toFixed(0)}h over target ${noun}`
-                                    : `${(target - logged).toFixed(0)}h remaining ${noun}`}
-                        </Box>
-                    </>
-                ) : (
+                {logged === 0 && (
                     <Box sx={{ fontSize: 11, color: 'text.disabled', fontStyle: 'italic' }}>
-                        {logged > 0 ? `No ${targetLabel} target set` : `No activity ${noun}`}
+                        No activity {noun}
                     </Box>
                 )}
             </Box>
@@ -630,7 +598,6 @@ function ProjectFormDialog(props: {
     title: string
     initial?: Project
     departments: Department[]
-    users: AdminUser[]
     activityTypes: ProjectActivityType[]
     components: ProjectComponent[]
     projectTypes: ProjectType[]
@@ -646,10 +613,7 @@ function ProjectFormDialog(props: {
     const [status, setStatus] = useState<ProjectStatus>(i?.status ?? 'Active')
     const [departmentIds, setDepartmentIds] = useState<number[]>(i?.departments.map((d) => d.id) ?? [])
     const [missingDepartment, setMissingDepartment] = useState(false)
-    const [ownerId, setOwnerId] = useState<string>(i?.ownerId ?? '')
     const [colorKey, setColorKey] = useState<string>(i?.colorKey ?? 'p1')
-    const [targetWeeklyHours, setTargetWeeklyHours] = useState<number>(i?.targetWeeklyHours ?? 0)
-    const [targetMonthlyHours, setTargetMonthlyHours] = useState<number>(i?.targetMonthlyHours ?? 0)
     const [activityTypeIds, setActivityTypeIds] = useState<number[]>(i?.activities.map((a) => a.id) ?? [])
     const [componentIds, setComponentIds] = useState<number[]>(i?.components.map((c) => c.id) ?? [])
     const [projectTypeIds, setProjectTypeIds] = useState<number[]>(i?.types.map((t) => t.id) ?? [])
@@ -705,10 +669,7 @@ function ProjectFormDialog(props: {
             isActive: status !== 'Inactive',
             status,
             departmentIds,
-            ownerId: ownerId === '' ? null : ownerId,
             colorKey,
-            targetWeeklyHours: Number(targetWeeklyHours) || 0,
-            targetMonthlyHours: Number(targetMonthlyHours) || 0,
             activityTypeIds,
             componentIds,
             projectTypeIds,
@@ -780,54 +741,40 @@ function ProjectFormDialog(props: {
                         </TextField>
                     </Stack>
 
-                    <Stack direction="row" spacing={2}>
-                        <TextField
-                            select
-                            required
-                            id="project-departments"
-                            label="Departments"
-                            value={departmentIds}
-                            onChange={(e) => {
-                                setDepartmentIds((e.target.value as unknown as number[]).map(Number))
-                                setMissingDepartment(false)
-                            }}
-                            fullWidth
-                            error={missingDepartment}
-                            helperText={missingDepartment
-                                ? 'Select at least one department.'
-                                : 'Who can see this project, and log time to it.'}
-                            SelectProps={{
-                                multiple: true,
-                                renderValue: (selected) => (
-                                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                                        {(selected as number[]).map((id) => (
-                                            <Chip
-                                                key={id}
-                                                size="small"
-                                                label={props.departments.find((d) => d.id === id)?.name ?? id}
-                                            />
-                                        ))}
-                                    </Box>
-                                ),
-                            }}
-                        >
-                            {props.departments.map((d) => (
-                                <MenuItem key={d.id} value={d.id}>{d.name}</MenuItem>
-                            ))}
-                        </TextField>
-                        <TextField
-                            select
-                            label="Owner"
-                            value={ownerId}
-                            onChange={(e) => setOwnerId(e.target.value)}
-                            fullWidth
-                        >
-                            <MenuItem value="">No owner</MenuItem>
-                            {props.users.map((u) => (
-                                <MenuItem key={u.id} value={u.id}>{u.displayName || u.email}</MenuItem>
-                            ))}
-                        </TextField>
-                    </Stack>
+                    <TextField
+                        select
+                        required
+                        id="project-departments"
+                        label="Departments"
+                        value={departmentIds}
+                        onChange={(e) => {
+                            setDepartmentIds((e.target.value as unknown as number[]).map(Number))
+                            setMissingDepartment(false)
+                        }}
+                        fullWidth
+                        error={missingDepartment}
+                        helperText={missingDepartment
+                            ? 'Select at least one department.'
+                            : 'Who can see this project, and log time to it.'}
+                        SelectProps={{
+                            multiple: true,
+                            renderValue: (selected) => (
+                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                    {(selected as number[]).map((id) => (
+                                        <Chip
+                                            key={id}
+                                            size="small"
+                                            label={props.departments.find((d) => d.id === id)?.name ?? id}
+                                        />
+                                    ))}
+                                </Box>
+                            ),
+                        }}
+                    >
+                        {props.departments.map((d) => (
+                            <MenuItem key={d.id} value={d.id}>{d.name}</MenuItem>
+                        ))}
+                    </TextField>
 
                     <TextField
                         select
@@ -918,25 +865,6 @@ function ProjectFormDialog(props: {
                             <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
                         ))}
                     </TextField>
-
-                    <Stack direction="row" spacing={2}>
-                        <TextField
-                            label="Target weekly hours"
-                            type="number"
-                            value={targetWeeklyHours}
-                            onChange={(e) => setTargetWeeklyHours(Number(e.target.value))}
-                            inputProps={{ min: 0, max: 1000 }}
-                            fullWidth
-                        />
-                        <TextField
-                            label="Target monthly hours"
-                            type="number"
-                            value={targetMonthlyHours}
-                            onChange={(e) => setTargetMonthlyHours(Number(e.target.value))}
-                            inputProps={{ min: 0, max: 5000 }}
-                            fullWidth
-                        />
-                    </Stack>
 
                     {props.error != null && (
                         <Alert severity="error">{getErrorMessage(props.error)}</Alert>

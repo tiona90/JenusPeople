@@ -15,11 +15,7 @@ public class ProjectDto
     /// Only an admin is ever handed a project with none.
     /// </summary>
     public List<ProjectDepartmentDto> Departments { get; set; } = new();
-    public string? OwnerId { get; set; }
-    public string? OwnerName { get; set; }
     public string ColorKey { get; set; } = "p1";
-    public int TargetWeeklyHours { get; set; }
-    public int TargetMonthlyHours { get; set; }
     public DateTime CreatedAt { get; set; }
 
     public decimal HoursThisWeek { get; set; }

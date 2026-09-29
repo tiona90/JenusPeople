@@ -406,15 +406,6 @@ public class AppDbContext : IdentityDbContext<
             entity.Property(p => p.Description).HasMaxLength(500).HasDefaultValue(string.Empty);
             entity.Property(p => p.Status).HasDefaultValue(ProjectStatus.Active);
             entity.Property(p => p.ColorKey).HasMaxLength(8).HasDefaultValue("p1");
-            entity.Property(p => p.TargetWeeklyHours).HasDefaultValue(0);
-            entity.Property(p => p.TargetMonthlyHours).HasDefaultValue(0);
-            entity.Property(p => p.OwnerId).HasMaxLength(450);
-
-            entity.HasOne(p => p.Owner)
-                .WithMany()
-                .HasForeignKey(p => p.OwnerId)
-                .OnDelete(DeleteBehavior.Restrict);
-
             entity.Property(p => p.IsDeleted).HasDefaultValue(false).IsRequired();
             entity.HasQueryFilter(p => !p.IsDeleted);
         });

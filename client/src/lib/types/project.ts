@@ -51,11 +51,7 @@ export interface Project {
     // Only an admin is ever handed a project with none.
     departments: ProjectDepartment[]
     department?: Department | null
-    ownerId: string | null
-    ownerName: string | null
     colorKey: string
-    targetWeeklyHours: number
-    targetMonthlyHours: number
     createdAt: string
 
     hoursThisWeek: number
@@ -85,10 +81,7 @@ export interface UpsertProjectRequest {
     isActive: boolean
     status: ProjectStatus
     departmentIds: number[]
-    ownerId: string | null
     colorKey: string
-    targetWeeklyHours: number
-    targetMonthlyHours: number
     activityTypeIds: number[]
     componentIds: number[]
     // Empty leaves the project unclassified, which is a valid state rather than

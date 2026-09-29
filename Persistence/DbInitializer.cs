@@ -199,10 +199,6 @@ public class DbInitializer
         var finance = context.Departments.FirstOrDefault(d => d.Code == "FIN");
         if (engineering is null || hr is null || finance is null) return;
 
-        var admin = context.Users.FirstOrDefault(u => u.Email == SystemAdministratorEmail);
-        var manager1 = context.Users.FirstOrDefault(u => u.Email == "manager1@annualleave.com");
-        var manager2 = context.Users.FirstOrDefault(u => u.Email == "manager2@annualleave.com");
-
         var projects = new List<Project>
         {
             new Project
@@ -210,27 +206,24 @@ public class DbInitializer
                 Name = "Intranet Redesign", Code = "INTRA-001",
                 Description = "Modernise the corporate intranet experience.",
                 DepartmentAssignments = { new ProjectDepartment { DepartmentId = engineering.Id } },
-                OwnerId = manager1?.Id ?? admin?.Id,
                 Status = ProjectStatus.Active, IsActive = true,
-                ColorKey = "p1", TargetWeeklyHours = 120, TargetMonthlyHours = 480
+                ColorKey = "p1"
             },
             new Project
             {
                 Name = "Payroll Automation", Code = "PAY-002",
                 Description = "Automate payroll generation and approval flow.",
                 DepartmentAssignments = { new ProjectDepartment { DepartmentId = finance.Id } },
-                OwnerId = manager2?.Id ?? admin?.Id,
                 Status = ProjectStatus.Active, IsActive = true,
-                ColorKey = "p2", TargetWeeklyHours = 100, TargetMonthlyHours = 400
+                ColorKey = "p2"
             },
             new Project
             {
                 Name = "Recruitment Portal", Code = "REC-003",
                 Description = "Candidate-facing portal for job applications.",
                 DepartmentAssignments = { new ProjectDepartment { DepartmentId = hr.Id } },
-                OwnerId = admin?.Id,
                 Status = ProjectStatus.OnHold, IsActive = true,
-                ColorKey = "p3", TargetWeeklyHours = 60, TargetMonthlyHours = 240
+                ColorKey = "p3"
             }
         };
 
@@ -243,26 +236,21 @@ public class DbInitializer
         // Enrich pre-existing project rows that pre-date the metadata migration.
         var rows = await context.Projects.ToListAsync();
         var colors = new[] { "p1", "p2", "p3", "p4", "p5" };
-        var admin = await context.Users.FirstOrDefaultAsync(u => u.Email == SystemAdministratorEmail);
         var changed = false;
         var idx = 0;
 
         foreach (var p in rows)
         {
             var needsColor = string.IsNullOrEmpty(p.ColorKey) || p.ColorKey == "p1";
-            var needsTargets = p.TargetWeeklyHours == 0 && p.TargetMonthlyHours == 0;
-            var needsOwner = string.IsNullOrEmpty(p.OwnerId) && admin is not null;
             var needsStatus = p.Status == ProjectStatus.Active && !p.IsActive; // mismatch fix
 
-            if (!needsColor && !needsTargets && !needsOwner && !needsStatus)
+            if (!needsColor && !needsStatus)
             {
                 idx++;
                 continue;
             }
 
             if (needsColor) p.ColorKey = colors[idx % colors.Length];
-            if (needsTargets) { p.TargetWeeklyHours = 80; p.TargetMonthlyHours = 320; }
-            if (needsOwner) p.OwnerId = admin!.Id;
             if (!p.IsActive) p.Status = ProjectStatus.Inactive;
 
             changed = true;
@@ -596,16 +584,6 @@ public class DbInitializer
         {
             timesheet.ApproverId = null;
             timesheet.ApprovedAt = null;
-        }
-
-        // The seeded demo projects are owned by manager1/manager2, so this is the
-        // case that blocked turning demo data off on an already-seeded database.
-        var ownedProjects = await context.Projects
-            .Where(p => p.OwnerId == userId)
-            .ToListAsync(cancellationToken);
-        foreach (var project in ownedProjects)
-        {
-            project.OwnerId = null;
         }
 
         var timesheetStatusChangesByUser = await context.TimesheetStatusHistories

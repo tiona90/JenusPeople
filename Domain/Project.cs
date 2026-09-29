@@ -19,12 +19,8 @@ public class Project : ISoftDeletable, IAuditable
     public string Description { get; set; } = string.Empty;
     public bool IsActive { get; set; } = true;
     public ProjectStatus Status { get; set; } = ProjectStatus.Active;
-    public string? OwnerId { get; set; }
-    public User? Owner { get; set; }
     public string ColorKey { get; set; } = "p1";
 
-    public int TargetWeeklyHours { get; set; }
-    public int TargetMonthlyHours { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public bool IsDeleted { get; set; }
     public ICollection<TimesheetEntry> TimesheetEntries { get; set; } = new List<TimesheetEntry>();
