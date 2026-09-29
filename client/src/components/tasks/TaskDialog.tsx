@@ -36,12 +36,14 @@ interface Props {
      * the caller alone whatever the request says.
      */
     personal?: boolean
+    /** The signed-in user: listed first in the picker as "Assign to me", and shown as "Me". */
+    currentUserId?: string
     onClose: () => void
     /** A warning when the task saved but some of the files picked for it did not attach. */
     onSaved: (warning?: string) => void
 }
 
-export default function TaskDialog({ open, task, personal = false, onClose, onSaved }: Props) {
+export default function TaskDialog({ open, task, personal = false, currentUserId, onClose, onSaved }: Props) {
     const [title, setTitle] = useState('')
     const [description, setDescription] = useState('')
     const [departmentId, setDepartmentId] = useState<number | ''>('')
@@ -196,7 +198,11 @@ export default function TaskDialog({ open, task, personal = false, onClose, onSa
     for (const existing of task?.assignees ?? [])
         if (assigneeIds.includes(existing.userId) && !assigneeOptions.some((a) => a.userId === existing.userId))
             assigneeOptions.push(existing)
-    const nameOf = (id: string) => assigneeOptions.find((a) => a.userId === id)?.displayName ?? id
+    // The caller first, as themselves rather than by name; everyone else keeps the server's order.
+    const mine = assigneeOptions.findIndex((a) => a.userId === currentUserId)
+    if (mine > 0) assigneeOptions.unshift(...assigneeOptions.splice(mine, 1))
+    const nameOf = (id: string) =>
+        id === currentUserId ? 'Me' : assigneeOptions.find((a) => a.userId === id)?.displayName ?? id
     const everyone = departmentId !== '' && assigneeIds.length === 0
     const nobodyToAssign = everyone && assignees.data?.length === 0
 
@@ -299,7 +305,7 @@ export default function TaskDialog({ open, task, personal = false, onClose, onSa
                         >
                             <MenuItem value={EVERYONE} divider>Everyone in the department</MenuItem>
                             {assigneeOptions.map((a) => (
-                                <MenuItem key={a.userId} value={a.userId}>{a.displayName}</MenuItem>
+                                <MenuItem key={a.userId} value={a.userId}>{a.userId === currentUserId ? 'Assign to me' : a.displayName}</MenuItem>
                             ))}
                         </Select>
                         {everyone && (

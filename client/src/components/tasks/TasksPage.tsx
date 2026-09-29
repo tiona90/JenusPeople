@@ -398,6 +398,7 @@ const TasksPage = observer(function TasksPage() {
                 open={dialogTask !== undefined}
                 task={dialogTask ?? null}
                 personal={!manages}
+                currentUserId={userId}
                 onClose={() => setDialogTask(undefined)}
                 onSaved={(warning) => { setDialogTask(undefined); setSaveWarning(warning ?? null); void refresh() }}
             />

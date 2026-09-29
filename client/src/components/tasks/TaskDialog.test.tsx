@@ -18,12 +18,12 @@ const api = vi.mocked(await import('../../lib/api'))
 // takes ~4s, so under a loaded machine the 5s default is a coin toss, not a signal.
 vi.setConfig({ testTimeout: 15_000 })
 
-function renderDialog({ personal = false }: { personal?: boolean } = {}) {
+function renderDialog({ personal = false, currentUserId }: { personal?: boolean; currentUserId?: string } = {}) {
     const onSaved = vi.fn()
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
         <QueryClientProvider client={queryClient}>
-            <TaskDialog open task={null} personal={personal} onClose={vi.fn()} onSaved={onSaved} />
+            <TaskDialog open task={null} personal={personal} currentUserId={currentUserId} onClose={vi.fn()} onSaved={onSaved} />
         </QueryClientProvider>,
     )
     return { onSaved }
@@ -260,6 +260,27 @@ describe('TaskDialog', () => {
 
         await waitFor(() => expect(onSaved).toHaveBeenCalled())
         expect(api.createWorkTask).toHaveBeenCalledWith(expect.objectContaining({ assigneeIds: ['u-sam', 'u-hana'] }))
+    })
+
+    it('lists the caller first as "Assign to me", and shows them as "Me" once picked', async () => {
+        api.createWorkTask.mockResolvedValue({} as never)
+        const { onSaved } = renderDialog({ currentUserId: 'u-hana' })
+        fireEvent.change(screen.getByRole('textbox', { name: /^Title/ }), { target: { value: 'Chase notes' } })
+        await choose('Department', 'Sales')
+        await choose('Project', 'CRM Rollout')
+        pickBilling('Billable')
+
+        fireEvent.mouseDown(screen.getByRole('combobox', { name: /^Assignees/ }))
+        const options = (await screen.findAllByRole('option')).map((o) => o.textContent)
+        expect(options).toEqual(['Everyone in the department', 'Assign to me', 'Sam Sales'])
+        fireEvent.click(screen.getByRole('option', { name: 'Assign to me' }))
+        fireEvent.keyDown(screen.getByRole('listbox'), { key: 'Escape' })
+        await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull())
+
+        expect(screen.getByText('Me')).toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: 'Create task' }))
+        await waitFor(() => expect(onSaved).toHaveBeenCalled())
+        expect(api.createWorkTask).toHaveBeenCalledWith(expect.objectContaining({ assigneeIds: ['u-hana'] }))
     })
 
     it('keeps the people who cover the new department and drops the rest', async () => {
