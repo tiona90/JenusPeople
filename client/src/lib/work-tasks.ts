@@ -1,5 +1,5 @@
 import type { WorkTaskSettings } from './api/work-task-settings'
-import { DEFAULT_TASK_SETTINGS, isShown } from './task-settings'
+import { DEFAULT_TASK_SETTINGS, isShown, needsAttachmentBeforeDone } from './task-settings'
 import type { WorkTask, WorkTaskPriority, WorkTaskStatus } from './types'
 
 export type TaskTab = 'assigned' | 'created' | 'all'
@@ -103,6 +103,41 @@ export function filterTasks(
             (filter.priority == null || filter.priority === 'any' || task.priority === filter.priority) &&
             matchesSearch(task, filter.search),
     )
+}
+
+export function plural(n: number, one: string, many = `${one}s`) {
+    return `${n} ${n === 1 ? one : many}`
+}
+
+/** What the card, the board and the list all read off a task, under the Task Settings. */
+export function taskFacts(task: WorkTask, today: string, settings: WorkTaskSettings) {
+    const closed = !isOpenTask(task)
+    const showDue = isShown(settings, 'dueDate')
+    const attachmentCount = task.attachments?.length ?? 0
+    return {
+        closed,
+        showDue,
+        showTarget: isShown(settings, 'targetHours'),
+        late: overdueDays(task, today, showDue),
+        progress: describeTaskProgress(task.targetHours, task.loggedHours),
+        attachmentCount,
+        fileNeeded: !closed && needsAttachmentBeforeDone(settings, attachmentCount),
+    }
+}
+
+/** How the Tasks page lays its tasks out: grouped cards, a dense table, or a board by status. */
+export type TaskLayout = 'cards' | 'list' | 'board'
+
+/**
+ * The board's columns: the statuses the status filter lets through, in workflow
+ * order. Awaiting confirmation is dropped when confirmation is off and nothing is
+ * still waiting — switching it off sweeps every waiting task to Done, so the column
+ * would only ever be empty.
+ */
+export function boardStatuses(filter: StatusFilter, confirmation: boolean, tasks: readonly WorkTask[]): WorkTaskStatus[] {
+    const all: WorkTaskStatus[] = ['ToDo', 'InProgress', 'AwaitingConfirmation', 'Done', 'Cancelled']
+    const admitted = all.filter((s) => filter === 'any' || (filter === 'open' ? s !== 'Done' && s !== 'Cancelled' : s === filter))
+    return admitted.filter((s) => s !== 'AwaitingConfirmation' || confirmation || tasks.some(isAwaitingConfirmation) || filter === s)
 }
 
 /** Whole days an open task is past its due date; 0 when it is not overdue. */
