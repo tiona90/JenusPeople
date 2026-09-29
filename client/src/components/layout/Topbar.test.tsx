@@ -193,10 +193,42 @@ describe("An employee's bell", () => {
         expect(navigateToTasks).toHaveBeenCalled()
     })
 
-    it('does not fetch tasks for an Employee', async () => {
+    const task = {
+        status: 'ToDo', canConfirm: false, createdById: 'u-mgr', createdByName: 'Nikos Manager',
+        createdAtUtc: recent, updatedAtUtc: recent, sentBackAtUtc: null,
+    }
+
+    it('lists a task somebody else handed an Employee, and marks it read on click', async () => {
+        api.getLeaveStatusHistories.mockResolvedValue([])
+        api.getWorkTasks.mockResolvedValue([
+            { ...task, id: 1, title: 'Call the bank', assignees: [{ userId: EMPLOYEE.id, displayName: 'Me' }] },
+            // Their own task, and one already under way, are not news.
+            { ...task, id: 2, title: 'My own', createdById: EMPLOYEE.id, assignees: [{ userId: EMPLOYEE.id, displayName: 'Me' }] },
+            { ...task, id: 3, title: 'Started', status: 'InProgress', assignees: [{ userId: EMPLOYEE.id, displayName: 'Me' }] },
+        ] as never)
         renderTopbarAs(EMPLOYEE)
-        await waitFor(() => expect(api.getLeaveStatusHistories).toHaveBeenCalled())
-        expect(api.getWorkTasks).not.toHaveBeenCalled()
+
+        await waitFor(() => expect(screen.getByText('1')).toBeInTheDocument())
+        fireEvent.click(screen.getByRole('button', { name: 'Notifications' }))
+        const item = await screen.findByText('New task: Call the bank')
+        expect(screen.getByText(/From Nikos Manager/)).toBeInTheDocument()
+        expect(screen.queryByText(/My own/)).not.toBeInTheDocument()
+        expect(screen.queryByText(/Started/)).not.toBeInTheDocument()
+
+        fireEvent.click(item)
+        expect(navigateToTasks).toHaveBeenCalled()
+        expect(JSON.parse(window.localStorage.getItem(`assignee-read-task-notifications:${EMPLOYEE.id}`) ?? '[]')).toEqual(['assigned:1'])
+    })
+
+    it('lists a task sent back to a Manager on it, beside what they decide', async () => {
+        api.getWorkTasks.mockResolvedValue([
+            { ...task, id: 4, title: 'Fix report', status: 'InProgress', createdById: 'u-hr', sentBackAtUtc: recent, assignees: [{ userId: MANAGER.id, displayName: 'Me' }] },
+        ] as never)
+        renderTopbarAs(MANAGER)
+
+        await waitFor(() => expect(screen.getByText('1')).toBeInTheDocument())
+        fireEvent.click(screen.getByRole('button', { name: 'Notifications' }))
+        expect(await screen.findByText('Fix report was sent back to you')).toBeInTheDocument()
     })
 
     // The task list is heavy (every task in scope, with logged hours); SignalR's
