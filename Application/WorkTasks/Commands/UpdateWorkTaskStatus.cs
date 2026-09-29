@@ -99,6 +99,11 @@ public class UpdateWorkTaskStatus
                 task.Status = target;
                 task.UpdatedAtUtc = now;
                 await context.SaveChangesAsync(cancellationToken);
+
+                if (target == WorkTaskStatus.AwaitingConfirmation)
+                    await WorkTaskReviewNotification.SubmittedAsync(context, emailService, logger, task, request.CallerUserId, cancellationToken);
+                else if (sendingBack)
+                    await WorkTaskReviewNotification.SentBackAsync(context, emailService, logger, task, request.CallerUserId, reason!, cancellationToken);
             }
 
             return await DtoAsync(task.Id, request, cancellationToken);

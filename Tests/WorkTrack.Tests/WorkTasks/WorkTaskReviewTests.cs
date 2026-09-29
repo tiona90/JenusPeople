@@ -1,4 +1,5 @@
 using Application.Core;
+using Application.WorkTasks;
 using Application.WorkTasks.Commands;
 using Application.WorkTasks.DTOs;
 using Application.WorkTasks.Support;
@@ -255,5 +256,71 @@ public class WorkTaskReviewTests
         var row = await Reload(db, id);
         Assert.Null(row.ConfirmedById);
         Assert.Null(row.CompletedAtUtc);
+    }
+
+    [Fact]
+    public async Task The_creator_is_emailed_when_a_task_waits()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        var id = await Seeded(db, NewTask(Sales, Hr, SalesManager, "Chase notes", WorkTaskStatus.InProgress));
+
+        await SetStatus(db, id, SalesManager, WorkTaskStatus.Done);
+
+        var mail = Assert.Single(_email.Sent);
+        Assert.Equal($"{Hr}@t", mail.Recipient);
+        Assert.Equal(WorkTaskReviewNotification.SubmittedSubjectPrefix + "Chase notes", mail.Subject);
+    }
+
+    [Fact]
+    public async Task With_the_creator_gone_the_covering_reviewers_are_emailed()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        // Sales: creator deactivated; the Employee is on it; HR and the Sales manager cover it.
+        var id = await Seeded(db, NewTask(Sales, OpsManager, Employee, status: WorkTaskStatus.InProgress));
+        var opsManager = await db.Users.SingleAsync(u => u.Id == OpsManager);
+        opsManager.IsActive = false;
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        await SetStatus(db, id, Employee, WorkTaskStatus.Done, assignedOnly: true);
+
+        Assert.Equal(
+            new[] { $"{Hr}@t", $"{SalesManager}@t" },
+            _email.Sent.Select(m => m.Recipient).OrderBy(r => r));
+    }
+
+    [Fact]
+    public async Task Sending_back_emails_the_assignees_with_the_reason()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        var task = NewTask(Sales, Hr, SalesManager, "Chase notes", WorkTaskStatus.AwaitingConfirmation);
+        task.Assignees.Add(new WorkTaskAssignee { UserId = Employee });
+        var id = await Seeded(db, task);
+
+        await SetStatus(db, id, Hr, WorkTaskStatus.InProgress, "Totals are off");
+
+        Assert.Equal(new[] { $"{Employee}@t", $"{SalesManager}@t" }, _email.Sent.Select(m => m.Recipient).OrderBy(r => r));
+        Assert.All(_email.Sent, m =>
+        {
+            Assert.Equal(WorkTaskReviewNotification.SentBackSubjectPrefix + "Chase notes", m.Subject);
+            Assert.Contains("Totals are off", m.TextBody);
+        });
+    }
+
+    [Fact]
+    public async Task Confirming_and_withdrawing_email_nobody()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        var confirmId = await Seeded(db, NewTask(Sales, Hr, SalesManager, status: WorkTaskStatus.AwaitingConfirmation));
+        var withdrawId = await Seeded(db, NewTask(Sales, Hr, SalesManager, status: WorkTaskStatus.AwaitingConfirmation));
+
+        await SetStatus(db, confirmId, Hr, WorkTaskStatus.Done);
+        await SetStatus(db, withdrawId, SalesManager, WorkTaskStatus.InProgress);
+
+        Assert.Empty(_email.Sent);
     }
 }
