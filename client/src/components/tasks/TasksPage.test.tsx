@@ -51,8 +51,6 @@ function renderPage(roles: string[] = ['Manager']) {
 
 const cards = () => screen.findAllByTestId('task-card')
 const cardFor = async (title: string) => (await cards()).find((c) => within(c).queryByText(title))!
-const showView = (view: 'assigned' | 'created' | 'all') =>
-    fireEvent.change(screen.getByRole('combobox', { name: 'View' }), { target: { value: view } })
 
 beforeEach(() => {
     vi.clearAllMocks()
@@ -62,16 +60,30 @@ beforeEach(() => {
 })
 
 describe('TasksPage', () => {
-    it('opens on Assigned to me, with open counts in the view picker', async () => {
+    it("splits a Manager's tasks into their own work, what they handed out, and the rest, with no view picker", async () => {
         renderPage()
-        const shown = await cards()
-        expect(shown).toHaveLength(1)
-        expect(within(shown[0]).getByText('Mine to do')).toBeInTheDocument()
+        expect(await cards()).toHaveLength(3)
+        expect(screen.queryByRole('combobox', { name: 'View' })).toBeNull()
 
-        const view = screen.getByRole('combobox', { name: 'View' })
-        expect(within(view).getByRole('option', { name: 'Assigned to me (1)' })).toBeInTheDocument()
-        expect(within(view).getByRole('option', { name: 'Created by me (1)' })).toBeInTheDocument()
-        expect(within(view).getByRole('option', { name: 'All in my departments (3)' })).toBeInTheDocument()
+        const assigned = screen.getByRole('region', { name: 'Assigned to you' })
+        const created = screen.getByRole('region', { name: 'Created by you' })
+        const others = screen.getByRole('region', { name: 'Others in your departments' })
+        expect(within(assigned).getAllByTestId('task-card')).toHaveLength(1)
+        expect(within(assigned).getByText('Mine to do')).toBeInTheDocument()
+        expect(within(created).getByText('I asked for this')).toBeInTheDocument()
+        expect(within(created).getByText('Create a new task')).toBeInTheDocument()
+        expect(within(others).getByText("Someone else's")).toBeInTheDocument()
+        expect(assigned.compareDocumentPosition(created) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+        expect(created.compareDocumentPosition(others) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    })
+
+    it("files a Manager's task on their own plate under Assigned to you, even when they created it", async () => {
+        api.getWorkTasks.mockResolvedValue([{ ...base, id: 9, title: 'Self-assigned', createdById: 'me', createdByName: 'Me', canEdit: true }])
+        renderPage()
+        await cards()
+        expect(within(screen.getByRole('region', { name: 'Assigned to you' })).getByText('Self-assigned')).toBeInTheDocument()
+        expect(within(screen.getByRole('region', { name: 'Created by you' })).queryByText('Self-assigned')).toBeNull()
+        expect(screen.queryByRole('region', { name: 'Others in your departments' })).toBeNull()
     })
 
     it('sums the tasks up in the tiles', async () => {
@@ -157,7 +169,6 @@ describe('TasksPage', () => {
     it('shows every assignee as an avatar with their name on hover', async () => {
         renderPage()
         await cards()
-        showView('created')
 
         const card = await cardFor('I asked for this')
         expect(within(card).getByTitle('Xena')).toBeInTheDocument()
@@ -168,7 +179,6 @@ describe('TasksPage', () => {
     it('offers Edit and Delete only on tasks the viewer may manage, and locks status for bystanders', async () => {
         renderPage()
         await cards()
-        showView('all')
 
         const mine = await cardFor('I asked for this')
         expect(within(mine).getByRole('button', { name: /Edit/ })).toBeInTheDocument()
@@ -181,7 +191,6 @@ describe('TasksPage', () => {
     it('narrows the grid with the search box', async () => {
         renderPage()
         await cards()
-        showView('all')
         fireEvent.change(screen.getByPlaceholderText('Search tasks…'), { target: { value: 'someone' } })
 
         await waitFor(async () => expect(await cards()).toHaveLength(1))
@@ -193,7 +202,6 @@ describe('TasksPage', () => {
         api.deleteWorkTask.mockResolvedValue(undefined)
         renderPage()
         await cards()
-        showView('created')
 
         fireEvent.click(within(await cardFor('I asked for this')).getByRole('button', { name: /Delete/ }))
 
@@ -201,7 +209,7 @@ describe('TasksPage', () => {
         expect(sweetAlert.fire).toHaveBeenCalledWith(expect.objectContaining({ title: 'Delete "I asked for this"?' }))
     })
 
-    it('says so when a view is empty', async () => {
+    it('says so when nothing is assigned to a Manager', async () => {
         api.getWorkTasks.mockResolvedValue([])
         renderPage()
         expect(await screen.findByText('Nothing assigned to you.')).toBeInTheDocument()
@@ -237,7 +245,6 @@ describe('TasksPage', () => {
         expect(within(planned).getByText('40h')).toBeInTheDocument()
         expect(within(planned).getByText('0h logged · 40h left')).toBeInTheDocument()
 
-        showView('created')
         const unplanned = await cardFor('I asked for this')
         expect(within(unplanned).getByText('no target set')).toBeInTheDocument()
     })
@@ -245,7 +252,6 @@ describe('TasksPage', () => {
     it('badges each card billable or non-billable', async () => {
         renderPage()
         expect(within(await cardFor('Mine to do')).getByText('Billable')).toBeInTheDocument()
-        showView('created')
         expect(within(await cardFor('I asked for this')).getByText('Non-billable')).toBeInTheDocument()
     })
 
@@ -281,6 +287,12 @@ describe('TasksPage', () => {
 
         expect(screen.queryByRole('combobox', { name: 'View' })).toBeNull()
         expect(screen.queryByTestId('stat-mine')).toBeNull()
+        const created = screen.getByRole('region', { name: 'Created by you' })
+        const others = screen.getByRole('region', { name: 'Created by others' })
+        expect(within(created).getByText('I asked for this')).toBeInTheDocument()
+        expect(within(others).getByText('Mine to do')).toBeInTheDocument()
+        expect(within(others).getByText("Someone else's")).toBeInTheDocument()
+        expect(screen.queryByRole('region', { name: 'Assigned to you' })).toBeNull()
 
         const department = await screen.findByRole('combobox', { name: 'Department filter' })
         expect(within(department).getByRole('option', { name: 'Sales' })).toBeInTheDocument()
@@ -328,8 +340,6 @@ describe('TasksPage confirmation', () => {
         api.updateWorkTaskStatus.mockResolvedValue({} as never)
         api.getWorkTasks.mockResolvedValue([{ ...TASKS[1], status: 'AwaitingConfirmation', canConfirm: true }])
         renderPage()
-        await screen.findByRole('combobox', { name: 'View' })
-        showView('created')
         const card = await cardFor('I asked for this')
 
         fireEvent.click(within(card).getByRole('button', { name: /Confirm/ }))
@@ -340,8 +350,6 @@ describe('TasksPage confirmation', () => {
         api.updateWorkTaskStatus.mockResolvedValue({} as never)
         api.getWorkTasks.mockResolvedValue([{ ...TASKS[1], status: 'AwaitingConfirmation', canConfirm: true }])
         renderPage()
-        await screen.findByRole('combobox', { name: 'View' })
-        showView('created')
         const card = await cardFor('I asked for this')
 
         fireEvent.click(within(card).getByRole('button', { name: /Send back/ }))
