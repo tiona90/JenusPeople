@@ -7,6 +7,7 @@ type Tint = string | ReturnType<typeof softBg>
 export const STATUS_COLORS: Record<WorkTaskStatus, { bg: Tint; fg: string; dot: string }> = {
     ToDo:       { bg: 'divider', fg: 'text.secondary', dot: 'text.disabled' },
     InProgress: { bg: softBg('primary'), fg: 'primary.dark', dot: 'primary.main' },
+    AwaitingConfirmation: { bg: softBg('warning'), fg: 'warning.dark', dot: 'warning.main' },
     Done:       { bg: softBg('success'), fg: 'success.dark', dot: 'success.main' },
     Cancelled:  { bg: 'action.hover', fg: 'text.disabled', dot: 'error.light' },
 }

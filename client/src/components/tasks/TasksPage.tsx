@@ -13,7 +13,7 @@ import { canManageTasks, canUseTasks, isHrAdministrator } from '../../lib/roles'
 import { softBg } from '../../lib/theme-tokens'
 import type { WorkTask, WorkTaskPriority, WorkTaskStatus } from '../../lib/types'
 import {
-    PRIORITY_LABELS, STATUS_LABELS, describeTaskProgress, filterTasks, formatTaskDate as formatDate, isOpenTask, nextStatusAction, openCount, overdueDays, taskStats, tasksToCsv, todayIso,
+    PRIORITY_LABELS, SETTABLE_STATUSES, STATUS_LABELS, describeTaskProgress, filterTasks, formatTaskDate as formatDate, isOpenTask, nextStatusAction, openCount, overdueDays, taskStats, tasksToCsv, todayIso,
     type StatusFilter, type TaskTab,
 } from '../../lib/work-tasks'
 import { SweetAlert } from '../ui'
@@ -646,7 +646,7 @@ function StatusControls({ status, pending, onStatus }: {
                 onClose={() => setAnchor(null)}
                 slotProps={{ paper: { sx: { minWidth: 170, borderRadius: '10px', mt: '4px' } } }}
             >
-                {(Object.keys(STATUS_LABELS) as WorkTaskStatus[]).map((s) => {
+                {SETTABLE_STATUSES.map((s) => {
                     const current = s === status
                     return (
                         <MenuItem

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { WorkTask } from './types'
-import { describeTaskProgress, filterTasks, isOverdue, nextStatusAction, openCount, overdueDays, taskStats, tasksToCsv, todayIso } from './work-tasks'
+import { SETTABLE_STATUSES, STATUS_LABELS, describeTaskProgress, filterTasks, isAwaitingConfirmation, isOpenTask, isOverdue, nextStatusAction, openCount, overdueDays, taskStats, tasksToCsv, todayIso } from './work-tasks'
 
 const base: WorkTask = {
     id: 1, title: 't', description: null, departmentId: 1, departmentName: 'Sales', projectId: 10, projectName: 'CRM Rollout', projectCode: 'CRM', projectColorKey: 'p1',
@@ -84,7 +84,7 @@ describe('work-tasks helpers', () => {
             t({ id: 5, status: 'Cancelled' }),
         ]
         expect(taskStats(tasks, 'me', '2026-09-28')).toEqual({
-            total: 5, open: 2, inProgress: 1, overdue: 1, doneThisMonth: 1, assignedToMeOpen: 1,
+            total: 5, open: 2, inProgress: 1, overdue: 1, doneThisMonth: 1, assignedToMeOpen: 1, awaitingMyConfirmation: 0,
         })
     })
 
@@ -138,5 +138,29 @@ describe('tasksToCsv', () => {
     it('leaves an unanswered billing question blank', () => {
         const [, row] = tasksToCsv([t({ isBillable: null })]).split('\r\n')
         expect(row.split(',')[7]).toBe('')
+    })
+})
+
+describe('awaiting confirmation', () => {
+    it('is open, but never overdue — the work is in', () => {
+        const waiting = t({ status: 'AwaitingConfirmation', dueDate: '2020-01-01' })
+        expect(isAwaitingConfirmation(waiting)).toBe(true)
+        expect(isOpenTask(waiting)).toBe(true)
+        expect(isOverdue(waiting, '2026-09-29')).toBe(false)
+    })
+
+    it('is labelled, and is never offered as a status to pick', () => {
+        expect(STATUS_LABELS.AwaitingConfirmation).toBe('Awaiting confirmation')
+        expect(SETTABLE_STATUSES).toEqual(['ToDo', 'InProgress', 'Done', 'Cancelled'])
+    })
+
+    it("offers the assignee Withdraw as the card's next step", () => {
+        expect(nextStatusAction('AwaitingConfirmation')).toEqual({ label: 'Withdraw', icon: '↺', to: 'InProgress' })
+    })
+
+    it('counts the tasks waiting for the viewer, and filters to waiting ones', () => {
+        const tasks = [t({ id: 1, status: 'AwaitingConfirmation', canConfirm: true }), t({ id: 2, status: 'AwaitingConfirmation' }), t({ id: 3 })]
+        expect(taskStats(tasks, 'me', '2026-09-29').awaitingMyConfirmation).toBe(1)
+        expect(filterTasks(tasks, { tab: 'all', status: 'AwaitingConfirmation', departmentId: null, userId: 'me' }).map((x) => x.id)).toEqual([1, 2])
     })
 })
