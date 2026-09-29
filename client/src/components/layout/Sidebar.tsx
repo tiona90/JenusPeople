@@ -260,6 +260,8 @@ const Sidebar = observer(function Sidebar() {
                 { kind: 'item', label: 'Projects', icon: <FolderRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('projects'), active: onAdminSection('projects'), indent: true } as NavEntry,
                 { kind: 'section', label: 'Leave Setting', sub: true } as NavEntry,
                 { kind: 'item', label: 'Leave Types', icon: <LabelRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('leave-types'), active: onAdminSection('leave-types', 'leave'), indent: true } as NavEntry,
+                { kind: 'section', label: 'Task Setting', sub: true } as NavEntry,
+                { kind: 'item', label: 'Task Settings', icon: <TaskAltRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAdminSection('task-settings'), active: onAdminSection('task-settings'), indent: true } as NavEntry,
                 { kind: 'section', label: 'System' } as NavEntry,
                 // Named for everything it holds: the leave year, the timesheet policy, the
                 // public-holiday country and the working week all live on this one page.

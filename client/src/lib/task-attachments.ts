@@ -16,6 +16,12 @@ const EXTENSIONS = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.jpg', '.jpeg', '
 /** For the file input's `accept`. */
 export const TASK_ATTACHMENT_ACCEPT = EXTENSIONS.join(',')
 
+export interface TaskAttachmentLimits {
+    maxFiles: number
+    maxBytes: number
+    extensions: string[]
+}
+
 /** Why this file would be refused, or null when it looks acceptable. */
 export function taskAttachmentError(file: Pick<File, 'name' | 'size'>): string | null {
     const dot = file.name.lastIndexOf('.')
