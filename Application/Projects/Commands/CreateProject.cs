@@ -32,10 +32,6 @@ public class CreateProject
             if (await context.Departments.CountAsync(d => departmentIds.Contains(d.Id), cancellationToken) != departmentIds.Count)
                 return Result<ProjectDto>.Failure("One or more selected departments do not exist.");
 
-            if (!string.IsNullOrEmpty(req.OwnerId)
-                && !await context.Users.AnyAsync(u => u.Id == req.OwnerId, cancellationToken))
-                return Result<ProjectDto>.Failure("Selected owner does not exist.");
-
             var activityTypeIds = req.ActivityTypeIds.Distinct().ToList();
             if (activityTypeIds.Count > 0
                 && await context.ProjectActivityTypes.CountAsync(a => activityTypeIds.Contains(a.Id), cancellationToken) != activityTypeIds.Count)
@@ -56,12 +52,9 @@ public class CreateProject
                 Name = name,
                 Code = code,
                 Description = (req.Description ?? string.Empty).Trim(),
-                OwnerId = string.IsNullOrEmpty(req.OwnerId) ? null : req.OwnerId,
                 Status = req.Status,
                 IsActive = req.Status != ProjectStatus.Inactive,
                 ColorKey = string.IsNullOrWhiteSpace(req.ColorKey) ? "p1" : req.ColorKey.Trim(),
-                TargetWeeklyHours = req.TargetWeeklyHours,
-                TargetMonthlyHours = req.TargetMonthlyHours,
                 CreatedAt = DateTime.UtcNow
             };
 
@@ -80,9 +73,6 @@ public class CreateProject
             context.Projects.Add(project);
             await context.SaveChangesAsync(cancellationToken);
 
-            // Reload with includes for the response
-            await context.Entry(project).Reference(p => p.Owner).LoadAsync(cancellationToken);
-
             var dto = ToDto(project);
             dto.Departments = await ProjectDepartmentLookup.ForProjectAsync(context, project.Id, cancellationToken);
             dto.Activities = await ProjectActivityLookup.ForProjectAsync(context, project.Id, cancellationToken);
@@ -99,11 +89,7 @@ public class CreateProject
             Description = p.Description,
             IsActive = p.IsActive,
             Status = p.Status,
-            OwnerId = p.OwnerId,
-            OwnerName = p.Owner?.DisplayName,
             ColorKey = p.ColorKey,
-            TargetWeeklyHours = p.TargetWeeklyHours,
-            TargetMonthlyHours = p.TargetMonthlyHours,
             CreatedAt = p.CreatedAt
         };
     }

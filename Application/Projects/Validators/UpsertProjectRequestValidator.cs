@@ -22,7 +22,5 @@ public class UpsertProjectRequestValidator : AbstractValidator<UpsertProjectRequ
 
         RuleFor(x => x.Description).MaximumLength(500);
         RuleFor(x => x.ColorKey).MaximumLength(8);
-        RuleFor(x => x.TargetWeeklyHours).InclusiveBetween(0, 1000);
-        RuleFor(x => x.TargetMonthlyHours).InclusiveBetween(0, 5000);
     }
 }

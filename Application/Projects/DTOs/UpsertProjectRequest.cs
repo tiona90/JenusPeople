@@ -22,21 +22,12 @@ public class UpsertProjectRequest
     /// </summary>
     public List<int> DepartmentIds { get; set; } = new();
 
-    [StringLength(450)]
-    public string? OwnerId { get; set; }
-
     public ProjectStatus Status { get; set; } = ProjectStatus.Active;
 
     public bool IsActive { get; set; } = true;
 
     [StringLength(8)]
     public string ColorKey { get; set; } = "p1";
-
-    [Range(0, 1000)]
-    public int TargetWeeklyHours { get; set; }
-
-    [Range(0, 5000)]
-    public int TargetMonthlyHours { get; set; }
 
     /// <summary>
     /// The activity types this project logs time against. Empty means the project

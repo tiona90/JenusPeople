@@ -83,10 +83,6 @@ public class MappingProfiles : Profile
 
         CreateMap<Project, ProjectDto>()
             .ForMember(d => d.Departments, opt => opt.Ignore())
-            .ForMember(d => d.OwnerName, opt => opt.MapFrom(s =>
-                s.Owner != null
-                    ? (s.Owner.DisplayName ?? s.Owner.UserName)
-                    : null))
             .ForMember(d => d.HoursThisWeek, opt => opt.Ignore())
             .ForMember(d => d.HoursThisMonth, opt => opt.Ignore())
             .ForMember(d => d.HoursYTD, opt => opt.Ignore())

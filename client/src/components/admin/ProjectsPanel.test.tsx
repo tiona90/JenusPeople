@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { StoreProvider } from '../../lib/mobx'
-import type { AdminUser, Department, Project, ProjectActivityType, ProjectComponent, ProjectType } from '../../lib/types'
+import type { Department, Project, ProjectActivityType, ProjectComponent, ProjectType } from '../../lib/types'
 import ProjectsPanel from './ProjectsPanel'
 
 // Activity types are an org-wide catalogue. A project picks the subset it logs
@@ -11,7 +11,6 @@ import ProjectsPanel from './ProjectsPanel'
 vi.mock('../../lib/api', () => ({
     getProjects: vi.fn(),
     getDepartments: vi.fn(),
-    getAdminUsers: vi.fn(),
     getProjectActivityTypes: vi.fn(),
     getProjectComponents: vi.fn(),
     getProjectTypes: vi.fn(),
@@ -63,11 +62,7 @@ const APOLLO: Project = {
     isActive: true,
     status: 'Active',
     departments: [{ id: 1, name: 'Engineering' }],
-    ownerId: null,
-    ownerName: null,
     colorKey: 'p1',
-    targetWeeklyHours: 0,
-    targetMonthlyHours: 0,
     createdAt: '2026-01-01T00:00:00',
     hoursThisWeek: 0,
     hoursThisMonth: 0,
@@ -86,7 +81,6 @@ beforeEach(() => {
     vi.clearAllMocks()
     api.getProjects.mockResolvedValue([APOLLO])
     api.getDepartments.mockResolvedValue([ENGINEERING, FINANCE])
-    api.getAdminUsers.mockResolvedValue([] as AdminUser[])
     api.getProjectActivityTypes.mockResolvedValue([DEVELOPMENT, TESTING, DESIGN, RETIRED])
     api.getProjectComponents.mockResolvedValue([DM, LASERNET, JDOCS, RETIRED_COMPONENT])
     api.getProjectTypes.mockResolvedValue([IMPLEMENTATION, SUPPORT, RETIRED_TYPE])
@@ -437,20 +431,15 @@ describe('ProjectsPanel — project departments', () => {
     })
 })
 
-// A project carries both a weekly and a monthly target, and the query ships
-// hours for both windows. One toolbar control decides which window every card
-// reports against, so the cards and the low-activity tile always agree on the
-// period being looked at.
+// The query ships hours for both windows. One toolbar control decides which
+// window every card reports, so the cards and the low-activity tile always
+// agree on the period being looked at.
 describe('ProjectsPanel — hours period', () => {
-    // Both windows sit at 60% of target, so each reports a "remaining" caption
-    // and neither counts as low activity until a test says otherwise.
     const ORION: Project = {
         ...APOLLO,
         id: 8,
         name: 'Orion',
         code: 'ORI-001',
-        targetWeeklyHours: 120,
-        targetMonthlyHours: 480,
         hoursThisWeek: 72,
         hoursThisMonth: 288,
     }
@@ -463,7 +452,7 @@ describe('ProjectsPanel — hours period', () => {
         fireEvent.change(periodSelect(), { target: { value: period } })
     }
 
-    /** The stat tile flagging projects under half their target. */
+    /** The stat tile flagging active projects with no hours in the period. */
     function lowActivityTile() {
         return screen.getByText('⚠️ Low Activity').parentElement as HTMLElement
     }
@@ -473,39 +462,41 @@ describe('ProjectsPanel — hours period', () => {
         await renderPanel()
 
         expect(periodSelect().value).toBe('week')
-        expect(await screen.findByText('/ 120h')).toBeTruthy()
-        expect(screen.getByText('48h remaining this week')).toBeTruthy()
+        expect(await screen.findByText('72')).toBeTruthy()
+        expect(screen.getByText('This week')).toBeTruthy()
     })
 
-    it('reports the monthly target and remaining hours when the month is chosen', async () => {
+    it('reports the monthly hours when the month is chosen', async () => {
         api.getProjects.mockResolvedValue([ORION])
         await renderPanel()
-        await screen.findByText('/ 120h')
+        await screen.findByText('72')
 
         choosePeriod('month')
 
-        expect(screen.getByText('/ 480h')).toBeTruthy()
-        expect(screen.getByText('192h remaining this month')).toBeTruthy()
-        expect(screen.queryByText('/ 120h')).toBeNull()
+        expect(screen.getByText('288')).toBeTruthy()
+        expect(screen.getByText('This month')).toBeTruthy()
     })
 
-    it('says the monthly target is unset when the project has none', async () => {
-        api.getProjects.mockResolvedValue([{ ...ORION, targetMonthlyHours: 0 }])
+    it('offers no target or owner fields on the project dialog', async () => {
+        api.getProjects.mockResolvedValue([ORION])
         await renderPanel()
-        await screen.findByText('/ 120h')
+        await screen.findByText('72')
 
-        choosePeriod('month')
+        fireEvent.click(screen.getAllByRole('button', { name: /new project/i })[0])
 
-        expect(screen.getByText('No monthly target set')).toBeTruthy()
+        await screen.findByRole('dialog')
+        expect(screen.queryByLabelText(/target weekly hours/i)).toBeNull()
+        expect(screen.queryByLabelText(/target monthly hours/i)).toBeNull()
+        expect(screen.queryByLabelText(/^owner/i)).toBeNull()
     })
 
-    it('counts low activity against the target for the chosen period', async () => {
-        // 48 of 120 weekly hours is under half; 288 of 480 monthly hours is not.
-        api.getProjects.mockResolvedValue([{ ...ORION, hoursThisWeek: 48 }])
+    it('counts active projects with no hours in the chosen period as low activity', async () => {
+        api.getProjects.mockResolvedValue([{ ...ORION, hoursThisWeek: 0 }])
         await renderPanel()
-        await screen.findByText('/ 120h')
+        await screen.findByText('Orion')
 
         expect(within(lowActivityTile()).getByText('1')).toBeTruthy()
+        expect(screen.getByText('No activity this week')).toBeTruthy()
 
         choosePeriod('month')
 

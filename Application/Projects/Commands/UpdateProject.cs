@@ -21,7 +21,6 @@ public class UpdateProject
         public async Task<Result<ProjectDto>> Handle(Command request, CancellationToken cancellationToken)
         {
             var project = await context.Projects
-                .Include(p => p.Owner)
                 .FirstOrDefaultAsync(p => p.Id == request.Id, cancellationToken);
 
             if (project is null)
@@ -39,10 +38,6 @@ public class UpdateProject
             var departmentIds = req.DepartmentIds.Distinct().ToList();
             if (await context.Departments.CountAsync(d => departmentIds.Contains(d.Id), cancellationToken) != departmentIds.Count)
                 return Result<ProjectDto>.Failure("One or more selected departments do not exist.");
-
-            if (!string.IsNullOrEmpty(req.OwnerId)
-                && !await context.Users.AnyAsync(u => u.Id == req.OwnerId, cancellationToken))
-                return Result<ProjectDto>.Failure("Selected owner does not exist.");
 
             var activityTypeIds = req.ActivityTypeIds.Distinct().ToList();
             if (activityTypeIds.Count > 0
@@ -62,12 +57,9 @@ public class UpdateProject
             project.Name = name;
             project.Code = code;
             project.Description = (req.Description ?? string.Empty).Trim();
-            project.OwnerId = string.IsNullOrEmpty(req.OwnerId) ? null : req.OwnerId;
             project.Status = req.Status;
             project.IsActive = req.Status != ProjectStatus.Inactive;
             project.ColorKey = string.IsNullOrWhiteSpace(req.ColorKey) ? "p1" : req.ColorKey.Trim();
-            project.TargetWeeklyHours = req.TargetWeeklyHours;
-            project.TargetMonthlyHours = req.TargetMonthlyHours;
 
             // Every set is diffed rather than cleared and re-added, so an
             // unchanged selection produces no writes at all.
@@ -119,8 +111,6 @@ public class UpdateProject
 
             await context.SaveChangesAsync(cancellationToken);
 
-            await context.Entry(project).Reference(p => p.Owner).LoadAsync(cancellationToken);
-
             return Result<ProjectDto>.Success(new ProjectDto
             {
                 Id = project.Id,
@@ -130,11 +120,7 @@ public class UpdateProject
                 IsActive = project.IsActive,
                 Status = project.Status,
                 Departments = await ProjectDepartmentLookup.ForProjectAsync(context, project.Id, cancellationToken),
-                OwnerId = project.OwnerId,
-                OwnerName = project.Owner?.DisplayName,
                 ColorKey = project.ColorKey,
-                TargetWeeklyHours = project.TargetWeeklyHours,
-                TargetMonthlyHours = project.TargetMonthlyHours,
                 CreatedAt = project.CreatedAt,
                 Activities = await ProjectActivityLookup.ForProjectAsync(context, project.Id, cancellationToken),
                 Components = await ProjectComponentLookup.ForProjectAsync(context, project.Id, cancellationToken),
