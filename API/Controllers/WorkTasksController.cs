@@ -88,7 +88,7 @@ public class WorkTasksController(IHubContext<NotificationsHub> notificationsHub)
     {
         var result = await Mediator.Send(new UpdateWorkTaskStatus.Command
         {
-            Id = id, CallerUserId = CallerUserId, Status = request.Status, AssignedOnly = AssignedOnly,
+            Id = id, CallerUserId = CallerUserId, Status = request.Status, Reason = request.Reason, AssignedOnly = AssignedOnly,
         }, cancellationToken);
         if (result.IsSuccess) await NotifyAsync(result.Value!, cancellationToken);
         return HandleResult(result);

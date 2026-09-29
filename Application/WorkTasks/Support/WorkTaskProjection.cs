@@ -47,6 +47,13 @@ public static class WorkTaskProjection
             CanEdit = t.CreatedById == callerUserId || (callerManages && !t.CreatedBy!.IsActive),
             CanChangeStatus = t.CreatedById == callerUserId || (callerManages && !t.CreatedBy!.IsActive)
                 || t.Assignees.Any(a => a.UserId == callerUserId),
+            // Mirrors WorkTaskReviewRule.IsReviewer: visible means in scope.
+            CanConfirm = t.Status == WorkTaskStatus.AwaitingConfirmation
+                && (t.CreatedById == callerUserId || (callerManages && !t.Assignees.Any(a => a.UserId == callerUserId))),
+            ConfirmedByName = t.ConfirmedBy == null ? null
+                : !string.IsNullOrWhiteSpace(t.ConfirmedBy.DisplayName) ? t.ConfirmedBy.DisplayName : (t.ConfirmedBy.Email ?? ""),
+            SentBackReason = t.SentBackReason,
+            SentBackAtUtc = t.SentBackAtUtc,
             // Never the bytes: only the file's columns are selected.
             Attachments = t.Attachments
                 .OrderBy(a => a.CreatedAtUtc).ThenBy(a => a.Id)

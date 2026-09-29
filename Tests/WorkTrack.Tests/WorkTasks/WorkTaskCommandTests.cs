@@ -23,8 +23,8 @@ public class WorkTaskCommandTests
         new UpdateWorkTask.Handler(db, _email, NullLogger<UpdateWorkTask.Handler>.Instance)
             .Handle(new UpdateWorkTask.Command { Id = id, CallerUserId = caller, Task = task }, CancellationToken.None);
 
-    private static Task<Result<WorkTaskDto>> SetStatus(AppDbContext db, int id, string caller, WorkTaskStatus status) =>
-        new UpdateWorkTaskStatus.Handler(db)
+    private Task<Result<WorkTaskDto>> SetStatus(AppDbContext db, int id, string caller, WorkTaskStatus status) =>
+        new UpdateWorkTaskStatus.Handler(db, _email, NullLogger<UpdateWorkTaskStatus.Handler>.Instance)
             .Handle(new UpdateWorkTaskStatus.Command { Id = id, CallerUserId = caller, Status = status }, CancellationToken.None);
 
     private static Task<Result<int>> Delete(AppDbContext db, int id, string caller) =>
@@ -230,7 +230,7 @@ public class WorkTaskCommandTests
     }
 
     [Fact]
-    public async Task The_assignee_may_move_the_status_and_done_stamps_completion()
+    public async Task The_assignee_may_move_the_status_and_confirmed_done_stamps_completion()
     {
         await using var db = await TransactionalTestDb.CreateAsync();
         await SeedAsync(db);
@@ -238,7 +238,12 @@ public class WorkTaskCommandTests
 
         var done = await SetStatus(db, id, SalesManager, WorkTaskStatus.Done);
         Assert.True(done.IsSuccess, done.Error);
-        Assert.NotNull(done.Value!.CompletedAtUtc);
+        Assert.Equal(WorkTaskStatus.AwaitingConfirmation, done.Value!.Status);
+        Assert.Null(done.Value.CompletedAtUtc);
+
+        var confirmed = await SetStatus(db, id, Hr, WorkTaskStatus.Done);
+        Assert.True(confirmed.IsSuccess, confirmed.Error);
+        Assert.NotNull(confirmed.Value!.CompletedAtUtc);
 
         var reopened = await SetStatus(db, id, SalesManager, WorkTaskStatus.InProgress);
         Assert.Null(reopened.Value!.CompletedAtUtc);
@@ -476,7 +481,7 @@ public class WorkTaskCommandTests
         var moved = await SetStatus(db, created.Value!.Id, OpsManager, WorkTaskStatus.Done);
 
         Assert.True(moved.IsSuccess, moved.Error);
-        Assert.Equal(WorkTaskStatus.Done, moved.Value!.Status);
+        Assert.Equal(WorkTaskStatus.AwaitingConfirmation, moved.Value!.Status);
         Assert.True(moved.Value.CanChangeStatus);
     }
 
