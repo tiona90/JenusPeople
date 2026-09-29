@@ -52,6 +52,7 @@ public class SystemAdministrationSurfaceTests
     [InlineData(typeof(SettingsController), nameof(SettingsController.ResetReminders))]
     [InlineData(typeof(SettingsController), nameof(SettingsController.ClearApprovalHistory))]
     [InlineData(typeof(SettingsController), nameof(SettingsController.RunReminder))]
+    [InlineData(typeof(WorkTaskSettingsController), nameof(WorkTaskSettingsController.UpdateSettings))]
     [InlineData(typeof(HolidaysController), nameof(HolidaysController.GetCountries))]
     // A read, despite the theory's name — the same exception HolidaysController.GetCountries
     // above already is. The rows say which departments each HR Administrator runs, so
@@ -147,5 +148,15 @@ public class SystemAdministrationSurfaceTests
         Assert.All(gates, g => Assert.True(
             g.Roles is null || g.Roles.Split(',').Contains(AppRoles.HrAdministrator),
             $"{controller.Name}.{action} names roles '{g.Roles}' without the HR Administrator"));
+    }
+
+    /// <summary>The task dialog of every role reads the rules; only the System Administrator writes them.</summary>
+    [Fact]
+    public void Task_settings_are_read_by_anyone_signed_in()
+    {
+        var gates = GatesOn(typeof(WorkTaskSettingsController), nameof(WorkTaskSettingsController.GetSettings)).ToList();
+
+        Assert.NotEmpty(gates);
+        Assert.All(gates, g => Assert.Null(g.Roles));
     }
 }
