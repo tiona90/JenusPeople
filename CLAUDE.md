@@ -1033,7 +1033,7 @@ Two more traps worth knowing, both found the hard way:
   preset plus public holidays), **nothing is sent on a non-working day**, and a
   weekly reminder goes out on the **first working day of the week** (Monday to
   Sunday, as the timesheet week runs), so a Monday holiday moves it to Tuesday
-  rather than skipping the week. It used to fire on `DateTime.Now` — right only
+  rather than skipping the week. The public holidays are read from the `PublicHolidays` cache, which used to be filled only when a page asked for them (and is emptied when the holiday country changes), so a host nobody had browsed sent every reminder on Cyprus Independence Day 2026; each tick now fills the year first via `Application/Holidays/Support/PublicHolidayCache.cs` (`PublicHolidayCacheTests`). It used to fire on `DateTime.Now` — right only
   while the server sat in the org's zone, as the developer box does — every day of
   the year, with weekly ones on Monday alone; only the check-in, check-out and
   daily-report dispatchers asked about the day, each against the UTC date. The
