@@ -11,10 +11,17 @@ namespace WorkTrack.Tests;
 /// </summary>
 internal static class TestDb
 {
-    public static AppDbContext Create()
+    public static AppDbContext Create() => Create(Guid.NewGuid().ToString());
+
+    /// <summary>
+    /// A context over a named in-memory database, so a test can open a second
+    /// context over the same data — the way a restarted API sees the rows the
+    /// previous process wrote.
+    /// </summary>
+    public static AppDbContext Create(string databaseName)
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .UseInMemoryDatabase(databaseName)
             // The in-memory provider can't honour the [Timestamp] RowVersion concurrency
             // token; silence that transaction/warning so seeding stays quiet.
             .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))

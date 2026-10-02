@@ -86,6 +86,49 @@ public class ReminderScheduleTests
         Assert.Equal(ReminderDueState.AlreadyRanToday, state);
     }
 
+    // ── Catching up a missed slot ───────────────────────────────────────────
+
+    [Fact]
+    public void A_missed_reminder_is_caught_up_later_the_same_day()
+    {
+        var state = ReminderSchedule.Evaluate(Daily("09:00"), new TimeOnly(14, 0), Wednesday,
+            todayIsWorkingDay: true, firstWorkingDayOfWeek: Monday, lastRun: null);
+
+        Assert.Equal(ReminderDueState.Due, state);
+    }
+
+    [Fact]
+    public void A_missed_check_in_reminder_is_dropped_once_the_working_day_is_over()
+    {
+        var cutoff = new TimeOnly(17, 0);
+
+        var beforeTheEnd = ReminderSchedule.Evaluate(Daily("09:00"), new TimeOnly(16, 59), Wednesday, true, Monday, null, notAfter: cutoff);
+        var afterTheEnd = ReminderSchedule.Evaluate(Daily("09:00"), new TimeOnly(17, 0), Wednesday, true, Monday, null, notAfter: cutoff);
+
+        Assert.Equal(ReminderDueState.Due, beforeTheEnd);
+        Assert.Equal(ReminderDueState.TooLate, afterTheEnd);
+    }
+
+    [Fact]
+    public void The_cutoff_never_refuses_a_reminder_scheduled_after_it()
+    {
+        // Check-in configured for 19:00 on a 09:00–17:00 day: odd, but it is what
+        // the admin asked for, and it goes out at 19:00 rather than never.
+        var state = ReminderSchedule.Evaluate(Daily("19:00"), new TimeOnly(19, 0), Wednesday, true, Monday, null, notAfter: new TimeOnly(17, 0));
+
+        Assert.Equal(ReminderDueState.Due, state);
+    }
+
+    [Fact]
+    public void Only_the_check_in_reminder_has_a_cutoff_and_it_is_the_end_of_the_working_day()
+    {
+        var settings = new AppSettings { WorkingHoursStart = "08:00", WorkingHoursEnd = "17:00" };
+
+        Assert.Equal(new TimeOnly(17, 0), ReminderSchedule.CatchUpCutoff(ReminderDispatcher.CheckInReminder, settings));
+        foreach (var id in ReminderDefaults.Create().Select(r => r.Id).Where(id => id != ReminderDispatcher.CheckInReminder))
+            Assert.Null(ReminderSchedule.CatchUpCutoff(id, settings));
+    }
+
     [Fact]
     public void A_disabled_or_malformed_reminder_is_never_due()
     {

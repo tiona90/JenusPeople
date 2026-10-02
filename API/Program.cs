@@ -287,9 +287,11 @@ builder.Services.AddMediatR(x =>
 x.RegisterServicesFromAssemblyContaining<GetAnnualLeaveList.Handler>());
 
 // Reminder scheduling: the dispatcher builds/sends each reminder's content; the
-// hosted service ticks every minute and fires due reminders (server local time,
-// in-memory dedup). See ReminderBackgroundService for the scheduling rules.
+// runner decides each tick which are due (org clock, Working Week, dedup in the
+// ReminderRuns table) and the hosted service is the once-a-minute timer. See
+// ReminderSchedule for the rules.
 builder.Services.AddScoped<ReminderDispatcher>();
+builder.Services.AddScoped<ReminderRunner>();
 builder.Services.AddHostedService<ReminderBackgroundService>();
 
 // System errors — an unhandled 500 or a reminder that threw — are emailed to

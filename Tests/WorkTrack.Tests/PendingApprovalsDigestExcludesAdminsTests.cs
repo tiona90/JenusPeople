@@ -20,7 +20,14 @@ public class PendingApprovalsDigestExcludesAdminsTests
     private const string ManagerEmail = "mia@example.com";
     private const int DepartmentId = 1;
 
-    private static readonly AppSettings Enabled = new() { EmailNotificationsEnabled = true };
+    // Every day works, so the digest runs whatever day the test executes on
+    // (nothing is dispatched on a non-working day).
+    private static readonly AppSettings Enabled = new()
+    {
+        EmailNotificationsEnabled = true,
+        WorkingDays = "custom",
+        WorkingDaysCustom = "sun,mon,tue,wed,thu,fri,sat",
+    };
 
     /// <summary>
     /// One System Administrator, one Manager of Engineering, one Engineering employee with a
