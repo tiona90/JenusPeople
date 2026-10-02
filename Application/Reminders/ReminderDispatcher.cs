@@ -1,5 +1,6 @@
 using System.Net;
 using Application.Attendance.Support;
+using Application.Holidays.Support;
 using Application.Settings.Support;
 using Domain;
 using Domain.Interfaces;
@@ -30,10 +31,19 @@ namespace Application.Reminders;
 //                         and are told about system errors instead —
 //                         SystemErrorNotifier)
 // Other ids are accepted but logged as not-implemented rather than failing.
+//
+// Nothing is sent on a non-working day — a weekend under the Working Week, or a
+// public holiday for the holiday country — whichever reminder it is and however
+// it was asked for. The scheduler already refuses to dispatch on such a day;
+// DispatchAsync asks again because the on-demand run-reminder endpoint bypasses
+// the schedule, and the question used to be repeated only by check-in,
+// check-out and the daily report, so a manual run of the pending-approvals or
+// late-submissions reminder still went out on a bank holiday.
 public class ReminderDispatcher(
     AppDbContext context,
     IEmailService emailService,
-    ILogger<ReminderDispatcher> logger)
+    ILogger<ReminderDispatcher> logger,
+    NagerHolidayClient? holidayClient = null)
 {
     // Matches the client copy ("fewer than 5 days remaining").
     private const int LowBalanceThreshold = 5;
@@ -49,16 +59,32 @@ public class ReminderDispatcher(
     public const string CheckOutReminder = "check-out";
     public const string DailyAttendanceReport = "daily-attendance-report";
 
-    // Convenience overload (used by the on-demand test endpoint): loads settings.
-    public async Task DispatchAsync(string reminderId, CancellationToken cancellationToken)
+    // Convenience overload (used by the on-demand test endpoint): loads settings,
+    // and fills this year's public holidays first — the scheduler does that on
+    // every tick, but this path never passes through it, and an empty cache
+    // reads a bank holiday as an ordinary weekday (PublicHolidayCache).
+    public async Task<bool> DispatchAsync(string reminderId, CancellationToken cancellationToken)
     {
         var settings = await context.AppSettings.AsNoTracking().FirstOrDefaultAsync(cancellationToken)
                        ?? new AppSettings();
-        await DispatchAsync(reminderId, settings, cancellationToken);
+        await EnsureHolidaysCachedAsync(settings, cancellationToken);
+        return await DispatchAsync(reminderId, settings, cancellationToken);
     }
 
-    public async Task DispatchAsync(string reminderId, AppSettings settings, CancellationToken cancellationToken)
+    /// <summary>
+    /// Sends one reminder. Returns false, sending nothing, when today is not a
+    /// working day for the org (weekend or public holiday) or the id has no
+    /// dispatcher.
+    /// </summary>
+    public async Task<bool> DispatchAsync(string reminderId, AppSettings settings, CancellationToken cancellationToken)
     {
+        if (!await IsWorkingDayTodayAsync(settings, cancellationToken))
+        {
+            logger.LogInformation("{Id}: today ({Today}) is not a working day (weekend or public holiday); nothing sent.",
+                reminderId, TodayLocal(settings));
+            return false;
+        }
+
         switch (reminderId)
         {
             case PendingApprovals:
@@ -84,7 +110,22 @@ public class ReminderDispatcher(
                 break;
             default:
                 logger.LogInformation("Reminder '{Id}' has no dispatcher implementation; skipping.", reminderId);
-                break;
+                return false;
+        }
+        return true;
+    }
+
+    private async Task EnsureHolidaysCachedAsync(AppSettings settings, CancellationToken ct)
+    {
+        var code = settings.HolidayCountryCode;
+        if (holidayClient is null || string.IsNullOrWhiteSpace(code)) return;
+        try
+        {
+            await PublicHolidayCache.EnsureYearAsync(context, holidayClient, code, TodayLocal(settings).Year, ct);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "Could not load public holidays for {Country}; going by the cached calendar.", code);
         }
     }
 
@@ -386,12 +427,6 @@ public class ReminderDispatcher(
     // day, matching how the attendance feature records and reports it.
     private async Task CheckInReminderAsync(AppSettings settings, CancellationToken ct)
     {
-        if (!await IsWorkingDayTodayAsync(settings, ct))
-        {
-            logger.LogInformation("check-in: today is not a working day (weekend or public holiday); nothing sent.");
-            return;
-        }
-
         var attendance = await LoadAttendanceTodayAsync(ct);
         var targets = attendance.Employees
             .Where(e => !attendance.OnLeaveUserIds.Contains(e.UserId) && !attendance.CheckedInProfileIds.Contains(e.ProfileId))
@@ -433,12 +468,6 @@ public class ReminderDispatcher(
     // check out and complete their timesheet.
     private async Task CheckOutReminderAsync(AppSettings settings, CancellationToken ct)
     {
-        if (!await IsWorkingDayTodayAsync(settings, ct))
-        {
-            logger.LogInformation("check-out: today is not a working day (weekend or public holiday); nothing sent.");
-            return;
-        }
-
         var attendance = await LoadAttendanceTodayAsync(ct);
         var targets = attendance.Employees
             .Where(e => !attendance.OnLeaveUserIds.Contains(e.UserId)
@@ -507,12 +536,6 @@ public class ReminderDispatcher(
     private async Task DailyAttendanceReportAsync(AppSettings settings, CancellationToken ct)
     {
         var today = TodayLocal(settings);
-        if (!await IsWorkingDayAsync(settings, today, ct))
-        {
-            logger.LogInformation("daily-attendance-report: today is not a working day; nothing sent.");
-            return;
-        }
-
         var reportDay = await PreviousWorkingDayAsync(settings, today, ct);
         if (reportDay is null)
         {
@@ -833,7 +856,7 @@ public class ReminderDispatcher(
 
     // Today's date on the org's clock (AppSettings.TimeZoneId) — the date a public
     // holiday is a date on. The scheduler (ReminderBackgroundService) already
-    // refuses to dispatch on a non-working day; the checks below repeat the
+    // refuses to dispatch on a non-working day; DispatchAsync repeats the
     // question because the on-demand run-reminder endpoint bypasses the schedule.
     private static DateOnly TodayLocal(AppSettings settings) => WorkingWeek.TodayLocal(settings, DateTime.UtcNow);
 

@@ -44,6 +44,7 @@ public class AppDbContext : IdentityDbContext<
     public DbSet<StoredFile> StoredFiles { get; set; }
     public DbSet<Child> Children { get; set; }
     public DbSet<SystemError> SystemErrors { get; set; }
+    public DbSet<ReminderRun> ReminderRuns { get; set; }
     public DbSet<WorkTask> WorkTasks { get; set; }
     public DbSet<WorkTaskAssignee> WorkTaskAssignees { get; set; }
     public DbSet<WorkTaskAttachment> WorkTaskAttachments { get; set; }
@@ -547,6 +548,14 @@ public class AppDbContext : IdentityDbContext<
             // row to bump by source + type.
             entity.HasIndex(e => e.LastOccurredAtUtc);
             entity.HasIndex(e => new { e.Source, e.ExceptionType });
+        });
+
+        builder.Entity<ReminderRun>(entity =>
+        {
+            // One row per reminder, keyed by its catalogue id; the runner upserts it.
+            entity.HasKey(e => e.ReminderId);
+            entity.Property(e => e.ReminderId).HasMaxLength(ReminderRun.ReminderIdMaxLength);
+            entity.Property(e => e.Outcome).IsRequired().HasMaxLength(ReminderRun.OutcomeMaxLength);
         });
 
         builder.Entity<WorkTask>(entity =>

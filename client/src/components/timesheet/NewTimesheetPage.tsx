@@ -61,7 +61,19 @@ const FULL_DOW = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Satur
 // Row one of a task card: the five pickers, hours, and the remove button. Task comes
 // first because picking one fills in the project. Description gets its own
 // full-width row underneath, so it is not part of this grid.
-const TASK_GRID = '1.4fr 1.3fr 1fr 1.1fr 1.1fr 84px 40px'
+// Every flexible track is minmax(0, …): a bare `fr` has a min-content floor, so one
+// long project name widened its column, pushed the row past the card's edge (the
+// remove button went off-screen) and broke the captions' alignment with the fields.
+// Long values truncate with an ellipsis instead.
+const TASK_GRID = [
+    'minmax(0, 1.6fr)', // Task
+    'minmax(0, 1.6fr)', // Project
+    'minmax(0, 1fr)',   // Type
+    'minmax(0, 1fr)',   // Component
+    'minmax(0, 1fr)',   // Activity
+    '72px',             // Hours
+    '42px',             // Remove
+].join(' ')
 const TASK_HEADERS: { label: string; align?: 'center' }[] = [
     { label: 'Task' },
     { label: 'Project' },
@@ -79,6 +91,9 @@ const TASK_CARD_PAD = '12px'
 // hence the two shapes below.
 const TASK_FIELD_SX = {
     height: 42,
+    // A grid item's min-width defaults to its content; 0 lets it shrink to its track.
+    minWidth: 0,
+    width: '100%',
     fontSize: 13,
     borderRadius: '8px',
     bgcolor: 'background.paper',
@@ -91,7 +106,15 @@ const TASK_FIELD_SX = {
     '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: 'primary.main', borderWidth: '2px' },
     '&.Mui-error .MuiOutlinedInput-notchedOutline': { borderColor: 'error.main' },
     '&.Mui-disabled': { bgcolor: 'action.hover' },
-    '& .MuiSelect-select': { py: 0, px: '12px', display: 'flex', alignItems: 'center' },
+    // Block with a line-height rather than flex: an ellipsis never applies to the
+    // anonymous text item of a flex box, so a long value would just be clipped.
+    '& .MuiSelect-select': {
+        py: 0, pl: '12px',
+        display: 'block',
+        lineHeight: '40px',
+        minHeight: 0,
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+    },
     '& .MuiInputBase-input': { py: 0, px: '12px', height: '100%', boxSizing: 'border-box' },
     '& input::placeholder': { opacity: 1, color: 'text.disabled' },
 }
@@ -1105,6 +1128,13 @@ function DayCard({
                                     disabled={disabled}
                                     sx={TASK_FIELD_SX}
                                     inputProps={{ 'aria-label': 'Task' }}
+                                    // The column truncates; the full name is a hover away.
+                                    SelectDisplayProps={{
+                                        title: (() => {
+                                            const o = taskOptions.find((x) => String(x.id) === t.workTaskId)
+                                            return o ? taskOptionLabel(o) : undefined
+                                        })(),
+                                    }}
                                 >
                                     <MenuItem value="">
                                         <Box component="em" sx={{ color: 'text.disabled' }}>No task</Box>
@@ -1124,6 +1154,9 @@ function DayCard({
                                     onChange={(e) => onUpdateTask(t._id, 'projectId', e.target.value)}
                                     disabled={disabled}
                                     sx={TASK_FIELD_SX}
+                                    SelectDisplayProps={{
+                                        title: activeProjects.find((p) => String(p.id) === t.projectId)?.name,
+                                    }}
                                 >
                                     <MenuItem value="" disabled>
                                         <Box component="em" sx={{ color: 'text.disabled' }}>Select project…</Box>
@@ -1219,7 +1252,7 @@ function DayCard({
                                     disabled={disabled}
                                     title="Remove"
                                     sx={{
-                                        width: 36, height: 36,
+                                        width: 42, height: 42,
                                         borderRadius: '8px',
                                         // Matches the fields beside it — a transparent
                                         // button reads as a hole in the tinted card.

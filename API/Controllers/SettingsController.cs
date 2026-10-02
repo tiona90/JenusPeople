@@ -46,8 +46,9 @@ public class SettingsController : BaseApiController
     public async Task<ActionResult<int>> ClearApprovalHistory(CancellationToken cancellationToken) =>
         HandleResult(await Mediator.Send(new ClearApprovalHistory.Command(), cancellationToken));
 
-    // On-demand dispatch of a single reminder, ignoring its schedule. Lets an
-    // admin verify reminder delivery without waiting for the configured time.
+    // On-demand dispatch of a single reminder, ignoring its time and frequency.
+    // Lets an admin verify reminder delivery without waiting for the configured
+    // time. A non-working day (weekend or public holiday) still sends nothing.
     [HttpPost("run-reminder/{id}")]
     [Authorize(Roles = AppRoles.SystemAdministrator)]
     public async Task<ActionResult> RunReminder(
@@ -55,7 +56,12 @@ public class SettingsController : BaseApiController
         [FromServices] ReminderDispatcher dispatcher,
         CancellationToken cancellationToken)
     {
-        await dispatcher.DispatchAsync(id, cancellationToken);
-        return Ok(new { message = $"Reminder '{id}' dispatched. Check the logs and recipient inboxes." });
+        var dispatched = await dispatcher.DispatchAsync(id, cancellationToken);
+        return Ok(new
+        {
+            message = dispatched
+                ? $"Reminder '{id}' dispatched. Check the logs and recipient inboxes."
+                : $"Reminder '{id}' not sent: today is not a working day, or the reminder has no dispatcher. See the logs.",
+        });
     }
 }
