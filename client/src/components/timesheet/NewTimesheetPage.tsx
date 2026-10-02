@@ -61,11 +61,11 @@ const FULL_DOW = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Satur
 // Row one of a task card: the five pickers, hours, and the remove button. Task comes
 // first because picking one fills in the project. Description gets its own
 // full-width row underneath, so it is not part of this grid.
-const TASK_GRID = '1.4fr 1fr 1.3fr 1.1fr 1.1fr 84px 40px'
+const TASK_GRID = '1.4fr 1.3fr 1fr 1.1fr 1.1fr 84px 40px'
 const TASK_HEADERS: { label: string; align?: 'center' }[] = [
     { label: 'Task' },
-    { label: 'Type' },
     { label: 'Project' },
+    { label: 'Type' },
     { label: 'Component' },
     { label: 'Activity' },
     { label: 'Hours', align: 'center' },
@@ -1119,23 +1119,6 @@ function DayCard({
                                 <Select
                                     size="small"
                                     displayEmpty
-                                    value={t.projectTypeId}
-                                    onChange={(e) => onUpdateTask(t._id, 'projectTypeId', e.target.value)}
-                                    disabled={disabled}
-                                    sx={TASK_FIELD_SX}
-                                >
-                                    <MenuItem value="">
-                                        <Box component="em" sx={{ color: 'text.disabled' }}>Any type…</Box>
-                                    </MenuItem>
-                                    {activeProjectTypes.map((pt) => (
-                                        <MenuItem key={pt.id} value={String(pt.id)}>
-                                            {pt.icon ? `${pt.icon} ${pt.name}` : pt.name}
-                                        </MenuItem>
-                                    ))}
-                                </Select>
-                                <Select
-                                    size="small"
-                                    displayEmpty
                                     error={!!err?.projectId}
                                     value={t.projectId}
                                     onChange={(e) => onUpdateTask(t._id, 'projectId', e.target.value)}
@@ -1148,6 +1131,23 @@ function DayCard({
                                     {projectOptionsFor(t.projectTypeId, activeProjects).map((p) => (
                                         <MenuItem key={p.id} value={String(p.id)}>
                                             {p.name}
+                                        </MenuItem>
+                                    ))}
+                                </Select>
+                                <Select
+                                    size="small"
+                                    displayEmpty
+                                    value={t.projectTypeId}
+                                    onChange={(e) => onUpdateTask(t._id, 'projectTypeId', e.target.value)}
+                                    disabled={disabled}
+                                    sx={TASK_FIELD_SX}
+                                >
+                                    <MenuItem value="">
+                                        <Box component="em" sx={{ color: 'text.disabled' }}>Any type…</Box>
+                                    </MenuItem>
+                                    {activeProjectTypes.map((pt) => (
+                                        <MenuItem key={pt.id} value={String(pt.id)}>
+                                            {pt.icon ? `${pt.icon} ${pt.name}` : pt.name}
                                         </MenuItem>
                                     ))}
                                 </Select>

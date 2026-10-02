@@ -1,3 +1,4 @@
+using Application.Holidays.Support;
 using Application.Reminders;
 using Application.Settings.Support;
 using Application.SystemErrors;
@@ -23,6 +24,15 @@ namespace API.BackgroundServices;
 //     reminders fire on the first working day of the week, so a Monday holiday
 //     moves them to Tuesday rather than skipping the week (they used to fire on
 //     Monday, holiday or not, and never at all for a week with no Monday in it).
+//   • The holidays are fetched here, not assumed. The calendar is the
+//     PublicHolidays cache, which only a page asking for holidays used to fill,
+//     and saving a new holiday country empties it — so a host nobody had browsed
+//     read a bank holiday (Cyprus Independence Day, 1 October 2026) as a
+//     working day and reminded everybody. Each tick makes sure the year's
+//     holidays are cached first (PublicHolidayCache — one indexed lookup once
+//     they are, since the table can be emptied under it at any time). If the provider cannot be reached
+//     the tick goes ahead on what is cached, as before, and a fetch is retried
+//     after HolidayRetryInterval rather than every minute.
 //   • Dedup is in-memory (a last-fired org-local date per reminder id). A restart
 //     can re-send once if it happens within the same day after the fire time;
 //     acceptable for this use case and avoids a DB migration.
@@ -36,9 +46,13 @@ public class ReminderBackgroundService(
     ILogger<ReminderBackgroundService> logger) : BackgroundService
 {
     private static readonly TimeSpan TickInterval = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan HolidayRetryInterval = TimeSpan.FromMinutes(15);
 
     // reminderId -> last calendar date (org local) it was dispatched.
     private readonly Dictionary<string, DateOnly> _lastRun = new();
+
+    // When a failed holiday fetch may next be retried.
+    private DateTime _holidayRetryAfterUtc = DateTime.MinValue;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -84,6 +98,11 @@ public class ReminderBackgroundService(
         var today = DateOnly.FromDateTime(localNow);
         var nowTime = TimeOnly.FromDateTime(localNow);
 
+        // The weekly question looks back to this week's Monday, which may sit in
+        // last year.
+        var monday = today.AddDays(-(((int)today.DayOfWeek + 6) % 7));
+        await EnsureHolidaysCachedAsync(scope, context, settings, [monday.Year, today.Year], ct);
+
         // One calendar lookup per tick, shared by every reminder; the weekly
         // question is only asked when a weekly reminder is switched on.
         var workingDay = await WorkingWeek.IsWorkingDayAsync(context, settings, today, ct);
@@ -120,6 +139,35 @@ public class ReminderBackgroundService(
             {
                 logger.LogError(ex, "Reminder '{Id}' failed.", r.Id);
                 await ReportAsync(r.Id, ex, ct);
+            }
+        }
+    }
+
+    private async Task EnsureHolidaysCachedAsync(
+        IServiceScope scope, AppDbContext context, AppSettings settings, int[] years, CancellationToken ct)
+    {
+        var code = settings.HolidayCountryCode?.Trim().ToUpperInvariant();
+        if (string.IsNullOrEmpty(code)) return;
+
+        if (DateTime.UtcNow < _holidayRetryAfterUtc) return;
+
+        var client = scope.ServiceProvider.GetRequiredService<NagerHolidayClient>();
+        foreach (var year in years.Distinct())
+        {
+            try
+            {
+                if (await PublicHolidayCache.EnsureYearAsync(context, client, code, year, ct)) continue;
+                _holidayRetryAfterUtc = DateTime.UtcNow + HolidayRetryInterval;
+                logger.LogWarning("No {Year} public holidays returned for {Country}; retrying in {Interval}.", year, code, HolidayRetryInterval);
+                return;
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
+            {
+                _holidayRetryAfterUtc = DateTime.UtcNow + HolidayRetryInterval;
+                logger.LogWarning(ex,
+                    "Could not load {Year} public holidays for {Country}; reminders go by the cached calendar until the next attempt.",
+                    year, code);
+                return;
             }
         }
     }

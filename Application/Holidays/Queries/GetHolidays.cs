@@ -25,61 +25,22 @@ public class GetHolidays
             if (string.IsNullOrEmpty(code))
                 return Result<IReadOnlyList<HolidayDto>>.Success([]);
 
-            var cached = await context.PublicHolidays
-                .AsNoTracking()
-                .Where(h => h.CountryCode == code && h.Year == request.Year)
-                .OrderBy(h => h.Date)
-                .ToListAsync(cancellationToken);
-
-            if (cached.Count > 0)
-            {
-                return Result<IReadOnlyList<HolidayDto>>.Success(cached.Select(ToDto).ToList());
-            }
-
             try
             {
-                var fetched = await client.GetPublicHolidaysAsync(request.Year, code, cancellationToken);
-                if (fetched.Count == 0)
-                    return Result<IReadOnlyList<HolidayDto>>.Success([]);
-
-                var existingDates = await context.PublicHolidays
-                    .Where(h => h.CountryCode == code)
-                    .Select(h => h.Date)
-                    .ToListAsync(cancellationToken);
-                var existingSet = existingDates.Select(d => d.Date).ToHashSet();
-
-                var entities = fetched
-                    .GroupBy(h => h.Date.Date)
-                    .Where(g => !existingSet.Contains(g.Key))
-                    .Select(g => g.First())
-                    .Select(h => new PublicHoliday
-                    {
-                        CountryCode = code,
-                        Year = request.Year,
-                        Date = h.Date.Date,
-                        LocalName = h.LocalName,
-                        EnglishName = h.EnglishName,
-                        CachedAt = DateTime.UtcNow,
-                    }).ToList();
-
-                if (entities.Count > 0)
-                {
-                    context.PublicHolidays.AddRange(entities);
-                    await context.SaveChangesAsync(cancellationToken);
-                }
-
-                var fresh = await context.PublicHolidays
-                    .AsNoTracking()
-                    .Where(h => h.CountryCode == code && h.Year == request.Year)
-                    .OrderBy(h => h.Date)
-                    .ToListAsync(cancellationToken);
-
-                return Result<IReadOnlyList<HolidayDto>>.Success(fresh.Select(ToDto).ToList());
+                await PublicHolidayCache.EnsureYearAsync(context, client, code, request.Year, cancellationToken);
             }
             catch (HttpRequestException ex)
             {
                 return Result<IReadOnlyList<HolidayDto>>.Failure($"Could not load public holidays: {ex.Message}");
             }
+
+            var holidays = await context.PublicHolidays
+                .AsNoTracking()
+                .Where(h => h.CountryCode == code && h.Year == request.Year)
+                .OrderBy(h => h.Date)
+                .ToListAsync(cancellationToken);
+
+            return Result<IReadOnlyList<HolidayDto>>.Success(holidays.Select(ToDto).ToList());
         }
 
         private static HolidayDto ToDto(PublicHoliday h) => new()
