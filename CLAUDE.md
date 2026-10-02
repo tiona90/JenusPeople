@@ -1057,7 +1057,12 @@ Two more traps worth knowing, both found the hard way:
   does not repeat it. The hosted service used to keep a dictionary, so every API
   restart — a deploy, an app-pool recycle, IIS waking the idle site — re-sent
   whatever was due earlier that day (fifteen pending-approvals digests on one
-  development day). A reminder that missed its minute is **caught up later the
+  development day). Migration `SeedReminderRunsOnUpgrade` stamps every reminder
+  as handled on the (UTC) day it runs, because the table starts empty and the
+  first start after the deploy would otherwise catch up every slot the old
+  process had already sent that day — which it did, once, locally. Its id list
+  is hard-coded and `ReminderDefaultsMatchSeedMigrationTests` pins it to
+  `ReminderDefaults`. A reminder that missed its minute is **caught up later the
   same day**, except the check-in reminder, which is dropped once
   `WorkingHoursEnd` has passed (`ReminderSchedule.CatchUpCutoff`, state
   `TooLate`, recorded as skipped so it is logged once) — "don't forget to check
