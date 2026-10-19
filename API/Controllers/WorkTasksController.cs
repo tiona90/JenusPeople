@@ -94,6 +94,26 @@ public class WorkTasksController(IHubContext<NotificationsHub> notificationsHub)
         return HandleResult(result);
     }
 
+    /// <summary>
+    /// An assignee logs hours on the task: into the week's Draft timesheet, on the
+    /// task's entry for that date. See <see cref="LogTaskTime"/>.
+    /// </summary>
+    [HttpPost("{id:int}/log-time")]
+    public async Task<ActionResult<LogTaskTimeResult>> LogTime(int id, LogTaskTimeRequest request, CancellationToken cancellationToken)
+    {
+        var result = await Mediator.Send(new LogTaskTime.Command
+        {
+            TaskId = id,
+            CallerUserId = CallerUserId,
+            AssignedOnly = AssignedOnly,
+            Date = request.Date,
+            Hours = request.Hours,
+            Notes = request.Notes,
+        }, cancellationToken);
+        if (result.IsSuccess) await NotifyAsync(result.Value!.Task, cancellationToken);
+        return HandleResult(result);
+    }
+
     /// <summary>Attaches one file. Anyone who can see the task may; see <see cref="AddWorkTaskAttachment"/>.</summary>
     [HttpPost("{id:int}/attachments")]
     [RequestSizeLimit(11_000_000)]
