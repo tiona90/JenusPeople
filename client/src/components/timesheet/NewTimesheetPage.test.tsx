@@ -307,3 +307,22 @@ describe('NewTimesheetPage — a type nobody chose does not stand in the way', (
         expect(combo('Type')).toHaveTextContent('Support')
     })
 })
+
+describe('NewTimesheetPage — a task a Manager or HR closed', () => {
+    const open: TimesheetTaskOption = { id: 7, title: 'Fix login', projectId: 10, projectCode: 'APO', targetHours: null, loggedHours: 0, isClosed: false }
+    const done: TimesheetTaskOption = { id: 8, title: 'Old report', projectId: 10, projectCode: 'APO', targetHours: null, loggedHours: 3, isClosed: true }
+
+    it('is not offered to a row that does not already name it', async () => {
+        await renderPage({ taskOptions: [open, done] })
+        fireEvent.mouseDown(combo('Task'))
+        expect(await screen.findByRole('option', { name: /Fix login/ })).toBeInTheDocument()
+        expect(screen.queryByRole('option', { name: /Old report/ })).toBeNull()
+    })
+
+    it('still reads on a row already logged against it, but cannot be picked again', async () => {
+        await renderPage({ sheet: sheetWith({ workTaskId: 8 }), taskOptions: [open, done] })
+        expect(combo('Task')).toHaveTextContent('Old report (closed)')
+        fireEvent.mouseDown(combo('Task'))
+        expect(await screen.findByRole('option', { name: /Old report/ })).toHaveAttribute('aria-disabled', 'true')
+    })
+})
