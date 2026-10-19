@@ -282,9 +282,11 @@ const AppInner = observer(function AppInner() {
                             <Route path="/attendance-management" element={<CompanyAttendancePage />} />
                         </Route>
 
-                        {/* Tasks — Managers and HR Administrators hand each other follow-ups. */}
+                        {/* Approved Projects (the Tasks page) — Managers and HR Administrators hand each other follow-ups. */}
                         <Route element={<ProtectedRoute roles={[...TASK_ROLES]} />}>
-                            <Route path="/tasks" element={<TasksPage />} />
+                            <Route path="/approved-projects" element={<TasksPage />} />
+                            {/* The page's old address, kept so a bookmark still lands. */}
+                            <Route path="/tasks" element={<Navigate to="/approved-projects" replace />} />
                         </Route>
 
                         {/* System Administrator-only nested routes — gated by role inside ProtectedRoute. An HR Administrator has the reach but not the configuration. */}
