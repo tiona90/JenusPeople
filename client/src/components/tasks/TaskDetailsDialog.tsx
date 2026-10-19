@@ -3,7 +3,7 @@ import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
-import { CODE_COLORS, avatarBg, initials } from '../../lib/card-kit'
+import { avatarBg, initials } from '../../lib/card-kit'
 import { attachmentLimits, isShown } from '../../lib/task-settings'
 import { useWorkTaskSettings } from '../../lib/task-settings-query'
 import type { LogTaskTimeResult, WorkTask } from '../../lib/types'
@@ -61,7 +61,6 @@ function Details({ task, today, viewerId, onClose, onEdit, onLogged }: {
     const progress = describeTaskProgress(task.targetHours, task.loggedHours)
     const status = STATUS_COLORS[task.status]
     const priority = PRIORITY_COLORS[task.priority]
-    const codeColor = closed ? 'text.disabled' : (CODE_COLORS[task.projectColorKey ?? ''] ?? CODE_COLORS.p1)
     const attachments = task.attachments ?? []
 
     return (
@@ -70,12 +69,6 @@ function Details({ task, today, viewerId, onClose, onEdit, onLogged }: {
                 {/* Header */}
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start' }}>
                     <Box sx={{ minWidth: 0 }}>
-                        {task.projectCode && (
-                            <Box sx={{
-                                display: 'inline-block', bgcolor: codeColor, color: '#fff',
-                                fontSize: 11, fontWeight: 700, px: '8px', py: '3px', borderRadius: '6px', mb: '6px',
-                            }}>{task.projectCode}</Box>
-                        )}
                         <Box component="h2" id="task-details-title" sx={{ m: 0, fontSize: 20, fontWeight: 700, lineHeight: 1.3, wordBreak: 'break-word' }}>
                             {task.title}
                         </Box>

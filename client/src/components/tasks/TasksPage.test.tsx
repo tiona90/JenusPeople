@@ -168,10 +168,10 @@ describe('TasksPage', () => {
         expect(screen.queryByRole('dialog')).toBeNull()
     })
 
-    it('shows the project badge and name on the card', async () => {
+    it("shows the project's name on the card, not its code", async () => {
         renderPage()
         const card = await cardFor('Mine to do')
-        expect(within(card).getByText('CRM')).toBeInTheDocument()
+        expect(within(card).queryByText('CRM')).toBeNull()
         expect(within(card).getByText('CRM Rollout')).toBeInTheDocument()
     })
 

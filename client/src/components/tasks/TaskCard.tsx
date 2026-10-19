@@ -3,7 +3,7 @@ import Box from '@mui/material/Box'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import type { WorkTaskSettings } from '../../lib/api/work-task-settings'
-import { CODE_COLORS, avatarBg, initials } from '../../lib/card-kit'
+import { avatarBg, initials } from '../../lib/card-kit'
 import { ATTACHMENT_REQUIRED_MESSAGE, isShown } from '../../lib/task-settings'
 import { softBg } from '../../lib/theme-tokens'
 import type { LogTaskTimeResult, WorkTask, WorkTaskStatus } from '../../lib/types'
@@ -41,17 +41,6 @@ export interface TaskItemProps {
 }
 
 /* ─── small pieces ───────────────────────────────────────────────────────── */
-
-export function ProjectBadge({ task, closed }: { task: WorkTask; closed: boolean }) {
-    if (!task.projectCode) return null
-    const color = closed ? 'text.disabled' : (CODE_COLORS[task.projectColorKey ?? ''] ?? CODE_COLORS.p1)
-    return (
-        <Box sx={{
-            display: 'inline-block', flexShrink: 0, bgcolor: color, color: '#fff',
-            fontSize: 10, fontWeight: 700, px: '7px', py: '2px', borderRadius: '5px', letterSpacing: '0.02em',
-        }}>{task.projectCode}</Box>
-    )
-}
 
 export function StatusPill({ status }: { status: WorkTaskStatus }) {
     const c = STATUS_COLORS[status]
@@ -236,9 +225,8 @@ export function TaskCard({ variant = 'grid', ...props }: TaskItemProps & { varia
             '&:hover': { borderColor: f.late > 0 ? 'warning.main' : 'primary.main', boxShadow: '0 2px 10px rgba(0,0,0,0.06)' },
         }}>
             <Box sx={{ p: board ? '12px 14px' : '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px', flex: 1 }}>
-                {/* Title line: the project, the title (one line, whole on hover), the status. */}
+                {/* Title line: the title (one line, whole on hover), the status. */}
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                    <ProjectBadge task={task} closed={f.closed} />
                     {/* A real button, so the details open from the keyboard too. */}
                     <Box
                         component="button"
