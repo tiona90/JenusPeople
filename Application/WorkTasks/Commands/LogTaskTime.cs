@@ -25,6 +25,9 @@ public class LogTaskTime
     public const string HoursMessage = "Hours must be in half hours, between 0.5 and 24.";
     public const string FutureDateMessage = "Time can't be logged for a future date.";
     public const string NoProfileMessage = "No employee profile found for the current user.";
+    /// <summary>The column holds 300 (TimesheetEntry.Notes); appended notes count together.</summary>
+    public const int NotesMaxLength = 300;
+    public const string NotesTooLongMessage = "That note would make this day's note longer than 300 characters. Shorten it, or edit the entry in the timesheet.";
 
     public class Command : IRequest<Result<LogTaskTimeResult>>
     {
@@ -93,7 +96,10 @@ public class LogTaskTime
                 ? []
                 : await context.TimesheetEntries.Where(e => e.TimesheetId == sheet.Id).ToListAsync(cancellationToken);
             var notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim();
-            var entry = existing.FirstOrDefault(e => e.WorkTaskId == task.Id && e.Date.Date == day);
+            // The task's entry on its *current* project: after the task moves project, an
+            // entry on the old one keeps the hours it was logged with, and new hours start
+            // a row on the new one rather than booking work to a project it has left.
+            var entry = existing.FirstOrDefault(e => e.WorkTaskId == task.Id && e.ProjectId == projectId && e.Date.Date == day);
 
             TimesheetEntry candidate;
             if (entry is not null)
@@ -117,6 +123,11 @@ public class LogTaskTime
                     ProjectTypeId = typeId, ProjectComponentId = componentId, ActivityTypeId = activityId,
                 };
             }
+
+            // TimesheetEntry.Notes holds 300. SQLite would not enforce it, SQL Server would
+            // throw on save, so the combined note is checked here, before anything is added.
+            if (candidate.Notes is { Length: > NotesMaxLength })
+                return Result<LogTaskTimeResult>.Invalid(NotesTooLongMessage);
 
             var validation = TimesheetEntryValidator.Validate(
                 candidate, existing, now,
@@ -156,7 +167,12 @@ public class LogTaskTime
             catch (DbUpdateException) when (isNewSheet)
             {
                 // Two logs for an unsaved week raced: the unique index on
-                // (EmployeeProfileId, PeriodStart) let one through. Ask again.
+                // (EmployeeProfileId, PeriodStart) let one through. Confirm that is what
+                // failed, as CreateTimesheet does, rather than reporting every write error
+                // as a race the caller could clear by retrying.
+                var raced = await context.Timesheets.AsNoTracking()
+                    .AnyAsync(t => t.EmployeeProfileId == profile.Id && t.PeriodStart == periodStart, cancellationToken);
+                if (!raced) throw;
                 return Result<LogTaskTimeResult>.Conflict("Your timesheet for this week was just created. Please try again.");
             }
 

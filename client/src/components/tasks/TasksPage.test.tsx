@@ -671,6 +671,12 @@ describe('TasksPage log time', () => {
         expect(screen.getByRole('button', { name: 'Log' })).toBeInTheDocument()
     })
 
+    it('caps the note at what the server keeps', async () => {
+        renderPage(['Employee'])
+        fireEvent.click(within(await cardFor('Mine to do')).getByRole('button', { name: /Log time/ }))
+        expect(screen.getByLabelText('Note')).toHaveAttribute('maxLength', '300')
+    })
+
     it('does not open the details for a click on Log time', async () => {
         renderPage(['Employee'])
         fireEvent.click(within(await cardFor('Mine to do')).getByRole('button', { name: /Log time/ }))

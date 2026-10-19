@@ -325,4 +325,58 @@ public class LogTaskTimeTests
 
         Assert.Equal(1, (await db.TimesheetEntries.AsNoTracking().SingleAsync()).ProjectComponentId);
     }
+
+    [Fact]
+    public async Task Refuses_a_note_longer_than_the_column_holds()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        var id = await Seeded(db, NewTask(Sales, Hr, Employee, status: WorkTaskStatus.InProgress));
+
+        var result = await Log(db, id, Employee, Monday, 1m, new string('x', 301), assignedOnly: true);
+
+        Assert.Equal(ResultErrorKind.Invalid, result.ErrorKind);
+        Assert.Equal(LogTaskTime.NotesTooLongMessage, result.Error);
+        Assert.Equal(0, await db.Timesheets.CountAsync());
+    }
+
+    [Fact]
+    public async Task Refuses_a_note_that_would_push_the_entry_past_the_column()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        var id = await Seeded(db, NewTask(Sales, Hr, Employee, status: WorkTaskStatus.InProgress));
+        await Log(db, id, Employee, Monday, 1m, new string('a', 200), assignedOnly: true);
+
+        var result = await Log(db, id, Employee, Monday, 1m, new string('b', 120), assignedOnly: true);
+
+        Assert.Equal(ResultErrorKind.Invalid, result.ErrorKind);
+        Assert.Equal(LogTaskTime.NotesTooLongMessage, result.Error);
+        Assert.Equal(1m, (await db.TimesheetEntries.AsNoTracking().SingleAsync()).HoursWorked);
+    }
+
+    [Fact]
+    public async Task After_the_task_moves_project_new_hours_go_on_a_new_entry_on_the_new_project()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        db.Projects.Add(new Project { Id = 13, Name = "Second Sales", Code = "SS2" });
+        db.ProjectDepartments.Add(new ProjectDepartment { ProjectId = 13, DepartmentId = Sales });
+        await db.SaveChangesAsync();
+        var id = await Seeded(db, NewTask(Sales, Hr, Employee, status: WorkTaskStatus.InProgress));
+        await Log(db, id, Employee, Monday, 2m, assignedOnly: true);
+        var task = await db.WorkTasks.SingleAsync(t => t.Id == id);
+        task.ProjectId = 13;
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var result = await Log(db, id, Employee, Monday, 1m, assignedOnly: true);
+
+        Assert.True(result.IsSuccess, result.Error);
+        var entries = await db.TimesheetEntries.AsNoTracking().OrderBy(e => e.ProjectId).ToListAsync();
+        Assert.Equal(2, entries.Count);
+        Assert.Equal((SalesProject, 2m), (entries[0].ProjectId, entries[0].HoursWorked));
+        Assert.Equal((13, 1m), (entries[1].ProjectId, entries[1].HoursWorked));
+        Assert.Equal(1m, result.Value!.HoursOnEntry);
+    }
 }

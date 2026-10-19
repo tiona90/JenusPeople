@@ -84,7 +84,11 @@ export default function LogTimeButton({ task, today, onLogged, dense = false }: 
                             sx={{ width: 90 }}
                         />
                     </Stack>
-                    <TextField label="Note" size="small" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="What did you work on?" />
+                    {/* The entry's note holds 300; a second log on the same day appends, which the server checks. */}
+                    <TextField
+                        label="Note" size="small" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="What did you work on?"
+                        slotProps={{ htmlInput: { maxLength: 300 } }}
+                    />
                     <Stack direction="row" spacing={1} justifyContent="flex-end">
                         <Button size="small" onClick={() => setAnchor(null)} disabled={log.isPending}>Cancel</Button>
                         <Button size="small" variant="contained" type="submit" disabled={log.isPending || !hoursValid || !dateValid}>Log</Button>
