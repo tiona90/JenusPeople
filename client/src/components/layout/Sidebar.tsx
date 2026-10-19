@@ -27,7 +27,6 @@ import FactCheckRoundedIcon from '@mui/icons-material/FactCheckRounded'
 import TaskAltRoundedIcon from '@mui/icons-material/TaskAltRounded'
 import NotificationsActiveRoundedIcon from '@mui/icons-material/NotificationsActiveRounded'
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
-import NoteAddRoundedIcon from '@mui/icons-material/NoteAddRounded'
 import PeopleRoundedIcon from '@mui/icons-material/PeopleRounded'
 import UploadRoundedIcon from '@mui/icons-material/UploadRounded'
 import Alert from '@mui/material/Alert'
@@ -277,8 +276,8 @@ const Sidebar = observer(function Sidebar() {
     } else if (isManagerUser) {
         // A manager reads two kinds of page: their own records and their team's.
         // Grouping by domain (Annual Leave / Time) interleaved the two, so
-        // "My Leave" sat next to "Team Leave" and "My Timesheets" next to
-        // "Team Timesheets". Group by whose records a page shows instead.
+        // "My Leave" sat next to "Team Leave" and the manager's own timesheets next to
+        // the team's. Group by whose records a page shows instead.
         navEntries = [
             { kind: 'section', label: 'Overview' },
             { kind: 'item', label: 'Dashboard', icon: <DashboardRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToDashboard(), active: onPage('/dashboard') },
@@ -286,8 +285,9 @@ const Sidebar = observer(function Sidebar() {
             { kind: 'item', label: 'My Leave', icon: <CalendarMonthRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToMyLeave('requests'), active: onPage('/my-leave') },
             { kind: 'item', label: 'Request Leave', icon: <AddCircleOutlineRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToApplyLeave(), active: onPage('/apply-leave') },
             { kind: 'item', label: 'My Attendance', icon: <AccessAlarmRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAttendance(), active: onPage('/attendance') },
-            { kind: 'item', label: 'Submit Timesheet', icon: <NoteAddRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToNewTimesheet(), active: onPage('/new-timesheet') },
-            { kind: 'item', label: 'My Timesheets', icon: <AccessTimeRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTimesheets(), active: onPage('/timesheets') },
+            // One entry for the week and its history: the page opens on the current week,
+            // and the editor is a step from it, not a sibling in the menu.
+            { kind: 'item', label: 'Timesheets', icon: <AccessTimeRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTimesheets(), active: onPage('/timesheets', '/new-timesheet') },
             { kind: 'section', label: 'My Team' },
             { kind: 'item', label: 'Leave Management', icon: <GroupRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamLeave(), active: onPage('/leave-management') },
             { kind: 'item', label: 'Team Attendance', icon: <VisibilityRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamAttendance(), active: onPage('/team-attendance') },
@@ -305,8 +305,9 @@ const Sidebar = observer(function Sidebar() {
             { kind: 'item', label: 'Request Leave', icon: <AddCircleOutlineRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToApplyLeave(), active: onPage('/apply-leave') },
             { kind: 'section', label: 'Time' },
             { kind: 'item', label: 'My Attendance', icon: <AccessAlarmRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToAttendance(), active: onPage('/attendance') },
-            { kind: 'item', label: 'Submit Timesheet', icon: <NoteAddRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToNewTimesheet(), active: onPage('/new-timesheet') },
-            { kind: 'item', label: 'My Timesheets', icon: <AccessTimeRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTimesheets(), active: onPage('/timesheets') },
+            // One entry for the week and its history: the page opens on the current week,
+            // and the editor is a step from it, not a sibling in the menu.
+            { kind: 'item', label: 'Timesheets', icon: <AccessTimeRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTimesheets(), active: onPage('/timesheets', '/new-timesheet') },
             // An Employee works the tasks they are given.
             ...collaborationEntries,
         ]
@@ -383,6 +384,7 @@ const Sidebar = observer(function Sidebar() {
                         return (
                             <Box
                                 key={`item-${i}`}
+                                aria-current={entry.active ? 'page' : undefined}
                                 onClick={entry.onClick}
                                 sx={{
                                     display: 'flex',

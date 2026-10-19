@@ -134,11 +134,11 @@ describe('Navigation offered to each administrator role', () => {
     })
 })
 
-function renderSidebarAs(user: UserInfo) {
+function renderSidebarAs(user: UserInfo, path = '/dashboard') {
     mobx.useStore.mockReturnValue({ authStore: { user }, uiStore: { sidebarMode: 'light' } } as never)
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
-        <MemoryRouter initialEntries={['/dashboard']}>
+        <MemoryRouter initialEntries={[path]}>
             <QueryClientProvider client={queryClient}>
                 <Sidebar />
             </QueryClientProvider>
@@ -173,6 +173,38 @@ describe('Tasks is offered to everyone in Leave & Time, and not to the System Ad
         renderSidebarAs(EMPLOYEE)
         const heading = screen.getByText('Collaboration')
         expect(heading.compareDocumentPosition(screen.getByText('Tasks')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-        expect(screen.getByText('My Timesheets').compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+        expect(screen.getByText('Timesheets').compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    })
+})
+
+describe('One Timesheets entry for the people who keep one', () => {
+    const MANAGER: UserInfo = { ...EMPLOYEE, roles: ['Manager'] }
+    const HR: UserInfo = { ...EMPLOYEE, departmentId: null, roles: ['HR Administrator'] }
+
+    it.each([['Employee', EMPLOYEE], ['Manager', MANAGER]])('gives a %s one Timesheets entry and no Submit Timesheet', (_role, user) => {
+        renderSidebarAs(user)
+        expect(screen.getAllByText('Timesheets')).toHaveLength(1)
+        expect(screen.queryByText('Submit Timesheet')).toBeNull()
+        expect(screen.queryByText('My Timesheets')).toBeNull()
+    })
+
+    it.each([['/timesheets'], ['/new-timesheet']])('highlights Timesheets on %s', (path) => {
+        renderSidebarAs(MANAGER, path)
+        expect(screen.getByText('Timesheets').closest('[aria-current]')).toHaveAttribute('aria-current', 'page')
+        expect(screen.getByText('Approvals').closest('[aria-current]')).toBeNull()
+    })
+
+    it("does not highlight Timesheets on a Manager's Approvals", () => {
+        renderSidebarAs(MANAGER, '/timesheets-management')
+        expect(screen.getByText('Approvals').closest('[aria-current]')).toHaveAttribute('aria-current', 'page')
+        expect(screen.getByText('Timesheets').closest('[aria-current]')).toBeNull()
+    })
+
+    it("leaves an HR Administrator's navigation as it was", () => {
+        renderSidebarAs(HR)
+        expect(screen.queryByText('Submit Timesheet')).toBeNull()
+        expect(screen.queryByText('My Timesheets')).toBeNull()
+        // HR's own entry under Leave & Time is "Timesheets" (All Timesheets), as before.
+        expect(screen.getAllByText('Timesheets')).toHaveLength(1)
     })
 })
