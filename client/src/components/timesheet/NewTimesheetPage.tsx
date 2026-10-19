@@ -469,17 +469,26 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
                         next.projectId = retainedProjectId(next.projectId, value, activeProjects)
                     }
 
-                    // Task is the row's first pick: it decides the project, and a type
-                    // that project is not classified as goes, rather than hiding the
-                    // project it just set from the Project picker.
+                    // Task is the row's first pick: it decides the project.
                     if (field === 'workTaskId' && value) {
                         const taskProjectId = projectIdForTask(value, taskOptions)
-                        if (taskProjectId) {
-                            next.projectId = taskProjectId
-                            if (next.projectTypeId && !retainedProjectId(taskProjectId, next.projectTypeId, activeProjects)) {
-                                next.projectTypeId = ''
-                            }
-                        }
+                        if (taskProjectId) next.projectId = taskProjectId
+                    }
+
+                    // When the project moves, the type follows one of two rules. A type
+                    // nobody chose — filled in because the old project left exactly one,
+                    // or never shown at all — does not outlive the project it was filled
+                    // in for; otherwise it would narrow the Project picker to the projects
+                    // carrying it and lock the user out of every other, with nothing on
+                    // screen to clear. A type the user did choose is kept while the new
+                    // project carries it and goes when it does not, which the server
+                    // would refuse on save.
+                    if ((field === 'projectId' || field === 'workTaskId') && next.projectId !== t.projectId) {
+                        const previous = activeProjects.find((p) => String(p.id) === t.projectId)
+                        const chosen = shown.type && !isLockedToSingle(narrowingOptions(previous, catalogues).types, t.projectTypeId)
+                        const incoming = activeProjects.find((p) => String(p.id) === next.projectId)
+                        const carried = incoming ? narrowingOptions(incoming, catalogues).types.some((pt) => String(pt.id) === next.projectTypeId) : false
+                        next.projectTypeId = chosen && carried ? next.projectTypeId : ''
                     }
 
                     // Switching project can strand an activity or a component the
@@ -1137,9 +1146,13 @@ function DayCard({
                             const keptType = retainedOption(options.types, t.projectTypeId, retainFrom.types)
                             const keptComponent = retainedOption(options.components, t.projectComponentId, retainFrom.components)
                             const keptActivity = retainedOption(options.activities, t.activityTypeId, retainFrom.activities)
-                            // The Project picker narrows by the row's type; a stored type the project does not
-                            // carry would otherwise drop the row's own project out of its list.
-                            const projectOptions = projectOptionsFor(t.projectTypeId, activeProjects)
+                            // The type narrows the Project picker only when somebody chose it. A type filled in
+                            // for the current project, or one the sheet never shows, must not hide the projects
+                            // they could switch to — there would be nothing on screen to clear it with.
+                            const typeChosen = shown.type && !!t.projectTypeId && !isLockedToSingle(options.types, t.projectTypeId)
+                            const projectOptions = projectOptionsFor(typeChosen ? t.projectTypeId : '', activeProjects)
+                            // A stored type the project does not carry would otherwise drop the row's own
+                            // project out of that narrowed list.
                             const keptProject = retainedOption(projectOptions, t.projectId, activeProjects)
                             return (
                             <Box key={t._id} data-testid="entry-row" sx={{

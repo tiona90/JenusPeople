@@ -273,3 +273,37 @@ describe('NewTimesheetPage — rows are entries', () => {
         expect(screen.getByText('Select a project for this entry.')).toBeInTheDocument()
     })
 })
+
+describe('NewTimesheetPage — a type nobody chose does not stand in the way', () => {
+    it('lets a mispicked project be changed to an unclassified one, dropping the type filled in for the first', async () => {
+        await renderPage()
+        await pick('Project', 'Apollo')
+        expect(combo('Type')).toHaveTextContent('Support')
+
+        // Cassini is unclassified; a chosen type would hide it, a filled-in one must not.
+        await pick('Project', 'Cassini')
+        expect(combo('Project')).toHaveTextContent('Cassini')
+        expect(combo('Type')).toHaveTextContent('Any type…')
+        expect(combo('Component')).toHaveTextContent('jDocs')
+    })
+
+    it('does the same when the Type column is hidden, and saves no type for the unclassified project', async () => {
+        await renderPage({ types: [SUPPORT] })
+        expect(screen.queryByRole('combobox', { name: 'Type' })).toBeNull()
+        await pick('Project', 'Apollo')
+        await pick('Project', 'Cassini')
+        fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '1' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Save draft' }))
+
+        await waitFor(() => expect(api.createTimesheetEntry).toHaveBeenCalledTimes(1))
+        expect(api.createTimesheetEntry.mock.calls[0][1]).toEqual(expect.objectContaining({ projectId: 12, projectTypeId: null }))
+    })
+
+    it('keeps a type the user did choose when the next project carries it', async () => {
+        await renderPage()
+        await pick('Project', 'Borealis')
+        await pick('Type', 'Support')
+        await pick('Project', 'Apollo')
+        expect(combo('Type')).toHaveTextContent('Support')
+    })
+})
