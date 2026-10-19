@@ -36,8 +36,9 @@ import { formatElapsed, formatTime12, useAttendanceToday, useLiveElapsedMinutes 
 import { activityOptionsFor, retainedActivityId } from '../../lib/project-activities'
 import { componentOptionsFor, retainedComponentId } from '../../lib/project-components'
 import { projectOptionsFor, retainedProjectId, typeOptionsFrom } from '../../lib/project-types'
+import { narrowingColumns, type NarrowingCatalogues, type NarrowingColumns } from '../../lib/timesheet-columns'
 import { copyableWorkTaskId, isPickable, projectIdForTask, retainedWorkTaskId, taskOptionLabel, taskOptionsForRow } from '../../lib/timesheet-tasks'
-import type { Project, ProjectActivityType, ProjectComponent, ProjectType, TimesheetTaskOption, UserInfo } from '../../lib/types'
+import type { Project, TimesheetTaskOption, UserInfo } from '../../lib/types'
 import type { Timesheet, TimesheetStatus } from '../../lib/types/timesheet'
 import type { TimesheetEntry } from '../../lib/types/timesheet-entry'
 import { softBg, type SxColor } from '../../lib/theme-tokens'
@@ -65,24 +66,30 @@ const FULL_DOW = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Satur
 // long project name widened its column, pushed the row past the card's edge (the
 // remove button went off-screen) and broke the captions' alignment with the fields.
 // Long values truncate with an ellipsis instead.
-const TASK_GRID = [
-    'minmax(0, 1.6fr)', // Task
-    'minmax(0, 1.6fr)', // Project
-    'minmax(0, 1fr)',   // Type
-    'minmax(0, 1fr)',   // Component
-    'minmax(0, 1fr)',   // Activity
-    '72px',             // Hours
-    '42px',             // Remove
-].join(' ')
-const TASK_HEADERS: { label: string; align?: 'center' }[] = [
-    { label: 'Task' },
-    { label: 'Project' },
-    { label: 'Type' },
-    { label: 'Component' },
-    { label: 'Activity' },
-    { label: 'Hours', align: 'center' },
-    { label: '' },
-]
+// Type, Component and Activity are asked only when their catalogue leaves something
+// to choose (`narrowingColumns`), so the grid and its captions are built per sheet.
+function taskGrid(shown: NarrowingColumns): string {
+    return [
+        'minmax(0, 1.6fr)', // Task
+        'minmax(0, 1.6fr)', // Project
+        ...(shown.type ? ['minmax(0, 1fr)'] : []),
+        ...(shown.component ? ['minmax(0, 1fr)'] : []),
+        ...(shown.activity ? ['minmax(0, 1fr)'] : []),
+        '72px',             // Hours
+        '42px',             // Remove
+    ].join(' ')
+}
+function taskHeaders(shown: NarrowingColumns): { label: string; align?: 'center' }[] {
+    return [
+        { label: 'Task' },
+        { label: 'Project' },
+        ...(shown.type ? [{ label: 'Type' }] : []),
+        ...(shown.component ? [{ label: 'Component' }] : []),
+        ...(shown.activity ? [{ label: 'Activity' }] : []),
+        { label: 'Hours', align: 'center' as const },
+        { label: '' },
+    ]
+}
 // Inner padding of a task card. The header strip above the cards repeats it (plus the
 // card's 1px border) so the captions stay lined up with the fields they name.
 const TASK_CARD_PAD = '12px'
@@ -311,6 +318,12 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
         () => typeOptionsFrom(activeProjects, projectTypes.filter((t) => t.isActive)),
         [activeProjects, projectTypes],
     )
+    // The three narrowing columns: shown only when there is something to choose.
+    const catalogues: NarrowingCatalogues = useMemo(
+        () => ({ types: activeProjectTypes, components: activeComponents, activities: activeActivityTypes }),
+        [activeProjectTypes, activeComponents, activeActivityTypes],
+    )
+    const shown = useMemo(() => narrowingColumns(catalogues), [catalogues])
 
     const { data: attendanceToday } = useAttendanceToday()
     const attendanceMinutes = useLiveElapsedMinutes(attendanceToday)
@@ -721,9 +734,8 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
                                 dayTotal={dayTotal}
                                 taskCount={taskCount}
                                 activeProjects={activeProjects}
-                                activeActivityTypes={activeActivityTypes}
-                                activeProjectTypes={activeProjectTypes}
-                                activeComponents={activeComponents}
+                                catalogues={catalogues}
+                                shown={shown}
                                 taskOptions={taskOptions}
                                 onToggle={() => { if (!isFuture) toggleDay(key) }}
                                 onAddTask={() => addTask(key)}
@@ -905,9 +917,8 @@ type DayCardProps = {
     dayTotal: number
     taskCount: number
     activeProjects: Project[]
-    activeActivityTypes: ProjectActivityType[]
-    activeProjectTypes: ProjectType[]
-    activeComponents: ProjectComponent[]
+    catalogues: NarrowingCatalogues
+    shown: NarrowingColumns
     taskOptions: TimesheetTaskOption[]
     onToggle: () => void
     onAddTask: () => void
@@ -970,13 +981,14 @@ function DayCard({
     dow, dom, dayName, isToday, isWeekend, isFuture, isOpen,
     tasks, taskErrors, dayTotal, taskCount,
     activeProjects,
-    activeActivityTypes,
-    activeProjectTypes,
-    activeComponents,
+    catalogues,
+    shown,
     taskOptions,
     onToggle, onAddTask, onCopyToWeek, copyTargetCount, canCopy, onRemoveTask, onUpdateTask,
     disabled, readOnly, banner,
 }: DayCardProps) {
+    const grid = taskGrid(shown)
+    const headers = taskHeaders(shown)
     const hasEntries = dayTotal > 0
     const isEmptyWeekday = !isWeekend && !isFuture && dayTotal === 0
 
@@ -1085,11 +1097,11 @@ function DayCard({
                     {banner && <Box sx={{ pt: 1.25 }}>{banner}</Box>}
                     <Box sx={{
                         display: 'grid',
-                        gridTemplateColumns: TASK_GRID,
+                        gridTemplateColumns: grid,
                         gap: 1.5,
                         p: `14px calc(${TASK_CARD_PAD} + 1px) 8px`,
                     }}>
-                        {TASK_HEADERS.map((h, i) => (
+                        {headers.map((h, i) => (
                             <Typography key={i} sx={{
                                 fontSize: 10.5, fontWeight: 700,
                                 color: 'text.disabled',
@@ -1104,8 +1116,9 @@ function DayCard({
                     <Stack spacing={1.25}>
                         {tasks.map((t) => {
                             const err = taskErrors[t._id]
+                            const project = activeProjects.find((p) => String(p.id) === t.projectId)
                             return (
-                            <Box key={t._id} sx={{
+                            <Box key={t._id} data-testid="entry-row" sx={{
                                 p: TASK_CARD_PAD,
                                 borderRadius: '10px',
                                 border: '1px solid',
@@ -1116,7 +1129,7 @@ function DayCard({
                             }}>
                                 <Box sx={{
                                     display: 'grid',
-                                    gridTemplateColumns: TASK_GRID,
+                                    gridTemplateColumns: grid,
                                     gap: 1.5,
                                     alignItems: 'center',
                                 }}>
@@ -1154,9 +1167,8 @@ function DayCard({
                                     onChange={(e) => onUpdateTask(t._id, 'projectId', e.target.value)}
                                     disabled={disabled}
                                     sx={TASK_FIELD_SX}
-                                    SelectDisplayProps={{
-                                        title: activeProjects.find((p) => String(p.id) === t.projectId)?.name,
-                                    }}
+                                    inputProps={{ 'aria-label': 'Project' }}
+                                    SelectDisplayProps={{ title: project?.name }}
                                 >
                                     <MenuItem value="" disabled>
                                         <Box component="em" sx={{ color: 'text.disabled' }}>Select project…</Box>
@@ -1167,6 +1179,7 @@ function DayCard({
                                         </MenuItem>
                                     ))}
                                 </Select>
+                                {shown.type && (
                                 <Select
                                     size="small"
                                     displayEmpty
@@ -1174,16 +1187,19 @@ function DayCard({
                                     onChange={(e) => onUpdateTask(t._id, 'projectTypeId', e.target.value)}
                                     disabled={disabled}
                                     sx={TASK_FIELD_SX}
+                                    inputProps={{ 'aria-label': 'Type' }}
                                 >
                                     <MenuItem value="">
                                         <Box component="em" sx={{ color: 'text.disabled' }}>Any type…</Box>
                                     </MenuItem>
-                                    {activeProjectTypes.map((pt) => (
+                                    {catalogues.types.map((pt) => (
                                         <MenuItem key={pt.id} value={String(pt.id)}>
                                             {pt.icon ? `${pt.icon} ${pt.name}` : pt.name}
                                         </MenuItem>
                                     ))}
                                 </Select>
+                                )}
+                                {shown.component && (
                                 <Select
                                     size="small"
                                     displayEmpty
@@ -1191,19 +1207,19 @@ function DayCard({
                                     onChange={(e) => onUpdateTask(t._id, 'projectComponentId', e.target.value)}
                                     disabled={disabled}
                                     sx={TASK_FIELD_SX}
+                                    inputProps={{ 'aria-label': 'Component' }}
                                 >
                                     <MenuItem value="">
                                         <Box component="em" sx={{ color: 'text.disabled' }}>Component…</Box>
                                     </MenuItem>
-                                    {componentOptionsFor(
-                                        activeProjects.find((p) => String(p.id) === t.projectId),
-                                        activeComponents,
-                                    ).map((c) => (
+                                    {componentOptionsFor(project, catalogues.components).map((c) => (
                                         <MenuItem key={c.id} value={String(c.id)}>
                                             {c.icon ? `${c.icon} ${c.name}` : c.name}
                                         </MenuItem>
                                     ))}
                                 </Select>
+                                )}
+                                {shown.activity && (
                                 <Select
                                     size="small"
                                     displayEmpty
@@ -1211,19 +1227,18 @@ function DayCard({
                                     onChange={(e) => onUpdateTask(t._id, 'activityTypeId', e.target.value)}
                                     disabled={disabled}
                                     sx={TASK_FIELD_SX}
+                                    inputProps={{ 'aria-label': 'Activity' }}
                                 >
                                     <MenuItem value="">
                                         <Box component="em" sx={{ color: 'text.disabled' }}>Activity…</Box>
                                     </MenuItem>
-                                    {activityOptionsFor(
-                                        activeProjects.find((p) => String(p.id) === t.projectId),
-                                        activeActivityTypes,
-                                    ).map((a) => (
+                                    {activityOptionsFor(project, catalogues.activities).map((a) => (
                                         <MenuItem key={a.id} value={String(a.id)}>
                                             {a.icon ? `${a.icon} ${a.name}` : a.name}
                                         </MenuItem>
                                     ))}
                                 </Select>
+                                )}
                                 <TextField
                                     type="number"
                                     size="small"
