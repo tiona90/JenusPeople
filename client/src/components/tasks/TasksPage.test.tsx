@@ -326,7 +326,41 @@ describe('TasksPage', () => {
         expect(within(own).getByText('My own')).toBeInTheDocument()
         expect(within(own).getByText('Add a task of your own')).toBeInTheDocument()
         expect(handed.compareDocumentPosition(own) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-        expect(within(screen.getByTestId('stat-mine')).getByText(/From Manager & HR/)).toBeInTheDocument()
+        // Both tasks inherit base's 2020 due date, so both are overdue.
+        expect(screen.getByTestId('stat-summary')).toHaveTextContent('2 open · 2 overdue')
+        expect(screen.queryByTestId('stat-mine')).toBeNull()
+    })
+
+    it('gives an Employee one summary line instead of the tiles, and no layout toggle', async () => {
+        renderPage(['Employee'])
+        await cards()
+        expect(screen.queryByTestId('stat-open')).toBeNull()
+        expect(screen.queryByTestId('stat-overdue')).toBeNull()
+        expect(screen.queryByTestId('stat-done')).toBeNull()
+        expect(screen.queryByRole('group', { name: 'Layout' })).toBeNull()
+        expect(screen.getByTestId('stat-summary')).toBeInTheDocument()
+    })
+
+    it("counts an Employee's own Done awaiting confirmation in the summary line", async () => {
+        api.getWorkTasks.mockResolvedValue([{ ...base, dueDate: null, status: 'AwaitingConfirmation' }])
+        renderPage(['Employee'])
+        await cards()
+        expect(screen.getByTestId('stat-summary')).toHaveTextContent('1 open · 1 waiting for confirmation')
+    })
+
+    it('tells an Employee with nothing open so', async () => {
+        api.getWorkTasks.mockResolvedValue([{ ...base, status: 'Done', completedAtUtc: '2026-09-15T08:00:00' }])
+        renderPage(['Employee'])
+        await screen.findByTestId('stat-summary')
+        expect(screen.getByTestId('stat-summary')).toHaveTextContent('No open tasks')
+    })
+
+    it('keeps the tiles and the layout toggle for a Manager', async () => {
+        renderPage()
+        await cards()
+        expect(screen.getByTestId('stat-open')).toBeInTheDocument()
+        expect(screen.getByRole('group', { name: 'Layout' })).toBeInTheDocument()
+        expect(screen.queryByTestId('stat-summary')).toBeNull()
     })
 
     it('shows an HR Administrator everything in their departments with no view picker, and filters by department', async () => {
@@ -567,6 +601,15 @@ describe('TasksPage layouts', () => {
         expect(screen.queryByRole('region', { name: 'Done' })).toBeNull()
         // The board is about where tasks stand, not whose they are.
         expect(screen.queryByRole('region', { name: 'Assigned to you' })).toBeNull()
+    })
+
+    it('shows an Employee cards whatever layout the browser remembers, and leaves the memory alone', async () => {
+        window.localStorage.setItem('tasks-layout', 'board')
+        renderPage(['Employee'])
+        expect(await cards()).toHaveLength(3)
+        expect(screen.queryByRole('region', { name: 'To do' })).toBeNull()
+        expect(screen.getByRole('region', { name: 'From your manager & HR' })).toBeInTheDocument()
+        expect(window.localStorage.getItem('tasks-layout')).toBe('board')
     })
 
     it('keeps the Completed fact, and no Created one, on a finished board card', async () => {
