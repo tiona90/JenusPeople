@@ -46,12 +46,12 @@ export function isHrAdministrator(roles: readonly string[] | null | undefined): 
 }
 
 /**
- * Who opens Tasks: everyone in Leave & Time, mirroring `AppRoles.LeaveAndTimeRoles`
- * on `WorkTasksController`. An Employee works the tasks they are given and runs
- * their own (always assigned to themselves); running the department's — assigning
- * others, the view picker — is `canManageTasks`.
+ * Who opens the Tasks page: the two department-scoped roles. An Employee has no
+ * Tasks page — they meet the tasks handed to them in the timesheet editor's Task
+ * column, which reads `GET /api/worktasks/timesheet-options` and so still needs
+ * `WorkTasksController`'s wider `AppRoles.LeaveAndTimeRoles` gate.
  */
-export const TASK_ROLES: readonly UserRole[] = ['HR Administrator', 'Manager', 'Employee']
+export const TASK_ROLES: readonly UserRole[] = ['HR Administrator', 'Manager']
 
 /** Who runs tasks: the two department-scoped roles (`AppRoles.LeaveAndTimeDecisionRoles`). */
 export const TASK_MANAGER_ROLES: readonly UserRole[] = ['HR Administrator', 'Manager']

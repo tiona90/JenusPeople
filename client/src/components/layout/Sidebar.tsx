@@ -215,9 +215,9 @@ const Sidebar = observer(function Sidebar() {
     const onAdminSection = (...sections: string[]) =>
         sections.some((s) => path === `/admin/${s}` || path.startsWith(`/admin/${s}/`))
 
-    // Tasks is neither leave nor time, and not only a manager's team: Managers and
-    // HR Administrators hand tasks out and Employees work them, so all three get
-    // the same section for it.
+    // Tasks is neither leave nor time: Managers and HR Administrators hand tasks out,
+    // so both get the same section for it. An Employee has no Tasks page — they log
+    // time against their tasks from the timesheet editor's Task column.
     const collaborationEntries: NavEntry[] = [
         { kind: 'section', label: 'Collaboration' },
         { kind: 'item', label: 'Tasks', icon: <TaskAltRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTasks(), active: onPage('/tasks') },
@@ -308,8 +308,6 @@ const Sidebar = observer(function Sidebar() {
             // One entry for the week and its history: the page opens on the current week,
             // and the editor is a step from it, not a sibling in the menu.
             { kind: 'item', label: 'Timesheets', icon: <AccessTimeRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTimesheets(), active: onPage('/timesheets', '/new-timesheet') },
-            // An Employee works the tasks they are given.
-            ...collaborationEntries,
         ]
     }
 

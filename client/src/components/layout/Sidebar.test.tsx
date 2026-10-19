@@ -146,11 +146,12 @@ function renderSidebarAs(user: UserInfo, path = '/dashboard') {
     )
 }
 
-describe('Tasks is offered to everyone in Leave & Time, and not to the System Administrator', () => {
+describe('Tasks is offered to Managers and HR Administrators only', () => {
     it.each([
         ['Manager', true],
         ['HR Administrator', true],
-        ['Employee', true],
+        // An Employee meets their tasks in the timesheet editor's Task column instead.
+        ['Employee', false],
         ['System Administrator', false],
     ])('%s sees Tasks: %s', (role, shown) => {
         renderSidebarAs({ ...EMPLOYEE, roles: [role] as UserInfo['roles'] })
@@ -169,11 +170,9 @@ describe('Tasks is offered to everyone in Leave & Time, and not to the System Ad
         }
     })
 
-    it('puts Tasks under Collaboration for an Employee too, after their own pages', () => {
+    it('gives an Employee no Collaboration section', () => {
         renderSidebarAs(EMPLOYEE)
-        const heading = screen.getByText('Collaboration')
-        expect(heading.compareDocumentPosition(screen.getByText('Tasks')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-        expect(screen.getByText('Timesheets').compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+        expect(screen.queryByText('Collaboration')).toBeNull()
     })
 })
 

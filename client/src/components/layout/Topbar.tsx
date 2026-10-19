@@ -130,9 +130,9 @@ const Topbar = observer(function Topbar() {
     // The Tasks page's key, so its mutations and the SignalR notificationsUpdated
     // invalidation (sent on every task write) refresh the bell. Not polled like the
     // rest: the list is every task in scope with its logged hours, heavy to fetch
-    // every 15 seconds for the few rows the bell shows. Fetched for an Employee too,
-    // for the tasks handed to them (their list is only the tasks they are on).
-    const shouldFetchTasks = shouldUseManagerNotifications || shouldUseEmployeeNotifications
+    // every 15 seconds for the few rows the bell shows. Not fetched for an Employee:
+    // they have no Tasks page for a task notification to open.
+    const shouldFetchTasks = shouldUseManagerNotifications
     const { data: workTasks, isLoading: isLoadingTasks } = useQuery({
         queryKey: ['work-tasks'],
         queryFn: getWorkTasks,

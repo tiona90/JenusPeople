@@ -306,7 +306,8 @@ describe('TasksPage', () => {
         expect(within(card).queryByTestId('task-facts')).toBeNull()
     })
 
-    it('gives an Employee their tasks to work and their own to create, with no views to pick between', async () => {
+    // An Employee no longer reaches this page (TASK_ROLES); were they to, it offers no New task.
+    it('gives an Employee their tasks to work, with no views to pick between', async () => {
         api.getWorkTasks.mockResolvedValue([base, { ...base, id: 4, title: 'My own', createdById: 'me', createdByName: 'Me', canEdit: true }])
         renderPage(['Employee'])
 
@@ -314,7 +315,7 @@ describe('TasksPage', () => {
         expect(within(card).getByRole('button', { name: /Start/ })).toBeInTheDocument()
         expect(within(card).queryByRole('button', { name: /Edit/ })).toBeNull()
         expect(within(await cardFor('My own')).getByRole('button', { name: /Edit/ })).toBeInTheDocument()
-        expect(screen.getByRole('button', { name: /New task/ })).toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: /New task/ })).toBeNull()
         expect(screen.queryByRole('combobox', { name: 'View' })).toBeNull()
     })
 
