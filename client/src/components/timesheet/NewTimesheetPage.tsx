@@ -538,14 +538,14 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
         const errs = collectTaskErrors()
         if (Object.keys(errs).length > 0) {
             setTaskErrors(errs)
-            setError('Please fix the highlighted tasks before saving.')
+            setError('Please fix the highlighted entries before saving.')
             return
         }
         setTaskErrors({})
 
         const valid = collectValidTasks()
         if (mode === 'submit' && valid.length === 0) {
-            setError('Add at least one task before submitting.')
+            setError('Add at least one entry before submitting.')
             return
         }
 
@@ -838,7 +838,7 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
             <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mt: 1.25, px: 0.5 }}>
                 <Typography sx={{ fontSize: 14, lineHeight: 1 }}>💡</Typography>
                 <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
-                    Click a day to expand it. Add tasks as you go — saving updates this week's timesheet without creating a new one.
+                    Click a day to expand it. Add entries as you go — saving updates this week's timesheet without creating a new one.
                 </Typography>
             </Stack>
 
@@ -1013,7 +1013,7 @@ function DayCard({
         : isWeekend
             ? 'Weekend · optional'
             : taskCount === 0 ? 'Nothing logged yet'
-                : taskCount === 1 ? '1 task' : `${taskCount} tasks`
+                : taskCount === 1 ? '1 entry' : `${taskCount} entries`
     const metaColor = isEmptyWeekday ? 'warning.dark' : 'text.secondary'
 
     return (
@@ -1371,7 +1371,7 @@ function DayCard({
                                     },
                                 }}
                             >
-                                + Add task
+                                + Add entry
                             </Button>
                             {!isWeekend && (
                                 <Tooltip title={

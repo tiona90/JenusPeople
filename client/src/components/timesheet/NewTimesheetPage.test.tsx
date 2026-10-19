@@ -259,3 +259,17 @@ describe('NewTimesheetPage — a stored value the project no longer offers', () 
         expect(combo('Component')).toHaveTextContent('Component…')
     })
 })
+
+describe('NewTimesheetPage — rows are entries', () => {
+    it('calls a row an entry, not a task, which is the picker beside it', async () => {
+        await renderPage()
+        expect(screen.getByRole('button', { name: '+ Add entry' })).toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: '+ Add task' })).toBeNull()
+
+        // Hours with no project: the row is flagged and the message names entries.
+        fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '2' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Save draft' }))
+        expect(await screen.findByText('Please fix the highlighted entries before saving.')).toBeInTheDocument()
+        expect(screen.getByText('Select a project for this entry.')).toBeInTheDocument()
+    })
+})
