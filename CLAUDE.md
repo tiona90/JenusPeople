@@ -1049,7 +1049,16 @@ Two more traps worth knowing, both found the hard way:
   zone). `ReminderScheduleTests` pins the server; `orgSettingsWorkingWeek.test.tsx`
   the client. `department-digest` is catalogued and switched on by default but has
   **no dispatcher** — the scheduler logs "no dispatcher implementation" and sends
-  nothing.
+  nothing. **`late-submissions` chases the week past its deadline, not Draft
+  rows**: `LatestTimesheetWeekPastDeadline` (shared with the daily report's
+  "Timesheet not submitted" section) names the most recent week whose
+  `TimesheetSubmissionDeadlineDay`/`Time` has passed, and every active Employee
+  or Manager who had joined by its end and has no Submitted, Approved or
+  Resubmitted sheet for it is emailed once, told whether it is unstarted, in
+  draft or rejected. It used to email whoever held a Draft row for any week, so
+  somebody who never started the sheet — the usual case — heard nothing, and a
+  draft begun that morning was chased before it was due. `LateSubmissionsReminderTests`
+  pins it.
   **"Already sent today" is the `ReminderRuns` table, not memory** (migration
   `AddReminderRuns`): one row per reminder id with the org-local `RanOn` date and
   an `Outcome` (`dispatching` → `sent` / `nothing to send` / `failed: …`, or

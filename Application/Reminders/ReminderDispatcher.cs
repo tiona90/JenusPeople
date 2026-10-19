@@ -18,7 +18,9 @@ namespace Application.Reminders;
 //
 // Currently implements the reminders backed by real data:
 //   • pending-approvals — managers with leave/timesheets awaiting review in their department (never System Administrators)
-//   • late-submissions  — employees sitting on an un-submitted (Draft) timesheet
+//   • late-submissions  — employees who have not submitted a timesheet for the
+//                         most recent week past its submission deadline (never
+//                         System Administrators)
 //   • low-balance       — employees whose remaining leave is below the threshold
 //   • birthday-reminder — admins/managers told of upcoming employee birthdays
 //   • check-in          — employees who have not yet checked in today (never System Administrators)
@@ -251,45 +253,78 @@ public class ReminderDispatcher(
     }
 
     // ── late-submissions ─────────────────────────────────────────────────────
+    // Who has not submitted a timesheet for the most recent week whose submission
+    // deadline (Organization › Timesheets) has passed — the same week the daily
+    // attendance report's "Timesheet not submitted" section reads, from the same
+    // helper (LatestTimesheetWeekPastDeadline). Everybody expected to log that
+    // week is asked: active Employees and Managers (never an administrator —
+    // AttendanceDay.ExcludeAdmins) who had joined by the end of it. A sheet for
+    // the week in Submitted, Approved or Resubmitted clears them; one in Draft or
+    // Rejected, or none at all, does not, and the email says which.
+    //
+    // It used to email whoever had a Draft row, for any week at all. Somebody who
+    // never started the week's sheet — the usual way one goes unsubmitted — heard
+    // nothing, while a draft begun that morning for the current week was chased
+    // before it was due. On the deployed host that read as the reminder not
+    // working (LateSubmissionsReminderTests).
     private async Task LateSubmissionsAsync(AppSettings settings, CancellationToken ct)
     {
-        var drafts = await context.Timesheets
-            .Where(t => t.Status == TimesheetStatus.Draft && t.Employee != null && t.Employee.User != null
-                        && t.Employee.User.Email != null && t.Employee.User.Email != "")
-            .Select(t => new
-            {
-                Email = t.Employee!.User!.Email!,
-                Name = t.Employee.User.DisplayName,
-                t.PeriodStart,
-                t.PeriodEnd,
-            })
+        var weekStart = LatestTimesheetWeekPastDeadline(settings, DateTime.UtcNow);
+        var weekEnd = weekStart.AddDays(6);
+        var weekStartUtc = weekStart.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+
+        var people = await AttendanceDay.ExcludeAdmins(context.EmployeeProfiles)
+            .Where(p => p.User != null && p.User.IsActive && p.User.Email != null && p.User.Email != "")
+            .Where(p => p.EmploymentStartDate == null || p.EmploymentStartDate <= weekEnd)
+            .Select(p => new { ProfileId = p.Id, Email = p.User!.Email!, Name = p.User.DisplayName })
             .ToListAsync(ct);
 
-        if (drafts.Count == 0)
+        if (people.Count == 0)
         {
-            logger.LogInformation("late-submissions: no draft timesheets; no notifications sent.");
+            logger.LogInformation("late-submissions: nobody is expected to log the week of {WeekStart}; no notifications sent.", weekStart);
             return;
         }
 
-        var byEmployee = drafts
-            .GroupBy(d => d.Email)
-            .Select(g => new { Email = g.Key, g.First().Name, Periods = g.Select(x => $"{x.PeriodStart:dd MMM yyyy} – {x.PeriodEnd:dd MMM yyyy}").ToList() })
+        var profileIds = people.Select(p => p.ProfileId).ToList();
+        var statusByProfileId = (await context.Timesheets
+            .Where(t => profileIds.Contains(t.EmployeeProfileId)
+                        && t.PeriodStart >= weekStartUtc && t.PeriodStart < weekStartUtc.AddDays(1))
+            .Select(t => new { t.EmployeeProfileId, t.Status })
+            .ToListAsync(ct))
+            .GroupBy(t => t.EmployeeProfileId)
+            .ToDictionary(g => g.Key, g => g.Select(t => t.Status).ToList());
+
+        var owing = people
+            .Select(p => new
+            {
+                p.Email,
+                p.Name,
+                State = statusByProfileId.TryGetValue(p.ProfileId, out var statuses)
+                    ? TimesheetWeekState(statuses)
+                    : "it has not been started yet",
+            })
+            .Where(p => p.State is not null)
             .ToList();
+
+        if (owing.Count == 0)
+        {
+            logger.LogInformation("late-submissions: everyone has submitted the week of {WeekStart}; no notifications sent.", weekStart);
+            return;
+        }
 
         var sent = 0;
         if (settings.EmailNotificationsEnabled)
         {
-            foreach (var emp in byEmployee)
+            var week = $"{weekStart:dd MMM yyyy} – {weekEnd:dd MMM yyyy}";
+            foreach (var emp in owing)
             {
                 var greeting = WebUtility.HtmlEncode(emp.Name ?? emp.Email);
-                var items = string.Join("", emp.Periods.Select(p => $"<li>{WebUtility.HtmlEncode(p)}</li>"));
                 var html = $"""
 <p>Hello {greeting},</p>
-<p>The following timesheet(s) are still in <strong>draft</strong> and have not been submitted:</p>
-<ul>{items}</ul>
-<p>Please log in to Jenus People and submit them for approval.</p>
+<p>Your timesheet for the week of <strong>{WebUtility.HtmlEncode(week)}</strong> has not been submitted: {emp.State}.</p>
+<p>Please log in to Jenus People and submit it for approval.</p>
 """;
-                var text = $"Hello {emp.Name ?? emp.Email},\n\nThese timesheet(s) are still in draft and not submitted:\n{string.Join("\n", emp.Periods.Select(p => "- " + p))}\n\nPlease log in to Jenus People and submit them.";
+                var text = $"Hello {emp.Name ?? emp.Email},\n\nYour timesheet for the week of {week} has not been submitted: {emp.State}.\n\nPlease log in to Jenus People and submit it for approval.";
                 if (await SendEmailAsync(emp.Email, "Jenus People: timesheet not yet submitted", html, text, ct))
                     sent++;
             }
@@ -299,8 +334,19 @@ public class ReminderDispatcher(
             logger.LogInformation("late-submissions: email notifications disabled; skipping emails.");
         }
 
+        logger.LogInformation("late-submissions: dispatched for the week of {WeekStart}. Owing: {Owing}. Emails sent: {Sent}.", weekStart, owing.Count, sent);
+    }
 
-        logger.LogInformation("late-submissions: dispatched. Emails sent: {Sent}.", sent);
+    // How the week's sheet stands for the reminder's one sentence, or null when it
+    // has been submitted and there is nothing to chase. A resubmission is a
+    // submission; a rejection the employee has not acted on is not.
+    private static string? TimesheetWeekState(IReadOnlyCollection<TimesheetStatus> statuses)
+    {
+        if (statuses.Any(s => s is TimesheetStatus.Submitted or TimesheetStatus.Approved or TimesheetStatus.Resubmitted))
+            return null;
+        if (statuses.Contains(TimesheetStatus.Rejected))
+            return "it was rejected and has not been resubmitted";
+        return "it is still in draft";
     }
 
     // ── low-balance ──────────────────────────────────────────────────────────
@@ -739,6 +785,8 @@ public class ReminderDispatcher(
     // (TimesheetSubmissionDeadlineDay at TimesheetSubmissionDeadlineTime, UTC)
     // has already passed. Midweek that is last week; once Friday 18:00 is gone
     // it is this week — so the list is empty until a timesheet is actually due.
+    // Read by both the daily report's "Timesheet not submitted" section and the
+    // late-submissions reminder, so the two chase the same week.
     private static DateOnly LatestTimesheetWeekPastDeadline(AppSettings settings, DateTime nowUtc)
     {
         var today = DateOnly.FromDateTime(nowUtc);
