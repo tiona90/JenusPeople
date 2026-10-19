@@ -47,7 +47,7 @@ function renderPage(roles: string[] = ['Manager']) {
     mobx.useStore.mockReturnValue({ authStore: { user: { id: 'me', roles } }, uiStore: { navigateToNewTimesheet } } as never)
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
-        <MemoryRouter initialEntries={['/tasks']}>
+        <MemoryRouter initialEntries={['/approved-projects']}>
             <QueryClientProvider client={queryClient}>
                 <TasksPage />
             </QueryClientProvider>
@@ -80,7 +80,7 @@ describe('TasksPage', () => {
         expect(within(assigned).getAllByTestId('task-card')).toHaveLength(1)
         expect(within(assigned).getByText('Mine to do')).toBeInTheDocument()
         expect(within(created).getByText('I asked for this')).toBeInTheDocument()
-        expect(within(created).getByText('Create a new task')).toBeInTheDocument()
+        expect(within(created).getByText('Create a new project')).toBeInTheDocument()
         expect(within(others).getByText("Someone else's")).toBeInTheDocument()
         expect(assigned.compareDocumentPosition(created) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
         expect(created.compareDocumentPosition(others) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
@@ -299,7 +299,7 @@ describe('TasksPage', () => {
         expect(within(card).queryByTestId('task-facts')).toBeNull()
     })
 
-    // An Employee no longer reaches this page (TASK_ROLES); were they to, it offers no New task.
+    // An Employee no longer reaches this page (TASK_ROLES); were they to, it offers no New project.
     it('gives an Employee their tasks to work, with no views to pick between', async () => {
         api.getWorkTasks.mockResolvedValue([base, { ...base, id: 4, title: 'My own', createdById: 'me', createdByName: 'Me', canEdit: true }])
         renderPage(['Employee'])
@@ -308,7 +308,7 @@ describe('TasksPage', () => {
         expect(within(card).getByRole('button', { name: /Start/ })).toBeInTheDocument()
         expect(within(card).queryByRole('button', { name: /Edit/ })).toBeNull()
         expect(within(await cardFor('My own')).getByRole('button', { name: /Edit/ })).toBeInTheDocument()
-        expect(screen.queryByRole('button', { name: /New task/ })).toBeNull()
+        expect(screen.queryByRole('button', { name: /New project/ })).toBeNull()
         expect(screen.queryByRole('combobox', { name: 'View' })).toBeNull()
     })
 
@@ -514,7 +514,7 @@ describe('TasksPage task settings', () => {
         const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
         mobx.useStore.mockReturnValue({ authStore: { user: { id: 'me', roles: ['Manager'] } }, uiStore: { navigateToNewTimesheet } } as never)
         render(
-            <MemoryRouter initialEntries={['/tasks']}>
+            <MemoryRouter initialEntries={['/approved-projects']}>
                 <QueryClientProvider client={queryClient}>
                     <TasksPage />
                 </QueryClientProvider>
@@ -550,7 +550,7 @@ describe('TasksPage layouts', () => {
         const created = await screen.findByRole('region', { name: 'Created by you' })
         expect(within(created).getByText("You haven't handed out a task yet.")).toBeInTheDocument()
         expect(within(created).queryAllByTestId('task-card')).toHaveLength(0)
-        expect(within(created).getByRole('button', { name: /Create a new task/ })).toBeInTheDocument()
+        expect(within(created).getByRole('button', { name: /Create a new project/ })).toBeInTheDocument()
 
         const regions = screen.getAllByRole('region').map((r) => r.getAttribute('aria-label'))
         expect(regions.indexOf('Created by others')).toBeLessThan(regions.indexOf('Created by you'))

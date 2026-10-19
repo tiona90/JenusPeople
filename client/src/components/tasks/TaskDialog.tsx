@@ -213,7 +213,7 @@ export default function TaskDialog({ open, task, personal = false, currentUserId
 
     return (
         <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
-            <DialogTitle>{task ? 'Edit task' : 'New task'}</DialogTitle>
+            <DialogTitle>{task ? 'Edit task' : 'New project'}</DialogTitle>
             <DialogContent>
                 <Stack spacing={2} sx={{ mt: 1 }}>
                     {save.isError && <Alert severity="error">{getApiErrorMessage(save.error, 'The task could not be saved.')}</Alert>}

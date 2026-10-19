@@ -284,7 +284,7 @@ const TasksPage = observer(function TasksPage() {
             }}>
                 <Box data-testid="stat-open">
                     <StatCard
-                        label="📋 Open Tasks"
+                        label="📋 Open Projects"
                         value={String(stats.open)}
                         sub={`of ${stats.total} total · ${stats.inProgress} in progress`}
                     />
@@ -415,7 +415,7 @@ const TasksPage = observer(function TasksPage() {
                         '&:hover': { bgcolor: 'primary.dark' },
                     }}
                 >
-                    + New task
+                    + New project
                 </Box>}
             </Box>
 
@@ -441,7 +441,7 @@ const TasksPage = observer(function TasksPage() {
                     >
                         {section.tasks.length === 0 ? (
                             <SectionEmpty
-                                action={section.add && creates ? { label: manages ? 'Create a new task' : 'Add a task of your own', onClick: () => setDialogTask(null) } : undefined}
+                                action={section.add && creates ? { label: manages ? 'Create a new project' : 'Add a task of your own', onClick: () => setDialogTask(null) } : undefined}
                             >
                                 {section.empty}
                             </SectionEmpty>
@@ -566,7 +566,7 @@ function AddCard({ onClick, personal = false }: { onClick: () => void; personal?
             }}
         >
             <Box sx={{ fontSize: 22, lineHeight: 1, color: 'primary.main' }}>+</Box>
-            <Box sx={{ fontSize: 13, fontWeight: 600, color: 'text.primary' }}>{personal ? 'Add a task of your own' : 'Create a new task'}</Box>
+            <Box sx={{ fontSize: 13, fontWeight: 600, color: 'text.primary' }}>{personal ? 'Add a task of your own' : 'Create a new project'}</Box>
             <Box sx={{ fontSize: 12, color: 'text.secondary' }}>
                 {personal ? 'Pick a project and track your own work to done' : 'Pick a project, assign the people, track it to done'}
             </Box>

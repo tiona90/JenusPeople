@@ -218,7 +218,7 @@ const Sidebar = observer(function Sidebar() {
     // The Tasks page, labelled Approved Projects: Managers and HR Administrators hand
     // tasks out, so it sits with their team pages. An Employee has no such page — they
     // log time against their tasks from the timesheet editor's Task column.
-    const approvedProjectsEntry: NavEntry = { kind: 'item', label: 'Approved Projects', icon: <TaskAltRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTasks(), active: onPage('/tasks') }
+    const approvedProjectsEntry: NavEntry = { kind: 'item', label: 'Approved Projects', icon: <TaskAltRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTasks(), active: onPage('/approved-projects') }
 
     let navEntries: NavEntry[]
     if (isAdminUser) {
