@@ -329,7 +329,7 @@ const TeamTimesheetPage = observer(function TeamTimesheetPage({ user }: { user: 
                     }}
                 >
                     <Typography sx={{ fontSize: 14, fontWeight: 600, color: 'text.primary' }}>
-                        {isAdmin ? 'Timesheets' : 'Approvals'}
+                        Approve Timesheets
                     </Typography>
 
                     {isAdmin && deptNames.length > 0 && (
