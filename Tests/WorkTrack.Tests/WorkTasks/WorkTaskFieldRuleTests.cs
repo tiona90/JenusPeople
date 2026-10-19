@@ -35,7 +35,6 @@ public class WorkTaskFieldRuleTests
         ProjectId = SalesProject,
         AssigneeIds = [SalesManager],
         Priority = WorkTaskPriority.High,
-        IsBillable = true,
     };
 
     private static async Task Configure(AppDbContext db, Action<WorkTaskSettings> change)
@@ -112,17 +111,6 @@ public class WorkTaskFieldRuleTests
     }
 
     [Fact]
-    public async Task A_required_billable_is_refused_blank()
-    {
-        await using var db = await TransactionalTestDb.CreateAsync();
-        await SeedAsync(db);
-        var request = Request();
-        request.IsBillable = null;
-
-        Assert.Equal(WorkTaskFieldRules.BillableRequiredMessage, (await Create(db, request)).Error);
-    }
-
-    [Fact]
     public async Task A_hidden_field_is_stored_as_nothing_on_create()
     {
         await using var db = await TransactionalTestDb.CreateAsync();
@@ -132,7 +120,6 @@ public class WorkTaskFieldRuleTests
             s.DescriptionRequirement = FieldRequirement.Hidden;
             s.DueDateRequirement = FieldRequirement.Hidden;
             s.TargetHoursRequirement = FieldRequirement.Hidden;
-            s.BillableRequirement = FieldRequirement.Hidden;
             s.ShowPriority = false;
         });
         var request = Request();
@@ -147,7 +134,6 @@ public class WorkTaskFieldRuleTests
         Assert.Null(stored.Description);
         Assert.Null(stored.DueDate);
         Assert.Null(stored.TargetHours);
-        Assert.Null(stored.IsBillable);
         Assert.Equal(WorkTaskPriority.Normal, stored.Priority);
     }
 
@@ -160,7 +146,6 @@ public class WorkTaskFieldRuleTests
         task.Description = "Keep me";
         task.DueDate = new DateOnly(2026, 10, 1);
         task.TargetHours = 16;
-        task.IsBillable = true;
         task.Priority = WorkTaskPriority.High;
         db.WorkTasks.Add(task);
         await db.SaveChangesAsync();
@@ -170,7 +155,6 @@ public class WorkTaskFieldRuleTests
             s.DescriptionRequirement = FieldRequirement.Hidden;
             s.DueDateRequirement = FieldRequirement.Hidden;
             s.TargetHoursRequirement = FieldRequirement.Hidden;
-            s.BillableRequirement = FieldRequirement.Hidden;
             s.ShowPriority = false;
         });
         // What the dialog sends with those fields hidden: nothing for them.
@@ -179,7 +163,6 @@ public class WorkTaskFieldRuleTests
         request.Description = null;
         request.DueDate = null;
         request.TargetHours = null;
-        request.IsBillable = null;
         request.Priority = WorkTaskPriority.Normal;
 
         var result = await Update(db, task.Id, request);
@@ -190,7 +173,6 @@ public class WorkTaskFieldRuleTests
         Assert.Equal("Keep me", stored.Description);
         Assert.Equal(new DateOnly(2026, 10, 1), stored.DueDate);
         Assert.Equal(16, stored.TargetHours);
-        Assert.True(stored.IsBillable);
         Assert.Equal(WorkTaskPriority.High, stored.Priority);
     }
 
@@ -200,7 +182,6 @@ public class WorkTaskFieldRuleTests
         await using var db = await TransactionalTestDb.CreateAsync();
         await SeedAsync(db);
         var task = NewTask(Sales, Hr, SalesManager);
-        task.IsBillable = true;
         db.WorkTasks.Add(task);
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();

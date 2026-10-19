@@ -10,7 +10,6 @@ export const DESCRIPTION_REQUIRED_MESSAGE = 'Description is required.'
 export const DUE_DATE_REQUIRED_MESSAGE = 'Due date is required.'
 export const TARGET_HOURS_REQUIRED_MESSAGE = 'Target hours are required.'
 export const PROJECT_REQUIRED_MESSAGE = 'Project is required.'
-export const BILLABLE_REQUIRED_MESSAGE = 'Say whether the task is billable.'
 export const ATTACHMENT_REQUIRED_MESSAGE = 'Attach a file before marking this task done.'
 
 /** Today's behaviour; also what an older API with no settings endpoint reads as. */
@@ -20,7 +19,6 @@ export const DEFAULT_TASK_SETTINGS: WorkTaskSettings = {
     targetHoursRequirement: 'Optional',
     attachmentsRequirement: 'Optional',
     projectRequirement: 'Required',
-    billableRequirement: 'Required',
     showPriority: true,
     requireCompletionConfirmation: true,
     maxAttachmentsPerTask: 10,
@@ -31,7 +29,7 @@ export const DEFAULT_TASK_SETTINGS: WorkTaskSettings = {
     allowExcel: true,
 }
 
-export type TaskField = 'description' | 'dueDate' | 'targetHours' | 'attachments' | 'project' | 'billable'
+export type TaskField = 'description' | 'dueDate' | 'targetHours' | 'attachments' | 'project'
 
 /** Which values each field may take — mirrors UpdateWorkTaskSettingsValidator. */
 export const FIELD_OPTIONS: Record<TaskField, FieldRequirement[]> = {
@@ -40,7 +38,6 @@ export const FIELD_OPTIONS: Record<TaskField, FieldRequirement[]> = {
     targetHours: ['Required', 'Optional', 'Hidden'],
     attachments: ['Required', 'Optional', 'Hidden'],
     project: ['Required', 'Optional'],
-    billable: ['Required', 'Hidden'],
 }
 
 const KEYS: Record<TaskField, keyof WorkTaskSettings> = {
@@ -49,7 +46,6 @@ const KEYS: Record<TaskField, keyof WorkTaskSettings> = {
     targetHours: 'targetHoursRequirement',
     attachments: 'attachmentsRequirement',
     project: 'projectRequirement',
-    billable: 'billableRequirement',
 }
 
 export function requirementOf(s: WorkTaskSettings, field: TaskField): FieldRequirement {
@@ -69,13 +65,11 @@ export interface TaskFieldValues {
     dueDate: string
     targetHours: number | null
     projectId: number | null
-    isBillable: boolean | null
 }
 
 /** The first required field left blank, in the server's order, or null. */
 export function fieldRequirementError(s: WorkTaskSettings, v: TaskFieldValues): string | null {
     if (s.projectRequirement === 'Required' && v.projectId == null) return PROJECT_REQUIRED_MESSAGE
-    if (s.billableRequirement === 'Required' && v.isBillable == null) return BILLABLE_REQUIRED_MESSAGE
     if (s.descriptionRequirement === 'Required' && v.description.trim() === '') return DESCRIPTION_REQUIRED_MESSAGE
     if (s.dueDateRequirement === 'Required' && v.dueDate === '') return DUE_DATE_REQUIRED_MESSAGE
     if (s.targetHoursRequirement === 'Required' && v.targetHours == null) return TARGET_HOURS_REQUIRED_MESSAGE

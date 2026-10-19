@@ -76,13 +76,11 @@ export function PriorityChip({ task }: { task: WorkTask }) {
     )
 }
 
-function Chip({ children, tone = 'neutral' }: { children: React.ReactNode; tone?: 'neutral' | 'success' }) {
+function Chip({ children }: { children: React.ReactNode }) {
     return (
         <Box sx={{
             fontSize: 11, px: '8px', py: '2px', borderRadius: '10px', whiteSpace: 'nowrap',
-            fontWeight: tone === 'success' ? 600 : 500,
-            bgcolor: tone === 'success' ? softBg('success') : 'action.hover',
-            color: tone === 'success' ? 'success.dark' : 'text.secondary',
+            fontWeight: 500, bgcolor: 'action.hover', color: 'text.secondary',
         }}>{children}</Box>
     )
 }
@@ -210,7 +208,7 @@ export function TaskCard({ variant = 'grid', ...props }: TaskItemProps & { varia
     const board = variant === 'board'
     const done = task.status === 'Done' && task.completedAtUtc
     const badges = cardBadges(task, settings, props.viewerManages)
-    const showChipRow = badges.department || badges.priority || badges.billable || (!!task.projectName && !board)
+    const showChipRow = badges.department || badges.priority || (!!task.projectName && !board)
 
     // Due, target and — once finished — when. "Created by" is the details dialog's
     // and the section header's; repeating it on every card said nothing new.
@@ -265,7 +263,6 @@ export function TaskCard({ variant = 'grid', ...props }: TaskItemProps & { varia
                     <Box sx={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
                         {badges.department && <Chip>{task.departmentName}</Chip>}
                         {badges.priority && <PriorityChip task={task} />}
-                        {badges.billable && <Chip tone="success">Billable</Chip>}
                         {task.projectName && !board && (
                             <Box sx={{ fontSize: 11, color: 'text.secondary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{task.projectName}</Box>
                         )}

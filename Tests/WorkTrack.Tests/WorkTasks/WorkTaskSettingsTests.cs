@@ -28,7 +28,6 @@ public class WorkTaskSettingsTests
         Assert.Equal(FieldRequirement.Optional, row.TargetHoursRequirement);
         Assert.Equal(FieldRequirement.Optional, row.AttachmentsRequirement);
         Assert.Equal(FieldRequirement.Required, row.ProjectRequirement);
-        Assert.Equal(FieldRequirement.Required, row.BillableRequirement);
         Assert.True(row.ShowPriority);
         Assert.True(row.RequireCompletionConfirmation);
         Assert.Equal(10, row.MaxAttachmentsPerTask);
@@ -61,7 +60,7 @@ public class WorkTaskSettingsTests
         await using var db = await TransactionalTestDb.CreateAsync();
         var dto = Defaults();
         dto.DueDateRequirement = FieldRequirement.Required;
-        dto.BillableRequirement = FieldRequirement.Hidden;
+        dto.ProjectRequirement = FieldRequirement.Optional;
         dto.MaxAttachmentsPerTask = 3;
         dto.AllowExcel = false;
 
@@ -70,14 +69,13 @@ public class WorkTaskSettingsTests
         Assert.True(result.IsSuccess, result.Error);
         var row = await db.WorkTaskSettings.AsNoTracking().SingleAsync();
         Assert.Equal(FieldRequirement.Required, row.DueDateRequirement);
-        Assert.Equal(FieldRequirement.Hidden, row.BillableRequirement);
+        Assert.Equal(FieldRequirement.Optional, row.ProjectRequirement);
         Assert.Equal(3, row.MaxAttachmentsPerTask);
         Assert.False(row.AllowExcel);
     }
 
     [Theory]
     [InlineData(nameof(WorkTaskSettingsDto.ProjectRequirement), FieldRequirement.Hidden)]
-    [InlineData(nameof(WorkTaskSettingsDto.BillableRequirement), FieldRequirement.Optional)]
     public void A_field_refuses_a_value_outside_its_set(string field, FieldRequirement value)
     {
         var dto = Defaults();

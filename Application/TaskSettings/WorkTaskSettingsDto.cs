@@ -10,7 +10,6 @@ public class WorkTaskSettingsDto
     public FieldRequirement TargetHoursRequirement { get; set; }
     public FieldRequirement AttachmentsRequirement { get; set; }
     public FieldRequirement ProjectRequirement { get; set; }
-    public FieldRequirement BillableRequirement { get; set; }
     public bool ShowPriority { get; set; }
     public bool RequireCompletionConfirmation { get; set; }
     public int MaxAttachmentsPerTask { get; set; }
@@ -27,7 +26,6 @@ public class WorkTaskSettingsDto
         TargetHoursRequirement = s.TargetHoursRequirement,
         AttachmentsRequirement = s.AttachmentsRequirement,
         ProjectRequirement = s.ProjectRequirement,
-        BillableRequirement = s.BillableRequirement,
         ShowPriority = s.ShowPriority,
         RequireCompletionConfirmation = s.RequireCompletionConfirmation,
         MaxAttachmentsPerTask = s.MaxAttachmentsPerTask,
@@ -45,7 +43,6 @@ public class WorkTaskSettingsDto
         s.TargetHoursRequirement = TargetHoursRequirement;
         s.AttachmentsRequirement = AttachmentsRequirement;
         s.ProjectRequirement = ProjectRequirement;
-        s.BillableRequirement = BillableRequirement;
         s.ShowPriority = ShowPriority;
         s.RequireCompletionConfirmation = RequireCompletionConfirmation;
         s.MaxAttachmentsPerTask = MaxAttachmentsPerTask;

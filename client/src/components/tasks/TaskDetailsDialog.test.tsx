@@ -18,7 +18,7 @@ const task: WorkTask = {
     id: 1, title: 'Chase notes', description: 'Follow up with the client', departmentId: 1, departmentName: 'Sales',
     projectId: 10, projectName: 'CRM Rollout', projectCode: 'CRM', projectColorKey: 'p1',
     assignees: [{ userId: 'u-sam', displayName: 'Sam Sales' }], createdById: 'u-hr', createdByName: 'Hana HR',
-    dueDate: '2020-01-01', targetHours: 10, loggedHours: 4, isBillable: true, priority: 'High', status: 'InProgress',
+    dueDate: '2020-01-01', targetHours: 10, loggedHours: 4, priority: 'High', status: 'InProgress',
     createdAtUtc: '2026-09-01T08:00:00', updatedAtUtc: '2026-09-01T08:00:00', completedAtUtc: null,
     canEdit: true, canChangeStatus: true, attachments: [],
 }
@@ -42,7 +42,7 @@ describe('TaskDetailsDialog', () => {
         api.getWorkTaskSettings.mockResolvedValue({
             ...DEFAULT_TASK_SETTINGS,
             descriptionRequirement: 'Hidden', dueDateRequirement: 'Hidden', targetHoursRequirement: 'Hidden',
-            attachmentsRequirement: 'Hidden', billableRequirement: 'Hidden', showPriority: false,
+            attachmentsRequirement: 'Hidden', showPriority: false,
         })
         renderDialog()
 
@@ -51,7 +51,6 @@ describe('TaskDetailsDialog', () => {
         expect(screen.queryByText('Due')).toBeNull()
         expect(screen.queryByText('Target')).toBeNull()
         expect(screen.queryByText(/Attachments/)).toBeNull()
-        expect(screen.queryByText('Billable')).toBeNull()
         expect(screen.queryByText('High priority')).toBeNull()
         // Created/Completed is not one of the Task Settings' fields — it always shows.
         expect(screen.getByText('Created')).toBeInTheDocument()
@@ -64,7 +63,6 @@ describe('TaskDetailsDialog', () => {
         expect(screen.getByText('Due')).toBeInTheDocument()
         expect(screen.getByText('Target')).toBeInTheDocument()
         expect(screen.getByText('Description')).toBeInTheDocument()
-        expect(screen.getByText('Billable')).toBeInTheDocument()
         expect(screen.getByText('High priority')).toBeInTheDocument()
     })
 

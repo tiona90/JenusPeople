@@ -17,10 +17,6 @@ public class UpdateWorkTaskSettingsValidator : AbstractValidator<UpdateWorkTaskS
         RuleFor(x => x.Settings.ProjectRequirement)
             .Must(r => r is FieldRequirement.Required or FieldRequirement.Optional)
             .WithMessage("Project can be required or optional, not hidden.");
-        // Billable is a yes/no answer: asked, or not asked.
-        RuleFor(x => x.Settings.BillableRequirement)
-            .Must(r => r is FieldRequirement.Required or FieldRequirement.Hidden)
-            .WithMessage("Billable can be required or hidden, not optional.");
         RuleFor(x => x.Settings.MaxAttachmentsPerTask)
             .InclusiveBetween(1, WorkTaskSettings.MaxAttachmentsCeiling)
             .WithMessage($"A task can be allowed 1 to {WorkTaskSettings.MaxAttachmentsCeiling} attachments.");

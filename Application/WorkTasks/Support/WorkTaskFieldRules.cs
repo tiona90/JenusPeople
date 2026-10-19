@@ -18,13 +18,11 @@ public static class WorkTaskFieldRules
     public const string DueDateRequiredMessage = "Due date is required.";
     public const string TargetHoursRequiredMessage = "Target hours are required.";
     public const string ProjectRequiredMessage = "Project is required.";
-    public const string BillableRequiredMessage = "Say whether the task is billable.";
     public const string AttachmentRequiredMessage = "Attach a file before marking this task done.";
 
     public static string? Check(WorkTaskSettings s, UpsertWorkTaskRequest input)
     {
         if (s.ProjectRequirement == FieldRequirement.Required && input.ProjectId is null) return ProjectRequiredMessage;
-        if (s.BillableRequirement == FieldRequirement.Required && input.IsBillable is null) return BillableRequiredMessage;
         if (s.DescriptionRequirement == FieldRequirement.Required && string.IsNullOrWhiteSpace(input.Description)) return DescriptionRequiredMessage;
         if (s.DueDateRequirement == FieldRequirement.Required && input.DueDate is null) return DueDateRequiredMessage;
         if (s.TargetHoursRequirement == FieldRequirement.Required && input.TargetHours is null) return TargetHoursRequiredMessage;
@@ -36,7 +34,6 @@ public static class WorkTaskFieldRules
         if (s.DescriptionRequirement == FieldRequirement.Hidden) input.Description = null;
         if (s.DueDateRequirement == FieldRequirement.Hidden) input.DueDate = null;
         if (s.TargetHoursRequirement == FieldRequirement.Hidden) input.TargetHours = null;
-        if (s.BillableRequirement == FieldRequirement.Hidden) input.IsBillable = null;
         if (!s.ShowPriority) input.Priority = WorkTaskPriority.Normal;
     }
 
@@ -45,7 +42,6 @@ public static class WorkTaskFieldRules
         if (s.DescriptionRequirement == FieldRequirement.Hidden) input.Description = stored.Description;
         if (s.DueDateRequirement == FieldRequirement.Hidden) input.DueDate = stored.DueDate;
         if (s.TargetHoursRequirement == FieldRequirement.Hidden) input.TargetHours = stored.TargetHours;
-        if (s.BillableRequirement == FieldRequirement.Hidden) input.IsBillable = stored.IsBillable;
         if (!s.ShowPriority) input.Priority = stored.Priority;
     }
 

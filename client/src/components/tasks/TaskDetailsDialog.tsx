@@ -6,7 +6,6 @@ import DialogContent from '@mui/material/DialogContent'
 import { CODE_COLORS, avatarBg, initials } from '../../lib/card-kit'
 import { attachmentLimits, isShown } from '../../lib/task-settings'
 import { useWorkTaskSettings } from '../../lib/task-settings-query'
-import { softBg } from '../../lib/theme-tokens'
 import type { LogTaskTimeResult, WorkTask } from '../../lib/types'
 import { PRIORITY_LABELS, STATUS_LABELS, canLogTime, describeTaskProgress, formatTaskDate, isOpenTask, overdueDays } from '../../lib/work-tasks'
 import { SectionLabel } from '../ui/CardKit'
@@ -84,13 +83,6 @@ function Details({ task, today, viewerId, onClose, onEdit, onLogged }: {
                             <Box sx={{ fontSize: 11, px: '8px', py: '2px', borderRadius: '10px', bgcolor: 'action.hover', color: 'text.secondary' }}>
                                 {task.departmentName}
                             </Box>
-                            {isShown(settings, 'billable') && task.isBillable != null && (
-                                <Box sx={{
-                                    fontSize: 11, px: '8px', py: '2px', borderRadius: '10px', fontWeight: 600,
-                                    bgcolor: task.isBillable ? softBg('success') : 'action.hover',
-                                    color: task.isBillable ? 'success.dark' : 'text.secondary',
-                                }}>{task.isBillable ? 'Billable' : 'Non-billable'}</Box>
-                            )}
                             {task.projectName && <Box sx={{ fontSize: 12, color: 'text.secondary' }}>{task.projectName}</Box>}
                         </Box>
                         <Box sx={{ fontSize: 12, color: 'text.secondary', mt: '8px' }}>

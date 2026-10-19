@@ -14,13 +14,11 @@ const FIELD_LABELS: Record<TaskField, string> = {
     targetHours: 'Target hours',
     attachments: 'Attachments',
     project: 'Project',
-    billable: 'Billable',
 }
 
 const FIELD_NOTES: Partial<Record<TaskField, string>> = {
     attachments: 'Required means a task cannot be marked done until a file is attached.',
     project: 'Cannot be hidden: timesheet rows take their project from the task.',
-    billable: 'A yes/no answer — asked, or not asked.',
 }
 
 /** Mirrors UpdateWorkTaskSettingsValidator, with its messages. */

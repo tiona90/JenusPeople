@@ -31,8 +31,6 @@ public class WorkTaskSettings
     public FieldRequirement AttachmentsRequirement { get; set; } = FieldRequirement.Optional;
     /// <summary>Required or Optional only: the timesheet's Task column sets a row's project from the task.</summary>
     public FieldRequirement ProjectRequirement { get; set; } = FieldRequirement.Required;
-    /// <summary>Required or Hidden only: a yes/no answer is asked or not asked.</summary>
-    public FieldRequirement BillableRequirement { get; set; } = FieldRequirement.Required;
     /// <summary>Priority always carries a value; this only decides whether it is shown.</summary>
     public bool ShowPriority { get; set; } = true;
 

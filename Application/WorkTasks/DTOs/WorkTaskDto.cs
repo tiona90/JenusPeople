@@ -29,11 +29,6 @@ public class WorkTaskDto
     /// Summed on every read, never stored. May pass <see cref="TargetHours"/>.
     /// </summary>
     public decimal LoggedHours { get; set; }
-    /// <summary>
-    /// Null on a task filed before the question was asked, or saved while the Task
-    /// Settings hide Billable (<see cref="Application.WorkTasks.Support.WorkTaskFieldRules"/>).
-    /// </summary>
-    public bool? IsBillable { get; set; }
     public WorkTaskPriority Priority { get; set; }
     public WorkTaskStatus Status { get; set; }
     public DateTime CreatedAtUtc { get; set; }
@@ -130,12 +125,6 @@ public class UpsertWorkTaskRequest
     public DateOnly? DueDate { get; set; }
     /// <summary>Optional; a null clears it (this is a full replace).</summary>
     public int? TargetHours { get; set; }
-    /// <summary>
-    /// Whether this is required is a Task Setting, enforced by
-    /// <see cref="Application.WorkTasks.Support.WorkTaskFieldRules"/> in the handler, not the
-    /// validator; nullable so an unanswered choice reaches that check as a message.
-    /// </summary>
-    public bool? IsBillable { get; set; }
     public WorkTaskPriority Priority { get; set; } = WorkTaskPriority.Normal;
 }
 

@@ -4,10 +4,10 @@ import {
     attachmentLimits, fieldRequirementError, isShown, needsAttachmentBeforeDone,
 } from './task-settings'
 
-const values = { description: '', dueDate: '', targetHours: null, projectId: 10, isBillable: true }
+const values = { description: '', dueDate: '', targetHours: null, projectId: 10 }
 
 describe('task settings', () => {
-    it('defaults reproduce today: project and billable required, the rest optional', () => {
+    it('defaults reproduce today: project required, the rest optional', () => {
         expect(fieldRequirementError(DEFAULT_TASK_SETTINGS, values)).toBeNull()
         expect(fieldRequirementError(DEFAULT_TASK_SETTINGS, { ...values, projectId: null })).toBe(PROJECT_REQUIRED_MESSAGE)
     })
@@ -18,9 +18,9 @@ describe('task settings', () => {
     })
 
     it('a hidden field is never checked and never shown', () => {
-        const s = { ...DEFAULT_TASK_SETTINGS, billableRequirement: 'Hidden' as const }
-        expect(fieldRequirementError(s, { ...values, isBillable: null })).toBeNull()
-        expect(isShown(s, 'billable')).toBe(false)
+        const s = { ...DEFAULT_TASK_SETTINGS, descriptionRequirement: 'Hidden' as const }
+        expect(fieldRequirementError(s, values)).toBeNull()
+        expect(isShown(s, 'description')).toBe(false)
         expect(isShown({ ...DEFAULT_TASK_SETTINGS, showPriority: false }, 'priority')).toBe(false)
     })
 
