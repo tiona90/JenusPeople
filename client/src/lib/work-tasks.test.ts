@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { WorkTask } from './types'
 import { DEFAULT_TASK_SETTINGS } from './task-settings'
-import { SETTABLE_STATUSES, STATUS_LABELS, boardStatuses, describeTaskProgress, filterTasks, isAwaitingConfirmation, isOpenTask, isOverdue, nextStatusAction, openCount, overdueDays, taskStats, tasksToCsv, todayIso } from './work-tasks'
+import { SETTABLE_STATUSES, STATUS_LABELS, boardStatuses, cardBadges, describeTaskProgress, employeeSummary, filterTasks, isAwaitingConfirmation, isOpenTask, isOverdue, nextStatusAction, openCount, overdueDays, taskStats, tasksToCsv, todayIso } from './work-tasks'
 
 const base: WorkTask = {
     id: 1, title: 't', description: null, departmentId: 1, departmentName: 'Sales', projectId: 10, projectName: 'CRM Rollout', projectCode: 'CRM', projectColorKey: 'p1',
@@ -93,7 +93,7 @@ describe('work-tasks helpers', () => {
             t({ id: 5, status: 'Cancelled' }),
         ]
         expect(taskStats(tasks, 'me', '2026-09-28')).toEqual({
-            total: 5, open: 2, inProgress: 1, overdue: 1, doneThisMonth: 1, assignedToMeOpen: 1, awaitingMyConfirmation: 0,
+            total: 5, open: 2, inProgress: 1, overdue: 1, doneThisMonth: 1, assignedToMeOpen: 1, awaitingMyConfirmation: 0, awaitingConfirmation: 0,
         })
         // With the due date hidden, nothing is overdue.
         expect(taskStats(tasks, 'me', '2026-09-28', false).overdue).toBe(0)
@@ -180,6 +180,7 @@ describe('awaiting confirmation', () => {
     it('counts the tasks waiting for the viewer, and filters to waiting ones', () => {
         const tasks = [t({ id: 1, status: 'AwaitingConfirmation', canConfirm: true }), t({ id: 2, status: 'AwaitingConfirmation' }), t({ id: 3 })]
         expect(taskStats(tasks, 'me', '2026-09-29').awaitingMyConfirmation).toBe(1)
+        expect(taskStats(tasks, 'me', '2026-09-29').awaitingConfirmation).toBe(2)
         expect(filterTasks(tasks, { tab: 'all', status: 'AwaitingConfirmation', departmentId: null, userId: 'me' }).map((x) => x.id)).toEqual([1, 2])
     })
 })
@@ -194,5 +195,46 @@ describe('boardStatuses', () => {
     it('drops the waiting column when confirmation is off and nothing waits', () => {
         expect(boardStatuses('open', false, [])).toEqual(['ToDo', 'InProgress'])
         expect(boardStatuses('open', false, [t({ status: 'AwaitingConfirmation' })])).toEqual(['ToDo', 'InProgress', 'AwaitingConfirmation'])
+    })
+})
+
+describe('employeeSummary', () => {
+    const stats = (over: Partial<ReturnType<typeof taskStats>>) => ({
+        total: 0, open: 0, inProgress: 0, overdue: 0, doneThisMonth: 0, assignedToMeOpen: 0, awaitingMyConfirmation: 0, awaitingConfirmation: 0, ...over,
+    })
+
+    it('leads with the open count and adds only the parts that are not zero', () => {
+        expect(employeeSummary(stats({ open: 2, overdue: 1, awaitingConfirmation: 1 }), true)).toEqual(['2 open', '1 overdue', '1 waiting for confirmation'])
+        expect(employeeSummary(stats({ open: 2 }), true)).toEqual(['2 open'])
+        expect(employeeSummary(stats({ open: 1, overdue: 1 }), true)).toEqual(['1 open', '1 overdue'])
+    })
+
+    it('says so when nothing is open', () => {
+        expect(employeeSummary(stats({}), true)).toEqual(['No open tasks'])
+    })
+
+    it('says nothing about confirmation when the Task Settings do not ask for it', () => {
+        expect(employeeSummary(stats({ open: 1, awaitingConfirmation: 1 }), false)).toEqual(['1 open'])
+    })
+})
+
+describe('cardBadges', () => {
+    it('shows the department to a viewer who manages tasks and not to an Employee', () => {
+        expect(cardBadges(t({}), DEFAULT_TASK_SETTINGS, true).department).toBe(true)
+        expect(cardBadges(t({}), DEFAULT_TASK_SETTINGS, false).department).toBe(false)
+    })
+
+    it('shows a priority only when it is not the default', () => {
+        expect(cardBadges(t({ priority: 'Normal' }), DEFAULT_TASK_SETTINGS, true).priority).toBe(false)
+        expect(cardBadges(t({ priority: 'High' }), DEFAULT_TASK_SETTINGS, true).priority).toBe(true)
+        expect(cardBadges(t({ priority: 'Low' }), DEFAULT_TASK_SETTINGS, true).priority).toBe(true)
+        expect(cardBadges(t({ priority: 'High' }), { ...DEFAULT_TASK_SETTINGS, showPriority: false }, true).priority).toBe(false)
+    })
+
+    it('badges a billable task and says nothing about a non-billable or unanswered one', () => {
+        expect(cardBadges(t({ isBillable: true }), DEFAULT_TASK_SETTINGS, true).billable).toBe(true)
+        expect(cardBadges(t({ isBillable: false }), DEFAULT_TASK_SETTINGS, true).billable).toBe(false)
+        expect(cardBadges(t({ isBillable: null }), DEFAULT_TASK_SETTINGS, true).billable).toBe(false)
+        expect(cardBadges(t({ isBillable: true }), { ...DEFAULT_TASK_SETTINGS, billableRequirement: 'Hidden' }, true).billable).toBe(false)
     })
 })

@@ -159,6 +159,36 @@ export function taskStats(tasks: readonly WorkTask[], userId: string, today: str
         doneThisMonth: tasks.filter((t) => t.status === 'Done' && (t.completedAtUtc ?? '').slice(0, 7) === month).length,
         assignedToMeOpen: openCount(tasks, 'assigned', userId),
         awaitingMyConfirmation: tasks.filter((t) => t.canConfirm === true).length,
+        // Every task waiting on somebody's confirmation, the viewer's own Done among them.
+        awaitingConfirmation: tasks.filter(isAwaitingConfirmation).length,
+    }
+}
+
+/**
+ * The Employee's one line in place of the stat tiles: the open count first, then
+ * only the parts with something in them. "Waiting for confirmation" is their own
+ * Done awaiting a reviewer, and is said only while the Task Settings ask for one —
+ * switching confirmation off sweeps those tasks to Done, so the figure would be 0
+ * anyway, but the words would still promise a stage that no longer exists.
+ */
+export function employeeSummary(stats: ReturnType<typeof taskStats>, confirmationOn: boolean): string[] {
+    const parts = [stats.open === 0 ? 'No open tasks' : `${stats.open} open`]
+    if (stats.overdue > 0) parts.push(`${stats.overdue} overdue`)
+    if (confirmationOn && stats.awaitingConfirmation > 0) parts.push(`${stats.awaitingConfirmation} waiting for confirmation`)
+    return parts
+}
+
+/**
+ * Which chips a card shows. Each says something only when it is not the default
+ * state: a department to somebody who sees more than one, a priority other than
+ * Normal, a task that *is* billable. A chip that is on every card tells nobody
+ * anything — it is the card's job to make two tasks look different.
+ */
+export function cardBadges(task: WorkTask, settings: WorkTaskSettings, viewerManages: boolean): { department: boolean; priority: boolean; billable: boolean } {
+    return {
+        department: viewerManages,
+        priority: isShown(settings, 'priority') && task.priority !== 'Normal',
+        billable: isShown(settings, 'billable') && task.isBillable === true,
     }
 }
 
