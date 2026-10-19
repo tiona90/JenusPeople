@@ -584,6 +584,13 @@ describe('TasksPage layouts', () => {
         await waitFor(() => expect(api.updateWorkTaskStatus).toHaveBeenCalledWith(1, 'InProgress'))
     })
 
+    it('offers no "Awaiting confirmation" pick in the status filter', async () => {
+        renderPage()
+        await cards()
+        const options = within(screen.getByRole('combobox', { name: 'Status filter' })).getAllByRole('option').map((o) => o.textContent)
+        expect(options).toEqual(['Open', 'To do', 'In progress', 'Done', 'Cancelled', 'Everything'])
+    })
+
     it('lays every task out by status on the board, one column per open status', async () => {
         api.getWorkTasks.mockResolvedValue([TASKS[0], { ...TASKS[1], status: 'InProgress' }])
         renderPage()

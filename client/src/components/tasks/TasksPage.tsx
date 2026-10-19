@@ -357,7 +357,10 @@ const TasksPage = observer(function TasksPage() {
                     onChange={(v) => setStatus(v as StatusFilter)}
                     options={[
                         { value: 'open', label: 'Open' },
-                        ...(Object.keys(STATUS_LABELS) as WorkTaskStatus[]).map((s) => ({ value: s, label: STATUS_LABELS[s] })),
+                        // No "Awaiting confirmation" pick: those tasks still show under Open, and the To Confirm tile counts them.
+                        ...(Object.keys(STATUS_LABELS) as WorkTaskStatus[])
+                            .filter((s) => s !== 'AwaitingConfirmation')
+                            .map((s) => ({ value: s, label: STATUS_LABELS[s] })),
                         { value: 'any', label: 'Everything' },
                     ]}
                 />
