@@ -3,7 +3,7 @@ import type { WorkTaskSettings } from '../../lib/api/work-task-settings'
 import { isShown } from '../../lib/task-settings'
 import type { WorkTask } from '../../lib/types'
 import { formatTaskDate as formatDate, taskFacts } from '../../lib/work-tasks'
-import { Assignees, PriorityChip, ProjectBadge, StatusPill, TaskActions, TaskNotices, type TaskItemProps } from './TaskCard'
+import { Assignees, PriorityChip, StatusPill, TaskActions, TaskNotices, type TaskItemProps } from './TaskCard'
 
 /**
  * The dense view: one row per task, for scanning many at once. The same facts and
@@ -59,7 +59,6 @@ function TaskRow(props: TaskItemProps) {
         }}>
             <Box component="td" sx={{ ...td, maxWidth: 360 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                    <ProjectBadge task={task} closed={f.closed} />
                     <Box
                         component="button"
                         type="button"
