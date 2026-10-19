@@ -248,7 +248,7 @@ const Sidebar = observer(function Sidebar() {
                 { kind: 'section', label: 'Leave & Time' } as NavEntry,
                 { kind: 'item', label: 'Leave Management', icon: <CalendarMonthRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamLeave(), active: onPage('/leave-management') } as NavEntry,
                 { kind: 'item', label: 'Attendance', icon: <ApartmentRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToCompanyAttendance(), active: onPage('/attendance-management') } as NavEntry,
-                { kind: 'item', label: 'Timesheets', icon: <AccessTimeRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamTimesheets(), active: onPage('/timesheets-management') } as NavEntry,
+                { kind: 'item', label: 'Approve Timesheets', icon: <AccessTimeRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamTimesheets(), active: onPage('/timesheets-management') } as NavEntry,
             ] : []),
             ...(isSystemAdminUser ? [
                 { kind: 'section', label: 'Configuration' } as NavEntry,
@@ -293,7 +293,7 @@ const Sidebar = observer(function Sidebar() {
             { kind: 'item', label: 'Team Attendance', icon: <VisibilityRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamAttendance(), active: onPage('/team-attendance') },
             // Not GroupRounded like Leave Management above: two entries in the same
             // section reading as the same icon is what made them hard to tell apart.
-            { kind: 'item', label: 'Approvals', icon: <FactCheckRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamTimesheets(), active: onPage('/timesheets-management') },
+            { kind: 'item', label: 'Approve Timesheets', icon: <FactCheckRoundedIcon sx={{ fontSize: 18 }} />, onClick: () => uiStore.navigateToTeamTimesheets(), active: onPage('/timesheets-management') },
             ...collaborationEntries,
         ]
     } else {

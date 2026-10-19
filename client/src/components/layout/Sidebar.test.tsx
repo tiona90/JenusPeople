@@ -113,7 +113,7 @@ describe('Navigation offered to each administrator role', () => {
         expect(screen.getByText('Dashboard')).toBeInTheDocument()
         expect(screen.getByText('Leave Management')).toBeInTheDocument()
         expect(screen.getByText('Attendance')).toBeInTheDocument()
-        expect(screen.getByText('Timesheets')).toBeInTheDocument()
+        expect(screen.getByText('Approve Timesheets')).toBeInTheDocument()
 
         for (const hidden of ['People', 'Users', 'Departments', 'Configuration', 'Projects', 'Leave Types', 'Task Settings', 'System', 'Organization', 'Notification Settings', 'Data Maintenance', 'System Log']) {
             expect(screen.queryByText(hidden)).not.toBeInTheDocument()
@@ -127,7 +127,7 @@ describe('Navigation offered to each administrator role', () => {
         for (const shown of ['Users', 'Departments', 'Projects', 'Leave Types', 'Task Settings', 'Organization', 'Notification Settings', 'Data Maintenance', 'System Log']) {
             expect(screen.getByText(shown)).toBeInTheDocument()
         }
-        for (const hidden of ['Leave & Time', 'Leave Management', 'Attendance', 'Timesheets']) {
+        for (const hidden of ['Leave & Time', 'Leave Management', 'Attendance', 'Timesheets', 'Approve Timesheets']) {
             expect(screen.queryByText(hidden)).not.toBeInTheDocument()
         }
         expect(screen.getByText('Administrator')).toBeInTheDocument()
@@ -190,12 +190,12 @@ describe('One Timesheets entry for the people who keep one', () => {
     it.each([['/timesheets'], ['/new-timesheet']])('highlights Timesheets on %s', (path) => {
         renderSidebarAs(MANAGER, path)
         expect(screen.getByText('Timesheets').closest('[aria-current]')).toHaveAttribute('aria-current', 'page')
-        expect(screen.getByText('Approvals').closest('[aria-current]')).toBeNull()
+        expect(screen.getByText('Approve Timesheets').closest('[aria-current]')).toBeNull()
     })
 
-    it("does not highlight Timesheets on a Manager's Approvals", () => {
+    it("does not highlight Timesheets on a Manager's Approve Timesheets", () => {
         renderSidebarAs(MANAGER, '/timesheets-management')
-        expect(screen.getByText('Approvals').closest('[aria-current]')).toHaveAttribute('aria-current', 'page')
+        expect(screen.getByText('Approve Timesheets').closest('[aria-current]')).toHaveAttribute('aria-current', 'page')
         expect(screen.getByText('Timesheets').closest('[aria-current]')).toBeNull()
     })
 
@@ -203,7 +203,7 @@ describe('One Timesheets entry for the people who keep one', () => {
         renderSidebarAs(HR)
         expect(screen.queryByText('Submit Timesheet')).toBeNull()
         expect(screen.queryByText('My Timesheets')).toBeNull()
-        // HR's own entry under Leave & Time is "Timesheets" (All Timesheets), as before.
-        expect(screen.getAllByText('Timesheets')).toHaveLength(1)
+        // HR's own entry under Leave & Time is "Approve Timesheets" (the review page), and nothing else.
+        expect(screen.getAllByText(/Timesheets/)).toHaveLength(1)
     })
 })

@@ -381,7 +381,7 @@ const Topbar = observer(function Topbar() {
     else if (path.startsWith('/apply-leave')) pageTitle = 'Apply for Leave'
     else if (path.startsWith('/leave-management')) pageTitle = isAdminUser ? 'Leave Management' : 'Team Leave'
     else if (path.startsWith('/tasks')) pageTitle = 'Tasks'
-    else if (path.startsWith('/timesheets-management')) pageTitle = isAdminUser ? 'Timesheets' : 'Approvals'
+    else if (path.startsWith('/timesheets-management')) pageTitle = 'Approve Timesheets'
     // One sidebar entry, "Timesheets", covers the list and the editor; the title agrees.
     else if (path.startsWith('/timesheets')) pageTitle = isAdminUser ? 'All Timesheets' : 'Timesheets'
     else if (path.startsWith('/new-timesheet')) pageTitle = 'Timesheets'
