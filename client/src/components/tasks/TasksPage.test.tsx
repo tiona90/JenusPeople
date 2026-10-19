@@ -255,10 +255,52 @@ describe('TasksPage', () => {
         expect(within(unplanned).getByText('no target set')).toBeInTheDocument()
     })
 
-    it('badges each card billable or non-billable', async () => {
+    it('badges a billable card and says nothing about a non-billable one', async () => {
         renderPage()
         expect(within(await cardFor('Mine to do')).getByText('Billable')).toBeInTheDocument()
-        expect(within(await cardFor('I asked for this')).getByText('Non-billable')).toBeInTheDocument()
+        expect(within(await cardFor('I asked for this')).queryByText('Non-billable')).toBeNull()
+        expect(within(await cardFor('I asked for this')).queryByText('Billable')).toBeNull()
+    })
+
+    it('shows the department to a Manager', async () => {
+        renderPage()
+        expect(within(await cardFor('Mine to do')).getByText('Sales')).toBeInTheDocument()
+    })
+
+    it('hides the department chip from an Employee, whose tasks are all in one', async () => {
+        renderPage(['Employee'])
+        expect(within(await cardFor('Mine to do')).queryByText('Sales')).toBeNull()
+    })
+
+    it('shows a priority chip only when the priority is not Normal', async () => {
+        api.getWorkTasks.mockResolvedValue([base, { ...base, id: 5, title: 'Ordinary', priority: 'Normal' }, { ...base, id: 6, title: 'Minor', priority: 'Low' }])
+        renderPage()
+        expect(within(await cardFor('Mine to do')).getByText('High priority')).toBeInTheDocument()
+        expect(within(await cardFor('Ordinary')).queryByText(/priority/)).toBeNull()
+        expect(within(await cardFor('Minor')).getByText('Low priority')).toBeInTheDocument()
+    })
+
+    it('drops "Created by" from the card but keeps "Completed" on a finished task', async () => {
+        api.getWorkTasks.mockResolvedValue([base, { ...base, id: 7, title: 'Finished', status: 'Done', completedAtUtc: '2026-09-15T08:00:00' }])
+        renderPage()
+        await cards()
+        fireEvent.change(screen.getByRole('combobox', { name: 'Status filter' }), { target: { value: 'any' } })
+
+        const open = await cardFor('Mine to do')
+        expect(within(open).queryByText('Created')).toBeNull()
+        expect(within(open).queryByText(/by Boss/)).toBeNull()
+        expect(within(open).getByText('Due')).toBeInTheDocument()
+
+        const finished = await cardFor('Finished')
+        expect(within(finished).getByText('Completed')).toBeInTheDocument()
+        expect(within(finished).queryByText('Created')).toBeNull()
+    })
+
+    it('draws no facts strip when there is no fact to show', async () => {
+        api.getWorkTaskSettings.mockResolvedValue({ ...DEFAULT_TASK_SETTINGS, dueDateRequirement: 'Hidden', targetHoursRequirement: 'Hidden' })
+        renderPage()
+        const card = await cardFor('Mine to do')
+        expect(within(card).queryByTestId('task-facts')).toBeNull()
     })
 
     it('gives an Employee their tasks to work and their own to create, with no views to pick between', async () => {
@@ -525,5 +567,18 @@ describe('TasksPage layouts', () => {
         expect(screen.queryByRole('region', { name: 'Done' })).toBeNull()
         // The board is about where tasks stand, not whose they are.
         expect(screen.queryByRole('region', { name: 'Assigned to you' })).toBeNull()
+    })
+
+    it('keeps the Completed fact, and no Created one, on a finished board card', async () => {
+        api.getWorkTasks.mockResolvedValue([TASKS[0], { ...base, id: 8, title: 'Shipped', status: 'Done', completedAtUtc: '2026-09-15T08:00:00' }])
+        renderPage()
+        await cards()
+        fireEvent.change(screen.getByRole('combobox', { name: 'Status filter' }), { target: { value: 'any' } })
+        fireEvent.click(screen.getByRole('button', { name: /Board/ }))
+
+        const doneColumn = screen.getByRole('region', { name: 'Done' })
+        expect(within(doneColumn).getByText('Shipped')).toBeInTheDocument()
+        expect(within(doneColumn).getByText('Completed')).toBeInTheDocument()
+        expect(within(doneColumn).queryByText('Created')).toBeNull()
     })
 })

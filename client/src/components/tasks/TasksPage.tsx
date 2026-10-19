@@ -229,6 +229,7 @@ const TasksPage = observer(function TasksPage() {
         task,
         today,
         settings,
+        viewerManages: manages,
         statusPending: moveStatus.isPending,
         onStatus: (next) => moveStatus.mutate({ id: task.id, next }),
         onOpen: () => setDetailsId(task.id),
