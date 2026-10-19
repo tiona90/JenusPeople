@@ -108,3 +108,25 @@ export interface TimesheetTaskOption {
     /** False on a task the sheet names from before its owner was taken off it. Missing from an older API: read as true. */
     isAssigned?: boolean
 }
+
+/** Hours an assignee logs on a task from its card (POST /worktasks/{id}/log-time). */
+export interface LogTaskTimeRequest {
+    /** yyyy-mm-dd, the viewer's calendar date. */
+    date: string
+    hours: number
+    notes: string | null
+}
+
+/** Where the hours went: the task as it now reads, and the week they landed in. */
+export interface LogTaskTimeResult {
+    task: WorkTask
+    timesheetId: string
+    entryId: string
+    /** yyyy-mm-dd, the Monday the week starts on. */
+    weekStart: string
+    /** The task's hours on that date, after this log. */
+    hoursOnEntry: number
+    /** Everything on the sheet for that date, after this log. */
+    hoursOnDay: number
+    timesheetStatus: string
+}

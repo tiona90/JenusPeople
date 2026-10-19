@@ -15,6 +15,7 @@ vi.mock('../../lib/api', () => ({
     updateWorkTask: vi.fn(),
     updateWorkTaskStatus: vi.fn(),
     deleteWorkTask: vi.fn(),
+    logTaskTime: vi.fn(),
     getIdleTaskPeople: vi.fn(),
     getWorkTaskSettings: vi.fn(),
     WORK_TASK_SETTINGS_KEY: ['work-tasks', 'settings'],
@@ -40,8 +41,10 @@ const TASKS: WorkTask[] = [
     { ...base, id: 3, title: "Someone else's", assignees: [{ userId: 'x', displayName: 'Xena' }], createdById: 'y', createdByName: 'Yan', dueDate: null, canEdit: false, canChangeStatus: false },
 ]
 
+const navigateToNewTimesheet = vi.fn()
+
 function renderPage(roles: string[] = ['Manager']) {
-    mobx.useStore.mockReturnValue({ authStore: { user: { id: 'me', roles } } } as never)
+    mobx.useStore.mockReturnValue({ authStore: { user: { id: 'me', roles } }, uiStore: { navigateToNewTimesheet } } as never)
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
         <MemoryRouter initialEntries={['/tasks']}>
@@ -515,7 +518,7 @@ describe('TasksPage task settings', () => {
             { ...base, id: 22, title: 'low one', priority: 'Low' },
         ])
         const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-        mobx.useStore.mockReturnValue({ authStore: { user: { id: 'me', roles: ['Manager'] } } } as never)
+        mobx.useStore.mockReturnValue({ authStore: { user: { id: 'me', roles: ['Manager'] } }, uiStore: { navigateToNewTimesheet } } as never)
         render(
             <MemoryRouter initialEntries={['/tasks']}>
                 <QueryClientProvider client={queryClient}>
@@ -623,5 +626,54 @@ describe('TasksPage layouts', () => {
         expect(within(doneColumn).getByText('Shipped')).toBeInTheDocument()
         expect(within(doneColumn).getByText('Completed')).toBeInTheDocument()
         expect(within(doneColumn).queryByText('Created')).toBeNull()
+    })
+})
+
+describe('TasksPage log time', () => {
+    const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })()
+
+    it('offers Log time on a task the viewer is on, and not on one they are not', async () => {
+        renderPage(['Employee'])
+        expect(within(await cardFor('Mine to do')).getByRole('button', { name: /Log time/ })).toBeInTheDocument()
+        expect(within(await cardFor('I asked for this')).queryByRole('button', { name: /Log time/ })).toBeNull()
+    })
+
+    it('logs the hours, says where they went, and opens the week from the message', async () => {
+        api.logTaskTime.mockResolvedValue({
+            task: { ...base, loggedHours: 2 }, timesheetId: 'ts', entryId: 'e', weekStart: '2026-10-19',
+            hoursOnEntry: 2, hoursOnDay: 3, timesheetStatus: 'Draft',
+        })
+        renderPage(['Employee'])
+        fireEvent.click(within(await cardFor('Mine to do')).getByRole('button', { name: /Log time/ }))
+        fireEvent.change(screen.getByLabelText('Hours'), { target: { value: '2' } })
+        fireEvent.change(screen.getByLabelText('Note'), { target: { value: 'Call' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Log' }))
+
+        await waitFor(() => expect(api.logTaskTime).toHaveBeenCalledWith(1, { date: today, hours: 2, notes: 'Call' }))
+        expect(await screen.findByText(/2h logged to the week of 19 Oct · 3h on/)).toBeInTheDocument()
+        // The card refreshes from the server.
+        await waitFor(() => expect(api.getWorkTasks).toHaveBeenCalledTimes(2))
+
+        fireEvent.click(screen.getByRole('button', { name: 'Open timesheet' }))
+        expect(navigateToNewTimesheet).toHaveBeenCalledWith('2026-10-19')
+    })
+
+    it("shows the server's refusal in the popover and keeps it open", async () => {
+        api.logTaskTime.mockRejectedValue(Object.assign(new Error('409'), {
+            isAxiosError: true,
+            response: { status: 409, data: { message: "This week's timesheet has already been submitted. Open it from Timesheets to change it." } },
+        }))
+        renderPage(['Employee'])
+        fireEvent.click(within(await cardFor('Mine to do')).getByRole('button', { name: /Log time/ }))
+        fireEvent.click(screen.getByRole('button', { name: 'Log' }))
+
+        expect(await screen.findByText(/already been submitted/)).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Log' })).toBeInTheDocument()
+    })
+
+    it('does not open the details for a click on Log time', async () => {
+        renderPage(['Employee'])
+        fireEvent.click(within(await cardFor('Mine to do')).getByRole('button', { name: /Log time/ }))
+        expect(screen.queryByRole('dialog')).toBeNull()
     })
 })

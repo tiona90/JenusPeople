@@ -6,12 +6,13 @@ import type { WorkTaskSettings } from '../../lib/api/work-task-settings'
 import { CODE_COLORS, avatarBg, initials } from '../../lib/card-kit'
 import { ATTACHMENT_REQUIRED_MESSAGE, isShown } from '../../lib/task-settings'
 import { softBg } from '../../lib/theme-tokens'
-import type { WorkTask, WorkTaskStatus } from '../../lib/types'
+import type { LogTaskTimeResult, WorkTask, WorkTaskStatus } from '../../lib/types'
 import {
     PRIORITY_LABELS, SETTABLE_STATUSES, STATUS_LABELS, cardBadges, formatTaskDate as formatDate,
-    isAwaitingConfirmation, isOpenTask, nextStatusAction, plural, taskFacts,
+    canLogTime, isAwaitingConfirmation, isOpenTask, nextStatusAction, plural, taskFacts,
 } from '../../lib/work-tasks'
 import { OutlineBtn } from '../ui/CardKit'
+import LogTimeButton from './LogTimeButton'
 import { PRIORITY_COLORS, STATUS_COLORS } from './statusStyles'
 
 /**
@@ -25,6 +26,10 @@ export interface TaskItemProps {
     settings: WorkTaskSettings
     /** Whether the viewer manages tasks (a Manager or HR Administrator). An Employee's tasks are all in their one department, so the department chip says nothing to them. */
     viewerManages: boolean
+    /** The viewer, to tell whether they are on the task (Log time is for assignees). */
+    viewerId: string
+    /** Hours were logged from the card. */
+    onLogged: (result: LogTaskTimeResult, hours: number, date: string) => void
     statusPending: boolean
     onStatus: (next: WorkTaskStatus) => void
     /** The details dialog: the whole description and the files, which the card only summarises. */
@@ -170,7 +175,7 @@ export function TaskNotices({ task, late, fileNeeded, inline = false }: { task: 
  * the status menu's included, which bubble through the portal — are not a click on
  * the card or row around it.
  */
-export function TaskActions({ task, statusPending, fileNeeded, onStatus, onEdit, onDelete, onSendBack, dense = false }: Omit<TaskItemProps, 'today' | 'settings' | 'onOpen'> & { fileNeeded: boolean; dense?: boolean }) {
+export function TaskActions({ task, today, viewerId, statusPending, fileNeeded, onStatus, onEdit, onDelete, onSendBack, onLogged, dense = false }: Omit<TaskItemProps, 'settings' | 'onOpen'> & { fileNeeded: boolean; dense?: boolean }) {
     return (
         <Box onClick={(e) => e.stopPropagation()} sx={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap', cursor: 'default' }}>
             {task.canConfirm ? (
@@ -180,6 +185,7 @@ export function TaskActions({ task, statusPending, fileNeeded, onStatus, onEdit,
             ) : (
                 <Box sx={{ fontSize: 11, color: 'text.disabled' }}>{dense ? 'View only' : 'Only the creator and assignees change the status'}</Box>
             )}
+            {canLogTime(task, viewerId) && <LogTimeButton task={task} today={today} onLogged={onLogged} dense={dense} />}
             <Box sx={{ flex: 1 }} />
             {task.canEdit && (
                 <>

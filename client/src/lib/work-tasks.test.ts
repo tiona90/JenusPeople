@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { WorkTask } from './types'
 import { DEFAULT_TASK_SETTINGS } from './task-settings'
-import { SETTABLE_STATUSES, STATUS_LABELS, boardStatuses, cardBadges, describeTaskProgress, employeeSummary, filterTasks, isAwaitingConfirmation, isOpenTask, isOverdue, nextStatusAction, openCount, overdueDays, taskStats, tasksToCsv, todayIso } from './work-tasks'
+import { SETTABLE_STATUSES, STATUS_LABELS, boardStatuses, canLogTime, cardBadges, describeLoggedTime, describeTaskProgress, employeeSummary, filterTasks, isAwaitingConfirmation, isOpenTask, isOverdue, nextStatusAction, openCount, overdueDays, taskStats, tasksToCsv, todayIso } from './work-tasks'
 
 const base: WorkTask = {
     id: 1, title: 't', description: null, departmentId: 1, departmentName: 'Sales', projectId: 10, projectName: 'CRM Rollout', projectCode: 'CRM', projectColorKey: 'p1',
@@ -236,5 +236,26 @@ describe('cardBadges', () => {
         expect(cardBadges(t({ isBillable: false }), DEFAULT_TASK_SETTINGS, true).billable).toBe(false)
         expect(cardBadges(t({ isBillable: null }), DEFAULT_TASK_SETTINGS, true).billable).toBe(false)
         expect(cardBadges(t({ isBillable: true }), { ...DEFAULT_TASK_SETTINGS, billableRequirement: 'Hidden' }, true).billable).toBe(false)
+    })
+})
+
+describe('canLogTime', () => {
+    it('lets an assignee log on an open task with a project', () => {
+        expect(canLogTime(t({ status: 'InProgress' }), 'me')).toBe(true)
+        expect(canLogTime(t({ status: 'AwaitingConfirmation' }), 'me')).toBe(true)
+    })
+
+    it('does not offer it to somebody who is not on the task, on a closed task, or with no project', () => {
+        expect(canLogTime(t({}), 'someone-else')).toBe(false)
+        expect(canLogTime(t({ status: 'Done' }), 'me')).toBe(false)
+        expect(canLogTime(t({ status: 'Cancelled' }), 'me')).toBe(false)
+        expect(canLogTime(t({ projectId: null }), 'me')).toBe(false)
+    })
+})
+
+describe('describeLoggedTime', () => {
+    it('says how much went where, and the day total', () => {
+        const result = { weekStart: '2026-10-19', hoursOnDay: 3, hoursOnEntry: 3 } as never
+        expect(describeLoggedTime(2, '2026-10-20', result)).toBe('2h logged to the week of 19 Oct · 3h on Tue 20')
     })
 })

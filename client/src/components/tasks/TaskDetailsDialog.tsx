@@ -7,9 +7,10 @@ import { CODE_COLORS, avatarBg, initials } from '../../lib/card-kit'
 import { attachmentLimits, isShown } from '../../lib/task-settings'
 import { useWorkTaskSettings } from '../../lib/task-settings-query'
 import { softBg } from '../../lib/theme-tokens'
-import type { WorkTask } from '../../lib/types'
-import { PRIORITY_LABELS, STATUS_LABELS, describeTaskProgress, formatTaskDate, isOpenTask, overdueDays } from '../../lib/work-tasks'
+import type { LogTaskTimeResult, WorkTask } from '../../lib/types'
+import { PRIORITY_LABELS, STATUS_LABELS, canLogTime, describeTaskProgress, formatTaskDate, isOpenTask, overdueDays } from '../../lib/work-tasks'
 import { SectionLabel } from '../ui/CardKit'
+import LogTimeButton from './LogTimeButton'
 import TaskAttachments from './TaskAttachments'
 import { PRIORITY_COLORS, STATUS_COLORS } from './statusStyles'
 
@@ -28,25 +29,30 @@ function Fact({ label, value, sub, danger }: { label: string; value: string; sub
  * every assignee by name, and the files to open or download. Whoever may edit the
  * task attaches and removes files here too, and can go on to Edit.
  */
-export default function TaskDetailsDialog({ task, today, onClose, onEdit }: {
+export default function TaskDetailsDialog({ task, today, viewerId, onClose, onEdit, onLogged }: {
     /** Null closes the dialog. */
     task: WorkTask | null
     today: string
+    /** The viewer, to tell whether they are on the task (Log time is for assignees). */
+    viewerId: string
     onClose: () => void
     onEdit: (task: WorkTask) => void
+    onLogged: (result: LogTaskTimeResult, hours: number, date: string) => void
 }) {
     return (
         <Dialog open={task != null} onClose={onClose} fullWidth maxWidth="sm" aria-labelledby="task-details-title">
-            {task && <Details task={task} today={today} onClose={onClose} onEdit={onEdit} />}
+            {task && <Details task={task} today={today} viewerId={viewerId} onClose={onClose} onEdit={onEdit} onLogged={onLogged} />}
         </Dialog>
     )
 }
 
-function Details({ task, today, onClose, onEdit }: {
+function Details({ task, today, viewerId, onClose, onEdit, onLogged }: {
     task: WorkTask
     today: string
+    viewerId: string
     onClose: () => void
     onEdit: (task: WorkTask) => void
+    onLogged: (result: LogTaskTimeResult, hours: number, date: string) => void
 }) {
     const settings = useWorkTaskSettings()
     const limits = attachmentLimits(settings)
@@ -176,6 +182,9 @@ function Details({ task, today, onClose, onEdit }: {
                 </Box>
             </DialogContent>
             <DialogActions>
+                {canLogTime(task, viewerId) && (
+                    <Box sx={{ mr: 'auto', pl: 1 }}><LogTimeButton task={task} today={today} onLogged={onLogged} /></Box>
+                )}
                 <Button onClick={onClose}>Close</Button>
                 {task.canEdit && <Button variant="contained" onClick={() => onEdit(task)}>Edit task</Button>}
             </DialogActions>

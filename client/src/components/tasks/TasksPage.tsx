@@ -3,7 +3,9 @@ import { observer } from 'mobx-react-lite'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
+import Snackbar from '@mui/material/Snackbar'
 import { deleteWorkTask, getWorkTaskDepartments, getWorkTasks, updateWorkTaskStatus } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
 import type { WorkTaskSettings } from '../../lib/api/work-task-settings'
@@ -12,9 +14,9 @@ import { canManageTasks, canUseTasks, isHrAdministrator } from '../../lib/roles'
 import { isShown } from '../../lib/task-settings'
 import { useWorkTaskSettings } from '../../lib/task-settings-query'
 import { softBg } from '../../lib/theme-tokens'
-import type { WorkTask, WorkTaskPriority, WorkTaskStatus } from '../../lib/types'
+import type { LogTaskTimeResult, WorkTask, WorkTaskPriority, WorkTaskStatus } from '../../lib/types'
 import {
-    PRIORITY_LABELS, STATUS_LABELS, boardStatuses, employeeSummary, filterTasks, taskStats, tasksToCsv, todayIso,
+    PRIORITY_LABELS, STATUS_LABELS, boardStatuses, describeLoggedTime, employeeSummary, filterTasks, taskStats, tasksToCsv, todayIso,
     type StatusFilter, type TaskLayout,
 } from '../../lib/work-tasks'
 import { SweetAlert } from '../ui'
@@ -135,7 +137,7 @@ function buildSections(all: readonly WorkTask[], visible: readonly WorkTask[], u
 /* ════════════════════════════════════════════════════════════════════════ */
 
 const TasksPage = observer(function TasksPage() {
-    const { authStore } = useStore()
+    const { authStore, uiStore } = useStore()
     const userId = authStore.user?.id ?? ''
     // An Employee works the tasks they are given and creates their own, always
     // assigned to themselves: the server sends them only the tasks they are on, and
@@ -159,6 +161,8 @@ const TasksPage = observer(function TasksPage() {
     const [detailsId, setDetailsId] = useState<number | null>(null)
     // A task saved without some of the files picked for it.
     const [saveWarning, setSaveWarning] = useState<string | null>(null)
+    // The last log from a card: what to say, and the week to open.
+    const [logged, setLogged] = useState<{ text: string; weekStart: string } | null>(null)
 
     const tasks = useQuery({ queryKey: ['work-tasks'], queryFn: getWorkTasks })
     const departments = useQuery({ queryKey: ['work-tasks', 'departments'], queryFn: getWorkTaskDepartments, enabled: creates })
@@ -229,11 +233,22 @@ const TasksPage = observer(function TasksPage() {
     }
 
     // What every card, board card and list row is handed besides the task.
+    // Hours logged from a card or the details: say where they went, refresh the
+    // card's logged figure and whatever timesheet the viewer opens next.
+    const onLogged = (result: LogTaskTimeResult, hours: number, date: string) => {
+        setLogged({ text: describeLoggedTime(hours, date, result), weekStart: result.weekStart })
+        void queryClient.invalidateQueries({ queryKey: ['work-tasks'] })
+        void queryClient.invalidateQueries({ queryKey: ['timesheets'] })
+        void queryClient.invalidateQueries({ queryKey: ['timesheet', result.timesheetId] })
+    }
+
     const itemProps = (task: WorkTask): TaskItemProps => ({
         task,
         today,
         settings,
         viewerManages: manages,
+        viewerId: userId,
+        onLogged,
         statusPending: moveStatus.isPending,
         onStatus: (next) => moveStatus.mutate({ id: task.id, next }),
         onOpen: () => setDetailsId(task.id),
@@ -459,6 +474,8 @@ const TasksPage = observer(function TasksPage() {
                 today={today}
                 onClose={() => setDetailsId(null)}
                 onEdit={(task) => { setDetailsId(null); setDialogTask(task) }}
+                viewerId={userId}
+                onLogged={onLogged}
             />
 
             <TaskDialog
@@ -469,6 +486,26 @@ const TasksPage = observer(function TasksPage() {
                 onClose={() => setDialogTask(undefined)}
                 onSaved={(warning) => { setDialogTask(undefined); setSaveWarning(warning ?? null); void refresh() }}
             />
+
+            <Snackbar
+                open={logged != null}
+                autoHideDuration={6000}
+                onClose={() => setLogged(null)}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            >
+                <Alert
+                    severity="success"
+                    variant="filled"
+                    action={
+                        <Button color="inherit" size="small" onClick={() => { const w = logged!.weekStart; setLogged(null); uiStore.navigateToNewTimesheet(w) }}>
+                            Open timesheet
+                        </Button>
+                    }
+                    sx={{ fontSize: 13 }}
+                >
+                    {logged?.text}
+                </Alert>
+            </Snackbar>
         </Box>
     )
 })
