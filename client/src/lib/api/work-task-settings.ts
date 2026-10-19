@@ -9,7 +9,6 @@ export interface WorkTaskSettings {
     targetHoursRequirement: FieldRequirement
     attachmentsRequirement: FieldRequirement
     projectRequirement: FieldRequirement
-    billableRequirement: FieldRequirement
     showPriority: boolean
     requireCompletionConfirmation: boolean
     maxAttachmentsPerTask: number

@@ -6,7 +6,7 @@ import { SETTABLE_STATUSES, STATUS_LABELS, boardStatuses, canLogTime, cardBadges
 const base: WorkTask = {
     id: 1, title: 't', description: null, departmentId: 1, departmentName: 'Sales', projectId: 10, projectName: 'CRM Rollout', projectCode: 'CRM', projectColorKey: 'p1',
     assignees: [{ userId: 'me', displayName: 'Me' }], createdById: 'boss', createdByName: 'Boss',
-    dueDate: null, targetHours: null, loggedHours: 0, isBillable: true, priority: 'Normal', status: 'ToDo',
+    dueDate: null, targetHours: null, loggedHours: 0, priority: 'Normal', status: 'ToDo',
     createdAtUtc: '2026-09-01T08:00:00', updatedAtUtc: '2026-09-01T08:00:00', completedAtUtc: null,
     canEdit: false, canChangeStatus: true,
 }
@@ -137,18 +137,13 @@ describe('tasksToCsv', () => {
             completedAtUtc: null,
         })])
         const [header, row] = csv.split('\r\n')
-        expect(header).toBe('Title,Description,Department,Project code,Project,Status,Priority,Billable,Assignees,Created by,Due date,Target hours,Logged hours,Created,Completed')
-        expect(row).toBe('Chase notes,,Sales,CRM,CRM Rollout,In progress,High,Yes,Ann; Bob,Boss,2026-10-09,24,26.3,2026-09-01,')
+        expect(header).toBe('Title,Description,Department,Project code,Project,Status,Priority,Assignees,Created by,Due date,Target hours,Logged hours,Created,Completed')
+        expect(row).toBe('Chase notes,,Sales,CRM,CRM Rollout,In progress,High,Ann; Bob,Boss,2026-10-09,24,26.3,2026-09-01,')
     })
 
     it('quotes commas, quotes and line breaks, and defuses formulas', () => {
         const [, row] = tasksToCsv([t({ title: '=HYPERLINK("x")', description: 'one, two\nthree' })]).split('\r\n')
         expect(row.startsWith(`"'=HYPERLINK(""x"")","one, two\nthree",`)).toBe(true)
-    })
-
-    it('leaves an unanswered billing question blank', () => {
-        const [, row] = tasksToCsv([t({ isBillable: null })]).split('\r\n')
-        expect(row.split(',')[7]).toBe('')
     })
 
     it('leaves hidden fields out of the export', () => {
@@ -229,13 +224,6 @@ describe('cardBadges', () => {
         expect(cardBadges(t({ priority: 'High' }), DEFAULT_TASK_SETTINGS, true).priority).toBe(true)
         expect(cardBadges(t({ priority: 'Low' }), DEFAULT_TASK_SETTINGS, true).priority).toBe(true)
         expect(cardBadges(t({ priority: 'High' }), { ...DEFAULT_TASK_SETTINGS, showPriority: false }, true).priority).toBe(false)
-    })
-
-    it('badges a billable task and says nothing about a non-billable or unanswered one', () => {
-        expect(cardBadges(t({ isBillable: true }), DEFAULT_TASK_SETTINGS, true).billable).toBe(true)
-        expect(cardBadges(t({ isBillable: false }), DEFAULT_TASK_SETTINGS, true).billable).toBe(false)
-        expect(cardBadges(t({ isBillable: null }), DEFAULT_TASK_SETTINGS, true).billable).toBe(false)
-        expect(cardBadges(t({ isBillable: true }), { ...DEFAULT_TASK_SETTINGS, billableRequirement: 'Hidden' }, true).billable).toBe(false)
     })
 })
 

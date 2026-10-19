@@ -181,14 +181,13 @@ export function employeeSummary(stats: ReturnType<typeof taskStats>, confirmatio
 /**
  * Which chips a card shows. Each says something only when it is not the default
  * state: a department to somebody who sees more than one, a priority other than
- * Normal, a task that *is* billable. A chip that is on every card tells nobody
+ * Normal. A chip that is on every card tells nobody
  * anything — it is the card's job to make two tasks look different.
  */
-export function cardBadges(task: WorkTask, settings: WorkTaskSettings, viewerManages: boolean): { department: boolean; priority: boolean; billable: boolean } {
+export function cardBadges(task: WorkTask, settings: WorkTaskSettings, viewerManages: boolean): { department: boolean; priority: boolean } {
     return {
         department: viewerManages,
         priority: isShown(settings, 'priority') && task.priority !== 'Normal',
-        billable: isShown(settings, 'billable') && task.isBillable === true,
     }
 }
 
@@ -228,7 +227,7 @@ function csvText(value: string | null | undefined): string {
 /**
  * The tasks as CSV, one row per task, in the order given (the page passes what it
  * is showing, so the file matches the filters). Assignees share one cell, joined
- * by "; ". Dates are `YYYY-MM-DD`; a legacy task with no billing answer is blank.
+ * by "; ". Dates are `YYYY-MM-DD`.
  * A column whose field the Task Settings hide drops out of the header and every
  * row together, built from the one list below.
  */
@@ -241,7 +240,6 @@ export function tasksToCsv(tasks: readonly WorkTask[], settings: WorkTaskSetting
         { header: 'Project', shown: true, value: (t) => csvText(t.projectName) },
         { header: 'Status', shown: true, value: (t) => csvText(STATUS_LABELS[t.status]) },
         { header: 'Priority', shown: isShown(settings, 'priority'), value: (t) => csvText(PRIORITY_LABELS[t.priority]) },
-        { header: 'Billable', shown: isShown(settings, 'billable'), value: (t) => (t.isBillable == null ? '' : t.isBillable ? 'Yes' : 'No') },
         { header: 'Assignees', shown: true, value: (t) => csvText(t.assignees.map((a) => a.displayName).join('; ')) },
         { header: 'Created by', shown: true, value: (t) => csvText(t.createdByName) },
         { header: 'Due date', shown: isShown(settings, 'dueDate'), value: (t) => t.dueDate?.slice(0, 10) ?? '' },

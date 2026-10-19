@@ -24,8 +24,6 @@ export interface WorkTask {
     targetHours: number | null
     /** Hours on every timesheet row linked to the task, any sheet status. Missing from an older API. */
     loggedHours: number
-    /** Null only on a task filed before the question was asked; it must be answered on the next edit. */
-    isBillable: boolean | null
     priority: WorkTaskPriority
     status: WorkTaskStatus
     createdAtUtc: string
@@ -90,8 +88,6 @@ export interface UpsertWorkTaskRequest {
     assigneeIds: string[]
     dueDate: string | null
     targetHours: number | null
-    /** Null when the Task Settings hide Billing, or it is not yet answered. */
-    isBillable: boolean | null
     priority: WorkTaskPriority
 }
 

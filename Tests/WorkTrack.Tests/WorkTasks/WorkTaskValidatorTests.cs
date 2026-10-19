@@ -9,16 +9,16 @@ public class WorkTaskValidatorTests
 {
     private static bool Valid(UpsertWorkTaskRequest r) => new UpsertWorkTaskRequestValidator().Validate(r).IsValid;
 
-    private static UpsertWorkTaskRequest Ok() => new() { Title = "Do it", DepartmentId = 1, ProjectId = 10, AssigneeIds = ["u"], IsBillable = false };
+    private static UpsertWorkTaskRequest Ok() => new() { Title = "Do it", DepartmentId = 1, ProjectId = 10, AssigneeIds = ["u"] };
 
     [Fact] public void A_complete_request_passes() => Assert.True(Valid(Ok()));
 
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
-    public void A_blank_title_is_refused(string title) => Assert.False(Valid(new UpsertWorkTaskRequest { Title = title, DepartmentId = 1, ProjectId = 10, AssigneeIds = ["u"], IsBillable = true }));
+    public void A_blank_title_is_refused(string title) => Assert.False(Valid(new UpsertWorkTaskRequest { Title = title, DepartmentId = 1, ProjectId = 10, AssigneeIds = ["u"] }));
 
-    [Fact] public void A_title_over_200_is_refused() => Assert.False(Valid(new UpsertWorkTaskRequest { Title = new string('x', 201), DepartmentId = 1, ProjectId = 10, AssigneeIds = ["u"], IsBillable = true }));
+    [Fact] public void A_title_over_200_is_refused() => Assert.False(Valid(new UpsertWorkTaskRequest { Title = new string('x', 201), DepartmentId = 1, ProjectId = 10, AssigneeIds = ["u"] }));
 
     [Fact] public void A_description_over_2000_is_refused()
     {
@@ -27,11 +27,11 @@ public class WorkTaskValidatorTests
     }
 
     [Fact] public void A_missing_department_is_refused() =>
-        Assert.False(Valid(new UpsertWorkTaskRequest { Title = "x", DepartmentId = 0, ProjectId = 10, AssigneeIds = ["u"], IsBillable = true }));
+        Assert.False(Valid(new UpsertWorkTaskRequest { Title = "x", DepartmentId = 0, ProjectId = 10, AssigneeIds = ["u"] }));
 
     // Empty is "everyone in the department"; the handler expands it.
     [Fact] public void No_assignees_passes() =>
-        Assert.True(Valid(new UpsertWorkTaskRequest { Title = "x", DepartmentId = 1, ProjectId = 10, AssigneeIds = [], IsBillable = true }));
+        Assert.True(Valid(new UpsertWorkTaskRequest { Title = "x", DepartmentId = 1, ProjectId = 10, AssigneeIds = [] }));
 
     [Fact] public void An_unknown_priority_is_refused()
     {
@@ -80,11 +80,5 @@ public class WorkTaskValidatorTests
     {
         var r = Ok(); r.TargetHours = hours;
         Assert.Equal(valid, Valid(r));
-    }
-
-    [Fact] public void A_missing_billable_is_left_to_the_task_settings()
-    {
-        var r = Ok(); r.IsBillable = null;
-        Assert.True(Valid(r));
     }
 }

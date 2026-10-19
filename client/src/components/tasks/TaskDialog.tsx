@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import {
-    Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormControlLabel, FormHelperText, FormLabel, InputLabel,
-    Radio, RadioGroup,
+    Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormHelperText, FormLabel, InputLabel,
     MenuItem, Select, Stack, TextField,
 } from '@mui/material'
 import { addWorkTaskAttachment, createWorkTask, getWorkTaskAssignees, getWorkTaskDepartments, getWorkTaskProjects, updateWorkTask, updateWorkTaskStatus } from '../../lib/api'
@@ -58,8 +57,6 @@ export default function TaskDialog({ open, task, personal = false, currentUserId
     const [priority, setPriority] = useState<WorkTaskPriority>('Normal')
     const [status, setStatus] = useState<WorkTaskStatus>('ToDo')
     const [targetHours, setTargetHours] = useState('')
-    // No default on purpose: billable or not is a decision, not an unticked box.
-    const [isBillable, setIsBillable] = useState<boolean | null>(null)
     // A saved task's files change on the server as they are picked; a new task's wait here.
     const [attachments, setAttachments] = useState<WorkTaskAttachment[]>([])
     const [stagedFiles, setStagedFiles] = useState<File[]>([])
@@ -77,7 +74,6 @@ export default function TaskDialog({ open, task, personal = false, currentUserId
         setPriority(task?.priority ?? 'Normal')
         setStatus(task?.status ?? 'ToDo')
         setTargetHours(task?.targetHours != null ? String(task.targetHours) : '')
-        setIsBillable(task?.isBillable ?? null)
         setAttachments(task?.attachments ?? [])
         setStagedFiles([])
     }, [open, task])
@@ -162,7 +158,6 @@ export default function TaskDialog({ open, task, personal = false, currentUserId
         dueDate,
         targetHours: typeof hours === 'number' ? hours : null,
         projectId: projectId === '' ? null : projectId,
-        isBillable,
     })
     const canSave =
         trimmedTitle.length > 0 &&
@@ -185,7 +180,6 @@ export default function TaskDialog({ open, task, personal = false, currentUserId
             assigneeIds: personal ? [] : assigneeIds,
             dueDate: dueDate === '' ? null : dueDate,
             targetHours: typeof hours === 'number' ? hours : null,
-            isBillable,
             priority,
         })
     }
@@ -329,21 +323,6 @@ export default function TaskDialog({ open, task, personal = false, currentUserId
                                       ? `All ${assignees.data.length} Managers and Employees in the department as of saving. Pick names to narrow it.`
                                       : 'Everyone in the department as of saving. Pick names to narrow it.'}
                             </FormHelperText>
-                        )}
-                    </FormControl>}
-                    {isShown(settings, 'billable') && <FormControl required error={task != null && isBillable === null}>
-                        <FormLabel id="task-billing-label" sx={{ fontSize: 13 }}>Billing</FormLabel>
-                        <RadioGroup
-                            row
-                            aria-labelledby="task-billing-label"
-                            value={isBillable === null ? '' : isBillable ? 'billable' : 'non-billable'}
-                            onChange={(e) => setIsBillable(e.target.value === 'billable')}
-                        >
-                            <FormControlLabel value="billable" control={<Radio size="small" />} label="Billable" />
-                            <FormControlLabel value="non-billable" control={<Radio size="small" />} label="Non-billable" />
-                        </RadioGroup>
-                        {task != null && isBillable === null && (
-                            <FormHelperText>This task was filed before billing was asked — choose one to save.</FormHelperText>
                         )}
                     </FormControl>}
                     {task && (

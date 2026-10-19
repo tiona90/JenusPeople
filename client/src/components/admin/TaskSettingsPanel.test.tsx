@@ -28,8 +28,6 @@ describe('TaskSettingsPanel', () => {
         renderPanel()
         const project = await screen.findByRole('group', { name: 'Project' })
         expect(within(project).queryByRole('button', { name: 'Hidden' })).toBeNull()
-        const billable = screen.getByRole('group', { name: 'Billable' })
-        expect(within(billable).queryByRole('button', { name: 'Optional' })).toBeNull()
         const due = screen.getByRole('group', { name: 'Due date' })
         expect(within(due).getAllByRole('button')).toHaveLength(3)
     })

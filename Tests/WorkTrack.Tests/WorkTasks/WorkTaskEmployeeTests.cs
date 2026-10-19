@@ -44,7 +44,7 @@ public class WorkTaskEmployeeTests
             new CreateWorkTask.Command
             {
                 CallerUserId = SalesManager,
-                Task = new() { Title = "File the receipts", DepartmentId = Sales, ProjectId = SalesProject, AssigneeIds = [Employee], IsBillable = false },
+                Task = new() { Title = "File the receipts", DepartmentId = Sales, ProjectId = SalesProject, AssigneeIds = [Employee] },
             },
             CancellationToken.None);
 
@@ -113,7 +113,7 @@ public class WorkTaskEmployeeTests
             {
                 CallerUserId = Employee,
                 AssignedOnly = true,
-                Task = new() { Title = "My own", DepartmentId = Sales, ProjectId = SalesProject, AssigneeIds = assigneeIds, IsBillable = true },
+                Task = new() { Title = "My own", DepartmentId = Sales, ProjectId = SalesProject, AssigneeIds = assigneeIds },
             },
             CancellationToken.None);
 
@@ -148,7 +148,7 @@ public class WorkTaskEmployeeTests
             {
                 CallerUserId = Employee,
                 AssignedOnly = true,
-                Task = new() { Title = "Elsewhere", DepartmentId = Ops, ProjectId = OpsProject, IsBillable = false },
+                Task = new() { Title = "Elsewhere", DepartmentId = Ops, ProjectId = OpsProject },
             },
             CancellationToken.None);
 
@@ -171,7 +171,7 @@ public class WorkTaskEmployeeTests
                 Id = id,
                 CallerUserId = Employee,
                 AssignedOnly = true,
-                Task = new() { Title = "renamed", DepartmentId = Sales, ProjectId = SalesProject, AssigneeIds = [SalesManager], IsBillable = true },
+                Task = new() { Title = "renamed", DepartmentId = Sales, ProjectId = SalesProject, AssigneeIds = [SalesManager] },
             },
             CancellationToken.None);
 
@@ -193,7 +193,7 @@ public class WorkTaskEmployeeTests
                 Id = id,
                 CallerUserId = Employee,
                 AssignedOnly = true,
-                Task = new() { Title = "hijacked", DepartmentId = Sales, ProjectId = SalesProject, IsBillable = true },
+                Task = new() { Title = "hijacked", DepartmentId = Sales, ProjectId = SalesProject },
             },
             CancellationToken.None);
         var delete = await new DeleteWorkTask.Handler(db).Handle(

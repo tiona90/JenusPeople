@@ -1323,9 +1323,6 @@ namespace Persistence.Migrations
                     b.Property<DateOnly?>("DueDate")
                         .HasColumnType("date");
 
-                    b.Property<bool?>("IsBillable")
-                        .HasColumnType("bit");
-
                     b.Property<int>("Priority")
                         .HasColumnType("int");
 
@@ -1431,9 +1428,6 @@ namespace Persistence.Migrations
                     b.Property<int>("AttachmentsRequirement")
                         .HasColumnType("int");
 
-                    b.Property<int>("BillableRequirement")
-                        .HasColumnType("int");
-
                     b.Property<int>("DescriptionRequirement")
                         .HasColumnType("int");
 
@@ -1471,7 +1465,6 @@ namespace Persistence.Migrations
                             AllowPdf = true,
                             AllowWord = true,
                             AttachmentsRequirement = 0,
-                            BillableRequirement = 1,
                             DescriptionRequirement = 0,
                             DueDateRequirement = 0,
                             MaxAttachmentSizeMb = 10,
