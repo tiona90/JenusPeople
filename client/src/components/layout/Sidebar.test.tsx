@@ -155,23 +155,21 @@ describe('Tasks is offered to Managers and HR Administrators only', () => {
         ['System Administrator', false],
     ])('%s sees Tasks: %s', (role, shown) => {
         renderSidebarAs({ ...EMPLOYEE, roles: [role] as UserInfo['roles'] })
-        expect(screen.queryByText('Tasks') != null).toBe(shown)
+        expect(screen.queryByText('Approved Projects') != null).toBe(shown)
     })
 
-    // Tasks is neither leave nor time, and not only the manager's team: it sits in a
-    // section of its own, the same one for both roles, after everything else.
-    it.each(['Manager', 'HR Administrator'])('puts Tasks under Collaboration for a %s', (role) => {
+    // It sits with the team pages, right after Approve Timesheets: under My Team for a
+    // Manager, under Leave & Time for an HR Administrator. There is no Collaboration section.
+    it.each([
+        ['Manager', 'My Team'],
+        ['HR Administrator', 'Leave & Time'],
+    ])('puts Approved Projects after Approve Timesheets for a %s, under %s', (role, section) => {
         renderSidebarAs({ ...EMPLOYEE, roles: [role] as UserInfo['roles'] })
-        const heading = screen.getByText('Collaboration')
-        const tasks = screen.getByText('Tasks')
-        expect(heading.compareDocumentPosition(tasks) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-        for (const other of ['Leave Management', 'Dashboard']) {
-            expect(screen.getByText(other).compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-        }
-    })
-
-    it('gives an Employee no Collaboration section', () => {
-        renderSidebarAs(EMPLOYEE)
+        const heading = screen.getByText(section)
+        const approve = screen.getByText('Approve Timesheets')
+        const tasks = screen.getByText('Approved Projects')
+        expect(heading.compareDocumentPosition(approve) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+        expect(approve.compareDocumentPosition(tasks) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
         expect(screen.queryByText('Collaboration')).toBeNull()
     })
 })
