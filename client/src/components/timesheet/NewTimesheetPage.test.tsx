@@ -151,3 +151,111 @@ describe('NewTimesheetPage — which columns are asked', () => {
         expect(headerLabels()).toEqual(['Task', 'Project', 'Hours', ''])
     })
 })
+
+describe('NewTimesheetPage — a single option is filled in', () => {
+    it('fills and locks what the project leaves one answer for, and leaves the rest to choose', async () => {
+        await renderPage()
+        await pick('Project', 'Apollo')
+
+        expect(combo('Type')).toHaveTextContent('Support')
+        expect(combo('Type')).toHaveAttribute('aria-disabled', 'true')
+        expect(combo('Component')).toHaveTextContent('DM')
+        expect(combo('Component')).toHaveAttribute('aria-disabled', 'true')
+        // Two activities: still a choice.
+        expect(combo('Activity')).not.toHaveAttribute('aria-disabled', 'true')
+        expect(combo('Activity')).toHaveTextContent('Activity…')
+    })
+
+    it('saves what it filled in', async () => {
+        await renderPage()
+        await pick('Project', 'Apollo')
+        fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '2' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Save draft' }))
+
+        await waitFor(() => expect(api.createTimesheetEntry).toHaveBeenCalledTimes(1))
+        expect(api.createTimesheetEntry.mock.calls[0][1]).toEqual(expect.objectContaining({
+            projectId: 10, projectTypeId: 1, projectComponentId: 1, activityTypeId: null, hoursWorked: 2,
+        }))
+    })
+
+    it('leaves a project with several options to choose, unlocked and blank', async () => {
+        await renderPage()
+        await pick('Project', 'Borealis')
+        expect(combo('Type')).not.toHaveAttribute('aria-disabled', 'true')
+        expect(combo('Type')).toHaveTextContent('Any type…')
+        expect(combo('Component')).not.toHaveAttribute('aria-disabled', 'true')
+    })
+
+    it('writes a hidden single-entry catalogue silently', async () => {
+        await renderPage({ components: [DM] })
+        expect(screen.queryByRole('combobox', { name: 'Component' })).toBeNull()
+        await pick('Project', 'Borealis')
+        fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '1' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Save draft' }))
+
+        await waitFor(() => expect(api.createTimesheetEntry).toHaveBeenCalledTimes(1))
+        expect(api.createTimesheetEntry.mock.calls[0][1]).toEqual(expect.objectContaining({ projectId: 11, projectComponentId: 1 }))
+    })
+
+    it('fills in after a task sets the project', async () => {
+        await renderPage({ taskOptions: [{ id: 7, title: 'Fix login', projectId: 10, projectCode: 'APO', targetHours: null, loggedHours: 0, isClosed: false }] })
+        await pick('Task', /Fix login/)
+        expect(combo('Project')).toHaveTextContent('Apollo')
+        expect(combo('Type')).toHaveTextContent('Support')
+        expect(combo('Type')).toHaveAttribute('aria-disabled', 'true')
+        expect(combo('Component')).toHaveTextContent('DM')
+    })
+
+    it('keeps a filled value the next project still offers, and refills when it does not', async () => {
+        // Cassini first: unclassified, so no type is filled and the Project picker keeps listing every project.
+        await renderPage()
+        await pick('Project', 'Cassini')
+        expect(combo('Component')).toHaveTextContent('jDocs')
+        expect(combo('Component')).toHaveAttribute('aria-disabled', 'true')
+
+        // Borealis declares none, so both components are offered: jDocs stays, unlocked.
+        await pick('Project', 'Borealis')
+        expect(combo('Component')).toHaveTextContent('jDocs')
+        expect(combo('Component')).not.toHaveAttribute('aria-disabled', 'true')
+
+        // Apollo is made of DM alone: jDocs goes, DM is filled in and locked.
+        await pick('Project', 'Apollo')
+        expect(combo('Component')).toHaveTextContent('DM')
+        expect(combo('Component')).toHaveAttribute('aria-disabled', 'true')
+    })
+
+    it('never overwrites a choice already made', async () => {
+        await renderPage()
+        await pick('Project', 'Borealis')
+        await pick('Component', 'jDocs')
+        // Borealis → Apollo: Apollo offers DM only, so jDocs is dropped by retention and DM filled — that is the
+        // retention rule, not an overwrite. Pick Borealis again: DM survives (offered) and is not replaced.
+        await pick('Project', 'Apollo')
+        expect(combo('Component')).toHaveTextContent('DM')
+        await pick('Project', 'Borealis')
+        expect(combo('Component')).toHaveTextContent('DM')
+    })
+})
+
+describe('NewTimesheetPage — a stored value the project no longer offers', () => {
+    it('still reads, and the picker stays editable rather than locking onto the one option', async () => {
+        // Apollo carries Support only; this row was saved as Issue.
+        await renderPage({ sheet: sheetWith({ projectTypeId: 2 }) })
+        expect(combo('Type')).toHaveTextContent('Issue')
+        expect(combo('Type')).not.toHaveAttribute('aria-disabled', 'true')
+        // The Project picker narrows by type, and Apollo does not carry Issue — the row's own project must still read.
+        expect(combo('Project')).toHaveTextContent('Apollo')
+    })
+
+    it('names a stored component the project does not declare', async () => {
+        // Apollo is made of DM; this row was saved against jDocs.
+        await renderPage({ sheet: sheetWith({ projectComponentId: 2 }) })
+        expect(combo('Component')).toHaveTextContent('jDocs')
+    })
+
+    it('does not fill a loaded row — blanks stay as they were saved', async () => {
+        await renderPage({ sheet: sheetWith({}) })
+        expect(combo('Type')).toHaveTextContent('Any type…')
+        expect(combo('Component')).toHaveTextContent('Component…')
+    })
+})

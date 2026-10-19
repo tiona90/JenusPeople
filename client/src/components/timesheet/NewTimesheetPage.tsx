@@ -33,10 +33,13 @@ import {
 } from '../../lib/api'
 import { useStore } from '../../lib/mobx'
 import { formatElapsed, formatTime12, useAttendanceToday, useLiveElapsedMinutes } from '../../lib/hooks/useAttendance'
-import { activityOptionsFor, retainedActivityId } from '../../lib/project-activities'
-import { componentOptionsFor, retainedComponentId } from '../../lib/project-components'
+import { retainedActivityId } from '../../lib/project-activities'
+import { retainedComponentId } from '../../lib/project-components'
 import { projectOptionsFor, retainedProjectId, typeOptionsFrom } from '../../lib/project-types'
-import { narrowingColumns, type NarrowingCatalogues, type NarrowingColumns } from '../../lib/timesheet-columns'
+import {
+    fillSingleOptions, isLockedToSingle, narrowingColumns, narrowingOptions, retainedOption,
+    type NarrowingCatalogues, type NarrowingColumns,
+} from '../../lib/timesheet-columns'
 import { copyableWorkTaskId, isPickable, projectIdForTask, retainedWorkTaskId, taskOptionLabel, taskOptionsForRow } from '../../lib/timesheet-tasks'
 import type { Project, TimesheetTaskOption, UserInfo } from '../../lib/types'
 import type { Timesheet, TimesheetStatus } from '../../lib/types/timesheet'
@@ -324,6 +327,11 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
         [activeProjectTypes, activeComponents, activeActivityTypes],
     )
     const shown = useMemo(() => narrowingColumns(catalogues), [catalogues])
+    // The whole catalogues, inactive included: only to name a stored value the options no longer offer.
+    const retainFrom: NarrowingCatalogues = useMemo(
+        () => ({ types: projectTypes, components, activities: activityTypes }),
+        [projectTypes, components, activityTypes],
+    )
 
     const { data: attendanceToday } = useAttendanceToday()
     const attendanceMinutes = useLiveElapsedMinutes(attendanceToday)
@@ -482,6 +490,9 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
                         next.activityTypeId = retainedActivityId(next.activityTypeId, project, activeActivityTypes)
                         next.projectComponentId = retainedComponentId(next.projectComponentId, project, activeComponents)
                         next.workTaskId = retainedWorkTaskId(next.workTaskId, next.projectId, taskOptions)
+                        // What the project leaves exactly one answer for is filled in, not asked —
+                        // blanks only, after retention has decided what survives the change.
+                        return fillSingleOptions(next, project, catalogues)
                     }
                     return next
                 }),
@@ -736,6 +747,7 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
                                 activeProjects={activeProjects}
                                 catalogues={catalogues}
                                 shown={shown}
+                                retainFrom={retainFrom}
                                 taskOptions={taskOptions}
                                 onToggle={() => { if (!isFuture) toggleDay(key) }}
                                 onAddTask={() => addTask(key)}
@@ -919,6 +931,8 @@ type DayCardProps = {
     activeProjects: Project[]
     catalogues: NarrowingCatalogues
     shown: NarrowingColumns
+    /** The unfiltered catalogues, to name a stored value the project no longer offers. */
+    retainFrom: NarrowingCatalogues
     taskOptions: TimesheetTaskOption[]
     onToggle: () => void
     onAddTask: () => void
@@ -983,6 +997,7 @@ function DayCard({
     activeProjects,
     catalogues,
     shown,
+    retainFrom,
     taskOptions,
     onToggle, onAddTask, onCopyToWeek, copyTargetCount, canCopy, onRemoveTask, onUpdateTask,
     disabled, readOnly, banner,
@@ -1117,6 +1132,15 @@ function DayCard({
                         {tasks.map((t) => {
                             const err = taskErrors[t._id]
                             const project = activeProjects.find((p) => String(p.id) === t.projectId)
+                            const options = narrowingOptions(project, catalogues)
+                            // A stored value the project no longer offers still reads, but cannot be picked again.
+                            const keptType = retainedOption(options.types, t.projectTypeId, retainFrom.types)
+                            const keptComponent = retainedOption(options.components, t.projectComponentId, retainFrom.components)
+                            const keptActivity = retainedOption(options.activities, t.activityTypeId, retainFrom.activities)
+                            // The Project picker narrows by the row's type; a stored type the project does not
+                            // carry would otherwise drop the row's own project out of its list.
+                            const projectOptions = projectOptionsFor(t.projectTypeId, activeProjects)
+                            const keptProject = retainedOption(projectOptions, t.projectId, activeProjects)
                             return (
                             <Box key={t._id} data-testid="entry-row" sx={{
                                 p: TASK_CARD_PAD,
@@ -1173,11 +1197,14 @@ function DayCard({
                                     <MenuItem value="" disabled>
                                         <Box component="em" sx={{ color: 'text.disabled' }}>Select project…</Box>
                                     </MenuItem>
-                                    {projectOptionsFor(t.projectTypeId, activeProjects).map((p) => (
+                                    {projectOptions.map((p) => (
                                         <MenuItem key={p.id} value={String(p.id)}>
                                             {p.name}
                                         </MenuItem>
                                     ))}
+                                    {keptProject && (
+                                        <MenuItem value={String(keptProject.id)} disabled>{keptProject.name}</MenuItem>
+                                    )}
                                 </Select>
                                 {shown.type && (
                                 <Select
@@ -1185,18 +1212,23 @@ function DayCard({
                                     displayEmpty
                                     value={t.projectTypeId}
                                     onChange={(e) => onUpdateTask(t._id, 'projectTypeId', e.target.value)}
-                                    disabled={disabled}
+                                    disabled={disabled || isLockedToSingle(options.types, t.projectTypeId)}
                                     sx={TASK_FIELD_SX}
                                     inputProps={{ 'aria-label': 'Type' }}
                                 >
                                     <MenuItem value="">
                                         <Box component="em" sx={{ color: 'text.disabled' }}>Any type…</Box>
                                     </MenuItem>
-                                    {catalogues.types.map((pt) => (
+                                    {options.types.map((pt) => (
                                         <MenuItem key={pt.id} value={String(pt.id)}>
                                             {pt.icon ? `${pt.icon} ${pt.name}` : pt.name}
                                         </MenuItem>
                                     ))}
+                                    {keptType && (
+                                        <MenuItem value={String(keptType.id)} disabled>
+                                            {keptType.icon ? `${keptType.icon} ${keptType.name}` : keptType.name}
+                                        </MenuItem>
+                                    )}
                                 </Select>
                                 )}
                                 {shown.component && (
@@ -1205,18 +1237,23 @@ function DayCard({
                                     displayEmpty
                                     value={t.projectComponentId}
                                     onChange={(e) => onUpdateTask(t._id, 'projectComponentId', e.target.value)}
-                                    disabled={disabled}
+                                    disabled={disabled || isLockedToSingle(options.components, t.projectComponentId)}
                                     sx={TASK_FIELD_SX}
                                     inputProps={{ 'aria-label': 'Component' }}
                                 >
                                     <MenuItem value="">
                                         <Box component="em" sx={{ color: 'text.disabled' }}>Component…</Box>
                                     </MenuItem>
-                                    {componentOptionsFor(project, catalogues.components).map((c) => (
+                                    {options.components.map((c) => (
                                         <MenuItem key={c.id} value={String(c.id)}>
                                             {c.icon ? `${c.icon} ${c.name}` : c.name}
                                         </MenuItem>
                                     ))}
+                                    {keptComponent && (
+                                        <MenuItem value={String(keptComponent.id)} disabled>
+                                            {keptComponent.icon ? `${keptComponent.icon} ${keptComponent.name}` : keptComponent.name}
+                                        </MenuItem>
+                                    )}
                                 </Select>
                                 )}
                                 {shown.activity && (
@@ -1225,18 +1262,23 @@ function DayCard({
                                     displayEmpty
                                     value={t.activityTypeId}
                                     onChange={(e) => onUpdateTask(t._id, 'activityTypeId', e.target.value)}
-                                    disabled={disabled}
+                                    disabled={disabled || isLockedToSingle(options.activities, t.activityTypeId)}
                                     sx={TASK_FIELD_SX}
                                     inputProps={{ 'aria-label': 'Activity' }}
                                 >
                                     <MenuItem value="">
                                         <Box component="em" sx={{ color: 'text.disabled' }}>Activity…</Box>
                                     </MenuItem>
-                                    {activityOptionsFor(project, catalogues.activities).map((a) => (
+                                    {options.activities.map((a) => (
                                         <MenuItem key={a.id} value={String(a.id)}>
                                             {a.icon ? `${a.icon} ${a.name}` : a.name}
                                         </MenuItem>
                                     ))}
+                                    {keptActivity && (
+                                        <MenuItem value={String(keptActivity.id)} disabled>
+                                            {keptActivity.icon ? `${keptActivity.icon} ${keptActivity.name}` : keptActivity.name}
+                                        </MenuItem>
+                                    )}
                                 </Select>
                                 )}
                                 <TextField
