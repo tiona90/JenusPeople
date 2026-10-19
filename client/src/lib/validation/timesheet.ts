@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 /**
- * Per-task (timesheet entry) rules, mirroring the server-side
+ * Per-entry rules, mirroring the server-side
  * TimesheetEntryValidator (hours > 0 and <= 24) plus the form's own pairing
  * rule (a row must have BOTH a project and hours, or neither). The client uses
  * a 0.5h minimum increment, matching the existing input step/validation.
@@ -19,10 +19,10 @@ export const timesheetTaskSchema = z
         const hasHours = t.hours.trim() !== ''
 
         if (hasProject && !hasHours) {
-            ctx.addIssue({ code: 'custom', path: ['hours'], message: 'Enter hours for this task.' })
+            ctx.addIssue({ code: 'custom', path: ['hours'], message: 'Enter hours for this entry.' })
         }
         if (!hasProject && hasHours) {
-            ctx.addIssue({ code: 'custom', path: ['projectId'], message: 'Select a project for this task.' })
+            ctx.addIssue({ code: 'custom', path: ['projectId'], message: 'Select a project for this entry.' })
         }
         if (hasHours) {
             const h = Number(t.hours)

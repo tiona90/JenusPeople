@@ -9,6 +9,7 @@ import { deleteTimesheet, getMyTimesheets, getTimesheetStatusHistories } from '.
 import { getApiErrorMessage } from '../../lib/api/error-utils'
 import { describeMismatch } from '../../lib/daily-hours'
 import { useStore } from '../../lib/mobx'
+import { thisWeekActionLabel } from '../../lib/timesheet-week'
 import type { Timesheet, TimesheetStatus, TimesheetStatusHistory, UserInfo } from '../../lib/types'
 import { softBg, type SxColor } from '../../lib/theme-tokens'
 import { isCancelledApproval, latestCommentByTimesheet } from '../../lib/timesheet-review-note'
@@ -264,7 +265,7 @@ export default function MyTimesheetPage({ user: _user }: { user: UserInfo }) {
             {/* Year activity */}
             <YearActivity monthHours={monthHours} maxMonth={maxMonth} currentMonth={currentMonth} totalYTD={totalYTD} />
 
-            {/* Tabs + Open this week */}
+            {/* Tabs + the current week's button */}
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: '18px', mx: '4px', mb: '10px' }}>
                 <Box sx={{ fontSize: 14, fontWeight: 600, color: 'text.primary' }}>All timesheets</Box>
                 <Box
@@ -277,7 +278,7 @@ export default function MyTimesheetPage({ user: _user }: { user: UserInfo }) {
                         '&:hover': { bgcolor: 'primary.dark' },
                     }}
                 >
-                    📝 Open this week
+                    📝 {thisWeekActionLabel(currentTimesheet?.status)}
                 </Box>
             </Box>
 

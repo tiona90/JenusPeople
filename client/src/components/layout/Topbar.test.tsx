@@ -57,7 +57,7 @@ const HISTORY: LeaveStatusHistory[] = [
 const navigateToAdminSection = vi.fn()
 const navigateToTasks = vi.fn()
 
-function renderTopbarAs(user: UserInfo) {
+function renderTopbarAs(user: UserInfo, path = '/dashboard') {
     mobx.useStore.mockReturnValue({
         authStore: { user, isAuthenticated: true },
         uiStore: { themePreference: 'light', setThemePreference: vi.fn(), navigateToAdminSection, navigateToMyLeave: vi.fn(), navigateToTimesheets: vi.fn(), navigateToTeamLeave: vi.fn(), navigateToTeamTimesheets: vi.fn(), navigateToTasks },
@@ -65,7 +65,7 @@ function renderTopbarAs(user: UserInfo) {
 
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
-        <MemoryRouter initialEntries={['/dashboard']}>
+        <MemoryRouter initialEntries={[path]}>
             <QueryClientProvider client={queryClient}>
                 <Topbar />
             </QueryClientProvider>
@@ -247,5 +247,14 @@ describe("An employee's bell", () => {
         } finally {
             vi.useRealTimers()
         }
+    })
+})
+
+describe('Topbar title for the one Timesheets entry', () => {
+    it.each([['/timesheets'], ['/new-timesheet']])('titles %s "Timesheets" for an Employee', (path) => {
+        renderTopbarAs(EMPLOYEE, path)
+        expect(screen.getByText('Timesheets')).toBeInTheDocument()
+        expect(screen.queryByText('Submit Timesheet')).toBeNull()
+        expect(screen.queryByText('My Timesheets')).toBeNull()
     })
 })

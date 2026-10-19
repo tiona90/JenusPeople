@@ -15,6 +15,7 @@ vi.mock('../../lib/api', () => ({
     updateWorkTask: vi.fn(),
     updateWorkTaskStatus: vi.fn(),
     deleteWorkTask: vi.fn(),
+    logTaskTime: vi.fn(),
     getIdleTaskPeople: vi.fn(),
     getWorkTaskSettings: vi.fn(),
     WORK_TASK_SETTINGS_KEY: ['work-tasks', 'settings'],
@@ -40,8 +41,10 @@ const TASKS: WorkTask[] = [
     { ...base, id: 3, title: "Someone else's", assignees: [{ userId: 'x', displayName: 'Xena' }], createdById: 'y', createdByName: 'Yan', dueDate: null, canEdit: false, canChangeStatus: false },
 ]
 
+const navigateToNewTimesheet = vi.fn()
+
 function renderPage(roles: string[] = ['Manager']) {
-    mobx.useStore.mockReturnValue({ authStore: { user: { id: 'me', roles } } } as never)
+    mobx.useStore.mockReturnValue({ authStore: { user: { id: 'me', roles } }, uiStore: { navigateToNewTimesheet } } as never)
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
         <MemoryRouter initialEntries={['/tasks']}>
@@ -255,10 +258,52 @@ describe('TasksPage', () => {
         expect(within(unplanned).getByText('no target set')).toBeInTheDocument()
     })
 
-    it('badges each card billable or non-billable', async () => {
+    it('badges a billable card and says nothing about a non-billable one', async () => {
         renderPage()
         expect(within(await cardFor('Mine to do')).getByText('Billable')).toBeInTheDocument()
-        expect(within(await cardFor('I asked for this')).getByText('Non-billable')).toBeInTheDocument()
+        expect(within(await cardFor('I asked for this')).queryByText('Non-billable')).toBeNull()
+        expect(within(await cardFor('I asked for this')).queryByText('Billable')).toBeNull()
+    })
+
+    it('shows the department to a Manager', async () => {
+        renderPage()
+        expect(within(await cardFor('Mine to do')).getByText('Sales')).toBeInTheDocument()
+    })
+
+    it('hides the department chip from an Employee, whose tasks are all in one', async () => {
+        renderPage(['Employee'])
+        expect(within(await cardFor('Mine to do')).queryByText('Sales')).toBeNull()
+    })
+
+    it('shows a priority chip only when the priority is not Normal', async () => {
+        api.getWorkTasks.mockResolvedValue([base, { ...base, id: 5, title: 'Ordinary', priority: 'Normal' }, { ...base, id: 6, title: 'Minor', priority: 'Low' }])
+        renderPage()
+        expect(within(await cardFor('Mine to do')).getByText('High priority')).toBeInTheDocument()
+        expect(within(await cardFor('Ordinary')).queryByText(/priority/)).toBeNull()
+        expect(within(await cardFor('Minor')).getByText('Low priority')).toBeInTheDocument()
+    })
+
+    it('drops "Created by" from the card but keeps "Completed" on a finished task', async () => {
+        api.getWorkTasks.mockResolvedValue([base, { ...base, id: 7, title: 'Finished', status: 'Done', completedAtUtc: '2026-09-15T08:00:00' }])
+        renderPage()
+        await cards()
+        fireEvent.change(screen.getByRole('combobox', { name: 'Status filter' }), { target: { value: 'any' } })
+
+        const open = await cardFor('Mine to do')
+        expect(within(open).queryByText('Created')).toBeNull()
+        expect(within(open).queryByText(/by Boss/)).toBeNull()
+        expect(within(open).getByText('Due')).toBeInTheDocument()
+
+        const finished = await cardFor('Finished')
+        expect(within(finished).getByText('Completed')).toBeInTheDocument()
+        expect(within(finished).queryByText('Created')).toBeNull()
+    })
+
+    it('draws no facts strip when there is no fact to show', async () => {
+        api.getWorkTaskSettings.mockResolvedValue({ ...DEFAULT_TASK_SETTINGS, dueDateRequirement: 'Hidden', targetHoursRequirement: 'Hidden' })
+        renderPage()
+        const card = await cardFor('Mine to do')
+        expect(within(card).queryByTestId('task-facts')).toBeNull()
     })
 
     it('gives an Employee their tasks to work and their own to create, with no views to pick between', async () => {
@@ -284,7 +329,41 @@ describe('TasksPage', () => {
         expect(within(own).getByText('My own')).toBeInTheDocument()
         expect(within(own).getByText('Add a task of your own')).toBeInTheDocument()
         expect(handed.compareDocumentPosition(own) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-        expect(within(screen.getByTestId('stat-mine')).getByText(/From Manager & HR/)).toBeInTheDocument()
+        // Both tasks inherit base's 2020 due date, so both are overdue.
+        expect(screen.getByTestId('stat-summary')).toHaveTextContent('2 open · 2 overdue')
+        expect(screen.queryByTestId('stat-mine')).toBeNull()
+    })
+
+    it('gives an Employee one summary line instead of the tiles, and no layout toggle', async () => {
+        renderPage(['Employee'])
+        await cards()
+        expect(screen.queryByTestId('stat-open')).toBeNull()
+        expect(screen.queryByTestId('stat-overdue')).toBeNull()
+        expect(screen.queryByTestId('stat-done')).toBeNull()
+        expect(screen.queryByRole('group', { name: 'Layout' })).toBeNull()
+        expect(screen.getByTestId('stat-summary')).toBeInTheDocument()
+    })
+
+    it("counts an Employee's own Done awaiting confirmation in the summary line", async () => {
+        api.getWorkTasks.mockResolvedValue([{ ...base, dueDate: null, status: 'AwaitingConfirmation' }])
+        renderPage(['Employee'])
+        await cards()
+        expect(screen.getByTestId('stat-summary')).toHaveTextContent('1 open · 1 waiting for confirmation')
+    })
+
+    it('tells an Employee with nothing open so', async () => {
+        api.getWorkTasks.mockResolvedValue([{ ...base, status: 'Done', completedAtUtc: '2026-09-15T08:00:00' }])
+        renderPage(['Employee'])
+        await screen.findByTestId('stat-summary')
+        expect(screen.getByTestId('stat-summary')).toHaveTextContent('No open tasks')
+    })
+
+    it('keeps the tiles and the layout toggle for a Manager', async () => {
+        renderPage()
+        await cards()
+        expect(screen.getByTestId('stat-open')).toBeInTheDocument()
+        expect(screen.getByRole('group', { name: 'Layout' })).toBeInTheDocument()
+        expect(screen.queryByTestId('stat-summary')).toBeNull()
     })
 
     it('shows an HR Administrator everything in their departments with no view picker, and filters by department', async () => {
@@ -439,7 +518,7 @@ describe('TasksPage task settings', () => {
             { ...base, id: 22, title: 'low one', priority: 'Low' },
         ])
         const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-        mobx.useStore.mockReturnValue({ authStore: { user: { id: 'me', roles: ['Manager'] } } } as never)
+        mobx.useStore.mockReturnValue({ authStore: { user: { id: 'me', roles: ['Manager'] } }, uiStore: { navigateToNewTimesheet } } as never)
         render(
             <MemoryRouter initialEntries={['/tasks']}>
                 <QueryClientProvider client={queryClient}>
@@ -525,5 +604,82 @@ describe('TasksPage layouts', () => {
         expect(screen.queryByRole('region', { name: 'Done' })).toBeNull()
         // The board is about where tasks stand, not whose they are.
         expect(screen.queryByRole('region', { name: 'Assigned to you' })).toBeNull()
+    })
+
+    it('shows an Employee cards whatever layout the browser remembers, and leaves the memory alone', async () => {
+        window.localStorage.setItem('tasks-layout', 'board')
+        renderPage(['Employee'])
+        expect(await cards()).toHaveLength(3)
+        expect(screen.queryByRole('region', { name: 'To do' })).toBeNull()
+        expect(screen.getByRole('region', { name: 'From your manager & HR' })).toBeInTheDocument()
+        expect(window.localStorage.getItem('tasks-layout')).toBe('board')
+    })
+
+    it('keeps the Completed fact, and no Created one, on a finished board card', async () => {
+        api.getWorkTasks.mockResolvedValue([TASKS[0], { ...base, id: 8, title: 'Shipped', status: 'Done', completedAtUtc: '2026-09-15T08:00:00' }])
+        renderPage()
+        await cards()
+        fireEvent.change(screen.getByRole('combobox', { name: 'Status filter' }), { target: { value: 'any' } })
+        fireEvent.click(screen.getByRole('button', { name: /Board/ }))
+
+        const doneColumn = screen.getByRole('region', { name: 'Done' })
+        expect(within(doneColumn).getByText('Shipped')).toBeInTheDocument()
+        expect(within(doneColumn).getByText('Completed')).toBeInTheDocument()
+        expect(within(doneColumn).queryByText('Created')).toBeNull()
+    })
+})
+
+describe('TasksPage log time', () => {
+    const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })()
+
+    it('offers Log time on a task the viewer is on, and not on one they are not', async () => {
+        renderPage(['Employee'])
+        expect(within(await cardFor('Mine to do')).getByRole('button', { name: /Log time/ })).toBeInTheDocument()
+        expect(within(await cardFor('I asked for this')).queryByRole('button', { name: /Log time/ })).toBeNull()
+    })
+
+    it('logs the hours, says where they went, and opens the week from the message', async () => {
+        api.logTaskTime.mockResolvedValue({
+            task: { ...base, loggedHours: 2 }, timesheetId: 'ts', entryId: 'e', weekStart: '2026-10-19',
+            hoursOnEntry: 2, hoursOnDay: 3, timesheetStatus: 'Draft',
+        })
+        renderPage(['Employee'])
+        fireEvent.click(within(await cardFor('Mine to do')).getByRole('button', { name: /Log time/ }))
+        fireEvent.change(screen.getByLabelText('Hours'), { target: { value: '2' } })
+        fireEvent.change(screen.getByLabelText('Note'), { target: { value: 'Call' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Log' }))
+
+        await waitFor(() => expect(api.logTaskTime).toHaveBeenCalledWith(1, { date: today, hours: 2, notes: 'Call' }))
+        expect(await screen.findByText(/2h logged to the week of 19 Oct · 3h on/)).toBeInTheDocument()
+        // The card refreshes from the server.
+        await waitFor(() => expect(api.getWorkTasks).toHaveBeenCalledTimes(2))
+
+        fireEvent.click(screen.getByRole('button', { name: 'Open timesheet' }))
+        expect(navigateToNewTimesheet).toHaveBeenCalledWith('2026-10-19')
+    })
+
+    it("shows the server's refusal in the popover and keeps it open", async () => {
+        api.logTaskTime.mockRejectedValue(Object.assign(new Error('409'), {
+            isAxiosError: true,
+            response: { status: 409, data: { message: "This week's timesheet has already been submitted. Open it from Timesheets to change it." } },
+        }))
+        renderPage(['Employee'])
+        fireEvent.click(within(await cardFor('Mine to do')).getByRole('button', { name: /Log time/ }))
+        fireEvent.click(screen.getByRole('button', { name: 'Log' }))
+
+        expect(await screen.findByText(/already been submitted/)).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Log' })).toBeInTheDocument()
+    })
+
+    it('caps the note at what the server keeps', async () => {
+        renderPage(['Employee'])
+        fireEvent.click(within(await cardFor('Mine to do')).getByRole('button', { name: /Log time/ }))
+        expect(screen.getByLabelText('Note')).toHaveAttribute('maxLength', '300')
+    })
+
+    it('does not open the details for a click on Log time', async () => {
+        renderPage(['Employee'])
+        fireEvent.click(within(await cardFor('Mine to do')).getByRole('button', { name: /Log time/ }))
+        expect(screen.queryByRole('dialog')).toBeNull()
     })
 })

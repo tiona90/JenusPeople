@@ -8,6 +8,7 @@ import type { WorkTask } from '../../lib/types'
 vi.mock('../../lib/api', () => ({
     addWorkTaskAttachment: vi.fn(),
     removeWorkTaskAttachment: vi.fn(),
+    logTaskTime: vi.fn(),
     getWorkTaskSettings: vi.fn(),
     WORK_TASK_SETTINGS_KEY: ['work-tasks', 'settings'],
 }))
@@ -26,7 +27,7 @@ function renderDialog(t: WorkTask = task) {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
         <QueryClientProvider client={queryClient}>
-            <TaskDetailsDialog task={t} today="2026-09-29" onClose={vi.fn()} onEdit={vi.fn()} />
+            <TaskDetailsDialog task={t} today="2026-09-29" viewerId="u-sam" onClose={vi.fn()} onEdit={vi.fn()} onLogged={vi.fn()} />
         </QueryClientProvider>,
     )
 }
@@ -93,5 +94,16 @@ describe('TaskDetailsDialog', () => {
         fireEvent.change(input, { target: { files: [new File([new Uint8Array(10)], 'shot.png')] } })
 
         expect(await screen.findByRole('alert')).toHaveTextContent('shot.png: only PDF, Word and Excel files can be attached.')
+    })
+
+    it('offers Log time to an assignee of an open task', async () => {
+        renderDialog()
+        expect(await screen.findByRole('button', { name: /Log time/ })).toBeInTheDocument()
+    })
+
+    it('does not offer Log time on a closed task', async () => {
+        renderDialog({ ...task, status: 'Done', completedAtUtc: '2026-09-20T08:00:00' })
+        await screen.findByRole('dialog')
+        expect(screen.queryByRole('button', { name: /Log time/ })).toBeNull()
     })
 })

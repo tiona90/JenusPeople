@@ -1,6 +1,6 @@
 import type { WorkTaskSettings } from './api/work-task-settings'
 import { DEFAULT_TASK_SETTINGS, isShown, needsAttachmentBeforeDone } from './task-settings'
-import type { WorkTask, WorkTaskPriority, WorkTaskStatus } from './types'
+import type { LogTaskTimeResult, WorkTask, WorkTaskPriority, WorkTaskStatus } from './types'
 
 export type TaskTab = 'assigned' | 'created' | 'all'
 /** `open` is To do, In progress and Awaiting confirmation, the page's default; `any` is everything. */
@@ -159,6 +159,36 @@ export function taskStats(tasks: readonly WorkTask[], userId: string, today: str
         doneThisMonth: tasks.filter((t) => t.status === 'Done' && (t.completedAtUtc ?? '').slice(0, 7) === month).length,
         assignedToMeOpen: openCount(tasks, 'assigned', userId),
         awaitingMyConfirmation: tasks.filter((t) => t.canConfirm === true).length,
+        // Every task waiting on somebody's confirmation, the viewer's own Done among them.
+        awaitingConfirmation: tasks.filter(isAwaitingConfirmation).length,
+    }
+}
+
+/**
+ * The Employee's one line in place of the stat tiles: the open count first, then
+ * only the parts with something in them. "Waiting for confirmation" is their own
+ * Done awaiting a reviewer, and is said only while the Task Settings ask for one —
+ * switching confirmation off sweeps those tasks to Done, so the figure would be 0
+ * anyway, but the words would still promise a stage that no longer exists.
+ */
+export function employeeSummary(stats: ReturnType<typeof taskStats>, confirmationOn: boolean): string[] {
+    const parts = [stats.open === 0 ? 'No open tasks' : `${stats.open} open`]
+    if (stats.overdue > 0) parts.push(`${stats.overdue} overdue`)
+    if (confirmationOn && stats.awaitingConfirmation > 0) parts.push(`${stats.awaitingConfirmation} waiting for confirmation`)
+    return parts
+}
+
+/**
+ * Which chips a card shows. Each says something only when it is not the default
+ * state: a department to somebody who sees more than one, a priority other than
+ * Normal, a task that *is* billable. A chip that is on every card tells nobody
+ * anything — it is the card's job to make two tasks look different.
+ */
+export function cardBadges(task: WorkTask, settings: WorkTaskSettings, viewerManages: boolean): { department: boolean; priority: boolean; billable: boolean } {
+    return {
+        department: viewerManages,
+        priority: isShown(settings, 'priority') && task.priority !== 'Normal',
+        billable: isShown(settings, 'billable') && task.isBillable === true,
     }
 }
 
@@ -228,4 +258,26 @@ export function tasksToCsv(tasks: readonly WorkTask[], settings: WorkTaskSetting
 export function formatTaskDate(iso: string): string {
     const [y, m, d] = iso.slice(0, 10).split('-').map(Number)
     return new Date(y, m - 1, d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+/**
+ * Whether the viewer may log hours on the task from its card: they are on it, it
+ * is still open, and it has a project for the hours to go on. Mirrors the refusals
+ * of LogTaskTime on the server; a submitted week is only known there, so it is
+ * answered there.
+ */
+export function canLogTime(task: WorkTask, viewerId: string): boolean {
+    return isOpenTask(task) && task.projectId != null && task.assignees.some((a) => a.userId === viewerId)
+}
+
+/** "2h logged to the week of 19 Oct · 3h on Tue 20" — the snackbar after a log. */
+export function describeLoggedTime(hours: number, date: string, result: LogTaskTimeResult): string {
+    // From the calendar parts: new Date('2026-10-19') is UTC midnight, the day before west of Greenwich.
+    const local = (iso: string) => {
+        const [y, m, d] = iso.slice(0, 10).split('-').map(Number)
+        return new Date(y, m - 1, d)
+    }
+    const week = local(result.weekStart).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+    const day = local(date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' })
+    return `${formatHours(hours)}h logged to the week of ${week} · ${formatHours(result.hoursOnDay)}h on ${day}`
 }

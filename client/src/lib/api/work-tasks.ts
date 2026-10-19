@@ -1,5 +1,5 @@
 import apiClient from './client'
-import type { TimesheetTaskOption, UpsertWorkTaskRequest, WorkTask, WorkTaskAssignee, WorkTaskDepartment, WorkTaskIdlePerson, WorkTaskProject, WorkTaskStatus } from '../types'
+import type { LogTaskTimeRequest, LogTaskTimeResult, TimesheetTaskOption, UpsertWorkTaskRequest, WorkTask, WorkTaskAssignee, WorkTaskDepartment, WorkTaskIdlePerson, WorkTaskProject, WorkTaskStatus } from '../types'
 
 // Every task in the caller's departments. Zero-arg so it is safe as a queryFn.
 export async function getWorkTasks() {
@@ -69,5 +69,11 @@ export async function getTimesheetTaskOptions(timesheetId?: string) {
     const response = await apiClient.get<TimesheetTaskOption[]>('/worktasks/timesheet-options', {
         params: timesheetId ? { timesheetId } : undefined,
     })
+    return response.data
+}
+
+/** Logs hours on a task the caller is on, into that week's draft timesheet. The server refuses a submitted week. */
+export async function logTaskTime(id: number, request: LogTaskTimeRequest) {
+    const response = await apiClient.post<LogTaskTimeResult>(`/worktasks/${id}/log-time`, request)
     return response.data
 }

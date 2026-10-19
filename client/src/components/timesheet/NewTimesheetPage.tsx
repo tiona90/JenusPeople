@@ -33,11 +33,15 @@ import {
 } from '../../lib/api'
 import { useStore } from '../../lib/mobx'
 import { formatElapsed, formatTime12, useAttendanceToday, useLiveElapsedMinutes } from '../../lib/hooks/useAttendance'
-import { activityOptionsFor, retainedActivityId } from '../../lib/project-activities'
-import { componentOptionsFor, retainedComponentId } from '../../lib/project-components'
+import { retainedActivityId } from '../../lib/project-activities'
+import { retainedComponentId } from '../../lib/project-components'
 import { projectOptionsFor, retainedProjectId, typeOptionsFrom } from '../../lib/project-types'
+import {
+    fillSingleOptions, isLockedToSingle, narrowingColumns, narrowingOptions, retainedOption,
+    type NarrowingCatalogues, type NarrowingColumns,
+} from '../../lib/timesheet-columns'
 import { copyableWorkTaskId, isPickable, projectIdForTask, retainedWorkTaskId, taskOptionLabel, taskOptionsForRow } from '../../lib/timesheet-tasks'
-import type { Project, ProjectActivityType, ProjectComponent, ProjectType, TimesheetTaskOption, UserInfo } from '../../lib/types'
+import type { Project, TimesheetTaskOption, UserInfo } from '../../lib/types'
 import type { Timesheet, TimesheetStatus } from '../../lib/types/timesheet'
 import type { TimesheetEntry } from '../../lib/types/timesheet-entry'
 import { softBg, type SxColor } from '../../lib/theme-tokens'
@@ -65,24 +69,30 @@ const FULL_DOW = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Satur
 // long project name widened its column, pushed the row past the card's edge (the
 // remove button went off-screen) and broke the captions' alignment with the fields.
 // Long values truncate with an ellipsis instead.
-const TASK_GRID = [
-    'minmax(0, 1.6fr)', // Task
-    'minmax(0, 1.6fr)', // Project
-    'minmax(0, 1fr)',   // Type
-    'minmax(0, 1fr)',   // Component
-    'minmax(0, 1fr)',   // Activity
-    '72px',             // Hours
-    '42px',             // Remove
-].join(' ')
-const TASK_HEADERS: { label: string; align?: 'center' }[] = [
-    { label: 'Task' },
-    { label: 'Project' },
-    { label: 'Type' },
-    { label: 'Component' },
-    { label: 'Activity' },
-    { label: 'Hours', align: 'center' },
-    { label: '' },
-]
+// Type, Component and Activity are asked only when their catalogue leaves something
+// to choose (`narrowingColumns`), so the grid and its captions are built per sheet.
+function taskGrid(shown: NarrowingColumns): string {
+    return [
+        'minmax(0, 1.6fr)', // Task
+        'minmax(0, 1.6fr)', // Project
+        ...(shown.type ? ['minmax(0, 1fr)'] : []),
+        ...(shown.component ? ['minmax(0, 1fr)'] : []),
+        ...(shown.activity ? ['minmax(0, 1fr)'] : []),
+        '72px',             // Hours
+        '42px',             // Remove
+    ].join(' ')
+}
+function taskHeaders(shown: NarrowingColumns): { label: string; align?: 'center' }[] {
+    return [
+        { label: 'Task' },
+        { label: 'Project' },
+        ...(shown.type ? [{ label: 'Type' }] : []),
+        ...(shown.component ? [{ label: 'Component' }] : []),
+        ...(shown.activity ? [{ label: 'Activity' }] : []),
+        { label: 'Hours', align: 'center' as const },
+        { label: '' },
+    ]
+}
 // Inner padding of a task card. The header strip above the cards repeats it (plus the
 // card's 1px border) so the captions stay lined up with the fields they name.
 const TASK_CARD_PAD = '12px'
@@ -311,6 +321,17 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
         () => typeOptionsFrom(activeProjects, projectTypes.filter((t) => t.isActive)),
         [activeProjects, projectTypes],
     )
+    // The three narrowing columns: shown only when there is something to choose.
+    const catalogues: NarrowingCatalogues = useMemo(
+        () => ({ types: activeProjectTypes, components: activeComponents, activities: activeActivityTypes }),
+        [activeProjectTypes, activeComponents, activeActivityTypes],
+    )
+    const shown = useMemo(() => narrowingColumns(catalogues), [catalogues])
+    // The whole catalogues, inactive included: only to name a stored value the options no longer offer.
+    const retainFrom: NarrowingCatalogues = useMemo(
+        () => ({ types: projectTypes, components, activities: activityTypes }),
+        [projectTypes, components, activityTypes],
+    )
 
     const { data: attendanceToday } = useAttendanceToday()
     const attendanceMinutes = useLiveElapsedMinutes(attendanceToday)
@@ -448,17 +469,26 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
                         next.projectId = retainedProjectId(next.projectId, value, activeProjects)
                     }
 
-                    // Task is the row's first pick: it decides the project, and a type
-                    // that project is not classified as goes, rather than hiding the
-                    // project it just set from the Project picker.
+                    // Task is the row's first pick: it decides the project.
                     if (field === 'workTaskId' && value) {
                         const taskProjectId = projectIdForTask(value, taskOptions)
-                        if (taskProjectId) {
-                            next.projectId = taskProjectId
-                            if (next.projectTypeId && !retainedProjectId(taskProjectId, next.projectTypeId, activeProjects)) {
-                                next.projectTypeId = ''
-                            }
-                        }
+                        if (taskProjectId) next.projectId = taskProjectId
+                    }
+
+                    // When the project moves, the type follows one of two rules. A type
+                    // nobody chose — filled in because the old project left exactly one,
+                    // or never shown at all — does not outlive the project it was filled
+                    // in for; otherwise it would narrow the Project picker to the projects
+                    // carrying it and lock the user out of every other, with nothing on
+                    // screen to clear. A type the user did choose is kept while the new
+                    // project carries it and goes when it does not, which the server
+                    // would refuse on save.
+                    if ((field === 'projectId' || field === 'workTaskId') && next.projectId !== t.projectId) {
+                        const previous = activeProjects.find((p) => String(p.id) === t.projectId)
+                        const chosen = shown.type && !isLockedToSingle(narrowingOptions(previous, catalogues).types, t.projectTypeId)
+                        const incoming = activeProjects.find((p) => String(p.id) === next.projectId)
+                        const carried = incoming ? narrowingOptions(incoming, catalogues).types.some((pt) => String(pt.id) === next.projectTypeId) : false
+                        next.projectTypeId = chosen && carried ? next.projectTypeId : ''
                     }
 
                     // Switching project can strand an activity or a component the
@@ -469,6 +499,9 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
                         next.activityTypeId = retainedActivityId(next.activityTypeId, project, activeActivityTypes)
                         next.projectComponentId = retainedComponentId(next.projectComponentId, project, activeComponents)
                         next.workTaskId = retainedWorkTaskId(next.workTaskId, next.projectId, taskOptions)
+                        // What the project leaves exactly one answer for is filled in, not asked —
+                        // blanks only, after retention has decided what survives the change.
+                        return fillSingleOptions(next, project, catalogues)
                     }
                     return next
                 }),
@@ -514,14 +547,14 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
         const errs = collectTaskErrors()
         if (Object.keys(errs).length > 0) {
             setTaskErrors(errs)
-            setError('Please fix the highlighted tasks before saving.')
+            setError('Please fix the highlighted entries before saving.')
             return
         }
         setTaskErrors({})
 
         const valid = collectValidTasks()
         if (mode === 'submit' && valid.length === 0) {
-            setError('Add at least one task before submitting.')
+            setError('Add at least one entry before submitting.')
             return
         }
 
@@ -721,9 +754,9 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
                                 dayTotal={dayTotal}
                                 taskCount={taskCount}
                                 activeProjects={activeProjects}
-                                activeActivityTypes={activeActivityTypes}
-                                activeProjectTypes={activeProjectTypes}
-                                activeComponents={activeComponents}
+                                catalogues={catalogues}
+                                shown={shown}
+                                retainFrom={retainFrom}
                                 taskOptions={taskOptions}
                                 onToggle={() => { if (!isFuture) toggleDay(key) }}
                                 onAddTask={() => addTask(key)}
@@ -814,7 +847,7 @@ export default function NewTimesheetPage({ user: _user }: { user: UserInfo }) {
             <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mt: 1.25, px: 0.5 }}>
                 <Typography sx={{ fontSize: 14, lineHeight: 1 }}>💡</Typography>
                 <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
-                    Click a day to expand it. Add tasks as you go — saving updates this week's timesheet without creating a new one.
+                    Click a day to expand it. Add entries as you go — saving updates this week's timesheet without creating a new one.
                 </Typography>
             </Stack>
 
@@ -905,9 +938,10 @@ type DayCardProps = {
     dayTotal: number
     taskCount: number
     activeProjects: Project[]
-    activeActivityTypes: ProjectActivityType[]
-    activeProjectTypes: ProjectType[]
-    activeComponents: ProjectComponent[]
+    catalogues: NarrowingCatalogues
+    shown: NarrowingColumns
+    /** The unfiltered catalogues, to name a stored value the project no longer offers. */
+    retainFrom: NarrowingCatalogues
     taskOptions: TimesheetTaskOption[]
     onToggle: () => void
     onAddTask: () => void
@@ -970,13 +1004,15 @@ function DayCard({
     dow, dom, dayName, isToday, isWeekend, isFuture, isOpen,
     tasks, taskErrors, dayTotal, taskCount,
     activeProjects,
-    activeActivityTypes,
-    activeProjectTypes,
-    activeComponents,
+    catalogues,
+    shown,
+    retainFrom,
     taskOptions,
     onToggle, onAddTask, onCopyToWeek, copyTargetCount, canCopy, onRemoveTask, onUpdateTask,
     disabled, readOnly, banner,
 }: DayCardProps) {
+    const grid = taskGrid(shown)
+    const headers = taskHeaders(shown)
     const hasEntries = dayTotal > 0
     const isEmptyWeekday = !isWeekend && !isFuture && dayTotal === 0
 
@@ -986,7 +1022,7 @@ function DayCard({
         : isWeekend
             ? 'Weekend · optional'
             : taskCount === 0 ? 'Nothing logged yet'
-                : taskCount === 1 ? '1 task' : `${taskCount} tasks`
+                : taskCount === 1 ? '1 entry' : `${taskCount} entries`
     const metaColor = isEmptyWeekday ? 'warning.dark' : 'text.secondary'
 
     return (
@@ -1085,11 +1121,11 @@ function DayCard({
                     {banner && <Box sx={{ pt: 1.25 }}>{banner}</Box>}
                     <Box sx={{
                         display: 'grid',
-                        gridTemplateColumns: TASK_GRID,
+                        gridTemplateColumns: grid,
                         gap: 1.5,
                         p: `14px calc(${TASK_CARD_PAD} + 1px) 8px`,
                     }}>
-                        {TASK_HEADERS.map((h, i) => (
+                        {headers.map((h, i) => (
                             <Typography key={i} sx={{
                                 fontSize: 10.5, fontWeight: 700,
                                 color: 'text.disabled',
@@ -1104,8 +1140,22 @@ function DayCard({
                     <Stack spacing={1.25}>
                         {tasks.map((t) => {
                             const err = taskErrors[t._id]
+                            const project = activeProjects.find((p) => String(p.id) === t.projectId)
+                            const options = narrowingOptions(project, catalogues)
+                            // A stored value the project no longer offers still reads, but cannot be picked again.
+                            const keptType = retainedOption(options.types, t.projectTypeId, retainFrom.types)
+                            const keptComponent = retainedOption(options.components, t.projectComponentId, retainFrom.components)
+                            const keptActivity = retainedOption(options.activities, t.activityTypeId, retainFrom.activities)
+                            // The type narrows the Project picker only when somebody chose it. A type filled in
+                            // for the current project, or one the sheet never shows, must not hide the projects
+                            // they could switch to — there would be nothing on screen to clear it with.
+                            const typeChosen = shown.type && !!t.projectTypeId && !isLockedToSingle(options.types, t.projectTypeId)
+                            const projectOptions = projectOptionsFor(typeChosen ? t.projectTypeId : '', activeProjects)
+                            // A stored type the project does not carry would otherwise drop the row's own
+                            // project out of that narrowed list.
+                            const keptProject = retainedOption(projectOptions, t.projectId, activeProjects)
                             return (
-                            <Box key={t._id} sx={{
+                            <Box key={t._id} data-testid="entry-row" sx={{
                                 p: TASK_CARD_PAD,
                                 borderRadius: '10px',
                                 border: '1px solid',
@@ -1116,7 +1166,7 @@ function DayCard({
                             }}>
                                 <Box sx={{
                                     display: 'grid',
-                                    gridTemplateColumns: TASK_GRID,
+                                    gridTemplateColumns: grid,
                                     gap: 1.5,
                                     alignItems: 'center',
                                 }}>
@@ -1154,76 +1204,96 @@ function DayCard({
                                     onChange={(e) => onUpdateTask(t._id, 'projectId', e.target.value)}
                                     disabled={disabled}
                                     sx={TASK_FIELD_SX}
-                                    SelectDisplayProps={{
-                                        title: activeProjects.find((p) => String(p.id) === t.projectId)?.name,
-                                    }}
+                                    inputProps={{ 'aria-label': 'Project' }}
+                                    SelectDisplayProps={{ title: project?.name }}
                                 >
                                     <MenuItem value="" disabled>
                                         <Box component="em" sx={{ color: 'text.disabled' }}>Select project…</Box>
                                     </MenuItem>
-                                    {projectOptionsFor(t.projectTypeId, activeProjects).map((p) => (
+                                    {projectOptions.map((p) => (
                                         <MenuItem key={p.id} value={String(p.id)}>
                                             {p.name}
                                         </MenuItem>
                                     ))}
+                                    {keptProject && (
+                                        <MenuItem value={String(keptProject.id)} disabled>{keptProject.name}</MenuItem>
+                                    )}
                                 </Select>
+                                {shown.type && (
                                 <Select
                                     size="small"
                                     displayEmpty
                                     value={t.projectTypeId}
                                     onChange={(e) => onUpdateTask(t._id, 'projectTypeId', e.target.value)}
-                                    disabled={disabled}
+                                    disabled={disabled || isLockedToSingle(options.types, t.projectTypeId)}
                                     sx={TASK_FIELD_SX}
+                                    inputProps={{ 'aria-label': 'Type' }}
                                 >
                                     <MenuItem value="">
                                         <Box component="em" sx={{ color: 'text.disabled' }}>Any type…</Box>
                                     </MenuItem>
-                                    {activeProjectTypes.map((pt) => (
+                                    {options.types.map((pt) => (
                                         <MenuItem key={pt.id} value={String(pt.id)}>
                                             {pt.icon ? `${pt.icon} ${pt.name}` : pt.name}
                                         </MenuItem>
                                     ))}
+                                    {keptType && (
+                                        <MenuItem value={String(keptType.id)} disabled>
+                                            {keptType.icon ? `${keptType.icon} ${keptType.name}` : keptType.name}
+                                        </MenuItem>
+                                    )}
                                 </Select>
+                                )}
+                                {shown.component && (
                                 <Select
                                     size="small"
                                     displayEmpty
                                     value={t.projectComponentId}
                                     onChange={(e) => onUpdateTask(t._id, 'projectComponentId', e.target.value)}
-                                    disabled={disabled}
+                                    disabled={disabled || isLockedToSingle(options.components, t.projectComponentId)}
                                     sx={TASK_FIELD_SX}
+                                    inputProps={{ 'aria-label': 'Component' }}
                                 >
                                     <MenuItem value="">
                                         <Box component="em" sx={{ color: 'text.disabled' }}>Component…</Box>
                                     </MenuItem>
-                                    {componentOptionsFor(
-                                        activeProjects.find((p) => String(p.id) === t.projectId),
-                                        activeComponents,
-                                    ).map((c) => (
+                                    {options.components.map((c) => (
                                         <MenuItem key={c.id} value={String(c.id)}>
                                             {c.icon ? `${c.icon} ${c.name}` : c.name}
                                         </MenuItem>
                                     ))}
+                                    {keptComponent && (
+                                        <MenuItem value={String(keptComponent.id)} disabled>
+                                            {keptComponent.icon ? `${keptComponent.icon} ${keptComponent.name}` : keptComponent.name}
+                                        </MenuItem>
+                                    )}
                                 </Select>
+                                )}
+                                {shown.activity && (
                                 <Select
                                     size="small"
                                     displayEmpty
                                     value={t.activityTypeId}
                                     onChange={(e) => onUpdateTask(t._id, 'activityTypeId', e.target.value)}
-                                    disabled={disabled}
+                                    disabled={disabled || isLockedToSingle(options.activities, t.activityTypeId)}
                                     sx={TASK_FIELD_SX}
+                                    inputProps={{ 'aria-label': 'Activity' }}
                                 >
                                     <MenuItem value="">
                                         <Box component="em" sx={{ color: 'text.disabled' }}>Activity…</Box>
                                     </MenuItem>
-                                    {activityOptionsFor(
-                                        activeProjects.find((p) => String(p.id) === t.projectId),
-                                        activeActivityTypes,
-                                    ).map((a) => (
+                                    {options.activities.map((a) => (
                                         <MenuItem key={a.id} value={String(a.id)}>
                                             {a.icon ? `${a.icon} ${a.name}` : a.name}
                                         </MenuItem>
                                     ))}
+                                    {keptActivity && (
+                                        <MenuItem value={String(keptActivity.id)} disabled>
+                                            {keptActivity.icon ? `${keptActivity.icon} ${keptActivity.name}` : keptActivity.name}
+                                        </MenuItem>
+                                    )}
                                 </Select>
+                                )}
                                 <TextField
                                     type="number"
                                     size="small"
@@ -1314,7 +1384,7 @@ function DayCard({
                                     },
                                 }}
                             >
-                                + Add task
+                                + Add entry
                             </Button>
                             {!isWeekend && (
                                 <Tooltip title={

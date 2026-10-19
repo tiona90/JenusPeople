@@ -25,7 +25,7 @@ public static class TimesheetEntryValidator
     ///   - an activity the project has not assigned,
     ///   - a type the project is not classified as,
     ///   - a component the project is not made up of,
-    ///   - duplicating an existing project, type *and component* on the same date (overlap),
+    ///   - duplicating an existing project, type, component *and task* on the same date (overlap),
     ///   - pushing the same-day total above 24 hours.
     ///
     /// <paramref name="existing"/> should contain all entries for the same
@@ -95,12 +95,17 @@ public static class TimesheetEntryValidator
         // Project, type and component together, because one project can
         // legitimately be worked on as two kinds of engagement, or on two of its
         // components, in a single day — 2h of Support on DM and 3h of Support on
-        // Lasernet are two facts, not a duplicate. Rows that leave both blank
-        // still collide, which is the pre-type behaviour unchanged.
+        // Lasernet are two facts, not a duplicate. The task is part of it too:
+        // two tasks on one project are two pieces of work, and with the editor
+        // leaving type and component blank whenever the catalogue has nothing to
+        // choose, the task is often the only thing telling two rows apart. Rows
+        // that leave all of them blank still collide, which is the pre-type
+        // behaviour unchanged.
         if (sameDayEntries.Any(e =>
                 e.ProjectId == candidate.ProjectId
                 && e.ProjectTypeId == candidate.ProjectTypeId
-                && e.ProjectComponentId == candidate.ProjectComponentId))
+                && e.ProjectComponentId == candidate.ProjectComponentId
+                && e.WorkTaskId == candidate.WorkTaskId))
             return ValidationResult.Fail("An entry for this project, type and component on this date already exists.");
 
         var dailyTotal = sameDayEntries.Sum(e => e.HoursWorked) + candidate.HoursWorked;

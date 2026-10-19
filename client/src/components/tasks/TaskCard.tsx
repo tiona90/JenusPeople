@@ -6,12 +6,13 @@ import type { WorkTaskSettings } from '../../lib/api/work-task-settings'
 import { CODE_COLORS, avatarBg, initials } from '../../lib/card-kit'
 import { ATTACHMENT_REQUIRED_MESSAGE, isShown } from '../../lib/task-settings'
 import { softBg } from '../../lib/theme-tokens'
-import type { WorkTask, WorkTaskStatus } from '../../lib/types'
+import type { LogTaskTimeResult, WorkTask, WorkTaskStatus } from '../../lib/types'
 import {
-    PRIORITY_LABELS, SETTABLE_STATUSES, STATUS_LABELS, formatTaskDate as formatDate,
-    isAwaitingConfirmation, isOpenTask, nextStatusAction, plural, taskFacts,
+    PRIORITY_LABELS, SETTABLE_STATUSES, STATUS_LABELS, cardBadges, formatTaskDate as formatDate,
+    canLogTime, isAwaitingConfirmation, isOpenTask, nextStatusAction, plural, taskFacts,
 } from '../../lib/work-tasks'
 import { OutlineBtn } from '../ui/CardKit'
+import LogTimeButton from './LogTimeButton'
 import { PRIORITY_COLORS, STATUS_COLORS } from './statusStyles'
 
 /**
@@ -23,6 +24,12 @@ export interface TaskItemProps {
     task: WorkTask
     today: string
     settings: WorkTaskSettings
+    /** Whether the viewer manages tasks (a Manager or HR Administrator). An Employee's tasks are all in their one department, so the department chip says nothing to them. */
+    viewerManages: boolean
+    /** The viewer, to tell whether they are on the task (Log time is for assignees). */
+    viewerId: string
+    /** Hours were logged from the card. */
+    onLogged: (result: LogTaskTimeResult, hours: number, date: string) => void
     statusPending: boolean
     onStatus: (next: WorkTaskStatus) => void
     /** The details dialog: the whole description and the files, which the card only summarises. */
@@ -168,7 +175,7 @@ export function TaskNotices({ task, late, fileNeeded, inline = false }: { task: 
  * the status menu's included, which bubble through the portal — are not a click on
  * the card or row around it.
  */
-export function TaskActions({ task, statusPending, fileNeeded, onStatus, onEdit, onDelete, onSendBack, dense = false }: Omit<TaskItemProps, 'today' | 'settings' | 'onOpen'> & { fileNeeded: boolean; dense?: boolean }) {
+export function TaskActions({ task, today, viewerId, statusPending, fileNeeded, onStatus, onEdit, onDelete, onSendBack, onLogged, dense = false }: Omit<TaskItemProps, 'settings' | 'onOpen'> & { fileNeeded: boolean; dense?: boolean }) {
     return (
         <Box onClick={(e) => e.stopPropagation()} sx={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap', cursor: 'default' }}>
             {task.canConfirm ? (
@@ -178,6 +185,7 @@ export function TaskActions({ task, statusPending, fileNeeded, onStatus, onEdit,
             ) : (
                 <Box sx={{ fontSize: 11, color: 'text.disabled' }}>{dense ? 'View only' : 'Only the creator and assignees change the status'}</Box>
             )}
+            {canLogTime(task, viewerId) && <LogTimeButton task={task} today={today} onLogged={onLogged} dense={dense} />}
             <Box sx={{ flex: 1 }} />
             {task.canEdit && (
                 <>
@@ -201,6 +209,25 @@ export function TaskCard({ variant = 'grid', ...props }: TaskItemProps & { varia
     const f = taskFacts(task, today, settings)
     const board = variant === 'board'
     const done = task.status === 'Done' && task.completedAtUtc
+    const badges = cardBadges(task, settings, props.viewerManages)
+    const showChipRow = badges.department || badges.priority || badges.billable || (!!task.projectName && !board)
+
+    // Due, target and — once finished — when. "Created by" is the details dialog's
+    // and the section header's; repeating it on every card said nothing new.
+    const facts: { label: string; value: string; sub?: string; valueColor?: string }[] = []
+    if (f.showDue) facts.push({
+        label: 'Due',
+        value: task.dueDate ? formatDate(task.dueDate) : '—',
+        sub: task.dueDate ? (f.late > 0 ? 'past due' : f.closed ? 'closed' : 'on track') : 'no date set',
+        valueColor: f.late > 0 ? 'error.main' : undefined,
+    })
+    if (f.showTarget && !board) facts.push({
+        label: 'Target',
+        value: task.targetHours != null ? `${task.targetHours}h` : '—',
+        sub: task.targetHours == null && f.progress.text === 'nothing logged' ? 'no target set' : f.progress.text,
+        valueColor: f.progress.over ? 'error.main' : undefined,
+    })
+    if (done) facts.push({ label: 'Completed', value: formatDate(task.completedAtUtc!), sub: 'finished' })
 
     return (
         <Box data-testid="task-card" onClick={onOpen} sx={{
@@ -233,16 +260,17 @@ export function TaskCard({ variant = 'grid', ...props }: TaskItemProps & { varia
                     {!board && <StatusPill status={task.status} />}
                 </Box>
 
-                <Box sx={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
-                    <Chip>{task.departmentName}</Chip>
-                    {isShown(settings, 'priority') && <PriorityChip task={task} />}
-                    {isShown(settings, 'billable') && task.isBillable != null && (
-                        <Chip tone={task.isBillable ? 'success' : 'neutral'}>{task.isBillable ? 'Billable' : 'Non-billable'}</Chip>
-                    )}
-                    {task.projectName && !board && (
-                        <Box sx={{ fontSize: 11, color: 'text.secondary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{task.projectName}</Box>
-                    )}
-                </Box>
+                {/* Chips carry only the non-default state (`cardBadges`); the project name tells two tasks apart. */}
+                {showChipRow && (
+                    <Box sx={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        {badges.department && <Chip>{task.departmentName}</Chip>}
+                        {badges.priority && <PriorityChip task={task} />}
+                        {badges.billable && <Chip tone="success">Billable</Chip>}
+                        {task.projectName && !board && (
+                            <Box sx={{ fontSize: 11, color: 'text.secondary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{task.projectName}</Box>
+                        )}
+                    </Box>
+                )}
 
                 {/* Only when there is one: an empty "No description" band told nobody anything. */}
                 {!board && isShown(settings, 'description') && task.description && (
@@ -261,29 +289,15 @@ export function TaskCard({ variant = 'grid', ...props }: TaskItemProps & { varia
 
                 <TaskNotices task={task} late={f.late} fileNeeded={f.fileNeeded} />
 
-                {/* Due, target and when — one line, not a band of three boxes. */}
-                <Box sx={{
-                    display: 'grid', gap: '12px', mt: 'auto', pt: '10px', borderTop: '1px solid', borderTopColor: 'divider',
-                    gridTemplateColumns: `repeat(${board ? 2 : 1 + (f.showDue ? 1 : 0) + (f.showTarget ? 1 : 0)}, minmax(0, 1fr))`,
-                }}>
-                    {f.showDue && <Fact
-                        label="Due"
-                        value={task.dueDate ? formatDate(task.dueDate) : '—'}
-                        sub={task.dueDate ? (f.late > 0 ? 'past due' : f.closed ? 'closed' : 'on track') : 'no date set'}
-                        valueColor={f.late > 0 ? 'error.main' : undefined}
-                    />}
-                    {f.showTarget && !board && <Fact
-                        label="Target"
-                        value={task.targetHours != null ? `${task.targetHours}h` : '—'}
-                        sub={task.targetHours == null && f.progress.text === 'nothing logged' ? 'no target set' : f.progress.text}
-                        valueColor={f.progress.over ? 'error.main' : undefined}
-                    />}
-                    <Fact
-                        label={done ? 'Completed' : 'Created'}
-                        value={formatDate(done ? task.completedAtUtc! : task.createdAtUtc)}
-                        sub={done ? 'finished' : `by ${task.createdByName}`}
-                    />
-                </Box>
+                {/* The facts on one line — and no line at all when there is nothing to say. */}
+                {facts.length > 0 && (
+                    <Box data-testid="task-facts" sx={{
+                        display: 'grid', gap: '12px', mt: 'auto', pt: '10px', borderTop: '1px solid', borderTopColor: 'divider',
+                        gridTemplateColumns: `repeat(${facts.length}, minmax(0, 1fr))`,
+                    }}>
+                        {facts.map((x) => <Fact key={x.label} {...x} />)}
+                    </Box>
+                )}
             </Box>
 
             <Box sx={{ p: '8px 12px', bgcolor: 'action.hover', borderTop: '1px solid', borderTopColor: 'divider' }}>

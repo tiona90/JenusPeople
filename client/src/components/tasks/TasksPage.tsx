@@ -3,7 +3,9 @@ import { observer } from 'mobx-react-lite'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
+import Snackbar from '@mui/material/Snackbar'
 import { deleteWorkTask, getWorkTaskDepartments, getWorkTasks, updateWorkTaskStatus } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
 import type { WorkTaskSettings } from '../../lib/api/work-task-settings'
@@ -12,9 +14,9 @@ import { canManageTasks, canUseTasks, isHrAdministrator } from '../../lib/roles'
 import { isShown } from '../../lib/task-settings'
 import { useWorkTaskSettings } from '../../lib/task-settings-query'
 import { softBg } from '../../lib/theme-tokens'
-import type { WorkTask, WorkTaskPriority, WorkTaskStatus } from '../../lib/types'
+import type { LogTaskTimeResult, WorkTask, WorkTaskPriority, WorkTaskStatus } from '../../lib/types'
 import {
-    PRIORITY_LABELS, STATUS_LABELS, boardStatuses, filterTasks, isOpenTask, taskStats, tasksToCsv, todayIso,
+    PRIORITY_LABELS, STATUS_LABELS, boardStatuses, describeLoggedTime, employeeSummary, filterTasks, taskStats, tasksToCsv, todayIso,
     type StatusFilter, type TaskLayout,
 } from '../../lib/work-tasks'
 import { SweetAlert } from '../ui'
@@ -135,7 +137,7 @@ function buildSections(all: readonly WorkTask[], visible: readonly WorkTask[], u
 /* ════════════════════════════════════════════════════════════════════════ */
 
 const TasksPage = observer(function TasksPage() {
-    const { authStore } = useStore()
+    const { authStore, uiStore } = useStore()
     const userId = authStore.user?.id ?? ''
     // An Employee works the tasks they are given and creates their own, always
     // assigned to themselves: the server sends them only the tasks they are on, and
@@ -159,6 +161,8 @@ const TasksPage = observer(function TasksPage() {
     const [detailsId, setDetailsId] = useState<number | null>(null)
     // A task saved without some of the files picked for it.
     const [saveWarning, setSaveWarning] = useState<string | null>(null)
+    // The last log from a card: what to say, and the week to open.
+    const [logged, setLogged] = useState<{ text: string; weekStart: string } | null>(null)
 
     const tasks = useQuery({ queryKey: ['work-tasks'], queryFn: getWorkTasks })
     const departments = useQuery({ queryKey: ['work-tasks', 'departments'], queryFn: getWorkTaskDepartments, enabled: creates })
@@ -187,9 +191,10 @@ const TasksPage = observer(function TasksPage() {
     )
     // A send-back's own error shows in its dialog, not twice.
     const mutationError = (sendingBack ? null : moveStatus.error) ?? remove.error
-    const handedToMeOpen = useMemo(
-        () => all.filter((t) => t.createdById !== userId && isOpenTask(t)).length,
-        [all, userId],
+    // The Employee's line in place of the tiles.
+    const summary = useMemo(
+        () => employeeSummary(stats, settings.requireCompletionConfirmation),
+        [stats, settings.requireCompletionConfirmation],
     )
     const sections = useMemo(
         () => orderSections(buildSections(all, visible, userId, manages ? (isHr ? 'hr' : 'manager') : 'employee')),
@@ -198,6 +203,9 @@ const TasksPage = observer(function TasksPage() {
 
     const [layout, setLayoutState] = useState<TaskLayout>(() => readStored(LAYOUT_KEY, parseLayout, 'cards'))
     const setLayout = (next: TaskLayout) => { setLayoutState(next); writeStored(LAYOUT_KEY, next) }
+    // An Employee has few tasks and no toggle: always cards. The stored choice is kept
+    // for the day they have the toggle again.
+    const effectiveLayout: TaskLayout = manages ? layout : 'cards'
     // Folded groups, by title, per viewer.
     const [collapsed, setCollapsed] = useState<string[]>(() => readStored(collapsedKey(userId), parseTitles, []))
     const toggleSection = (title: string) => {
@@ -225,10 +233,22 @@ const TasksPage = observer(function TasksPage() {
     }
 
     // What every card, board card and list row is handed besides the task.
+    // Hours logged from a card or the details: say where they went, refresh the
+    // card's logged figure and whatever timesheet the viewer opens next.
+    const onLogged = (result: LogTaskTimeResult, hours: number, date: string) => {
+        setLogged({ text: describeLoggedTime(hours, date, result), weekStart: result.weekStart })
+        void queryClient.invalidateQueries({ queryKey: ['work-tasks'] })
+        void queryClient.invalidateQueries({ queryKey: ['timesheets'] })
+        void queryClient.invalidateQueries({ queryKey: ['timesheet', result.timesheetId] })
+    }
+
     const itemProps = (task: WorkTask): TaskItemProps => ({
         task,
         today,
         settings,
+        viewerManages: manages,
+        viewerId: userId,
+        onLogged,
         statusPending: moveStatus.isPending,
         onStatus: (next) => moveStatus.mutate({ id: task.id, next }),
         onOpen: () => setDetailsId(task.id),
@@ -253,8 +273,8 @@ const TasksPage = observer(function TasksPage() {
                 <Alert severity="warning" sx={{ mb: 2 }} onClose={() => setSaveWarning(null)}>{saveWarning}</Alert>
             )}
 
-            {/* Stats row */}
-            <Box sx={{
+            {/* Stats row — Managers and HR. An Employee gets one line in the toolbar instead. */}
+            {manages && <Box sx={{
                 display: 'grid',
                 gridTemplateColumns: {
                     xs: '1fr 1fr',
@@ -294,23 +314,14 @@ const TasksPage = observer(function TasksPage() {
                     />
                 </Box>
                 {!isHr && <Box data-testid="stat-mine">
-                    {manages ? (
-                        <StatCard
-                            label="👤 Assigned To Me"
-                            value={String(stats.assignedToMeOpen)}
-                            valueColor="primary.main"
-                            sub="open tasks on your plate"
-                        />
-                    ) : (
-                        <StatCard
-                            label="📥 From Manager & HR"
-                            value={String(handedToMeOpen)}
-                            valueColor="primary.main"
-                            sub="open tasks handed to you"
-                        />
-                    )}
+                    <StatCard
+                        label="👤 Assigned To Me"
+                        value={String(stats.assignedToMeOpen)}
+                        valueColor="primary.main"
+                        sub="open tasks on your plate"
+                    />
                 </Box>}
-            </Box>
+            </Box>}
 
             {/* Toolbar */}
             <Box sx={{
@@ -318,6 +329,12 @@ const TasksPage = observer(function TasksPage() {
                 p: '10px 12px', display: 'flex', gap: '10px', flexWrap: 'wrap',
                 alignItems: 'center', mb: '14px',
             }}>
+                {!manages && (
+                    <Box data-testid="stat-summary" sx={{ fontSize: 13, color: 'text.secondary', whiteSpace: 'nowrap' }}>
+                        <Box component="strong" sx={{ color: 'text.primary', fontWeight: 700 }}>{summary[0]}</Box>
+                        {summary.slice(1).map((part) => <Box component="span" key={part}>{` · ${part}`}</Box>)}
+                    </Box>
+                )}
                 <Box sx={{ flex: 1, minWidth: 200, maxWidth: 320 }}>
                     <Box
                         component="input"
@@ -367,7 +384,7 @@ const TasksPage = observer(function TasksPage() {
                     />
                 )}
                 <Box sx={{ flex: 1 }} />
-                <LayoutToggle value={layout} onChange={setLayout} />
+                {manages && <LayoutToggle value={layout} onChange={setLayout} />}
                 {/* HR reports on the tasks they run; the file is what the filters show. */}
                 {isHr && (
                     <Box
@@ -408,7 +425,7 @@ const TasksPage = observer(function TasksPage() {
                 keep the groups: an Employee's work handed to them and their own; a
                 Manager's work on their plate, what they handed out, and the rest of their
                 departments; an HR Administrator's own tasks and everybody else's. */}
-            {layout === 'board' ? (
+            {effectiveLayout === 'board' ? (
                 <TaskBoard tasks={visible} statuses={columns} renderProps={itemProps} />
             ) : sections.map((section) => {
                 const isCollapsed = collapsed.includes(section.title)
@@ -428,7 +445,7 @@ const TasksPage = observer(function TasksPage() {
                             >
                                 {section.empty}
                             </SectionEmpty>
-                        ) : layout === 'list' ? (
+                        ) : effectiveLayout === 'list' ? (
                             <TaskList tasks={section.tasks} settings={settings} renderProps={itemProps} />
                         ) : (
                             <CardGrid>
@@ -457,6 +474,8 @@ const TasksPage = observer(function TasksPage() {
                 today={today}
                 onClose={() => setDetailsId(null)}
                 onEdit={(task) => { setDetailsId(null); setDialogTask(task) }}
+                viewerId={userId}
+                onLogged={onLogged}
             />
 
             <TaskDialog
@@ -467,6 +486,26 @@ const TasksPage = observer(function TasksPage() {
                 onClose={() => setDialogTask(undefined)}
                 onSaved={(warning) => { setDialogTask(undefined); setSaveWarning(warning ?? null); void refresh() }}
             />
+
+            <Snackbar
+                open={logged != null}
+                autoHideDuration={6000}
+                onClose={() => setLogged(null)}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            >
+                <Alert
+                    severity="success"
+                    variant="filled"
+                    action={
+                        <Button color="inherit" size="small" onClick={() => { const w = logged!.weekStart; setLogged(null); uiStore.navigateToNewTimesheet(w) }}>
+                            Open timesheet
+                        </Button>
+                    }
+                    sx={{ fontSize: 13 }}
+                >
+                    {logged?.text}
+                </Alert>
+            </Snackbar>
         </Box>
     )
 })

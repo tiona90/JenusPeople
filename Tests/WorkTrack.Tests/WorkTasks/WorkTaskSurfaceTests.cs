@@ -49,6 +49,16 @@ public class WorkTaskSurfaceTests
     }
 
     [Fact]
+    public void Logging_time_is_a_post_on_the_task_open_to_every_task_role()
+    {
+        var action = typeof(WorkTasksController).GetMethod(nameof(WorkTasksController.LogTime))!;
+        var post = action.GetCustomAttribute<Microsoft.AspNetCore.Mvc.HttpPostAttribute>();
+        Assert.Equal("{id:int}/log-time", post!.Template);
+        // No gate of its own: the class's Leave & Time roles, as for status moves.
+        Assert.Empty(action.GetCustomAttributes<AuthorizeAttribute>());
+    }
+
+    [Fact]
     public void No_action_is_anonymous()
     {
         Assert.All(Actions(), a => Assert.Null(a.GetCustomAttribute<AllowAnonymousAttribute>()));
