@@ -1348,7 +1348,7 @@ function DayCard({
                                     size="small"
                                     value={t.notes}
                                     onChange={(e) => onUpdateTask(t._id, 'notes', e.target.value)}
-                                    placeholder="What did you work on?"
+                                    placeholder="Description / Notes"
                                     disabled={disabled}
                                     sx={{ ...TASK_TEXTFIELD_SX, mt: 1.25 }}
                                 />

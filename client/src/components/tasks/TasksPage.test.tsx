@@ -646,7 +646,7 @@ describe('TasksPage log time', () => {
         renderPage(['Employee'])
         fireEvent.click(within(await cardFor('Mine to do')).getByRole('button', { name: /Log time/ }))
         fireEvent.change(screen.getByLabelText('Hours'), { target: { value: '2' } })
-        fireEvent.change(screen.getByLabelText('Note'), { target: { value: 'Call' } })
+        fireEvent.change(screen.getByLabelText('Description / Notes'), { target: { value: 'Call' } })
         fireEvent.click(screen.getByRole('button', { name: 'Log' }))
 
         await waitFor(() => expect(api.logTaskTime).toHaveBeenCalledWith(1, { date: today, hours: 2, notes: 'Call' }))
@@ -674,7 +674,7 @@ describe('TasksPage log time', () => {
     it('caps the note at what the server keeps', async () => {
         renderPage(['Employee'])
         fireEvent.click(within(await cardFor('Mine to do')).getByRole('button', { name: /Log time/ }))
-        expect(screen.getByLabelText('Note')).toHaveAttribute('maxLength', '300')
+        expect(screen.getByLabelText('Description / Notes')).toHaveAttribute('maxLength', '300')
     })
 
     it('does not open the details for a click on Log time', async () => {
