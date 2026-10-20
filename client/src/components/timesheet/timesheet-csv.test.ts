@@ -35,7 +35,11 @@ function csv(entries: TimesheetEntry[]): string[][] {
         new Map([[10, { name: 'Support' }]]),
         new Map([[20, { name: 'Lasernet' }]]),
         new Map([
-            [7, { title: 'Call', description: 'Ring the bank', dueDate: '2026-09-29', targetHours: 1, loggedHours: 8, createdAtUtc: '2026-09-29T08:15:00Z' }],
+            [7, {
+                title: 'Call', description: 'Ring the bank', status: 'InProgress', priority: 'High',
+                startDate: '2026-09-28', dueDate: '2026-09-29', targetHours: 1, loggedHours: 8,
+                createdByName: 'Grace Hopper', createdAtUtc: '2026-09-29T08:15:00Z',
+            }],
             [8, { title: 'Report', description: null, dueDate: null, targetHours: 16, loggedHours: 4, createdAtUtc: '2026-09-01T10:00:00Z' }],
         ]),
     )
@@ -78,26 +82,32 @@ describe('buildTimesheetsCsv', () => {
         }
     })
 
-    it('describes the task a row was logged against in place of the project code', () => {
+    it('describes the approved project a row was logged against', () => {
         const [header, row] = csv([entry(10, 20, 3, 7)])
 
         expect(header).not.toContain('Project Code')
-        expect(row[col(header, 'Task')]).toBe('Call')
-        expect(row[col(header, 'Task Description')]).toBe('Ring the bank')
-        expect(row[col(header, 'Task Due Date')]).toBe('2026-09-29')
-        expect(row[col(header, 'Task Target Hours')]).toBe('1')
-        expect(row[col(header, 'Task Hours Over Target')]).toBe('7')
-        expect(row[col(header, 'Task Created')]).toBe('2026-09-29')
+        expect(header.some((h) => h.startsWith('Task'))).toBe(false)
+        expect(row[col(header, 'Approved Project')]).toBe('Call')
+        expect(row[col(header, 'Approved Project Description')]).toBe('Ring the bank')
+        expect(row[col(header, 'Approved Project Status')]).toBe('In progress')
+        expect(row[col(header, 'Approved Project Priority')]).toBe('High')
+        expect(row[col(header, 'Approved Project Start Date')]).toBe('2026-09-28')
+        expect(row[col(header, 'Approved Project Due Date')]).toBe('2026-09-29')
+        expect(row[col(header, 'Approved Project Target Hours')]).toBe('1')
+        expect(row[col(header, 'Approved Project Logged Hours')]).toBe('8')
+        expect(row[col(header, 'Approved Project Hours Over Target')]).toBe('7')
+        expect(row[col(header, 'Approved Project Created By')]).toBe('Grace Hopper')
+        expect(row[col(header, 'Approved Project Created')]).toBe('2026-09-29')
         expect(row[col(header, 'Project Name')]).toBe('Apollo')
     })
 
-    it('leaves "over" blank for a task under its target, and every task cell blank with no task', () => {
+    it('leaves "over" blank under target, and every approved-project cell blank with none', () => {
         const [header, under, none] = csv([entry(10, 20, 3, 8), { ...entry(null, null, 2), date: '2026-09-03T00:00:00' }])
 
-        expect(under[col(header, 'Task Target Hours')]).toBe('16')
-        expect(under[col(header, 'Task Hours Over Target')]).toBe('')
-        expect(under[col(header, 'Task Due Date')]).toBe('')
-        for (const name of ['Task', 'Task Description', 'Task Due Date', 'Task Target Hours', 'Task Hours Over Target', 'Task Created']) {
+        expect(under[col(header, 'Approved Project Target Hours')]).toBe('16')
+        expect(under[col(header, 'Approved Project Hours Over Target')]).toBe('')
+        expect(under[col(header, 'Approved Project Due Date')]).toBe('')
+        for (const name of header.filter((h) => h.startsWith('Approved Project'))) {
             expect(none[col(header, name)]).toBe('')
         }
     })

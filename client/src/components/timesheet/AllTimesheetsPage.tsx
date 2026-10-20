@@ -675,7 +675,7 @@ export default function AllTimesheetsPage() {
             const typeById = new Map(projectTypes.map((t) => [t.id, t]))
             const componentById = new Map(components.map((c) => [c.id, c]))
 
-            /* The task columns. HR reads every task in their departments; a System
+            /* The approved-project columns. HR reads every task in their departments; a System
                Administrator is refused the task list, so their export leaves them blank
                rather than failing. */
             const tasks = await queryClient

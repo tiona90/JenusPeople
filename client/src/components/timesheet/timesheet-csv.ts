@@ -1,5 +1,7 @@
 import type { Timesheet } from '../../lib/types/timesheet'
 import type { TimesheetEntry } from '../../lib/types/timesheet-entry'
+import type { WorkTaskPriority, WorkTaskStatus } from '../../lib/types/work-task'
+import { PRIORITY_LABELS, STATUS_LABELS } from '../../lib/work-tasks'
 
 /** Minimal project shape needed to label a CSV row. */
 export interface ProjectRef {
@@ -16,15 +18,20 @@ export interface ProjectComponentRef {
     name?: string | null
 }
 
-/** Minimal task shape needed to describe the task a row was logged against. */
+/** Minimal approved-project (work task) shape needed to describe what a row was logged against. */
 export interface WorkTaskRef {
     title: string
     description?: string | null
+    status?: WorkTaskStatus | null
+    priority?: WorkTaskPriority | null
+    /** Calendar date, `YYYY-MM-DD`. */
+    startDate?: string | null
     /** Calendar date, `YYYY-MM-DD`. */
     dueDate?: string | null
     targetHours?: number | null
     /** Every hour logged against the task, on any sheet — what "over" is measured on. */
     loggedHours?: number | null
+    createdByName?: string | null
     createdAtUtc?: string | null
 }
 
@@ -35,6 +42,21 @@ export interface TimesheetCsvSource {
     departmentName: string
 }
 
+/** The approved project (work task) a row was logged against, in the order `approvedProjectCells` fills them. */
+const APPROVED_PROJECT_HEADER = [
+    'Approved Project',
+    'Approved Project Description',
+    'Approved Project Status',
+    'Approved Project Priority',
+    'Approved Project Start Date',
+    'Approved Project Due Date',
+    'Approved Project Target Hours',
+    'Approved Project Logged Hours',
+    'Approved Project Hours Over Target',
+    'Approved Project Created By',
+    'Approved Project Created',
+]
+
 const HEADER = [
     'Employee',
     'Department',
@@ -42,12 +64,7 @@ const HEADER = [
     'Date',
     'Day',
     'Type',
-    'Task',
-    'Task Description',
-    'Task Due Date',
-    'Task Target Hours',
-    'Task Hours Over Target',
-    'Task Created',
+    ...APPROVED_PROJECT_HEADER,
     'Project Name',
     'Component',
     'Hours',
@@ -65,18 +82,24 @@ const fmtHours = (h: number) => (Number.isInteger(h) ? String(h) : h.toFixed(2))
 
 const escape = (v: string) => (/[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v)
 
-/** The six task cells, blank for a row logged against no task (or one the caller cannot see). */
-function taskCells(task: WorkTaskRef | undefined): string[] {
-    if (!task) return ['', '', '', '', '', '']
+/** The approved-project cells, blank for a row logged against none (or one the caller cannot see). */
+function approvedProjectCells(task: WorkTaskRef | undefined): string[] {
+    if (!task) return APPROVED_PROJECT_HEADER.map(() => '')
     const target = task.targetHours ?? null
-    const over = target != null ? (task.loggedHours ?? 0) - target : 0
+    const logged = task.loggedHours ?? null
+    const over = target != null ? (logged ?? 0) - target : 0
     return [
         task.title,
         task.description ?? '',
+        task.status ? STATUS_LABELS[task.status] ?? task.status : '',
+        task.priority ? PRIORITY_LABELS[task.priority] ?? task.priority : '',
+        task.startDate ? fmtDate(task.startDate) : '',
         task.dueDate ? fmtDate(task.dueDate) : '',
         target != null ? fmtHours(target) : '',
+        logged != null ? fmtHours(logged) : '',
         // Blank unless the task has gone past its plan; on or under target is not news.
         over > 0 ? fmtHours(over) : '',
+        task.createdByName ?? '',
         task.createdAtUtc ? fmtDate(task.createdAtUtc) : '',
     ]
 }
@@ -129,7 +152,7 @@ export function buildTimesheetsCsv(
                 fmtDate(e.date),
                 fmtDay(e.date),
                 type?.name ?? '',
-                ...taskCells(task),
+                ...approvedProjectCells(task),
                 proj?.name ?? `Project #${e.projectId}`,
                 component?.name ?? '',
                 Number(e.hoursWorked).toFixed(2),
