@@ -1058,7 +1058,17 @@ Two more traps worth knowing, both found the hard way:
   draft or rejected. It used to email whoever held a Draft row for any week, so
   somebody who never started the sheet — the usual case — heard nothing, and a
   draft begun that morning was chased before it was due. `LateSubmissionsReminderTests`
-  pins it.
+  pins it. **Nobody on a full day of approved leave is sent any reminder**:
+  `ReminderDispatcher.SendEmailAsync` drops them (`LoadLeaveTodayAsync`, matched
+  on the org-local date against midnight — the check-in snapshot used to compare
+  `EndDate` with the current instant and reminded people on the last day of their
+  leave); a morning half day also skips check-in. **`timesheet-before-leave`**
+  (daily, 14:00) asks whoever's next working day starts a full day of approved
+  leave, and who is back only after this week's deadline, to submit the week
+  before they go, unless it is already Submitted, Approved or Resubmitted.
+  `RemindersOnLeaveTests` pins both; the id was added after
+  `SeedReminderRunsOnUpgrade`, so `ReminderDefaultsMatchSeedMigrationTests`
+  lists it as a deliberate omission.
   **"Already sent today" is the `ReminderRuns` table, not memory** (migration
   `AddReminderRuns`): one row per reminder id with the org-local `RanOn` date and
   an `Outcome` (`dispatching` → `sent` / `nothing to send` / `failed: …`, or

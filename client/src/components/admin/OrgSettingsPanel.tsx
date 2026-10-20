@@ -31,6 +31,7 @@ const REMINDERS_META: ReminderMeta[] = [
     { id: 'birthday-reminder', emoji: '🎂', name: 'Birthday Reminders', desc: 'Notify the team about upcoming employee birthdays.', tail: "you'll see any team members with birthdays that week." },
     { id: 'check-in', emoji: '🟢', name: 'Check-In Reminder', desc: 'Remind employees to check in at the start of their workday.', tail: "employees who haven't checked in will be reminded to do so." },
     { id: 'check-out', emoji: '🔴', name: 'Check-Out Reminder', desc: 'Remind employees to check out at the end of their workday.', tail: 'employees still checked in will be reminded to check out and complete their timesheet.' },
+    { id: 'timesheet-before-leave', emoji: '🏖️', name: 'Timesheet Before Leave', desc: "Remind employees to submit this week's timesheet before going on leave, when it falls due while they are away.", tail: "employees whose approved leave starts on the next working day and runs past this week's timesheet deadline will be asked to submit it first." },
 ]
 const META_BY_ID = new Map(REMINDERS_META.map((m) => [m.id, m]))
 
