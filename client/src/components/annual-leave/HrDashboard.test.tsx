@@ -141,10 +141,10 @@ describe('The HR Administrator dashboard', () => {
     it('lists who is not working on a task', async () => {
         renderAs(HR)
 
-        const panel = await screen.findByRole('region', { name: 'Not working on a task' })
+        const panel = await screen.findByRole('region', { name: 'Not working on an approved project' })
         expect(panel).toHaveTextContent('Maria Ioannou')
-        expect(panel).toHaveTextContent('No tasks')
-        expect(screen.getByRole('button', { name: 'Go to Tasks →' })).toBeInTheDocument()
+        expect(panel).toHaveTextContent('No approved projects')
+        expect(screen.getByRole('button', { name: 'Go to Approved Projects →' })).toBeInTheDocument()
     })
 
     it('lists who is away across every department, with when they are back', async () => {

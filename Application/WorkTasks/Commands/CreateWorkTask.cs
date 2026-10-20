@@ -42,6 +42,11 @@ public class CreateWorkTask
             if (input.ProjectId is { } projectId
                 && !await WorkTaskProjectRule.IsAvailableAsync(context, projectId, input.DepartmentId, cancellationToken))
                 return Result<WorkTaskDto>.Invalid(WorkTaskProjectRule.NotAvailableMessage);
+            if (input.ProjectTypeId is { } typeId
+                && !await WorkTaskProjectRule.IsTypeAvailableAsync(context, input.ProjectId, typeId, cancellationToken))
+                return Result<WorkTaskDto>.Invalid(WorkTaskProjectRule.TypeNotAvailableMessage);
+            if (await WorkTaskProjectRule.IsTypeMissingAsync(context, input.ProjectId, input.ProjectTypeId, cancellationToken))
+                return Result<WorkTaskDto>.Invalid(WorkTaskProjectRule.TypeRequiredMessage);
             var assigneeIds = request.AssignedOnly
                 ? [request.CallerUserId]
                 : await WorkTaskAssigneeRule.ResolveAsync(context, input.AssigneeIds, input.DepartmentId, cancellationToken);
@@ -59,8 +64,10 @@ public class CreateWorkTask
                 Description = string.IsNullOrWhiteSpace(input.Description) ? null : input.Description.Trim(),
                 DepartmentId = input.DepartmentId,
                 ProjectId = input.ProjectId,
+                ProjectTypeId = input.ProjectTypeId,
                 Assignees = [.. assigneeIds.Select(id => new WorkTaskAssignee { UserId = id })],
                 CreatedById = request.CallerUserId,
+                StartDate = input.StartDate,
                 DueDate = input.DueDate,
                 TargetHours = input.TargetHours,
                 Priority = input.Priority,

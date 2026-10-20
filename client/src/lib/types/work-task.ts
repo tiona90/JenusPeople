@@ -14,10 +14,16 @@ export interface WorkTask {
     /** The project's code and colour key, for the card's badge. */
     projectCode: string | null
     projectColorKey: string | null
+    /** Optional: one of the project's types, which a timesheet row picking the task takes. Missing from an older API. */
+    projectTypeId?: number | null
+    projectTypeName?: string | null
+    projectTypeIcon?: string | null
     /** Everyone on the task, by name. They share one status. */
     assignees: WorkTaskAssignee[]
     createdById: string
     createdByName: string
+    /** Calendar date, `YYYY-MM-DD`; not after dueDate. Missing from an older API. */
+    startDate?: string | null
     /** Calendar date, `YYYY-MM-DD`. */
     dueDate: string | null
     /** The plan. Measured against loggedHours; going over is allowed. */
@@ -76,7 +82,9 @@ export interface WorkTaskIdlePerson {
     /** Tasks they are on that have not started; 0 means no open task at all. */
     toDoCount: number
 }
-export interface WorkTaskProject { id: number; name: string; code: string }
+export interface WorkTaskProjectType { id: number; name: string; icon: string }
+/** `types`: the active types the project carries — what the task's Type may be. Missing from an older API. */
+export interface WorkTaskProject { id: number; name: string; code: string; types?: WorkTaskProjectType[] }
 
 export interface UpsertWorkTaskRequest {
     title: string
@@ -84,8 +92,11 @@ export interface UpsertWorkTaskRequest {
     departmentId: number
     /** Null when the Task Settings make Project optional and none is chosen. */
     projectId: number | null
+    /** Optional; one of the project's types. */
+    projectTypeId: number | null
     /** At least one, no repeats. */
     assigneeIds: string[]
+    startDate: string | null
     dueDate: string | null
     targetHours: number | null
     priority: WorkTaskPriority
@@ -97,6 +108,8 @@ export interface TimesheetTaskOption {
     title: string
     projectId: number | null
     projectCode: string | null
+    /** The task's type, which the row takes with the project. Missing from an older API. */
+    projectTypeId?: number | null
     targetHours: number | null
     loggedHours: number
     /** Done or cancelled: listed only because a row on the sheet already names it. */

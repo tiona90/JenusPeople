@@ -1,12 +1,17 @@
-import { useEffect, useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useEffect, useMemo, useState } from 'react'
+import { useMutation, useQueries, useQuery } from '@tanstack/react-query'
 import {
     Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormHelperText, FormLabel, InputLabel,
     MenuItem, Select, Stack, TextField,
 } from '@mui/material'
+// From their own modules, not the lib/api index, so a test that mocks the whole index
+// (as TasksPage's does) still renders the dialog.
+import { getHolidays } from '../../lib/api/holidays'
+import { getAppSettings } from '../../lib/api/settings'
 import { addWorkTaskAttachment, createWorkTask, getWorkTaskAssignees, getWorkTaskDepartments, getWorkTaskProjects, updateWorkTask, updateWorkTaskStatus } from '../../lib/api'
 import { getApiErrorMessage } from '../../lib/api/error-utils'
 import { describeKinds } from '../../lib/task-attachments'
+import { describeEstimate, estimateTargetHours, yearsBetween } from '../../lib/task-target'
 import { fieldRequirementError, isShown, needsAttachmentBeforeDone, requirementOf, attachmentLimits } from '../../lib/task-settings'
 import { useWorkTaskSettings } from '../../lib/task-settings-query'
 import type { UpsertWorkTaskRequest, WorkTask, WorkTaskAttachment, WorkTaskPriority, WorkTaskStatus } from '../../lib/types'
@@ -21,6 +26,9 @@ const TARGET_HOURS_MAX = 9999
 // The assignee menu's first item. Picking it empties the selection, and an empty
 // selection is sent as-is: the server assigns everyone eligible in the department.
 const EVERYONE = '__everyone__'
+// Mirrors UpsertWorkTaskRequestValidator.StartAfterDueMessage.
+const START_AFTER_DUE = 'The start date cannot be after the due date.'
+const ONE_HOUR = 60 * 60 * 1000
 
 /** A target field's text as a whole number in range, null when blank, or 'invalid'. */
 function parseTarget(text: string, max: number): number | null | 'invalid' {
@@ -52,7 +60,9 @@ export default function TaskDialog({ open, task, personal = false, currentUserId
     const [description, setDescription] = useState('')
     const [departmentId, setDepartmentId] = useState<number | ''>('')
     const [projectId, setProjectId] = useState<number | ''>('')
+    const [projectTypeId, setProjectTypeId] = useState<number | ''>('')
     const [assigneeIds, setAssigneeIds] = useState<string[]>([])
+    const [startDate, setStartDate] = useState('')
     const [dueDate, setDueDate] = useState('')
     const [priority, setPriority] = useState<WorkTaskPriority>('Normal')
     const [status, setStatus] = useState<WorkTaskStatus>('ToDo')
@@ -67,9 +77,11 @@ export default function TaskDialog({ open, task, personal = false, currentUserId
         setDescription(task?.description ?? '')
         setDepartmentId(task?.departmentId ?? '')
         setProjectId(task?.projectId ?? '')
+        setProjectTypeId(task?.projectTypeId ?? '')
         // HR is never assigned; one left on from before the rule comes off here,
         // since a save that keeps them is refused.
         setAssigneeIds(task?.assignees.filter((a) => !a.isHrAdministrator).map((a) => a.userId) ?? [])
+        setStartDate(task?.startDate?.slice(0, 10) ?? '')
         setDueDate(task?.dueDate?.slice(0, 10) ?? '')
         setPriority(task?.priority ?? 'Normal')
         setStatus(task?.status ?? 'ToDo')
@@ -77,6 +89,33 @@ export default function TaskDialog({ open, task, personal = false, currentUserId
         setAttachments(task?.attachments ?? [])
         setStagedFiles([])
     }, [open, task])
+
+    // The working week and its public holidays, for the hours the dates come to.
+    const holidayYears = yearsBetween(startDate, dueDate)
+    const appSettings = useQuery({ queryKey: ['appSettings'], queryFn: getAppSettings, enabled: open && holidayYears.length > 0, staleTime: ONE_HOUR })
+    const holidayQueries = useQueries({
+        queries: holidayYears.map((year) => ({
+            queryKey: ['holidays', year],
+            queryFn: () => getHolidays(year),
+            enabled: open,
+            staleTime: ONE_HOUR,
+        })),
+    })
+    const holidaysLoaded = holidayQueries.every((q) => !q.isPending)
+    const holidayKeys = holidayQueries.flatMap((q) => q.data ?? []).map((h) => h.date.slice(0, 10)).join(',')
+    const estimate = useMemo(
+        () => holidaysLoaded
+            ? estimateTargetHours(startDate, dueDate, appSettings.data, new Set(holidayKeys.split(',')), TARGET_HOURS_MAX)
+            : null,
+        [startDate, dueDate, appSettings.data, holidayKeys, holidaysLoaded],
+    )
+    // With a start and a due date that come to a figure, the hours are that figure and
+    // the field is read-only. Clearing the start date hands the field back, keeping the
+    // last figure as a starting point. An edited task's stored hours follow its dates too.
+    const hoursFromDates = estimate !== null
+    useEffect(() => {
+        if (estimate) setTargetHours(String(estimate.hours))
+    }, [estimate])
 
     const departments = useQuery({ queryKey: ['work-tasks', 'departments'], queryFn: getWorkTaskDepartments, enabled: open })
 
@@ -99,6 +138,21 @@ export default function TaskDialog({ open, task, personal = false, currentUserId
         const unchangedOnEdit = task != null && departmentId === task.departmentId && projectId === task.projectId
         if (!unchangedOnEdit && !projects.data.some((p) => p.id === projectId)) setProjectId('')
     }, [projects.data, projectId, departmentId, task])
+
+    // The type is one the chosen project carries. Dropped once the list says the
+    // project does not — except an edited task's own type on its own project, which
+    // the server re-checks only when either moves.
+    const chosenProject = projects.data?.find((p) => p.id === projectId)
+    useEffect(() => {
+        if (projectTypeId === '') return
+        if (projectId === '') {
+            setProjectTypeId('')
+            return
+        }
+        if (!chosenProject) return
+        const unchangedOnEdit = task != null && projectId === task.projectId && projectTypeId === task.projectTypeId
+        if (!unchangedOnEdit && !(chosenProject.types ?? []).some((t) => t.id === projectTypeId)) setProjectTypeId('')
+    }, [chosenProject, projectId, projectTypeId, task])
 
     const assignees = useQuery({
         queryKey: ['work-tasks', 'assignees', departmentId],
@@ -153,6 +207,11 @@ export default function TaskDialog({ open, task, personal = false, currentUserId
 
     const trimmedTitle = title.trim()
     const hours = parseTarget(targetHours, TARGET_HOURS_MAX)
+    const startAfterDue = startDate !== '' && dueDate !== '' && startDate > dueDate
+    // Mirrors WorkTaskProjectRule.IsTypeMissingAsync: a project classified by any type
+    // needs one picked; a project with none leaves nothing to ask.
+    const typeRequired = (chosenProject?.types?.length ?? 0) > 0
+    const typeMissing = typeRequired && projectTypeId === ''
     const fieldError = fieldRequirementError(settings, {
         description,
         dueDate,
@@ -165,6 +224,8 @@ export default function TaskDialog({ open, task, personal = false, currentUserId
         description.length <= DESCRIPTION_MAX &&
         departmentId !== '' &&
         fieldError === null &&
+        !startAfterDue &&
+        !typeMissing &&
         // Empty means everyone in the department, which is only somebody once the list says so.
         (personal || assigneeIds.length > 0 || (assignees.data?.length ?? 0) > 0) &&
         hours !== 'invalid' &&
@@ -177,7 +238,9 @@ export default function TaskDialog({ open, task, personal = false, currentUserId
             description: description.trim() === '' ? null : description.trim(),
             departmentId: departmentId as number,
             projectId: projectId === '' ? null : projectId,
+            projectTypeId: projectTypeId === '' ? null : projectTypeId,
             assigneeIds: personal ? [] : assigneeIds,
+            startDate: startDate === '' ? null : startDate,
             dueDate: dueDate === '' ? null : dueDate,
             targetHours: typeof hours === 'number' ? hours : null,
             priority,
@@ -197,6 +260,15 @@ export default function TaskDialog({ open, task, personal = false, currentUserId
     if (task?.projectId != null && projectId === task.projectId && !projectOptions.some((p) => p.id === projectId))
         projectOptions.push({ id: task.projectId, name: task.projectName ?? `Project ${task.projectId}`, code: '' })
     const noProjects = departmentId !== '' && projects.data?.length === 0 && projectOptions.length === 0
+
+    // The chosen project's types, plus an edited task's own type if the project has since dropped it.
+    const typeOptions = [...(chosenProject?.types ?? [])]
+    if (task?.projectTypeId != null && projectTypeId === task.projectTypeId && projectId === task.projectId
+        && !typeOptions.some((t) => t.id === projectTypeId))
+        typeOptions.push({ id: task.projectTypeId, name: task.projectTypeName ?? `Type ${task.projectTypeId}`, icon: task.projectTypeIcon ?? '' })
+    const typeHelper = projectId === ''
+        ? 'Choose a project first'
+        : chosenProject && typeOptions.length === 0 ? 'This project has no types' : 'Timesheet entries for it use this type'
 
     // Keep an edited task's own people selectable while the list loads, or after they left scope.
     const assigneeOptions = [...(assignees.data ?? [])]
@@ -287,6 +359,24 @@ export default function TaskDialog({ open, task, personal = false, currentUserId
                         </Select>
                         {noProjects && <FormHelperText>No active projects in this department</FormHelperText>}
                     </FormControl>}
+                    {isShown(settings, 'project') && <FormControl required={typeRequired} disabled={projectId === '' || typeOptions.length === 0}>
+                        <InputLabel id="task-type-label">Type</InputLabel>
+                        <Select
+                            labelId="task-type-label"
+                            label="Type"
+                            value={typeOptions.some((t) => t.id === projectTypeId) ? projectTypeId : ''}
+                            onChange={(e) => {
+                                const value = String(e.target.value)
+                                setProjectTypeId(value === '' ? '' : Number(value))
+                            }}
+                        >
+                            {!typeRequired && <MenuItem value=""><em>No type</em></MenuItem>}
+                            {typeOptions.map((t) => (
+                                <MenuItem key={t.id} value={t.id}>{t.icon ? `${t.icon} ${t.name}` : t.name}</MenuItem>
+                            ))}
+                        </Select>
+                        <FormHelperText>{typeHelper}</FormHelperText>
+                    </FormControl>}
                     {!personal && <FormControl disabled={departmentId === ''} error={nobodyToAssign}>
                         <InputLabel id="task-assignee-label" shrink={everyone || assigneeIds.length > 0}>Assignees</InputLabel>
                         <Select<string[]>
@@ -356,16 +446,30 @@ export default function TaskDialog({ open, task, personal = false, currentUserId
                             )}
                         </FormControl>
                     )}
-                    <Stack direction="row" spacing={2}>
-                        {isShown(settings, 'dueDate') && <TextField
+                    {/* The start date is the due date's companion: shown and hidden with it, never required. */}
+                    {isShown(settings, 'dueDate') && <Stack direction="row" spacing={2}>
+                        <TextField
+                            label="Start date"
+                            type="date"
+                            value={startDate}
+                            onChange={(e) => setStartDate(e.target.value)}
+                            error={startAfterDue}
+                            helperText={startAfterDue ? START_AFTER_DUE : undefined}
+                            slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: dueDate || undefined } }}
+                            sx={{ flex: 1 }}
+                        />
+                        <TextField
                             label="Due date"
                             type="date"
                             value={dueDate}
                             onChange={(e) => setDueDate(e.target.value)}
                             required={requirementOf(settings, 'dueDate') === 'Required'}
-                            slotProps={{ inputLabel: { shrink: true } }}
+                            error={startAfterDue}
+                            slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: startDate || undefined } }}
                             sx={{ flex: 1 }}
-                        />}
+                        />
+                    </Stack>}
+                    <Stack direction="row" spacing={2}>
                         {isShown(settings, 'targetHours') && <TextField
                             label="Target hours"
                             type="number"
@@ -373,8 +477,17 @@ export default function TaskDialog({ open, task, personal = false, currentUserId
                             onChange={(e) => setTargetHours(e.target.value)}
                             required={requirementOf(settings, 'targetHours') === 'Required'}
                             error={hours === 'invalid'}
-                            helperText={hours === 'invalid' ? `1 to ${TARGET_HOURS_MAX}` : 'Estimated effort'}
-                            slotProps={{ htmlInput: { min: 1, max: TARGET_HOURS_MAX, step: 1 } }}
+                            helperText={
+                                hours === 'invalid'
+                                    ? `1 to ${TARGET_HOURS_MAX}`
+                                    : estimate
+                                      ? `${describeEstimate(estimate)} — from the dates`
+                                      : 'Estimated effort'
+                            }
+                            slotProps={{
+                                input: { readOnly: hoursFromDates },
+                                htmlInput: { min: 1, max: TARGET_HOURS_MAX, step: 1 },
+                            }}
                             sx={{ flex: 1 }}
                         />}
                         {isShown(settings, 'priority') && <FormControl sx={{ flex: 1 }}>

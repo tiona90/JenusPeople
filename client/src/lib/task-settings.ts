@@ -15,8 +15,8 @@ export const ATTACHMENT_REQUIRED_MESSAGE = 'Attach a file before marking this ta
 /** Today's behaviour; also what an older API with no settings endpoint reads as. */
 export const DEFAULT_TASK_SETTINGS: WorkTaskSettings = {
     descriptionRequirement: 'Optional',
-    dueDateRequirement: 'Optional',
-    targetHoursRequirement: 'Optional',
+    dueDateRequirement: 'Required',
+    targetHoursRequirement: 'Required',
     attachmentsRequirement: 'Optional',
     projectRequirement: 'Required',
     showPriority: true,

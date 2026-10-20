@@ -71,6 +71,13 @@ public class UpdateWorkTask
                 && input.ProjectId is { } projectId
                 && !await WorkTaskProjectRule.IsAvailableAsync(context, projectId, input.DepartmentId, cancellationToken))
                 return Result<WorkTaskDto>.Invalid(WorkTaskProjectRule.NotAvailableMessage);
+            // Like the project, the type is re-checked only when it or the project moves.
+            if ((projectChanged || input.ProjectTypeId != task.ProjectTypeId)
+                && input.ProjectTypeId is { } typeId
+                && !await WorkTaskProjectRule.IsTypeAvailableAsync(context, input.ProjectId, typeId, cancellationToken))
+                return Result<WorkTaskDto>.Invalid(WorkTaskProjectRule.TypeNotAvailableMessage);
+            if (await WorkTaskProjectRule.IsTypeMissingAsync(context, input.ProjectId, input.ProjectTypeId, cancellationToken))
+                return Result<WorkTaskDto>.Invalid(WorkTaskProjectRule.TypeRequiredMessage);
             if (await WorkTaskAssigneeRule.AnyHrAdministratorAsync(context, assigneeIds, cancellationToken))
                 return Result<WorkTaskDto>.Invalid(WorkTaskAssigneeRule.HrNotAssignableMessage);
             if (!await WorkTaskAssigneeRule.AllEligibleAsync(
@@ -81,11 +88,13 @@ public class UpdateWorkTask
             task.Description = string.IsNullOrWhiteSpace(input.Description) ? null : input.Description.Trim();
             task.DepartmentId = input.DepartmentId;
             task.ProjectId = input.ProjectId;
+            task.ProjectTypeId = input.ProjectTypeId;
             var requested = assigneeIds.ToHashSet();
             foreach (var gone in task.Assignees.Where(a => !requested.Contains(a.UserId)).ToList())
                 task.Assignees.Remove(gone);
             foreach (var id in added)
                 task.Assignees.Add(new WorkTaskAssignee { UserId = id });
+            task.StartDate = input.StartDate;
             task.DueDate = input.DueDate;
             task.TargetHours = input.TargetHours;
             task.Priority = input.Priority;

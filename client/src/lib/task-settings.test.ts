@@ -1,15 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import {
-    ATTACHMENT_REQUIRED_MESSAGE, DEFAULT_TASK_SETTINGS, DUE_DATE_REQUIRED_MESSAGE, PROJECT_REQUIRED_MESSAGE,
+    ATTACHMENT_REQUIRED_MESSAGE, DEFAULT_TASK_SETTINGS, DUE_DATE_REQUIRED_MESSAGE, PROJECT_REQUIRED_MESSAGE, TARGET_HOURS_REQUIRED_MESSAGE,
     attachmentLimits, fieldRequirementError, isShown, needsAttachmentBeforeDone,
 } from './task-settings'
 
 const values = { description: '', dueDate: '', targetHours: null, projectId: 10 }
 
 describe('task settings', () => {
-    it('defaults reproduce today: project required, the rest optional', () => {
-        expect(fieldRequirementError(DEFAULT_TASK_SETTINGS, values)).toBeNull()
-        expect(fieldRequirementError(DEFAULT_TASK_SETTINGS, { ...values, projectId: null })).toBe(PROJECT_REQUIRED_MESSAGE)
+    it('defaults: project, due date and target hours required, the rest optional', () => {
+        const filled = { ...values, dueDate: '2026-10-01', targetHours: 8 }
+        expect(fieldRequirementError(DEFAULT_TASK_SETTINGS, filled)).toBeNull()
+        expect(fieldRequirementError(DEFAULT_TASK_SETTINGS, { ...filled, projectId: null })).toBe(PROJECT_REQUIRED_MESSAGE)
+        expect(fieldRequirementError(DEFAULT_TASK_SETTINGS, { ...filled, dueDate: '' })).toBe(DUE_DATE_REQUIRED_MESSAGE)
+        expect(fieldRequirementError(DEFAULT_TASK_SETTINGS, { ...filled, targetHours: null })).toBe(TARGET_HOURS_REQUIRED_MESSAGE)
     })
 
     it('a required due date is refused blank, with the server message', () => {
@@ -18,7 +21,7 @@ describe('task settings', () => {
     })
 
     it('a hidden field is never checked and never shown', () => {
-        const s = { ...DEFAULT_TASK_SETTINGS, descriptionRequirement: 'Hidden' as const }
+        const s = { ...DEFAULT_TASK_SETTINGS, descriptionRequirement: 'Hidden' as const, dueDateRequirement: 'Optional' as const, targetHoursRequirement: 'Optional' as const }
         expect(fieldRequirementError(s, values)).toBeNull()
         expect(isShown(s, 'description')).toBe(false)
         expect(isShown({ ...DEFAULT_TASK_SETTINGS, showPriority: false }, 'priority')).toBe(false)

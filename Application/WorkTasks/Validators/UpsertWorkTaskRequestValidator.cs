@@ -29,7 +29,13 @@ public class UpsertWorkTaskRequestValidator : AbstractValidator<UpsertWorkTaskRe
         RuleFor(x => x.TargetHours).InclusiveBetween(1, WorkTask.MaxTargetHours)
             .When(x => x.TargetHours.HasValue)
             .WithMessage($"Target hours must be between 1 and {WorkTask.MaxTargetHours}.");
+        RuleFor(x => x.StartDate).Must((x, start) => start <= x.DueDate)
+            .When(x => x.StartDate.HasValue && x.DueDate.HasValue)
+            .WithMessage(StartAfterDueMessage);
     }
+
+    /// <summary>Mirrored by TaskDialog on the client.</summary>
+    public const string StartAfterDueMessage = "The start date cannot be after the due date.";
 }
 
 // ValidationBehavior resolves IValidator<TCommand>, so the request validator only

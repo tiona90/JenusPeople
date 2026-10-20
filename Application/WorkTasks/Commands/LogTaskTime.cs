@@ -116,6 +116,10 @@ public class LogTaskTime
             else
             {
                 var (typeId, componentId, activityId) = await TimesheetEntryDefaults.SingleOptionsAsync(context, projectId, cancellationToken);
+                // The task's own type wins over the project's single one, while the project still carries it.
+                if (task.ProjectTypeId is { } taskTypeId
+                    && await WorkTaskProjectRule.IsTypeAvailableAsync(context, projectId, taskTypeId, cancellationToken))
+                    typeId = taskTypeId;
                 candidate = new TimesheetEntry
                 {
                     Id = Guid.NewGuid().ToString(), TimesheetId = sheet.Id, ProjectId = projectId, Date = day,

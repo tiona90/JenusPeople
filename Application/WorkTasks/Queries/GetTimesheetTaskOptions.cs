@@ -81,6 +81,7 @@ public class GetTimesheetTaskOptions
                     Title = t.Title,
                     ProjectId = t.ProjectId,
                     ProjectCode = t.Project != null ? t.Project.Code : null,
+                    ProjectTypeId = t.ProjectTypeId,
                     TargetHours = t.TargetHours,
                     IsClosed = t.Status == WorkTaskStatus.Done || t.Status == WorkTaskStatus.Cancelled,
                     IsAssigned = t.Assignees.Any(a => a.UserId == ownerUserId),

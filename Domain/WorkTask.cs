@@ -54,6 +54,14 @@ public class WorkTask
     public Project? Project { get; set; }
 
     /// <summary>
+    /// What kind of work it is (Task, Issue, Inquiry, Support): optional, and one of
+    /// the types <see cref="ProjectId"/> carries (WorkTaskProjectRule). A timesheet row
+    /// that picks the task takes it as its Type, as it takes the project.
+    /// </summary>
+    public int? ProjectTypeId { get; set; }
+    public ProjectType? ProjectType { get; set; }
+
+    /// <summary>
     /// Who is working on it: at least one active Manager or HR Administrator
     /// covering <see cref="DepartmentId"/>. They share one <see cref="Status"/> —
     /// any of them moving it moves it for all.
@@ -62,6 +70,14 @@ public class WorkTask
 
     public string CreatedById { get; set; } = string.Empty;
     public User? CreatedBy { get; set; }
+
+    /// <summary>
+    /// When the work is planned to begin: a calendar date, no zone, optional, never
+    /// after <see cref="DueDate"/>. With both set, the dialog fills
+    /// <see cref="TargetHours"/> from the working days between them; nothing on the
+    /// server derives anything from it.
+    /// </summary>
+    public DateOnly? StartDate { get; set; }
 
     /// <summary>A calendar date, no zone.</summary>
     public DateOnly? DueDate { get; set; }

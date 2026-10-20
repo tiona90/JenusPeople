@@ -32,6 +32,12 @@ export function projectIdForTask(workTaskId: string, options: TimesheetTaskOptio
     return option?.projectId != null ? String(option.projectId) : null
 }
 
+/** The type a picked task sets on its row, or null when the task names none. */
+export function projectTypeIdForTask(workTaskId: string, options: TimesheetTaskOption[]): string | null {
+    const option = options.find((o) => String(o.id) === workTaskId)
+    return option?.projectTypeId != null ? String(option.projectTypeId) : null
+}
+
 /**
  * The row's task after its project moves: kept if it belongs to the new project,
  * otherwise cleared, since the server would refuse it. An id not in the list yet

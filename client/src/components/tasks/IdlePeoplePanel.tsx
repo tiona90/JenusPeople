@@ -14,7 +14,7 @@ import type { WorkTaskIdlePerson } from '../../lib/types'
  */
 export default function IdlePeoplePanel({ departmentId = null, onViewTasks }: {
     departmentId?: number | null
-    /** A "Go to Tasks" link in the header (the dashboards). */
+    /** A "Go to Approved Projects" link in the header (the dashboards). */
     onViewTasks?: () => void
 }) {
     const [open, setOpen] = useState(true)
@@ -24,7 +24,7 @@ export default function IdlePeoplePanel({ departmentId = null, onViewTasks }: {
     const people = (idle.data ?? []).filter((p) => departmentId == null || p.departmentIds.includes(departmentId))
 
     return (
-        <Box component="section" aria-label="Not working on a task" sx={{
+        <Box component="section" aria-label="Not working on an approved project" sx={{
             bgcolor: 'background.paper', border: '1px solid', borderColor: people.length > 0 ? 'warning.light' : 'divider',
             borderRadius: '10px', mb: '14px', overflow: 'hidden',
         }}>
@@ -40,13 +40,13 @@ export default function IdlePeoplePanel({ departmentId = null, onViewTasks }: {
                 }}
             >
                 <Box component="span" aria-hidden sx={{ fontSize: 14 }}>🧍</Box>
-                <Box sx={{ fontSize: 13, fontWeight: 700, color: 'text.primary' }}>Not working on a task</Box>
+                <Box sx={{ fontSize: 13, fontWeight: 700, color: 'text.primary' }}>Not working on an approved project</Box>
                 <Box data-testid="idle-count" sx={{
                     fontSize: 11, fontWeight: 700, px: '8px', py: '1px', borderRadius: '10px',
                     bgcolor: people.length > 0 ? 'warning.main' : 'action.hover', color: people.length > 0 ? '#fff' : 'text.secondary',
                 }}>{people.length}</Box>
                 <Box sx={{ fontSize: 12, color: 'text.secondary', flex: 1 }}>
-                    {people.length === 0 ? 'Everyone has a task in progress.' : 'Nobody has started a task for them — no task In progress.'}
+                    {people.length === 0 ? 'Everyone has an approved project in progress.' : 'Nobody has started an approved project for them — none In progress.'}
                 </Box>
                 <Box component="span" aria-hidden sx={{ fontSize: 12, color: 'text.secondary' }}>{open ? '▲' : '▼'}</Box>
             </Box>
@@ -61,7 +61,7 @@ export default function IdlePeoplePanel({ departmentId = null, onViewTasks }: {
                             fontSize: 12, fontWeight: 600, color: 'primary.main', '&:hover': { textDecoration: 'underline' },
                         }}
                     >
-                        Go to Tasks →
+                        Go to Approved Projects →
                     </Box>
                 </Box>
             )}
@@ -94,7 +94,7 @@ function Person({ person }: { person: WorkTaskIdlePerson }) {
                 <Box sx={{ fontSize: 10, color: 'text.secondary', whiteSpace: 'nowrap' }}>
                     {person.departmentNames.join(', ')} ·{' '}
                     <Box component="span" sx={{ color: waiting ? 'warning.dark' : 'error.main', fontWeight: 600 }}>
-                        {waiting ? `${person.toDoCount} to do, none started` : 'No tasks'}
+                        {waiting ? `${person.toDoCount} to do, none started` : 'No approved projects'}
                     </Box>
                 </Box>
             </Box>

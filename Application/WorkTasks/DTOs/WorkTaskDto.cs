@@ -18,10 +18,15 @@ public class WorkTaskDto
     /// <summary>The project's code and colour, for the card's badge.</summary>
     public string? ProjectCode { get; set; }
     public string? ProjectColorKey { get; set; }
+    /// <summary>Optional: one of the project's types, which a timesheet row picking the task takes.</summary>
+    public int? ProjectTypeId { get; set; }
+    public string? ProjectTypeName { get; set; }
+    public string? ProjectTypeIcon { get; set; }
     /// <summary>Everyone on the task, by name.</summary>
     public List<WorkTaskAssigneeDto> Assignees { get; set; } = [];
     public string CreatedById { get; set; } = string.Empty;
     public string CreatedByName { get; set; } = string.Empty;
+    public DateOnly? StartDate { get; set; }
     public DateOnly? DueDate { get; set; }
     public int? TargetHours { get; set; }
     /// <summary>
@@ -100,6 +105,15 @@ public class WorkTaskProjectDto
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public string Code { get; set; } = string.Empty;
+    /// <summary>The active types the project carries: what the task's Type may be.</summary>
+    public List<WorkTaskProjectTypeDto> Types { get; set; } = [];
+}
+
+public class WorkTaskProjectTypeDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Icon { get; set; } = string.Empty;
 }
 
 public class WorkTaskDepartmentDto
@@ -120,8 +134,12 @@ public class UpsertWorkTaskRequest
     /// validator; nullable so a missing one reaches that check as a message, not a 0.
     /// </summary>
     public int? ProjectId { get; set; }
+    /// <summary>Optional; one of the project's active types (<c>WorkTaskProjectRule.IsTypeAvailableAsync</c>).</summary>
+    public int? ProjectTypeId { get; set; }
     /// <summary>At least one, no repeats — see <c>UpsertWorkTaskRequestValidator</c>.</summary>
     public List<string> AssigneeIds { get; set; } = [];
+    /// <summary>Optional; not after <see cref="DueDate"/>. Shown and hidden with the due date.</summary>
+    public DateOnly? StartDate { get; set; }
     public DateOnly? DueDate { get; set; }
     /// <summary>Optional; a null clears it (this is a full replace).</summary>
     public int? TargetHours { get; set; }
@@ -144,6 +162,8 @@ public class TimesheetTaskOptionDto
     /// <summary>The picker narrows by it; null only on a task predating required projects.</summary>
     public int? ProjectId { get; set; }
     public string? ProjectCode { get; set; }
+    /// <summary>The task's type, which the row takes with the project.</summary>
+    public int? ProjectTypeId { get; set; }
     public int? TargetHours { get; set; }
     public decimal LoggedHours { get; set; }
     /// <summary>Done or cancelled: on the list only because a row on the sheet already names it.</summary>

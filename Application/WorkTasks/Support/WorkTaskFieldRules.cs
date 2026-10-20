@@ -32,7 +32,8 @@ public static class WorkTaskFieldRules
     public static void ApplyHiddenOnCreate(WorkTaskSettings s, UpsertWorkTaskRequest input)
     {
         if (s.DescriptionRequirement == FieldRequirement.Hidden) input.Description = null;
-        if (s.DueDateRequirement == FieldRequirement.Hidden) input.DueDate = null;
+        // The start date is the due date's companion and is shown and hidden with it.
+        if (s.DueDateRequirement == FieldRequirement.Hidden) (input.StartDate, input.DueDate) = (null, null);
         if (s.TargetHoursRequirement == FieldRequirement.Hidden) input.TargetHours = null;
         if (!s.ShowPriority) input.Priority = WorkTaskPriority.Normal;
     }
@@ -40,7 +41,7 @@ public static class WorkTaskFieldRules
     public static void KeepHiddenOnEdit(WorkTaskSettings s, UpsertWorkTaskRequest input, WorkTask stored)
     {
         if (s.DescriptionRequirement == FieldRequirement.Hidden) input.Description = stored.Description;
-        if (s.DueDateRequirement == FieldRequirement.Hidden) input.DueDate = stored.DueDate;
+        if (s.DueDateRequirement == FieldRequirement.Hidden) (input.StartDate, input.DueDate) = (stored.StartDate, stored.DueDate);
         if (s.TargetHoursRequirement == FieldRequirement.Hidden) input.TargetHours = stored.TargetHours;
         if (!s.ShowPriority) input.Priority = stored.Priority;
     }
