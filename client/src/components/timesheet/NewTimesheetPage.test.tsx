@@ -114,7 +114,7 @@ export async function pick(name: string, option: string | RegExp) {
 /** The header strip of the one open day card: the column captions in order. */
 function headerLabels() {
     const row = combo('Project').closest('[data-testid="entry-row"]')!
-    const strip = row.parentElement!.previousElementSibling!
+    const strip = row.querySelector('[data-testid="entry-captions"]')!
     return Array.from(strip.children).map((el) => el.textContent)
 }
 

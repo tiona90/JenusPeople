@@ -93,9 +93,18 @@ function taskHeaders(shown: NarrowingColumns): { label: string; align?: 'center'
         { label: '' },
     ]
 }
-// Inner padding of a task card. The header strip above the cards repeats it (plus the
-// card's 1px border) so the captions stay lined up with the fields they name.
+// Inner padding of a task card.
 const TASK_CARD_PAD = '12px'
+
+// The small uppercase caption over a field. Each entry card carries its own, directly
+// above the fields they name — a strip above the first card sat over the Approved
+// project line instead and read as its label.
+const TASK_CAPTION_SX = {
+    fontSize: 10.5, fontWeight: 700,
+    color: 'text.disabled',
+    textTransform: 'uppercase', letterSpacing: '0.06em',
+    lineHeight: 1.4,
+} as const
 
 // Applied to the outlined-input root — a Select *is* that root, a TextField nests it,
 // hence the two shapes below.
@@ -1128,25 +1137,8 @@ function DayCard({
             {isOpen && (
                 <Box sx={{ px: 2, pb: 2, borderTop: '1px solid', borderTopColor: 'divider' }}>
                     {banner && <Box sx={{ pt: 1.25 }}>{banner}</Box>}
-                    <Box sx={{
-                        display: 'grid',
-                        gridTemplateColumns: grid,
-                        gap: 1.5,
-                        p: `14px calc(${TASK_CARD_PAD} + 1px) 8px`,
-                    }}>
-                        {headers.map((h, i) => (
-                            <Typography key={i} sx={{
-                                fontSize: 10.5, fontWeight: 700,
-                                color: 'text.disabled',
-                                textTransform: 'uppercase', letterSpacing: '0.06em',
-                                textAlign: h.align ?? 'left',
-                            }}>
-                                {h.label}
-                            </Typography>
-                        ))}
-                    </Box>
 
-                    <Stack spacing={1.25}>
+                    <Stack spacing={1.25} sx={{ pt: 1.5 }}>
                         {tasks.map((t) => {
                             const err = taskErrors[t._id]
                             const project = activeProjects.find((p) => String(p.id) === t.projectId)
@@ -1186,6 +1178,12 @@ function DayCard({
                                     pb: 1.25, mb: 1.25,
                                     borderBottom: '1px dashed', borderBottomColor: 'divider',
                                 }}>
+                                    <Stack direction="row" alignItems="baseline" spacing={1} sx={{ mb: 0.75 }}>
+                                        <Typography sx={TASK_CAPTION_SX}>Approved project</Typography>
+                                        <Typography sx={{ fontSize: 11, color: 'text.disabled' }}>
+                                            Optional · picking one fills in the project
+                                        </Typography>
+                                    </Stack>
                                     <Select
                                         size="small"
                                         displayEmpty
@@ -1208,7 +1206,7 @@ function DayCard({
                                             const o = taskOptions.find((x) => String(x.id) === value)
                                             return o
                                                 ? taskOptionLabel(o)
-                                                : <Box component="span" sx={{ color: 'text.disabled' }}>Approved project (optional)</Box>
+                                                : <Box component="span" sx={{ color: 'text.disabled', fontStyle: 'italic' }}>Select approved project…</Box>
                                         }}
                                         // The field truncates; the full name is a hover away.
                                         SelectDisplayProps={{
@@ -1228,6 +1226,18 @@ function DayCard({
                                             </MenuItem>
                                         ))}
                                     </Select>
+                                </Box>
+                                <Box data-testid="entry-captions" sx={{
+                                    display: 'grid',
+                                    gridTemplateColumns: grid,
+                                    gap: 1.5,
+                                    mb: 0.75,
+                                }}>
+                                    {headers.map((h, i) => (
+                                        <Typography key={i} sx={{ ...TASK_CAPTION_SX, textAlign: h.align ?? 'left' }}>
+                                            {h.label}
+                                        </Typography>
+                                    ))}
                                 </Box>
                                 <Box sx={{
                                     display: 'grid',
@@ -1387,8 +1397,9 @@ function DayCard({
                                     size="small"
                                     value={t.notes}
                                     onChange={(e) => onUpdateTask(t._id, 'notes', e.target.value)}
-                                    placeholder="Description / Notes"
+                                    placeholder="Description / notes (optional)"
                                     disabled={disabled}
+                                    inputProps={{ 'aria-label': 'Description / notes' }}
                                     sx={{ ...TASK_TEXTFIELD_SX, mt: 1.25 }}
                                 />
                                 {err && (err.projectId || err.hours) && (
