@@ -32,7 +32,16 @@ namespace Application.Reminders;
 //                         Administrators: they run the system, not attendance,
 //                         and are told about system errors instead —
 //                         SystemErrorNotifier)
+//   • timesheet-before-leave — employees whose approved leave starts on the next
+//                         working day and runs past this week's timesheet
+//                         deadline, while the week is still unsubmitted
 // Other ids are accepted but logged as not-implemented rather than failing.
+//
+// Nobody on a full day of approved leave today is sent any reminder — not the
+// check-in or check-out nudge, not the late-submissions chase, not a manager's
+// digest. SendEmailAsync drops them (LoadLeaveTodayAsync), so a reminder added
+// later cannot forget to. A morning half day also skips the check-in reminder;
+// an afternoon half day still gets the check-out one, since they did come in.
 //
 // Nothing is sent on a non-working day — a weekend under the Working Week, or a
 // public holiday for the holiday country — whichever reminder it is and however
@@ -60,6 +69,11 @@ public class ReminderDispatcher(
     public const string CheckInReminder = "check-in";
     public const string CheckOutReminder = "check-out";
     public const string DailyAttendanceReport = "daily-attendance-report";
+    public const string TimesheetBeforeLeave = "timesheet-before-leave";
+
+    // Who is on approved leave today, keyed by email (what SendEmailAsync is
+    // given). Loaded at the start of every dispatch.
+    private Dictionary<string, LeaveToday> _leaveToday = new(StringComparer.OrdinalIgnoreCase);
 
     // Convenience overload (used by the on-demand test endpoint): loads settings,
     // and fills this year's public holidays first — the scheduler does that on
@@ -87,6 +101,8 @@ public class ReminderDispatcher(
             return false;
         }
 
+        _leaveToday = await LoadLeaveTodayAsync(TodayLocal(settings), cancellationToken);
+
         switch (reminderId)
         {
             case PendingApprovals:
@@ -109,6 +125,9 @@ public class ReminderDispatcher(
                 break;
             case DailyAttendanceReport:
                 await DailyAttendanceReportAsync(settings, cancellationToken);
+                break;
+            case TimesheetBeforeLeave:
+                await TimesheetBeforeLeaveAsync(settings, cancellationToken);
                 break;
             default:
                 logger.LogInformation("Reminder '{Id}' has no dispatcher implementation; skipping.", reminderId);
@@ -349,6 +368,138 @@ public class ReminderDispatcher(
         return "it is still in draft";
     }
 
+    // ── timesheet-before-leave ───────────────────────────────────────────────
+    // The afternoon before somebody goes on leave, if this week's timesheet will
+    // fall due while they are away and is not submitted yet, they are asked to
+    // submit it before they go — otherwise it sits unsubmitted until they are back
+    // and late-submissions chases a week nobody could have closed.
+    //
+    // "Goes on leave" means a full day of approved leave on the next working day
+    // (a half day there still brings them in). "While they are away" means the
+    // deadline is before the day they are back: the first working day after the
+    // next one that no full day of approved leave covers. So a Wednesday off with
+    // a Friday deadline asks nothing — they are back on Thursday — while leave
+    // from Friday, or from Monday when the deadline is the Friday just gone,
+    // does. Same population as late-submissions: active Employees and Managers who
+    // had joined by the end of the week. Anybody on leave today is already gone
+    // and is dropped by SendEmailAsync.
+    private async Task TimesheetBeforeLeaveAsync(AppSettings settings, CancellationToken ct)
+    {
+        var today = TodayLocal(settings);
+
+        // Working-day answers are reused across everyone's walk to their return.
+        var workingDays = new Dictionary<DateOnly, bool>();
+        async Task<bool> IsWorking(DateOnly day)
+        {
+            if (!workingDays.TryGetValue(day, out var working))
+                workingDays[day] = working = await IsWorkingDayAsync(settings, day, ct);
+            return working;
+        }
+
+        DateOnly? nextWorkingDay = null;
+        for (var ahead = 1; ahead <= 14 && nextWorkingDay is null; ahead++)
+            if (await IsWorking(today.AddDays(ahead))) nextWorkingDay = today.AddDays(ahead);
+        if (nextWorkingDay is not { } leaveStart)
+        {
+            logger.LogInformation("timesheet-before-leave: no working day in the next two weeks; nothing sent.");
+            return;
+        }
+
+        var weekStart = WeekStartOf(today);
+        var weekEnd = weekStart.AddDays(6);
+        var deadlineUtc = TimesheetDeadlineUtc(settings, weekStart);
+        var weekStartUtc = weekStart.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+        var leaveStartAt = leaveStart.ToDateTime(TimeOnly.MinValue);
+
+        var people = await AttendanceDay.ExcludeAdmins(context.EmployeeProfiles)
+            .Where(p => p.User != null && p.User.IsActive && p.User.Email != null && p.User.Email != "")
+            .Where(p => p.EmploymentStartDate == null || p.EmploymentStartDate <= weekEnd)
+            .Select(p => new { ProfileId = p.Id, p.UserId, Email = p.User!.Email!, Name = p.User.DisplayName })
+            .ToListAsync(ct);
+        var userIds = people.Select(p => p.UserId).ToList();
+
+        // Every approved leave from the next working day on, for the walk below.
+        var leaves = (await context.AnnualLeaves
+            .Where(l => l.Status == AnnualLeaveStatus.Approved && l.EndDate >= leaveStartAt && userIds.Contains(l.EmployeeId))
+            .Select(l => new { l.EmployeeId, l.StartDate, l.EndDate, l.Duration })
+            .ToListAsync(ct))
+            .GroupBy(l => l.EmployeeId)
+            .ToDictionary(g => g.Key, g => g.Select(l => (
+                Start: DateOnly.FromDateTime(l.StartDate),
+                End: DateOnly.FromDateTime(l.EndDate),
+                l.Duration)).ToList());
+
+        bool OffAllDay(string userId, DateOnly day) =>
+            leaves.TryGetValue(userId, out var own)
+            && DailyHoursRule.CombineLeave(own.Where(l => l.Start <= day && l.End >= day).Select(l => l.Duration)) == LeaveOnDay.Full;
+
+        var leaving = new List<(string ProfileId, string Email, string? Name, DateOnly BackOn)>();
+        foreach (var person in people.Where(p => OffAllDay(p.UserId, leaveStart)))
+        {
+            // Bounded, so a year of leave or a calendar with no working days ends.
+            var backOn = leaveStart.AddDays(1);
+            while (backOn <= leaveStart.AddDays(366) && (!await IsWorking(backOn) || OffAllDay(person.UserId, backOn)))
+                backOn = backOn.AddDays(1);
+
+            if (deadlineUtc < backOn.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc))
+                leaving.Add((person.ProfileId, person.Email, person.Name, backOn));
+        }
+
+        if (leaving.Count == 0)
+        {
+            logger.LogInformation("timesheet-before-leave: nobody goes on leave on {Day} past the week's deadline; nothing sent.", leaveStart);
+            return;
+        }
+
+        var profileIds = leaving.Select(p => p.ProfileId).ToList();
+        var statusByProfileId = (await context.Timesheets
+            .Where(t => profileIds.Contains(t.EmployeeProfileId)
+                        && t.PeriodStart >= weekStartUtc && t.PeriodStart < weekStartUtc.AddDays(1))
+            .Select(t => new { t.EmployeeProfileId, t.Status })
+            .ToListAsync(ct))
+            .GroupBy(t => t.EmployeeProfileId)
+            .ToDictionary(g => g.Key, g => g.Select(t => t.Status).ToList());
+
+        var owing = leaving
+            .Select(p => (p.Email, p.Name, p.BackOn, State: statusByProfileId.TryGetValue(p.ProfileId, out var statuses)
+                ? TimesheetWeekState(statuses)
+                : "it has not been started yet"))
+            .Where(p => p.State is not null)
+            .ToList();
+
+        if (owing.Count == 0)
+        {
+            logger.LogInformation("timesheet-before-leave: everyone going on leave has submitted the week of {WeekStart}; nothing sent.", weekStart);
+            return;
+        }
+
+        var sent = 0;
+        if (settings.EmailNotificationsEnabled)
+        {
+            var week = $"{weekStart:dd MMM yyyy} – {weekEnd:dd MMM yyyy}";
+            var due = $"{deadlineUtc:dddd dd MMM 'at' HH:mm}";
+            foreach (var emp in owing)
+            {
+                var greeting = WebUtility.HtmlEncode(emp.Name ?? emp.Email);
+                var html = $"""
+<p>Hello {greeting},</p>
+<p>You are on leave from <strong>{leaveStart:dddd dd MMM}</strong> and back on <strong>{emp.BackOn:dddd dd MMM}</strong>.</p>
+<p>Your timesheet for the week of <strong>{WebUtility.HtmlEncode(week)}</strong> is due {WebUtility.HtmlEncode(due)}, while you are away, and has not been submitted: {emp.State}.</p>
+<p>Please log in to Jenus People and submit it before you go.</p>
+""";
+                var text = $"Hello {emp.Name ?? emp.Email},\n\nYou are on leave from {leaveStart:dddd dd MMM} and back on {emp.BackOn:dddd dd MMM}.\n\nYour timesheet for the week of {week} is due {due}, while you are away, and has not been submitted: {emp.State}.\n\nPlease log in to Jenus People and submit it before you go.";
+                if (await SendEmailAsync(emp.Email, "Jenus People: submit your timesheet before your leave", html, text, ct))
+                    sent++;
+            }
+        }
+        else
+        {
+            logger.LogInformation("timesheet-before-leave: email notifications disabled; skipping emails.");
+        }
+
+        logger.LogInformation("timesheet-before-leave: dispatched for leave from {Day}. Owing: {Owing}. Emails sent: {Sent}.", leaveStart, owing.Count, sent);
+    }
+
     // ── low-balance ──────────────────────────────────────────────────────────
     private async Task LowBalanceAsync(AppSettings settings, CancellationToken ct)
     {
@@ -475,7 +626,7 @@ public class ReminderDispatcher(
     {
         var attendance = await LoadAttendanceTodayAsync(ct);
         var targets = attendance.Employees
-            .Where(e => !attendance.OnLeaveUserIds.Contains(e.UserId) && !attendance.CheckedInProfileIds.Contains(e.ProfileId))
+            .Where(e => !IsAway(e.Email, morning: true) && !attendance.CheckedInProfileIds.Contains(e.ProfileId))
             .ToList();
 
         if (targets.Count == 0)
@@ -516,7 +667,7 @@ public class ReminderDispatcher(
     {
         var attendance = await LoadAttendanceTodayAsync(ct);
         var targets = attendance.Employees
-            .Where(e => !attendance.OnLeaveUserIds.Contains(e.UserId)
+            .Where(e => !IsAway(e.Email, morning: false)
                         && attendance.CheckedInProfileIds.Contains(e.ProfileId)
                         && !attendance.CheckedOutProfileIds.Contains(e.ProfileId))
             .ToList();
@@ -789,16 +940,23 @@ public class ReminderDispatcher(
     // late-submissions reminder, so the two chase the same week.
     private static DateOnly LatestTimesheetWeekPastDeadline(AppSettings settings, DateTime nowUtc)
     {
-        var today = DateOnly.FromDateTime(nowUtc);
-        var weekStart = today.AddDays(-(((int)today.DayOfWeek + 6) % 7)); // Monday
-        var deadlineOffset = Array.IndexOf(WeekTokensMondayFirst, (settings.TimesheetSubmissionDeadlineDay ?? "fri").Trim().ToLowerInvariant());
-        if (deadlineOffset < 0) deadlineOffset = 4; // Friday
-        var deadlineTime = TimeOnly.TryParse(settings.TimesheetSubmissionDeadlineTime, out var t) ? t : new TimeOnly(18, 0);
-
-        while (weekStart.AddDays(deadlineOffset).ToDateTime(deadlineTime, DateTimeKind.Utc) > nowUtc)
+        var weekStart = WeekStartOf(DateOnly.FromDateTime(nowUtc));
+        while (TimesheetDeadlineUtc(settings, weekStart) > nowUtc)
             weekStart = weekStart.AddDays(-7);
 
         return weekStart;
+    }
+
+    private static DateOnly WeekStartOf(DateOnly day) => day.AddDays(-(((int)day.DayOfWeek + 6) % 7)); // Monday
+
+    // When the week starting 'weekStart' is due: TimesheetSubmissionDeadlineDay at
+    // TimesheetSubmissionDeadlineTime, read as UTC (Friday 18:00 by default).
+    private static DateTime TimesheetDeadlineUtc(AppSettings settings, DateOnly weekStart)
+    {
+        var deadlineOffset = Array.IndexOf(WeekTokensMondayFirst, (settings.TimesheetSubmissionDeadlineDay ?? "fri").Trim().ToLowerInvariant());
+        if (deadlineOffset < 0) deadlineOffset = 4; // Friday
+        var deadlineTime = TimeOnly.TryParse(settings.TimesheetSubmissionDeadlineTime, out var t) ? t : new TimeOnly(18, 0);
+        return weekStart.AddDays(deadlineOffset).ToDateTime(deadlineTime, DateTimeKind.Utc);
     }
 
     private static readonly string[] WeekTokensMondayFirst = { "mon", "tue", "wed", "thu", "fri", "sat", "sun" };
@@ -860,8 +1018,8 @@ public class ReminderDispatcher(
 
     // Shared attendance snapshot for the check-in/check-out reminders: every
     // employee with a usable email, plus the sets of who has checked in / out
-    // today (keyed by EmployeeProfile.Id, as attendance events are) and who is
-    // on approved leave today (keyed by user id, as AnnualLeave.EmployeeId is).
+    // today (keyed by EmployeeProfile.Id, as attendance events are). Who is on
+    // leave is the dispatch-wide _leaveToday, read through IsAway.
     //
     // System Administrators are dropped the same way the attendance dashboards drop them
     // (AttendanceDay.ExcludeAdmins): a System Administrator may hold a profile, but the topbar
@@ -875,7 +1033,7 @@ public class ReminderDispatcher(
             .ToListAsync(ct);
 
         if (employees.Count == 0)
-            return new AttendanceSnapshot(employees, new(), new(), new());
+            return new AttendanceSnapshot(employees, new(), new());
 
         var now = DateTime.UtcNow;
         var dayStart = new DateTime(now.Year, now.Month, now.Day, 0, 0, 0, DateTimeKind.Utc);
@@ -891,16 +1049,40 @@ public class ReminderDispatcher(
         var checkedIn = todayEvents.Where(e => e.Type == AttendanceEventType.CheckIn).Select(e => e.EmployeeProfileId).ToHashSet();
         var checkedOut = todayEvents.Where(e => e.Type == AttendanceEventType.CheckOut).Select(e => e.EmployeeProfileId).ToHashSet();
 
-        var userIds = employees.Select(e => e.UserId).ToList();
-        var onLeave = (await context.AnnualLeaves
-            .Where(l => l.Status == AnnualLeaveStatus.Approved
-                        && l.StartDate <= now && l.EndDate >= now
-                        && userIds.Contains(l.EmployeeId))
-            .Select(l => l.EmployeeId)
-            .ToListAsync(ct)).ToHashSet();
-
-        return new AttendanceSnapshot(employees, checkedIn, checkedOut, onLeave);
+        return new AttendanceSnapshot(employees, checkedIn, checkedOut);
     }
+
+    // Approved leave covering 'day', per recipient email. Leave dates are calendar
+    // dates stored at midnight, so they are compared against the day's midnight —
+    // the snapshot used to compare EndDate against the current instant, which
+    // dropped the last day of every leave once the clock passed midnight and sent
+    // the employee a check-in reminder on the final day of their holiday.
+    private async Task<Dictionary<string, LeaveToday>> LoadLeaveTodayAsync(DateOnly day, CancellationToken ct)
+    {
+        var dayStart = day.ToDateTime(TimeOnly.MinValue);
+        var rows = await context.AnnualLeaves
+            .Where(l => l.Status == AnnualLeaveStatus.Approved
+                        && l.StartDate <= dayStart && l.EndDate >= dayStart
+                        && l.Employee != null && l.Employee.Email != null && l.Employee.Email != "")
+            .Select(l => new { Email = l.Employee!.Email!, l.Duration })
+            .ToListAsync(ct);
+
+        return rows
+            .GroupBy(r => r.Email, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                g => g.Key,
+                g => new LeaveToday(
+                    AllDay: DailyHoursRule.CombineLeave(g.Select(r => r.Duration)) == LeaveOnDay.Full,
+                    Morning: g.Any(r => r.Duration is LeaveDuration.Full or LeaveDuration.HalfDayMorning)),
+                StringComparer.OrdinalIgnoreCase);
+    }
+
+    // Away all day — or, with 'morning', away for the morning (a morning half day
+    // checks in after lunch, so the morning's check-in nudge is not theirs).
+    private bool IsAway(string email, bool morning) =>
+        _leaveToday.TryGetValue(email, out var leave) && (leave.AllDay || (morning && leave.Morning));
+
+    private sealed record LeaveToday(bool AllDay, bool Morning);
 
     // Today's date on the org's clock (AppSettings.TimeZoneId) — the date a public
     // holiday is a date on. The scheduler (ReminderBackgroundService) already
@@ -924,8 +1106,7 @@ public class ReminderDispatcher(
     private record AttendanceSnapshot(
         List<EmployeeContact> Employees,
         HashSet<string> CheckedInProfileIds,
-        HashSet<string> CheckedOutProfileIds,
-        HashSet<string> OnLeaveUserIds);
+        HashSet<string> CheckedOutProfileIds);
 
     // Next occurrence of a birthday on/after 'from', clamping Feb 29 to Feb 28 in
     // non-leap years.
@@ -942,6 +1123,12 @@ public class ReminderDispatcher(
     // ── shared helpers ───────────────────────────────────────────────────────
     private async Task<bool> SendEmailAsync(string email, string subject, string html, string text, CancellationToken ct)
     {
+        if (IsAway(email, morning: false))
+        {
+            logger.LogInformation("Reminder '{Subject}' not sent to {Email}: on approved leave today.", subject, email);
+            return false;
+        }
+
         try
         {
             return await emailService.SendEmailAsync(email, subject, html, text, ct);

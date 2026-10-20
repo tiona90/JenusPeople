@@ -15,10 +15,15 @@ namespace WorkTrack.Tests;
 /// </summary>
 public class ReminderDefaultsMatchSeedMigrationTests
 {
+    // Reminders catalogued after the migration ran. Each one is new, so its first
+    // day catching up is wanted, and it is listed here on purpose.
+    private static readonly string[] AddedAfterTheMigration = ["timesheet-before-leave"];
+
     [Fact]
     public void The_seed_migration_names_every_reminder_in_the_catalogue()
     {
-        var catalogue = ReminderDefaults.Create().Select(r => r.Id).OrderBy(id => id).ToArray();
+        var catalogue = ReminderDefaults.Create().Select(r => r.Id)
+            .Except(AddedAfterTheMigration).OrderBy(id => id).ToArray();
         var seeded = SeedReminderRunsOnUpgrade.ReminderIds.OrderBy(id => id).ToArray();
 
         Assert.Equal(catalogue, seeded);

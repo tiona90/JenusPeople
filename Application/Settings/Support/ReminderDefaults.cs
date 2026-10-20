@@ -24,6 +24,9 @@ public static class ReminderDefaults
         new() { Id = "birthday-reminder",  Enabled = false, Time = "08:30", Frequency = "daily"  },
         new() { Id = "check-in",           Enabled = true,  Time = "09:00", Frequency = "daily"  },
         new() { Id = "check-out",          Enabled = true,  Time = "18:00", Frequency = "daily"  },
+        // Added after SeedReminderRunsOnUpgrade, so on the deploy day it catches up
+        // like any brand-new reminder (ReminderDefaultsMatchSeedMigrationTests).
+        new() { Id = "timesheet-before-leave", Enabled = true, Time = "14:00", Frequency = "daily" },
     };
 
     public static readonly IReadOnlySet<string> KnownIds =
