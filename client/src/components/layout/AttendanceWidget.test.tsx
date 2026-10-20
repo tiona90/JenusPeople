@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppSettings, AttendanceToday } from '../../lib/types'
@@ -99,6 +99,30 @@ describe('the break clock on the topbar pill', () => {
         renderWidget(ON_BREAK, SETTINGS)
 
         expect(await screen.findByRole('timer', { name: 'On break for 10:00' })).toBeInTheDocument()
+    })
+
+    it('opens the break full screen from the Break button, and minimises back to the pill', async () => {
+        attendanceApi.startBreak.mockResolvedValue(ON_BREAK)
+        renderWidget({ ...ON_BREAK, status: 'in', onBreakSince: null }, { ...SETTINGS, breakMode: 'flexible', breakMinutes: 60 })
+
+        fireEvent.click(await screen.findByRole('button', { name: 'Break' }))
+
+        const overlay = await screen.findByRole('presentation')
+        expect(within(overlay).getByText('On break')).toBeInTheDocument()
+        expect(await within(overlay).findByRole('timer', { name: '50:00 of break left' })).toBeInTheDocument()
+        expect(within(overlay).getByRole('button', { name: 'Resume work' })).toBeInTheDocument()
+
+        fireEvent.click(within(overlay).getByRole('button', { name: 'Minimise' }))
+        await waitFor(() => expect(screen.queryByRole('presentation')).not.toBeInTheDocument())
+        expect(screen.getByRole('timer', { name: '50:00 of break left' })).toBeInTheDocument()
+    })
+
+    it('reopens the full-screen break from the pill', async () => {
+        renderWidget(ON_BREAK, SETTINGS)
+
+        expect(screen.queryByRole('presentation')).not.toBeInTheDocument()
+        fireEvent.click(await screen.findByRole('button', { name: /On break/ }))
+        expect(await screen.findByRole('button', { name: 'Resume work' })).toBeInTheDocument()
     })
 
     it('shows no clock while working', async () => {
