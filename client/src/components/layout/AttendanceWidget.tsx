@@ -3,10 +3,11 @@ import { useQuery } from '@tanstack/react-query'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
+import Modal from '@mui/material/Modal'
 import Typography from '@mui/material/Typography'
 import { softBg } from '../../lib/theme-tokens'
 import { getAppSettings } from '../../lib/api'
-import { breakAllowanceMinutes, breakClock, formatClock } from '../../lib/break-policy'
+import { breakAllowanceMinutes, breakClock, formatClock, type BreakClock } from '../../lib/break-policy'
 import { queryKeys } from '../../lib/hooks/queryKeys'
 import {
     AppDialog,
@@ -67,6 +68,123 @@ const ghostBtnSx = {
     '&:hover': { bgcolor: 'background.paper', borderColor: 'divider', boxShadow: 'none' },
 }
 
+function clockLabel(clock: BreakClock): string {
+    return clock.kind === 'remaining' ? `${formatClock(clock.seconds)} of break left`
+        : clock.kind === 'over' ? `${formatClock(clock.seconds)} over break allowance`
+            : `On break for ${formatClock(clock.seconds)}`
+}
+
+/**
+ * The break, full screen: opened by the Break button (and by clicking the pill while
+ * a break runs), over the page blurred behind it. Minimise drops back to the pill;
+ * the break itself carries on until Resume.
+ */
+function BreakOverlay({ open, clock, allowanceMinutes, idle, since, workedLabel, resuming, onResume, onMinimise }: {
+    open: boolean
+    clock: BreakClock | null
+    allowanceMinutes: number
+    idle: boolean
+    since: string | null
+    workedLabel: string
+    resuming: boolean
+    onResume: () => void
+    onMinimise: () => void
+}) {
+    const over = clock?.kind === 'over'
+    const ringValue = !clock || allowanceMinutes <= 0 ? 0
+        : over ? 100
+            : Math.min(100, (clock.seconds / (allowanceMinutes * 60)) * 100)
+
+    return (
+        <Modal
+            open={open}
+            onClose={onMinimise}
+            aria-labelledby="break-overlay-title"
+            slotProps={{
+                backdrop: {
+                    sx: {
+                        bgcolor: 'rgba(15, 23, 42, 0.55)',
+                        backdropFilter: 'blur(6px)',
+                        WebkitBackdropFilter: 'blur(6px)',
+                    },
+                },
+            }}
+        >
+            <Box sx={{
+                position: 'fixed', inset: 0,
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                gap: 3, px: 2, color: '#fff', textAlign: 'center', outline: 'none',
+            }}>
+                <Typography id="break-overlay-title" sx={{ fontSize: 22, fontWeight: 600, color: '#fff' }}>
+                    {idle ? 'You are idle' : 'On break'}
+                </Typography>
+
+                <Box sx={{ position: 'relative', width: 260, height: 260, maxWidth: '70vw', maxHeight: '70vw' }}>
+                    <CircularProgress
+                        variant="determinate" value={100} size="100%" thickness={2}
+                        sx={{ position: 'absolute', inset: 0, color: 'rgba(255,255,255,0.18)' }}
+                    />
+                    <CircularProgress
+                        variant="determinate" value={ringValue} size="100%" thickness={2}
+                        sx={{ position: 'absolute', inset: 0, color: over ? RED : AMBER }}
+                    />
+                    <Box sx={{
+                        position: 'absolute', inset: 0,
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                        {clock && (
+                            <Box
+                                role="timer"
+                                aria-label={clockLabel(clock)}
+                                sx={{
+                                    fontVariantNumeric: 'tabular-nums',
+                                    fontWeight: 700,
+                                    fontSize: { xs: 40, sm: 54 },
+                                    lineHeight: 1.1,
+                                    color: over ? RED : '#fff',
+                                }}
+                            >
+                                {over ? '+' : ''}{formatClock(clock.seconds)}
+                            </Box>
+                        )}
+                        <Typography sx={{ fontSize: 14, color: over ? RED : 'rgba(255,255,255,0.8)', fontWeight: over ? 600 : 400 }}>
+                            {clock?.kind === 'remaining' ? 'left of your break'
+                                : over ? 'over your break allowance'
+                                    : 'on break'}
+                        </Typography>
+                    </Box>
+                </Box>
+
+                <Typography sx={{ fontSize: 14, color: 'rgba(255,255,255,0.8)' }}>
+                    {since && <>Since {formatTime12(since)} · </>}{workedLabel} worked today
+                </Typography>
+
+                <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', justifyContent: 'center' }}>
+                    <Button
+                        disableElevation
+                        disabled={resuming}
+                        onClick={onResume}
+                        startIcon={resuming ? <CircularProgress size={14} color="inherit" /> : null}
+                        sx={{ ...solidBtnSx(GREEN, GREEN_HOVER), fontSize: 15, px: 4, py: 1.25, borderRadius: '8px' }}
+                    >
+                        {resuming ? 'Resuming…' : 'Resume work'}
+                    </Button>
+                    <Button
+                        onClick={onMinimise}
+                        sx={{
+                            ...ghostBtnSx, color: '#fff', borderColor: 'rgba(255,255,255,0.4)',
+                            fontSize: 15, px: 3, py: 1.25, borderRadius: '8px',
+                            '&:hover': { bgcolor: 'rgba(255,255,255,0.1)', borderColor: '#fff' },
+                        }}
+                    >
+                        Minimise
+                    </Button>
+                </Box>
+            </Box>
+        </Modal>
+    )
+}
+
 /** The wall clock, ticking every second while `active`, so the break clock moves. */
 function useSecondTicker(active: boolean): number {
     const [now, setNow] = useState(() => Date.now())
@@ -88,7 +206,16 @@ export default function AttendanceWidget({ enabled }: { enabled: boolean }) {
     const { data: settings } = useQuery({ queryKey: queryKeys.appSettings, queryFn: getAppSettings, enabled })
     const onBreak = enabled && today?.status === 'break'
     const now = useSecondTicker(onBreak)
-    const clock = onBreak && today ? breakClock(today, breakAllowanceMinutes(settings), now) : null
+    const allowance = breakAllowanceMinutes(settings)
+    const clock = onBreak && today ? breakClock(today, allowance, now) : null
+    const [showBreakOverlay, setShowBreakOverlay] = useState(false)
+    // A break that ends anywhere (the pill's Resume, another tab) closes it, so the
+    // next idle auto-break does not open it unasked.
+    const [wasOnBreak, setWasOnBreak] = useState(onBreak)
+    if (wasOnBreak !== onBreak) {
+        setWasOnBreak(onBreak)
+        if (!onBreak) setShowBreakOverlay(false)
+    }
 
     if (!enabled) return null
 
@@ -152,17 +279,22 @@ export default function AttendanceWidget({ enabled }: { enabled: boolean }) {
                         </Box>
                     </Typography>
                 ) : status === 'break' ? (
-                    <Typography sx={{ fontSize: 12, color: 'text.secondary', whiteSpace: 'nowrap' }}>
+                    <Typography
+                        component="button"
+                        type="button"
+                        title="Show the break full screen"
+                        onClick={() => setShowBreakOverlay(true)}
+                        sx={{
+                            fontSize: 12, color: 'text.secondary', whiteSpace: 'nowrap',
+                            background: 'none', border: 0, p: 0, fontFamily: 'inherit', cursor: 'pointer',
+                        }}
+                    >
                         {today?.isAutoBreak ? 'Idle' : 'On break'}
                         {clock && (
                             <Box
                                 component="span"
                                 role="timer"
-                                aria-label={
-                                    clock.kind === 'remaining' ? `${formatClock(clock.seconds)} of break left`
-                                        : clock.kind === 'over' ? `${formatClock(clock.seconds)} over break allowance`
-                                            : `On break for ${formatClock(clock.seconds)}`
-                                }
+                                aria-label={clockLabel(clock)}
                                 sx={{ ml: 0.75 }}
                             >
                                 <Box component="span" sx={{
@@ -220,7 +352,10 @@ export default function AttendanceWidget({ enabled }: { enabled: boolean }) {
                     <Button
                         disableElevation
                         disabled={anyPending}
-                        onClick={() => startBreak.mutate()}
+                        onClick={() => {
+                            setShowBreakOverlay(true)
+                            startBreak.mutate()
+                        }}
                         startIcon={startBreak.isPending ? <CircularProgress size={11} color="inherit" /> : null}
                         sx={ghostBtnSx}
                     >
@@ -249,6 +384,18 @@ export default function AttendanceWidget({ enabled }: { enabled: boolean }) {
                     {endBreak.isPending ? 'Resuming…' : 'Resume'}
                 </Button>
             )}
+
+            <BreakOverlay
+                open={showBreakOverlay && onBreak}
+                clock={clock}
+                allowanceMinutes={allowance}
+                idle={!!today?.isAutoBreak}
+                since={today?.onBreakSince ?? null}
+                workedLabel={formatElapsed(elapsed)}
+                resuming={endBreak.isPending}
+                onResume={() => endBreak.mutate(undefined, { onSuccess: () => setShowBreakOverlay(false) })}
+                onMinimise={() => setShowBreakOverlay(false)}
+            />
 
             <AppDialog open={showEarlyCheckOutWarning} onClose={() => setShowEarlyCheckOutWarning(false)} maxWidth="xs">
                 <AppDialogTitle>Check out early?</AppDialogTitle>
