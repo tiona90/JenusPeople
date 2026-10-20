@@ -144,9 +144,9 @@ describe('TasksPage', () => {
         ])
         renderPage()
 
-        const panel = await screen.findByRole('region', { name: 'Not working on a task' })
+        const panel = await screen.findByRole('region', { name: 'Not working on an approved project' })
         expect(within(panel).getByTestId('idle-count')).toHaveTextContent('2')
-        expect(within(panel).getByText('No tasks')).toBeInTheDocument()
+        expect(within(panel).getByText('No approved projects')).toBeInTheDocument()
         expect(within(panel).getByText('2 to do, none started')).toBeInTheDocument()
 
         fireEvent.change(await screen.findByRole('combobox', { name: 'Department filter' }), { target: { value: '2' } })
@@ -157,7 +157,7 @@ describe('TasksPage', () => {
     it('shows an Employee no idle-people panel', async () => {
         renderPage(['Employee'])
         await cards()
-        expect(screen.queryByRole('region', { name: 'Not working on a task' })).toBeNull()
+        expect(screen.queryByRole('region', { name: 'Not working on an approved project' })).toBeNull()
         expect(api.getIdleTaskPeople).not.toHaveBeenCalled()
     })
 

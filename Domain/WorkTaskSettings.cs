@@ -25,8 +25,8 @@ public class WorkTaskSettings
     public int Id { get; set; } = SingletonId;
 
     public FieldRequirement DescriptionRequirement { get; set; } = FieldRequirement.Optional;
-    public FieldRequirement DueDateRequirement { get; set; } = FieldRequirement.Optional;
-    public FieldRequirement TargetHoursRequirement { get; set; } = FieldRequirement.Optional;
+    public FieldRequirement DueDateRequirement { get; set; } = FieldRequirement.Required;
+    public FieldRequirement TargetHoursRequirement { get; set; } = FieldRequirement.Required;
     /// <summary>Required gates completion, not creation: the create dialog uploads after the task exists.</summary>
     public FieldRequirement AttachmentsRequirement { get; set; } = FieldRequirement.Optional;
     /// <summary>Required or Optional only: the timesheet's Task column sets a row's project from the task.</summary>

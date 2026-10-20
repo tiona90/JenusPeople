@@ -128,7 +128,7 @@ describe('NewTimesheetPage — which columns are asked', () => {
         expect(combo('Type')).toBeInTheDocument()
         expect(combo('Component')).toBeInTheDocument()
         expect(combo('Activity')).toBeInTheDocument()
-        expect(headerLabels()).toEqual(['Task', 'Project', 'Type', 'Component', 'Activity', 'Hours', ''])
+        expect(headerLabels()).toEqual(['Project', 'Type', 'Component', 'Activity', 'Hours', ''])
     })
 
     it('drops a column whose catalogue is empty, header and picker together', async () => {
@@ -136,19 +136,19 @@ describe('NewTimesheetPage — which columns are asked', () => {
         expect(screen.queryByRole('combobox', { name: 'Component' })).toBeNull()
         expect(screen.queryByRole('combobox', { name: 'Activity' })).toBeNull()
         expect(combo('Type')).toBeInTheDocument()
-        expect(headerLabels()).toEqual(['Task', 'Project', 'Type', 'Hours', ''])
+        expect(headerLabels()).toEqual(['Project', 'Type', 'Hours', ''])
     })
 
     it('drops a column whose catalogue has one entry — there is nothing to choose', async () => {
         await renderPage({ components: [DM] })
         expect(screen.queryByRole('combobox', { name: 'Component' })).toBeNull()
-        expect(headerLabels()).toEqual(['Task', 'Project', 'Type', 'Activity', 'Hours', ''])
+        expect(headerLabels()).toEqual(['Project', 'Type', 'Activity', 'Hours', ''])
     })
 
-    it('leaves a row of Task, Project and Hours when no catalogue is in use', async () => {
+    it('leaves a row of Project and Hours when no catalogue is in use', async () => {
         await renderPage({ types: [], components: [], activities: [] })
-        expect(screen.getAllByRole('combobox').map((c) => c.getAttribute('aria-label'))).toEqual(['Task', 'Project'])
-        expect(headerLabels()).toEqual(['Task', 'Project', 'Hours', ''])
+        expect(screen.getAllByRole('combobox').map((c) => c.getAttribute('aria-label'))).toEqual(['Approved project', 'Project'])
+        expect(headerLabels()).toEqual(['Project', 'Hours', ''])
     })
 })
 
@@ -199,11 +199,25 @@ describe('NewTimesheetPage — a single option is filled in', () => {
 
     it('fills in after a task sets the project', async () => {
         await renderPage({ taskOptions: [{ id: 7, title: 'Fix login', projectId: 10, projectCode: 'APO', targetHours: null, loggedHours: 0, isClosed: false }] })
-        await pick('Task', /Fix login/)
+        await pick('Approved project', /Fix login/)
         expect(combo('Project')).toHaveTextContent('Apollo')
         expect(combo('Type')).toHaveTextContent('Support')
         expect(combo('Type')).toHaveAttribute('aria-disabled', 'true')
         expect(combo('Component')).toHaveTextContent('DM')
+    })
+
+    it('locks the project and the task\'s type while an approved project is picked, and frees them when it is cleared', async () => {
+        await renderPage({
+            taskOptions: [{ id: 7, title: 'Fix login', projectId: 10, projectTypeId: 1, projectCode: 'APO', targetHours: null, loggedHours: 0, isClosed: false }],
+        })
+        await pick('Approved project', /Fix login/)
+        expect(combo('Project')).toHaveTextContent('Apollo')
+        expect(combo('Project')).toHaveAttribute('aria-disabled', 'true')
+        expect(combo('Type')).toHaveTextContent('Support')
+        expect(combo('Type')).toHaveAttribute('aria-disabled', 'true')
+
+        await pick('Approved project', 'No approved project')
+        expect(combo('Project')).not.toHaveAttribute('aria-disabled', 'true')
     })
 
     it('keeps a filled value the next project still offers, and refills when it does not', async () => {
@@ -314,15 +328,15 @@ describe('NewTimesheetPage — a task a Manager or HR closed', () => {
 
     it('is not offered to a row that does not already name it', async () => {
         await renderPage({ taskOptions: [open, done] })
-        fireEvent.mouseDown(combo('Task'))
+        fireEvent.mouseDown(combo('Approved project'))
         expect(await screen.findByRole('option', { name: /Fix login/ })).toBeInTheDocument()
         expect(screen.queryByRole('option', { name: /Old report/ })).toBeNull()
     })
 
     it('still reads on a row already logged against it, but cannot be picked again', async () => {
         await renderPage({ sheet: sheetWith({ workTaskId: 8 }), taskOptions: [open, done] })
-        expect(combo('Task')).toHaveTextContent('Old report (closed)')
-        fireEvent.mouseDown(combo('Task'))
+        expect(combo('Approved project')).toHaveTextContent('Old report (closed)')
+        fireEvent.mouseDown(combo('Approved project'))
         expect(await screen.findByRole('option', { name: /Old report/ })).toHaveAttribute('aria-disabled', 'true')
     })
 })

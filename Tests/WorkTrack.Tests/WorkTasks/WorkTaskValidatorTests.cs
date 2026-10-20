@@ -81,4 +81,18 @@ public class WorkTaskValidatorTests
         var r = Ok(); r.TargetHours = hours;
         Assert.Equal(valid, Valid(r));
     }
+
+    [Theory]
+    [InlineData("2026-10-19", "2026-10-30", true)]
+    [InlineData("2026-10-30", "2026-10-30", true)]  // a one-day task
+    [InlineData("2026-10-31", "2026-10-30", false)]
+    [InlineData("2026-10-31", null, true)]          // no due date to be after
+    [InlineData(null, "2026-10-30", true)]
+    public void The_start_date_is_optional_but_not_after_the_due_date(string? start, string? due, bool valid)
+    {
+        var r = Ok();
+        r.StartDate = start is null ? null : DateOnly.Parse(start);
+        r.DueDate = due is null ? null : DateOnly.Parse(due);
+        Assert.Equal(valid, Valid(r));
+    }
 }

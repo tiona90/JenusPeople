@@ -24,6 +24,9 @@ public static class WorkTaskProjection
             ProjectName = t.Project != null ? t.Project.Name : null,
             ProjectCode = t.Project != null ? t.Project.Code : null,
             ProjectColorKey = t.Project != null ? t.Project.ColorKey : null,
+            ProjectTypeId = t.ProjectTypeId,
+            ProjectTypeName = t.ProjectType != null ? t.ProjectType.Name : null,
+            ProjectTypeIcon = t.ProjectType != null ? t.ProjectType.Icon : null,
             Assignees = t.Assignees
                 .Select(a => new WorkTaskAssigneeDto
                 {
@@ -35,6 +38,7 @@ public static class WorkTaskProjection
                 .ToList(),
             CreatedById = t.CreatedById,
             CreatedByName = !string.IsNullOrWhiteSpace(t.CreatedBy!.DisplayName) ? t.CreatedBy.DisplayName : (t.CreatedBy.Email ?? ""),
+            StartDate = t.StartDate,
             DueDate = t.DueDate,
             TargetHours = t.TargetHours,
             Priority = t.Priority,

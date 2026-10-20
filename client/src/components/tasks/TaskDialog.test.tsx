@@ -3,6 +3,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import TaskDialog from './TaskDialog'
 import { DEFAULT_TASK_SETTINGS } from '../../lib/task-settings'
+import type { WorkTaskSettings } from '../../lib/api/work-task-settings'
+
+// Most tests are about something else, so they leave the due date and target hours
+// optional rather than filling both in every time; the defaults have their own test.
+const DATES_OPTIONAL: WorkTaskSettings = { ...DEFAULT_TASK_SETTINGS, dueDateRequirement: 'Optional', targetHoursRequirement: 'Optional' }
 
 vi.mock('../../lib/api', () => ({
     getWorkTaskDepartments: vi.fn(),
@@ -15,7 +20,13 @@ vi.mock('../../lib/api', () => ({
     getWorkTaskSettings: vi.fn(),
     WORK_TASK_SETTINGS_KEY: ['work-tasks', 'settings'],
 }))
-const api = vi.mocked(await import('../../lib/api'))
+vi.mock('../../lib/api/settings', () => ({ getAppSettings: vi.fn() }))
+vi.mock('../../lib/api/holidays', () => ({ getHolidays: vi.fn() }))
+const api = {
+    ...vi.mocked(await import('../../lib/api')),
+    ...vi.mocked(await import('../../lib/api/settings')),
+    ...vi.mocked(await import('../../lib/api/holidays')),
+}
 
 // Each test drives several MUI Selects, which jsdom renders slowly: alone the heaviest
 // takes ~4s, so under a loaded machine the 5s default is a coin toss, not a signal.
@@ -51,7 +62,11 @@ beforeEach(() => {
             : [{ userId: 'u-olga', displayName: 'Olga Ops' }, { userId: 'u-hana', displayName: 'Hana HR' }])
     api.getWorkTaskProjects.mockImplementation(async (departmentId: number) =>
         departmentId === 1 ? [{ id: 10, name: 'CRM Rollout', code: 'CRM' }] : [{ id: 12, name: 'Ops Tooling', code: 'OPT' }])
-    api.getWorkTaskSettings.mockResolvedValue(DEFAULT_TASK_SETTINGS)
+    api.getWorkTaskSettings.mockResolvedValue(DATES_OPTIONAL)
+    api.getAppSettings.mockResolvedValue({
+        workingDays: 'mon-fri', workingDaysCustom: '', workingHoursStart: '09:00', workingHoursEnd: '17:00', breakMode: 'none',
+    } as never)
+    api.getHolidays.mockResolvedValue([{ date: '2026-10-28', localName: 'Ochi Day', englishName: 'Ochi Day', countryCode: 'CY' }])
 })
 
 describe('TaskDialog', () => {
@@ -180,8 +195,47 @@ describe('TaskDialog', () => {
 
         await waitFor(() => expect(onSaved).toHaveBeenCalled())
         expect(api.createWorkTask).toHaveBeenCalledWith({
-            title: 'Chase notes', description: null, departmentId: 1, projectId: 10, assigneeIds: ['u-sam'], dueDate: null, targetHours: null, priority: 'Normal',
+            title: 'Chase notes', description: null, departmentId: 1, projectId: 10, projectTypeId: null, assigneeIds: ['u-sam'], startDate: null, dueDate: null, targetHours: null, priority: 'Normal',
         })
+    })
+
+    it('fills target hours from the start and due dates and locks them until the start date is cleared', async () => {
+        api.createWorkTask.mockResolvedValue({} as never)
+        const { onSaved } = renderDialog()
+        fireEvent.change(screen.getByRole('textbox', { name: /^Title/ }), { target: { value: 'Migrate' } })
+        await choose('Department', 'Sales')
+        await choose('Project', 'CRM Rollout')
+        // Mon 19 – Fri 30 Oct: ten weekdays, less Ochi Day, at 8h.
+        fireEvent.change(screen.getByLabelText(/^Start date/), { target: { value: '2026-10-19' } })
+        fireEvent.change(screen.getByLabelText(/^Due date/), { target: { value: '2026-10-30' } })
+
+        const hours = screen.getByRole('spinbutton', { name: /^Target hours/ })
+        await waitFor(() => expect(hours).toHaveValue(72))
+        expect(screen.getByText('9 working days × 8h — from the dates')).toBeInTheDocument()
+        expect(hours).toHaveAttribute('readonly')
+
+        fireEvent.click(screen.getByRole('button', { name: 'Create task' }))
+        await waitFor(() => expect(onSaved).toHaveBeenCalled())
+        expect(api.createWorkTask).toHaveBeenCalledWith(expect.objectContaining({ startDate: '2026-10-19', dueDate: '2026-10-30', targetHours: 72 }))
+
+        // No start date: the field is the user's again, keeping the last figure.
+        fireEvent.change(screen.getByLabelText(/^Start date/), { target: { value: '' } })
+        await waitFor(() => expect(hours).not.toHaveAttribute('readonly'))
+        expect(hours).toHaveValue(72)
+        fireEvent.change(hours, { target: { value: '60' } })
+        expect(hours).toHaveValue(60)
+    })
+
+    it('holds Create while the start date is after the due date', async () => {
+        renderDialog()
+        fireEvent.change(screen.getByRole('textbox', { name: /^Title/ }), { target: { value: 'Migrate' } })
+        await choose('Department', 'Sales')
+        await choose('Project', 'CRM Rollout')
+        fireEvent.change(screen.getByLabelText(/^Start date/), { target: { value: '2026-10-30' } })
+        fireEvent.change(screen.getByLabelText(/^Due date/), { target: { value: '2026-10-19' } })
+
+        expect(screen.getByText('The start date cannot be after the due date.')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Create task' })).toBeDisabled()
     })
 
     it('opens clean after a failed save was cancelled', async () => {
@@ -216,6 +270,57 @@ describe('TaskDialog', () => {
 
         await waitFor(() => expect(api.getWorkTaskProjects).toHaveBeenCalledWith(2))
         expect(within(screen.getByRole('combobox', { name: /^Project/ })).queryByText('CRM Rollout')).toBeNull()
+    })
+
+    it("offers the chosen project's types, posts the one picked, and drops it when the project changes", async () => {
+        api.getWorkTaskProjects.mockResolvedValue([
+            { id: 10, name: 'CRM Rollout', code: 'CRM', types: [{ id: 3, name: 'Issue', icon: '🐞' }, { id: 4, name: 'Support', icon: '🛠️' }] },
+            { id: 11, name: 'Payroll', code: 'PAY', types: [] },
+        ])
+        api.createWorkTask.mockResolvedValue({} as never)
+        const { onSaved } = renderDialog()
+        fireEvent.change(screen.getByRole('textbox', { name: /^Title/ }), { target: { value: 'Chase notes' } })
+        await choose('Department', 'Sales')
+        await choose('Assignees', 'Sam Sales')
+        expect(screen.getByText('Choose a project first')).toBeInTheDocument()
+
+        await choose('Project', 'Payroll')
+        expect(await screen.findByText('This project has no types')).toBeInTheDocument()
+
+        await choose('Project', 'CRM Rollout')
+        await choose('Type', '🐞 Issue')
+        await choose('Project', 'Payroll')
+        await waitFor(() => expect(within(screen.getByRole('combobox', { name: /^Type/ })).queryByText('🐞 Issue')).toBeNull())
+
+        await choose('Project', 'CRM Rollout')
+        await choose('Type', '🛠️ Support')
+        fireEvent.click(screen.getByRole('button', { name: 'Create task' }))
+        await waitFor(() => expect(onSaved).toHaveBeenCalled())
+        expect(api.createWorkTask).toHaveBeenCalledWith(expect.objectContaining({ projectId: 10, projectTypeId: 4 }))
+    })
+
+    it('requires a type on a project classified by any, and not on one with none', async () => {
+        api.getWorkTaskProjects.mockResolvedValue([
+            { id: 10, name: 'CRM Rollout', code: 'CRM', types: [{ id: 3, name: 'Issue', icon: '🐞' }] },
+            { id: 11, name: 'Payroll', code: 'PAY', types: [] },
+        ])
+        renderDialog()
+        fireEvent.change(screen.getByRole('textbox', { name: /^Title/ }), { target: { value: 'Chase notes' } })
+        await choose('Department', 'Sales')
+        await choose('Assignees', 'Sam Sales')
+        const create = screen.getByRole('button', { name: 'Create task' })
+
+        await choose('Project', 'CRM Rollout')
+        expect(create).toBeDisabled()
+        fireEvent.mouseDown(screen.getByRole('combobox', { name: /^Type/ }))
+        expect(screen.queryByRole('option', { name: 'No type' })).toBeNull()
+        fireEvent.keyDown(screen.getByRole('listbox'), { key: 'Escape' })
+        await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull())
+        await choose('Type', '🐞 Issue')
+        expect(create).toBeEnabled()
+
+        await choose('Project', 'Payroll')
+        await waitFor(() => expect(create).toBeEnabled())
     })
 
     it('holds Create until a project is chosen', async () => {
@@ -342,6 +447,8 @@ describe('TaskDialog', () => {
 
         expect(screen.getByRole('combobox', { name: /^Status/ })).toHaveAttribute('aria-disabled', 'true')
         expect(screen.getByText(/Confirm it or send it back from its card/)).toBeInTheDocument()
+        // The settings land a tick after the dialog opens; until then the defaults ask for a due date.
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled())
         fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
 
         await waitFor(() => expect(onSaved).toHaveBeenCalled())
@@ -400,13 +507,15 @@ describe('TaskDialog', () => {
         await waitFor(() => expect(within(assignees).getByText('Sam Sales')).toBeInTheDocument())
         expect(within(assignees).queryByText('Hana HR')).toBeNull()
 
+        // The settings land a tick after the dialog opens; until then the defaults ask for a due date.
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled())
         fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
         await waitFor(() => expect(onSaved).toHaveBeenCalled())
         expect(api.updateWorkTask).toHaveBeenCalledWith(8, expect.objectContaining({ assigneeIds: ['u-sam'] }))
     })
 
-    it('holds Save until a required due date is given, and says why', async () => {
-        api.getWorkTaskSettings.mockResolvedValue({ ...DEFAULT_TASK_SETTINGS, dueDateRequirement: 'Required' })
+    it('requires a due date and target hours by default, and says why', async () => {
+        api.getWorkTaskSettings.mockResolvedValue(DEFAULT_TASK_SETTINGS)
         renderDialog()
         fireEvent.change(screen.getByRole('textbox', { name: /^Title/ }), { target: { value: 'Chase notes' } })
         await choose('Department', 'Sales')
@@ -416,6 +525,10 @@ describe('TaskDialog', () => {
         expect(screen.getByRole('button', { name: 'Create task' })).toBeDisabled()
 
         fireEvent.change(screen.getByLabelText(/Due date/), { target: { value: '2026-10-01' } })
+        expect(await screen.findByText('Target hours are required.')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Create task' })).toBeDisabled()
+
+        fireEvent.change(screen.getByRole('spinbutton', { name: /^Target hours/ }), { target: { value: '12' } })
         expect(screen.getByRole('button', { name: 'Create task' })).toBeEnabled()
     })
 
@@ -436,7 +549,7 @@ describe('TaskDialog', () => {
     })
 
     it('lets an optional project be left out and sends null', async () => {
-        api.getWorkTaskSettings.mockResolvedValue({ ...DEFAULT_TASK_SETTINGS, projectRequirement: 'Optional' })
+        api.getWorkTaskSettings.mockResolvedValue({ ...DATES_OPTIONAL, projectRequirement: 'Optional' })
         api.createWorkTask.mockResolvedValue({} as never)
         const { onSaved } = renderDialog()
         fireEvent.change(await screen.findByRole('textbox', { name: /^Title/ }), { target: { value: 'No project' } })

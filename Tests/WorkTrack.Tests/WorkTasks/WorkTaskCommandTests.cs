@@ -418,6 +418,119 @@ public class WorkTaskCommandTests
         Assert.True(result.IsSuccess, result.Error);
     }
 
+    /// <summary>Two types: Issue, which the Sales project carries, and Support, which it does not.</summary>
+    private static async Task<(int Issue, int Support)> SeedTypesAsync(AppDbContext db)
+    {
+        var issue = new ProjectType { Name = "Issue", Icon = "🐞" };
+        var support = new ProjectType { Name = "Support" };
+        db.ProjectTypes.AddRange(issue, support);
+        await db.SaveChangesAsync();
+        db.ProjectTypeAssignments.Add(new ProjectTypeAssignment { ProjectId = SalesProject, ProjectTypeId = issue.Id });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        return (issue.Id, support.Id);
+    }
+
+    [Fact]
+    public async Task A_created_task_carries_a_type_its_project_is_classified_as()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        var (issue, _) = await SeedTypesAsync(db);
+        var request = Request(Sales, SalesManager);
+        request.ProjectTypeId = issue;
+
+        var result = await Create(db, Hr, request);
+
+        Assert.True(result.IsSuccess, result.Error);
+        Assert.Equal(issue, result.Value!.ProjectTypeId);
+        Assert.Equal("Issue", result.Value.ProjectTypeName);
+        Assert.Equal("🐞", result.Value.ProjectTypeIcon);
+    }
+
+    [Fact]
+    public async Task A_type_the_project_does_not_carry_is_refused()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        var (_, support) = await SeedTypesAsync(db);
+        var request = Request(Sales, SalesManager);
+        request.ProjectTypeId = support;
+
+        var result = await Create(db, Hr, request);
+
+        Assert.Equal(ResultErrorKind.Invalid, result.ErrorKind);
+        Assert.Equal(WorkTaskProjectRule.TypeNotAvailableMessage, result.Error);
+    }
+
+    [Fact]
+    public async Task A_task_on_a_classified_project_must_name_a_type()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        await SeedTypesAsync(db);
+
+        var created = await Create(db, Hr, Request(Sales, SalesManager));
+
+        Assert.Equal(ResultErrorKind.Invalid, created.ErrorKind);
+        Assert.Equal(WorkTaskProjectRule.TypeRequiredMessage, created.Error);
+    }
+
+    [Fact]
+    public async Task A_task_filed_before_the_rule_is_given_a_type_on_its_next_edit()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        var (issue, _) = await SeedTypesAsync(db);
+        var id = await Seeded(db, NewTask(Sales, Hr, SalesManager));
+
+        var refused = await Update(db, id, Hr, Request(Sales, SalesManager, "Typo fixed"));
+        Assert.Equal(WorkTaskProjectRule.TypeRequiredMessage, refused.Error);
+
+        var request = Request(Sales, SalesManager, "Typo fixed");
+        request.ProjectTypeId = issue;
+        var saved = await Update(db, id, Hr, request);
+        Assert.True(saved.IsSuccess, saved.Error);
+    }
+
+    [Fact]
+    public async Task Editing_title_only_does_not_recheck_a_type_the_project_has_since_dropped()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        var (issue, _) = await SeedTypesAsync(db);
+        var task = NewTask(Sales, Hr, SalesManager);
+        task.ProjectTypeId = issue;
+        var id = await Seeded(db, task);
+        db.ProjectTypeAssignments.RemoveRange(db.ProjectTypeAssignments);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        var request = Request(Sales, SalesManager, "Typo fixed");
+        request.ProjectTypeId = issue;
+
+        var result = await Update(db, id, Hr, request);
+
+        Assert.True(result.IsSuccess, result.Error);
+        Assert.Equal(issue, result.Value!.ProjectTypeId);
+    }
+
+    [Fact]
+    public async Task Deleting_a_type_leaves_the_task_unclassified()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        var (_, support) = await SeedTypesAsync(db);
+        var task = NewTask(Sales, Hr, SalesManager);
+        task.ProjectTypeId = support;
+        var id = await Seeded(db, task);
+
+        db.ProjectTypes.Remove(await db.ProjectTypes.SingleAsync(t => t.Id == support));
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        Assert.Null((await db.WorkTasks.SingleAsync(t => t.Id == id)).ProjectTypeId);
+    }
+
     /// <summary>OpsManager covers Sales as well, so Sales has three eligible people.</summary>
     private static async Task OpsManagerCoversSalesAsync(AppDbContext db)
     {
@@ -537,14 +650,18 @@ public class WorkTaskCommandTests
         await SeedAsync(db);
         var request = Request(Sales, SalesManager);
         request.TargetHours = 40;
+        request.StartDate = new DateOnly(2026, 10, 19);
+        request.DueDate = new DateOnly(2026, 10, 23);
 
         var created = await Create(db, Hr, request);
         Assert.True(created.IsSuccess, created.Error);
         Assert.Equal(40, created.Value!.TargetHours);
+        Assert.Equal(new DateOnly(2026, 10, 19), created.Value.StartDate);
 
         var cleared = await Update(db, created.Value.Id, Hr, Request(Sales, SalesManager));
         Assert.True(cleared.IsSuccess, cleared.Error);
         Assert.Null(cleared.Value!.TargetHours);
+        Assert.Null(cleared.Value.StartDate);
     }
 
     [Theory]

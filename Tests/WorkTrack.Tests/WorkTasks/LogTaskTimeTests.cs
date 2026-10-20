@@ -312,6 +312,26 @@ public class LogTaskTimeTests
     }
 
     [Fact]
+    public async Task Uses_the_tasks_own_type_over_a_choice_the_project_leaves()
+    {
+        await using var db = await TransactionalTestDb.CreateAsync();
+        await SeedAsync(db);
+        db.ProjectTypes.Add(new ProjectType { Id = 1, Name = "Support" });
+        db.ProjectTypes.Add(new ProjectType { Id = 2, Name = "Issue" });
+        db.ProjectTypeAssignments.Add(new ProjectTypeAssignment { ProjectId = SalesProject, ProjectTypeId = 1 });
+        db.ProjectTypeAssignments.Add(new ProjectTypeAssignment { ProjectId = SalesProject, ProjectTypeId = 2 });
+        await db.SaveChangesAsync();
+        var task = NewTask(Sales, Hr, Employee, status: WorkTaskStatus.InProgress);
+        task.ProjectTypeId = 2;
+        var id = await Seeded(db, task);
+
+        var result = await Log(db, id, Employee, Monday, 1m, assignedOnly: true);
+
+        Assert.True(result.IsSuccess, result.Error);
+        Assert.Equal(2, (await db.TimesheetEntries.AsNoTracking().SingleAsync()).ProjectTypeId);
+    }
+
+    [Fact]
     public async Task Fills_a_single_entry_catalogue_for_a_project_that_declared_none()
     {
         await using var db = await TransactionalTestDb.CreateAsync();

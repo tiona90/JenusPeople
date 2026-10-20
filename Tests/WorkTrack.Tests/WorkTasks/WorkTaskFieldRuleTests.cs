@@ -124,6 +124,7 @@ public class WorkTaskFieldRuleTests
         });
         var request = Request();
         request.Description = "sneaked in";
+        request.StartDate = new DateOnly(2026, 9, 1);
         request.DueDate = new DateOnly(2026, 10, 1);
         request.TargetHours = 8;
 
@@ -132,6 +133,7 @@ public class WorkTaskFieldRuleTests
         Assert.True(result.IsSuccess, result.Error);
         var stored = await db.WorkTasks.AsNoTracking().SingleAsync();
         Assert.Null(stored.Description);
+        Assert.Null(stored.StartDate);
         Assert.Null(stored.DueDate);
         Assert.Null(stored.TargetHours);
         Assert.Equal(WorkTaskPriority.Normal, stored.Priority);
@@ -144,6 +146,7 @@ public class WorkTaskFieldRuleTests
         await SeedAsync(db);
         var task = NewTask(Sales, Hr, SalesManager);
         task.Description = "Keep me";
+        task.StartDate = new DateOnly(2026, 9, 1);
         task.DueDate = new DateOnly(2026, 10, 1);
         task.TargetHours = 16;
         task.Priority = WorkTaskPriority.High;
@@ -171,6 +174,7 @@ public class WorkTaskFieldRuleTests
         var stored = await db.WorkTasks.AsNoTracking().SingleAsync(t => t.Id == task.Id);
         Assert.Equal("Typo fixed", stored.Title);
         Assert.Equal("Keep me", stored.Description);
+        Assert.Equal(new DateOnly(2026, 9, 1), stored.StartDate);
         Assert.Equal(new DateOnly(2026, 10, 1), stored.DueDate);
         Assert.Equal(16, stored.TargetHours);
         Assert.Equal(WorkTaskPriority.High, stored.Priority);

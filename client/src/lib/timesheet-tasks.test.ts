@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { copyableWorkTaskId, projectIdForTask, retainedWorkTaskId, taskOptionLabel, taskOptionsForRow } from './timesheet-tasks'
+import { copyableWorkTaskId, projectIdForTask, projectTypeIdForTask, retainedWorkTaskId, taskOptionLabel, taskOptionsForRow } from './timesheet-tasks'
 import type { TimesheetTaskOption } from './types'
 
 const opt = (o: Partial<TimesheetTaskOption>): TimesheetTaskOption => ({
@@ -32,6 +32,14 @@ describe('projectIdForTask', () => {
     it('is nothing for no task, or one not listed yet', () => {
         expect(projectIdForTask('', [payroll])).toBeNull()
         expect(projectIdForTask('9', [payroll])).toBeNull()
+    })
+})
+
+describe('projectTypeIdForTask', () => {
+    it('is the picked task type', () => expect(projectTypeIdForTask('2', [payroll, opt({ id: 2, projectTypeId: 5 })])).toBe('5'))
+    it('is nothing for a task with no type, or one from an older API', () => {
+        expect(projectTypeIdForTask('1', [opt({ id: 1, projectTypeId: null })])).toBeNull()
+        expect(projectTypeIdForTask('1', [payroll])).toBeNull()
     })
 })
 

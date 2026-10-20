@@ -53,6 +53,14 @@ internal static class WorkTaskWorld
         db.ProjectDepartments.Add(new ProjectDepartment { ProjectId = InactiveSalesProject, DepartmentId = Sales });
         db.ProjectDepartments.Add(new ProjectDepartment { ProjectId = OpsProject, DepartmentId = Ops });
 
+        // The defaults require a due date and target hours. These tests are about other
+        // rules, so they leave both optional rather than filling them into every request;
+        // WorkTaskSettingsTests and WorkTaskFieldRuleTests cover the requirements themselves.
+        var settings = await db.WorkTaskSettings.FindAsync(WorkTaskSettings.SingletonId);
+        if (settings is null) db.WorkTaskSettings.Add(settings = new WorkTaskSettings());
+        settings.DueDateRequirement = FieldRequirement.Optional;
+        settings.TargetHoursRequirement = FieldRequirement.Optional;
+
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
     }

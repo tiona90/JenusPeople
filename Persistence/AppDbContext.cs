@@ -577,6 +577,13 @@ public class AppDbContext : IdentityDbContext<
                 .WithMany()
                 .HasForeignKey(t => t.ProjectId)
                 .OnDelete(DeleteBehavior.Restrict);
+            // SetNull, unlike the rest: the type is a default for the timesheet rows,
+            // not a record of work done, so deleting it from the catalogue just
+            // leaves the task unclassified.
+            entity.HasOne(t => t.ProjectType)
+                .WithMany()
+                .HasForeignKey(t => t.ProjectTypeId)
+                .OnDelete(DeleteBehavior.SetNull);
             entity.HasOne(t => t.CreatedBy)
                 .WithMany()
                 .HasForeignKey(t => t.CreatedById)

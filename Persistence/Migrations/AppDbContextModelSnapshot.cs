@@ -1329,12 +1329,18 @@ namespace Persistence.Migrations
                     b.Property<int?>("ProjectId")
                         .HasColumnType("int");
 
+                    b.Property<int?>("ProjectTypeId")
+                        .HasColumnType("int");
+
                     b.Property<DateTime?>("SentBackAtUtc")
                         .HasColumnType("datetime2");
 
                     b.Property<string>("SentBackReason")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateOnly?>("StartDate")
+                        .HasColumnType("date");
 
                     b.Property<int>("Status")
                         .HasColumnType("int");
@@ -1357,6 +1363,8 @@ namespace Persistence.Migrations
                     b.HasIndex("CreatedById");
 
                     b.HasIndex("ProjectId");
+
+                    b.HasIndex("ProjectTypeId");
 
                     b.HasIndex("DepartmentId", "Status");
 
@@ -1466,13 +1474,13 @@ namespace Persistence.Migrations
                             AllowWord = true,
                             AttachmentsRequirement = 0,
                             DescriptionRequirement = 0,
-                            DueDateRequirement = 0,
+                            DueDateRequirement = 1,
                             MaxAttachmentSizeMb = 10,
                             MaxAttachmentsPerTask = 10,
                             ProjectRequirement = 1,
                             RequireCompletionConfirmation = true,
                             ShowPriority = true,
-                            TargetHoursRequirement = 0
+                            TargetHoursRequirement = 1
                         });
                 });
 
@@ -1951,6 +1959,11 @@ namespace Persistence.Migrations
                         .HasForeignKey("ProjectId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("Domain.ProjectType", "ProjectType")
+                        .WithMany()
+                        .HasForeignKey("ProjectTypeId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.Navigation("ConfirmedBy");
 
                     b.Navigation("CreatedBy");
@@ -1958,6 +1971,8 @@ namespace Persistence.Migrations
                     b.Navigation("Department");
 
                     b.Navigation("Project");
+
+                    b.Navigation("ProjectType");
                 });
 
             modelBuilder.Entity("Domain.WorkTaskAssignee", b =>

@@ -24,8 +24,9 @@ public class WorkTaskSettingsTests
 
         Assert.Equal(WorkTaskSettings.SingletonId, row.Id);
         Assert.Equal(FieldRequirement.Optional, row.DescriptionRequirement);
-        Assert.Equal(FieldRequirement.Optional, row.DueDateRequirement);
-        Assert.Equal(FieldRequirement.Optional, row.TargetHoursRequirement);
+        // RequireWorkTaskDueDateAndTargetHours made both required.
+        Assert.Equal(FieldRequirement.Required, row.DueDateRequirement);
+        Assert.Equal(FieldRequirement.Required, row.TargetHoursRequirement);
         Assert.Equal(FieldRequirement.Optional, row.AttachmentsRequirement);
         Assert.Equal(FieldRequirement.Required, row.ProjectRequirement);
         Assert.True(row.ShowPriority);
