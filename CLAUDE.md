@@ -1104,6 +1104,13 @@ Two more traps worth knowing, both found the hard way:
   `SecurityStampValidatorOptions.ValidationInterval` is lowered to 1 minute in
   `Program.cs` for that reason. Deliberately distinct from `LockoutEnd`, which
   is the 15-minute brake on password guessing (see `API/Security/LockoutPolicy.cs`).
+  **A deactivated account is nobody's recipient and nobody's subject**: every
+  recipient query in `ReminderDispatcher` (`GetUsersInRolesAsync`,
+  `GetManagersWithDepartmentAsync`, the attendance snapshot, low balance, the
+  birthday subjects) and both branches of `ManagerNotificationRecipients` — which
+  `ManagerAvailability` reads, so a department whose only manager has left now routes
+  new requests to HR rather than filing them Pending against the leaver — filter on
+  `IsActive`. `DeactivatedAccountRemindersTests` pins it.
 - **Short days and timesheet ↔ attendance match, in one place.**
   `Application/Attendance/Support/DailyHoursRule.cs` is the rule and
   `DailyHoursContext` loads its inputs for a range (settings, the holiday
