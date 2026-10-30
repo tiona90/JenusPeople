@@ -87,6 +87,15 @@ internal static class AnnualLeaveBalanceCalculator
         return null;
     }
 
+    /// <summary>
+    /// Marks the employee's ledger as changed by an approval being saved now, so a
+    /// second approval for the same person that read the ledger before this one
+    /// commits is refused at its own save (<see cref="EmployeeProfile.LedgerVersion"/>
+    /// is a concurrency token). Call it once the approval's checks have passed, on
+    /// the tracked profile, before the save that writes the approval.
+    /// </summary>
+    public static void ClaimLedger(EmployeeProfile employeeProfile) => employeeProfile.LedgerVersion++;
+
     public static async Task SyncCurrentYearBalanceAsync(
         AppDbContext context,
         EmployeeProfile employeeProfile,

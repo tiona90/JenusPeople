@@ -156,6 +156,7 @@ public class UpdateLeaveType
                             if (perChildError is not null)
                                 return Result<LeaveTypeDto>.Conflict(perChildError);
 
+                            AnnualLeaveBalanceCalculator.ClaimLedger(employeeProfile);
                             affectedProfiles[employeeProfile.Id] = employeeProfile;
                         }
 
@@ -228,7 +229,16 @@ public class UpdateLeaveType
             // second must not leave them approved against stale balances.
             await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
 
-            await context.SaveChangesAsync(cancellationToken);
+            try
+            {
+                await context.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                // An approval for one of the swept employees committed since their
+                // balance was checked (EmployeeProfile.LedgerVersion).
+                return Result<LeaveTypeDto>.Conflict(ConcurrencyError.Message);
+            }
 
             foreach (var employeeProfile in affectedProfiles.Values)
             {

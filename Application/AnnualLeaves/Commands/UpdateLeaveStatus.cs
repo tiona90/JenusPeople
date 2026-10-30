@@ -144,6 +144,8 @@ public class UpdateLeaveStatus
                     if (perChildError is not null)
                         return Result<Unit>.Failure(perChildError);
                 }
+
+                AnnualLeaveBalanceCalculator.ClaimLedger(employeeProfile);
             }
 
             if (newStatus == AnnualLeaveStatus.Approved)

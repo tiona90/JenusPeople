@@ -513,6 +513,16 @@ Eight things about it that are deliberate:
   Manager and HR branches used to delete in any status, so a Manager could erase
   leave they had already taken and have the days handed back. `LeaveDeletionTests`
   pins it.
+- **Two approvals for one person cannot both spend the same days.** Each checks
+  the balance against the rows it can see, and neither sees the other until it
+  commits, so every path into `Approved` — `UpdateLeaveStatus`, the status path of
+  `EditAnnualLeave`, an auto-approving `CreateAnnualLeave` and the `UpdateLeaveType`
+  sweep — calls `AnnualLeaveBalanceCalculator.ClaimLedger` once its checks pass,
+  bumping `EmployeeProfile.LedgerVersion` (a `[ConcurrencyCheck]` int, migration
+  `AddEmployeeProfileLedgerVersion`) in the approval's own save. The one that commits
+  second fails that save and answers `ConcurrencyError.Message`. An int rather than
+  a rowversion so `TransactionalTestDb` keeps it; `LeaveApprovalConcurrencyTests`
+  stages the race.
 - **Balance, per-child ledger, coverage announcement, `ApprovedAt`/`ApprovedById`
   move only into `Approved`.** `AwaitingHrApproval` charges nothing and tells the
   delegate nothing. The attachment policy runs on *both* steps out of `Pending`,

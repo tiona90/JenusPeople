@@ -281,6 +281,8 @@ public class EditAnnualLeave
                     cancellationToken);
                 if (balanceError is not null)
                     return Result<Unit>.Failure(balanceError);
+
+                AnnualLeaveBalanceCalculator.ClaimLedger(employeeProfile);
             }
 
             // One transaction over both saves: the balance sync reads approved leave

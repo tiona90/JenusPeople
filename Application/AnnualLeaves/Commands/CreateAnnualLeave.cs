@@ -176,6 +176,8 @@ public class CreateAnnualLeave
                 if (balanceError is not null)
                     return Result<string>.Failure(balanceError);
 
+                AnnualLeaveBalanceCalculator.ClaimLedger(employeeProfile);
+
                 context.LeaveStatusHistories.Add(new LeaveStatusHistory
                 {
                     Id = Guid.NewGuid().ToString(),
@@ -196,7 +198,17 @@ public class CreateAnnualLeave
             // against a leave that has already been written.
             await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
 
-            await context.SaveChangesAsync(cancellationToken);
+            try
+            {
+                await context.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                // Another approval for this employee committed since the balance was
+                // checked (EmployeeProfile.LedgerVersion). Nothing is committed, so
+                // disposing the transaction rolls the attempted write back.
+                return Result<string>.Failure(ConcurrencyError.Message);
+            }
 
             if (initialStatus == AnnualLeaveStatus.Approved)
             {

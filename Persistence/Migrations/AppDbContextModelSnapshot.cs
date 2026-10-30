@@ -372,6 +372,10 @@ namespace Persistence.Migrations
                     b.Property<decimal>("LeaveBalance")
                         .HasColumnType("decimal(5,2)");
 
+                    b.Property<int>("LedgerVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("int");
+
                     b.Property<string>("ManagerId")
                         .HasColumnType("nvarchar(450)");
 
