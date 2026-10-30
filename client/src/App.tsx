@@ -29,6 +29,7 @@ import ProtectedRoute from './components/auth/ProtectedRoute'
 import ErrorBoundary from './components/ui/ErrorBoundary'
 import { API_ERROR_EVENT } from './lib/api/error-events'
 import { SESSION_EXPIRED_EVENT } from './lib/api/session-expiry'
+import { keepConnected, reconnectPolicy } from './lib/notifications-hub'
 import { apiBaseUrl } from './lib/api/client'
 import { useStore } from './lib/mobx'
 import { LEAVE_AND_TIME_ROLES, SYSTEM_ADMINISTRATOR_ROLES, TASK_ROLES, isAdministrator } from './lib/roles'
@@ -235,32 +236,38 @@ const AppInner = observer(function AppInner() {
         return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onSessionExpired)
     }, [authStore, queryClient])
 
+    // Keyed on the id, not the user object: editing your own profile replaces
+    // the object, and used to tear the connection down and build it again.
+    const signedInUserId = authStore.user?.id
     useEffect(() => {
-        if (!authStore.user) return
+        if (!signedInUserId) return
 
         const hubBaseUrl = apiBaseUrl.endsWith('/api') ? apiBaseUrl.slice(0, -4) : apiBaseUrl
         const connection = new HubConnectionBuilder()
             .withUrl(`${hubBaseUrl}/hubs/notifications`, { withCredentials: true })
-            .withAutomaticReconnect()
+            .withAutomaticReconnect(reconnectPolicy)
             .configureLogging(LogLevel.Warning)
             .build()
 
-        connection.on('notificationsUpdated', () => {
+        const refresh = () => {
             void queryClient.invalidateQueries({ queryKey: ['leaveStatusHistories'] })
             void queryClient.invalidateQueries({ queryKey: ['annualLeaves'] })
             void queryClient.invalidateQueries({ queryKey: ['teamAwayThisWeekCount'] })
             void queryClient.invalidateQueries({ queryKey: ['timesheets'] })
             void queryClient.invalidateQueries({ queryKey: ['timesheetStatusHistories'] })
             void queryClient.invalidateQueries({ queryKey: ['work-tasks'] })
-        })
+        }
+        connection.on('notificationsUpdated', refresh)
 
-        void connection.start().catch(() => { /* polling fallback */ })
+        // Retries a failed start and a closed connection for as long as it takes,
+        // and refreshes after every gap, since events sent meanwhile are lost.
+        const stop = keepConnected(connection, refresh)
 
         return () => {
             connection.off('notificationsUpdated')
-            void connection.stop()
+            stop()
         }
-    }, [authStore.user, queryClient])
+    }, [signedInUserId, queryClient])
 
     if (!authStore.hasCheckedAuth && authStore.isLoadingUser) {
         return (
