@@ -19,7 +19,7 @@ import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import { getOpenAnnualLeaves, getLeaveStatusHistories, getSystemErrors, getOpenTimesheets, getTimesheetStatusHistories, getWorkTasks } from '../../lib/api'
+import { getOpenAnnualLeaves, getRecentLeaveStatusHistories, getSystemErrors, getOpenTimesheets, getRecentTimesheetStatusHistories, getWorkTasks } from '../../lib/api'
 import { canDecide, isTimesheetWithManager, statusPhrase } from '../../lib/approval-stage'
 import { useStore } from '../../lib/mobx'
 import { isAdministrator, isHrAdministrator, isSystemAdministrator } from '../../lib/roles'
@@ -101,15 +101,17 @@ const Topbar = observer(function Topbar() {
     const [readSystemKeys, setReadSystemKeys] = useState<string[]>(() => getStoredIds(systemKey))
 
     const { data: statusHistories, isLoading: isLoadingStatus } = useQuery({
-        queryKey: ['leaveStatusHistories'],
-        queryFn: getLeaveStatusHistories,
+        // The newest changes only, under their own key inside the prefix every
+        // invalidation uses.
+        queryKey: ['leaveStatusHistories', 'recent'],
+        queryFn: getRecentLeaveStatusHistories,
         enabled: authStore.isAuthenticated && shouldUseEmployeeNotifications,
         refetchInterval: authStore.isAuthenticated && shouldUseEmployeeNotifications ? notificationRefreshMs : false,
     })
 
     const { data: tsStatusHistories, isLoading: isLoadingTsStatus } = useQuery({
-        queryKey: ['timesheetStatusHistories'],
-        queryFn: getTimesheetStatusHistories,
+        queryKey: ['timesheetStatusHistories', 'recent'],
+        queryFn: getRecentTimesheetStatusHistories,
         enabled: authStore.isAuthenticated && shouldUseEmployeeNotifications,
         refetchInterval: authStore.isAuthenticated && shouldUseEmployeeNotifications ? notificationRefreshMs : false,
     })

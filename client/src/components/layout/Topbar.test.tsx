@@ -77,8 +77,8 @@ beforeEach(() => {
     vi.clearAllMocks()
     window.localStorage.clear()
     api.getSystemErrors.mockResolvedValue(ERRORS)
-    api.getLeaveStatusHistories.mockResolvedValue(HISTORY)
-    api.getTimesheetStatusHistories.mockResolvedValue([])
+    api.getRecentLeaveStatusHistories.mockResolvedValue(HISTORY)
+    api.getRecentTimesheetStatusHistories.mockResolvedValue([])
     api.getOpenAnnualLeaves.mockResolvedValue([])
     api.getOpenTimesheets.mockResolvedValue([])
     api.getWorkTasks.mockResolvedValue([])
@@ -99,8 +99,8 @@ describe("The System Administrator's bell", () => {
 
         expect(screen.queryByText(/Leave approved/)).not.toBeInTheDocument()
         // And the status feeds were never even fetched for this role.
-        expect(api.getLeaveStatusHistories).not.toHaveBeenCalled()
-        expect(api.getTimesheetStatusHistories).not.toHaveBeenCalled()
+        expect(api.getRecentLeaveStatusHistories).not.toHaveBeenCalled()
+        expect(api.getRecentTimesheetStatusHistories).not.toHaveBeenCalled()
     })
 
     it('opens the System Log at the row when an error is clicked, and marks it read', async () => {
@@ -154,7 +154,7 @@ describe("An HR Administrator's bell", () => {
         expect(screen.getByText('New timesheet from Nikos Manager')).toBeInTheDocument()
         expect(screen.queryByText(/Andreas Georgiou/)).not.toBeInTheDocument()
         expect(screen.queryByText(/Leave approved/)).not.toBeInTheDocument()
-        expect(api.getLeaveStatusHistories).not.toHaveBeenCalled()
+        expect(api.getRecentLeaveStatusHistories).not.toHaveBeenCalled()
         expect(api.getSystemErrors).not.toHaveBeenCalled()
         // The bell asks for the open rows only — never the full lists, which it
         // polled before, every one with its entries.
@@ -167,10 +167,13 @@ describe("An employee's bell", () => {
     it('still lists their own status changes and never fetches system errors', async () => {
         renderTopbarAs(EMPLOYEE)
 
-        await waitFor(() => expect(api.getLeaveStatusHistories).toHaveBeenCalled())
+        await waitFor(() => expect(api.getRecentLeaveStatusHistories).toHaveBeenCalled())
         fireEvent.click(screen.getByRole('button', { name: 'Notifications' }))
         expect(await screen.findByText('Leave approved')).toBeInTheDocument()
 
+        // The newest changes only, never every one the person ever had.
+        expect(api.getLeaveStatusHistories).not.toHaveBeenCalled()
+        expect(api.getTimesheetStatusHistories).not.toHaveBeenCalled()
         expect(api.getSystemErrors).not.toHaveBeenCalled()
         expect(screen.queryByText(/System error/)).not.toBeInTheDocument()
     })
@@ -200,10 +203,10 @@ describe("An employee's bell", () => {
     // An Employee has no Tasks page for a task notification to open; they meet the
     // tasks handed to them in the timesheet editor's Task column.
     it("does not fetch tasks for an Employee's bell", async () => {
-        api.getLeaveStatusHistories.mockResolvedValue([])
+        api.getRecentLeaveStatusHistories.mockResolvedValue([])
         renderTopbarAs(EMPLOYEE)
 
-        await waitFor(() => expect(api.getLeaveStatusHistories).toHaveBeenCalled())
+        await waitFor(() => expect(api.getRecentLeaveStatusHistories).toHaveBeenCalled())
         expect(api.getWorkTasks).not.toHaveBeenCalled()
     })
 
