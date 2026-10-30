@@ -73,7 +73,7 @@ that means when adding code:
 
 **CQRS via MediatR:** Business logic belongs in `Application/*/Queries/` and `Application/*/Commands/`. Controllers should be thin — dispatch to MediatR, then call `HandleResult<T>()`. Two existing exceptions to follow *away* from, not copy: `API/Controllers/TimesheetEntriesController.cs` does its entry CRUD directly against `AppDbContext`, and `AnnualLeavesController`/`TimesheetsController` query it to resolve SignalR notification audiences. `API/Hubs/`, `API/BackgroundServices/`, and the health checks also use `AppDbContext` directly, which is fine — they sit outside the request/handler path.
 
-**Result<T> pattern:** Handlers return `Result<T>` (never throw for business errors). `BaseApiController.HandleResult<T>()` maps these to HTTP responses consistently.
+**Result<T> pattern:** Handlers return `Result<T>` (never throw for business errors). `BaseApiController.HandleResult<T>()` maps these to HTTP responses consistently. Where a `Result<T>` cannot be returned (the entry actions of `TimesheetEntriesController`), throw `Application.Core.RequestRefusedException`: `GlobalExceptionMiddleware` answers it with a 400 whose `message` is the exception's own, so write it for the user. **No other exception type is the caller's fault** — `ArgumentException`, `InvalidOperationException` and `KeyNotFoundException` used to map to 400/409/404 with their message as `details`, but EF and the BCL throw them for bugs, so "could not be translated" reached the client as a 409 and never reached the System Log. They are 500s now (`ExceptionMappingTests`).
 
 **Validation pipeline:** `FluentValidation` validators auto-run via MediatR's `ValidationBehavior` pipeline behavior. Add a validator class in the same folder as the command/query.
 

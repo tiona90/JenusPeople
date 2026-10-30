@@ -1,3 +1,4 @@
+﻿using Application.Core;
 using API.Middleware;
 using Application.SystemErrors;
 using Application.SystemErrors.Queries;
@@ -307,10 +308,10 @@ public class SystemErrorNotifierTests
     {
         using var db = SeedWorld();
 
-        // KeyNotFoundException is mapped to 404: the caller's mistake, not the system's.
-        var (context, email) = await RunMiddlewareAsync(db, new KeyNotFoundException("no such row"));
+        // A refusal is mapped to 400: the caller's mistake, not the system's.
+        var (context, email) = await RunMiddlewareAsync(db, new RequestRefusedException("no such row"));
 
-        Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
         Assert.Empty(email.Sent);
     }
 }

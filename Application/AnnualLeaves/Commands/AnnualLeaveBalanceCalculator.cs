@@ -14,25 +14,6 @@ namespace Application.AnnualLeaves.Commands;
 internal static class AnnualLeaveBalanceCalculator
 {
     /// <summary>
-    /// Throwing wrapper kept for callers that surface insufficient balance as an
-    /// unexpected exception (e.g. status-change flows). Handlers that return
-    /// <see cref="Application.Core.Result{T}"/> should call
-    /// <see cref="CheckSufficientBalanceAsync"/> and map the message to a Failure instead.
-    /// </summary>
-    public static async Task EnsureSufficientBalanceAsync(
-        AppDbContext context,
-        EmployeeProfile employeeProfile,
-        AnnualLeave annualLeave,
-        string? excludeLeaveId,
-        CancellationToken cancellationToken)
-    {
-        var error = await CheckSufficientBalanceAsync(
-            context, employeeProfile, annualLeave, excludeLeaveId, cancellationToken);
-        if (error is not null)
-            throw new InvalidOperationException(error);
-    }
-
-    /// <summary>
     /// Returns a human-readable error message when the requested leave would exceed
     /// the employee's remaining balance, or <c>null</c> when the balance is sufficient
     /// (or the check does not apply). Never throws for the business rule.

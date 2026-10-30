@@ -1,3 +1,4 @@
+﻿using Application.Core;
 using System.Security.Claims;
 using API.Controllers;
 using Application.Timesheets.Commands;
@@ -96,7 +97,7 @@ public class TimesheetPeriodRulesTests
             },
         };
 
-        var thrown = await Assert.ThrowsAsync<ArgumentException>(() => controller.AddEntry(
+        var thrown = await Assert.ThrowsAsync<RequestRefusedException>(() => controller.AddEntry(
             "ts", new CreateEntryRequest { ProjectId = 1, Date = new DateTime(2024, 1, 9), HoursWorked = 4 }, CancellationToken.None));
 
         Assert.Equal(TimesheetEntryValidator.OutsideWeekMessage, thrown.Message);

@@ -1,3 +1,4 @@
+﻿using Application.Core;
 using System.Security.Claims;
 using API.Controllers;
 using Domain;
@@ -109,7 +110,7 @@ public class TimesheetEntryProjectTypeScopeTests
     {
         using var db = SeedWorld();
 
-        var error = await Assert.ThrowsAsync<ArgumentException>(() =>
+        var error = await Assert.ThrowsAsync<RequestRefusedException>(() =>
             ControllerFor(db).AddEntry(TimesheetId, EntryOn(ClassifiedProjectId, IssueId), CancellationToken.None));
 
         Assert.Contains("type", error.Message, StringComparison.OrdinalIgnoreCase);
@@ -168,7 +169,7 @@ public class TimesheetEntryProjectTypeScopeTests
 
         await controller.AddEntry(TimesheetId, EntryOn(ClassifiedProjectId, SupportId, 3m), CancellationToken.None);
 
-        var error = await Assert.ThrowsAsync<ArgumentException>(() =>
+        var error = await Assert.ThrowsAsync<RequestRefusedException>(() =>
             controller.AddEntry(TimesheetId, EntryOn(ClassifiedProjectId, SupportId, 2m), CancellationToken.None));
 
         Assert.Contains("already exists", error.Message, StringComparison.OrdinalIgnoreCase);
@@ -182,7 +183,7 @@ public class TimesheetEntryProjectTypeScopeTests
 
         await controller.AddEntry(TimesheetId, EntryOn(ClassifiedProjectId, null, 3m), CancellationToken.None);
 
-        var error = await Assert.ThrowsAsync<ArgumentException>(() =>
+        var error = await Assert.ThrowsAsync<RequestRefusedException>(() =>
             controller.AddEntry(TimesheetId, EntryOn(ClassifiedProjectId, null, 2m), CancellationToken.None));
 
         Assert.Contains("already exists", error.Message, StringComparison.OrdinalIgnoreCase);

@@ -187,11 +187,11 @@ public class TimesheetEntriesController : ControllerBase
             assignedComponentIds: await AssignedComponentIdsAsync(entry.ProjectId, cancellationToken),
             period: await PeriodOfAsync(timesheetId, cancellationToken));
         if (!validation.IsValid)
-            throw new ArgumentException(validation.Error);
+            throw new RequestRefusedException(validation.Error);
 
         var taskRefusal = await TimesheetEntryTaskRule.CheckAsync(_context, timesheetId, entry, stored: null, cancellationToken);
         if (taskRefusal is not null)
-            throw new ArgumentException(taskRefusal);
+            throw new RequestRefusedException(taskRefusal);
 
         _context.TimesheetEntries.Add(entry);
         var conflict = await SaveWithTotalAsync(timesheetId, cancellationToken);
@@ -232,12 +232,12 @@ public class TimesheetEntriesController : ControllerBase
             assignedComponentIds: await AssignedComponentIdsAsync(entry.ProjectId, cancellationToken),
             period: await PeriodOfAsync(timesheetId, cancellationToken));
         if (!validation.IsValid)
-            throw new ArgumentException(validation.Error);
+            throw new RequestRefusedException(validation.Error);
 
         var taskRefusal = await TimesheetEntryTaskRule.CheckAsync(
             _context, timesheetId, entry, existing.Single(e => e.Id == entryId), cancellationToken);
         if (taskRefusal is not null)
-            throw new ArgumentException(taskRefusal);
+            throw new RequestRefusedException(taskRefusal);
 
         _context.Entry(entry).State = EntityState.Modified;
         var conflict = await SaveWithTotalAsync(timesheetId, cancellationToken);

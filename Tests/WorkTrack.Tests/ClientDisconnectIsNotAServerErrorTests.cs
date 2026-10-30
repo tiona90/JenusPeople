@@ -1,3 +1,4 @@
+﻿using Application.Core;
 using API.Middleware;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
@@ -113,8 +114,8 @@ public class ClientDisconnectIsNotAServerErrorTests
     [Fact]
     public async Task A_mapped_exception_keeps_its_own_status_code()
     {
-        var context = await InvokeAsync(new KeyNotFoundException(), clientGone: true);
+        var context = await InvokeAsync(new RequestRefusedException("Not allowed."), clientGone: true);
 
-        Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
     }
 }
