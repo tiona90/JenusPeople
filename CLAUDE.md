@@ -512,7 +512,12 @@ Eight things about it that are deliberate:
   withdraws only an open request, for every role (`DecidedRequestMessage`) — its
   Manager and HR branches used to delete in any status, so a Manager could erase
   leave they had already taken and have the days handed back. `LeaveDeletionTests`
-  pins it.
+  pins it. Nor is a status change: `ApprovalStageRule.Resolve` refuses
+  sending a request back to `Pending` (`BackToPendingMessage` — Approved → Pending
+  then delete was the other way round) and any decision on a `Cancelled` one
+  (`CancelledIsFinalMessage`), and `EditAnnualLeave` asks "has it started?" of the
+  stored start date as well as the edited one, so moving a started leave's start
+  into the future and cancelling it in one save is refused too.
 - **Two approvals for one person cannot both spend the same days.** Each checks
   the balance against the rows it can see, and neither sees the other until it
   commits, so every path into `Approved` — `UpdateLeaveStatus`, the status path of

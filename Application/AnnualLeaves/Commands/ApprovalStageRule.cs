@@ -1,4 +1,4 @@
-using Domain;
+﻿using Domain;
 
 namespace Application.AnnualLeaves.Commands;
 
@@ -34,6 +34,12 @@ public static class ApprovalStageRule
 
     public const string WithManagerMessage =
         "This request is awaiting the manager's decision; an HR Administrator does not decide the manager stage.";
+
+    public const string BackToPendingMessage =
+        "A decided request cannot be put back to Pending. Cancel or reject it instead.";
+
+    public const string CancelledIsFinalMessage =
+        "This request was cancelled and is closed; file a new request instead.";
 
     public const string StageIsDerivedMessage =
         "A request cannot be put into 'Awaiting HR approval' directly. Approve it and the stage is decided for you.";
@@ -79,6 +85,16 @@ public static class ApprovalStageRule
         // Approve on an approved row must not send it back to HR.
         if (requested == current)
             return new Outcome(current, null);
+
+        // Cancelled is the end of a request; the employee files again.
+        if (current == AnnualLeaveStatus.Cancelled)
+            return new Outcome(null, CancelledIsFinalMessage);
+
+        // Pending is where a request is filed, never where a decision sends it:
+        // putting an approved leave back there dodged CancellationRule, since an
+        // open request can then be withdrawn and the days handed back.
+        if (requested == AnnualLeaveStatus.Pending)
+            return new Outcome(null, BackToPendingMessage);
 
         if (requested == AnnualLeaveStatus.AwaitingHrApproval)
             return new Outcome(null, StageIsDerivedMessage);

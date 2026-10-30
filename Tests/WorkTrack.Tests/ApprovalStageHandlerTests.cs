@@ -1,4 +1,4 @@
-using Application.AnnualLeaves.Commands;
+﻿using Application.AnnualLeaves.Commands;
 using Application.AnnualLeaves.DTOs;
 using Application.Core;
 using AutoMapper;
@@ -334,6 +334,44 @@ public class ApprovalStageHandlerTests
         Assert.Equal(CancellationRule.AlreadyStartedMessage, result.Error);
         Assert.Equal(AnnualLeaveStatus.Approved, (await StoredAsync(db)).Status);
         Assert.Empty(email.Sent);
+    }
+
+    /// <summary>
+    /// The edit dialog takes dates and status in one save, so "has it started?"
+    /// is asked of the stored start as well as the edited one: moving a started
+    /// leave's start into the future and cancelling it in the same save was a way
+    /// round CancellationRule.
+    /// </summary>
+    [Fact]
+    public async Task A_started_leave_cannot_be_cancelled_by_moving_its_start_in_the_same_edit()
+    {
+        using var db = await WorldAsync();
+        var startedOn = DateTime.UtcNow.Date.AddDays(-2);
+        db.AnnualLeaves.Add(new AnnualLeave
+        {
+            Id = "L-started", EmployeeId = Employee, EmployeeProfileId = EmployeeProfile, DepartmentId = Dept,
+            LeaveTypeId = ManagerOnlyType, StartDate = startedOn, EndDate = startedOn.AddDays(4), Reason = "Trip",
+            DelegateId = Delegate, Status = AnnualLeaveStatus.Approved, CreatedAt = DateTime.UtcNow,
+        });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var movedTo = DateTime.UtcNow.Date.AddDays(30);
+        var result = await new EditAnnualLeave.Handler(db, new FakeEmailService()).Handle(new EditAnnualLeave.Command
+        {
+            ChangedByUserId = Hr, IsAdmin = true,
+            AnnualLeave = new EditAnnualLeaveRequest
+            {
+                Id = "L-started", LeaveTypeId = ManagerOnlyType, StartDate = movedTo, EndDate = movedTo,
+                Reason = "Trip", DelegateId = Delegate, Status = AnnualLeaveStatus.Cancelled,
+            },
+        }, CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(CancellationRule.AlreadyStartedMessage, result.Error);
+        var stored = await StoredAsync(db, "L-started");
+        Assert.Equal(AnnualLeaveStatus.Approved, stored.Status);
+        Assert.Equal(startedOn, stored.StartDate);
     }
 
     [Fact]

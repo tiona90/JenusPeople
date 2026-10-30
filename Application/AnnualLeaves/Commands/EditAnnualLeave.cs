@@ -223,7 +223,11 @@ public class EditAnnualLeave
 
                 // An approved leave is cancellable only until it starts — measured
                 // against the dates as edited, since those are what will be stored.
-                var cancellationError = CancellationRule.Check(oldStatus, newStatus, request.AnnualLeave.StartDate, DateTime.UtcNow);
+                // Asked of the stored start as well: dates and status arrive in one
+                // save, and moving a started leave's start into the future in the
+                // same edit must not make it cancellable.
+                var cancellationError = CancellationRule.Check(oldStatus, newStatus, startDateBeforeEdit, DateTime.UtcNow)
+                    ?? CancellationRule.Check(oldStatus, newStatus, request.AnnualLeave.StartDate, DateTime.UtcNow);
                 if (cancellationError is not null)
                     return Result<Unit>.Failure(cancellationError);
 
