@@ -26,6 +26,7 @@ import {
     TeamTimesheetPage,
 } from './components'
 import ProtectedRoute from './components/auth/ProtectedRoute'
+import ErrorBoundary from './components/ui/ErrorBoundary'
 import { API_ERROR_EVENT } from './lib/api/error-events'
 import { SESSION_EXPIRED_EVENT } from './lib/api/session-expiry'
 import { apiBaseUrl } from './lib/api/client'
@@ -91,6 +92,7 @@ const AuthGate = observer(function AuthGate() {
 
 const AppShell = observer(function AppShell() {
     const { authStore } = useStore()
+    const location = useLocation()
 
     if (!authStore.user) return null
 
@@ -100,7 +102,12 @@ const AppShell = observer(function AppShell() {
             <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
                 <Topbar />
                 <Container component="main" maxWidth="lg" sx={{ pt: 3, pb: 4 }}>
-                    <Outlet />
+                    {/* Keyed by route: a page that crashes is replaced by a message
+                        while the sidebar and topbar stay, and navigating away
+                        recovers. */}
+                    <ErrorBoundary resetKey={location.pathname}>
+                        <Outlet />
+                    </ErrorBoundary>
                 </Container>
             </Box>
         </Box>
