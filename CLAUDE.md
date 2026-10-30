@@ -573,6 +573,13 @@ Eight things about it that are deliberate:
   Manager was already on, not newly switched on in the same save, so this case
   is routed separately. Switching anything *on* alone moves nothing. As with the
   old auto-approval sweep, nothing is emailed.
+  Every row the sweep approves clears what an ordinary approval clears — the
+  attachment policy, the pooled balance and the per-child ledger — and the two
+  ledgers are handed what the sweep has approved so far (`alsoApproved` on both
+  calculators), since none of it is saved yet; without that, one employee's two
+  pending requests each passed alone and together overspent. Any refusal refuses
+  the whole save (409), and both saves share one transaction.
+  `LeaveTypeSweepGuardTests` pins it.
 
 The enum value is appended (`AwaitingHrApproval = 4`) so stored values keep their
 meaning, and the card's Enabled toggle sends both flags (see the trap at the end

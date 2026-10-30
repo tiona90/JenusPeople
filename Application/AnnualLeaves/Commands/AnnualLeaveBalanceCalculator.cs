@@ -1,4 +1,4 @@
-using Domain;
+﻿using Domain;
 using Domain.Services;
 using Microsoft.EntityFrameworkCore;
 using Persistence;
@@ -37,12 +37,19 @@ internal static class AnnualLeaveBalanceCalculator
     /// the employee's remaining balance, or <c>null</c> when the balance is sufficient
     /// (or the check does not apply). Never throws for the business rule.
     /// </summary>
+    /// <param name="alsoApproved">
+    /// Leave approved earlier in the same unit of work and not yet saved — the
+    /// database cannot see it, so it is counted here. The leave-type sweep passes
+    /// what it has approved so far; without it, one employee's several pending
+    /// requests each passed on their own and together overspent the balance.
+    /// </param>
     public static async Task<string?> CheckSufficientBalanceAsync(
         AppDbContext context,
         EmployeeProfile employeeProfile,
         AnnualLeave annualLeave,
         string? excludeLeaveId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyCollection<AnnualLeave>? alsoApproved = null)
     {
         if (!await AffectsBalanceAsync(context, annualLeave.LeaveTypeId, cancellationToken))
             return null;
@@ -65,7 +72,7 @@ internal static class AnnualLeaveBalanceCalculator
                 continue;
 
             var usedDays = await GetApprovedDaysForLeaveYearAsync(
-                context, annualLeave.EmployeeId, leaveYearKey, startMonth, excludeLeaveId, cancellationToken);
+                context, annualLeave.EmployeeId, leaveYearKey, startMonth, excludeLeaveId, cancellationToken, alsoApproved);
 
             var remainingBalance = LeaveCalculationService.CalculateRemainingBalance(
                 EntitlementForLeaveYear(employeeProfile, leaveYearKey, startMonth, proRateFirstYear), usedDays);
@@ -140,7 +147,8 @@ internal static class AnnualLeaveBalanceCalculator
         int leaveYearKey,
         int startMonth,
         string? excludeLeaveId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyCollection<AnnualLeave>? alsoApproved = null)
     {
         var balanceTypeIds = await context.LeaveTypes
             .AsNoTracking()
@@ -164,6 +172,18 @@ internal static class AnnualLeaveBalanceCalculator
                 && balanceTypeIds.Contains(l.LeaveTypeId.Value)
                 && (excludeLeaveId == null || l.Id != excludeLeaveId))
             .ToListAsync(cancellationToken);
+
+        if (alsoApproved is not null)
+        {
+            approvedLeaves.AddRange(alsoApproved.Where(l =>
+                l.EmployeeId == employeeId
+                && l.StartDate <= lyEnd
+                && l.EndDate >= lyStart
+                && l.LeaveTypeId.HasValue
+                && balanceTypeIds.Contains(l.LeaveTypeId.Value)
+                && l.Id != excludeLeaveId
+                && approvedLeaves.All(saved => saved.Id != l.Id)));
+        }
 
         if (approvedLeaves.Count == 0) return 0;
 

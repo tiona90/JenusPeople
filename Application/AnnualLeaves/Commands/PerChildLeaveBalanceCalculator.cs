@@ -1,4 +1,4 @@
-using Domain;
+﻿using Domain;
 using Domain.Services;
 using Microsoft.EntityFrameworkCore;
 using Persistence;
@@ -37,7 +37,8 @@ internal static class PerChildLeaveBalanceCalculator
         AnnualLeave annualLeave,
         EmployeeProfile employeeProfile,
         string? excludeLeaveId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyCollection<AnnualLeave>? alsoApproved = null)
     {
         var leaveType = annualLeave.LeaveTypeId.HasValue
             ? await context.LeaveTypes
@@ -88,6 +89,15 @@ internal static class PerChildLeaveBalanceCalculator
             return null;
 
         var approved = await ApprovedLeaveForChildAsync(context, childId, excludeLeaveId, cancellationToken);
+        // Approved earlier in the same unit of work and not yet saved — see the
+        // pooled calculator's parameter of the same name.
+        if (alsoApproved is not null)
+        {
+            approved.AddRange(alsoApproved.Where(leave =>
+                leave.ChildId == childId
+                && leave.Id != excludeLeaveId
+                && approved.All(saved => saved.Id != leave.Id)));
+        }
 
         // ── Lifetime cap ───────────────────────────────────────────────────────
         // Which total applies depends on which of the employee's children this is
