@@ -1,4 +1,4 @@
-using Application.Core;
+﻿using Application.Core;
 using Application.Timesheets.Support;
 using Application.WorkTasks.DTOs;
 using Application.WorkTasks.Support;
@@ -167,6 +167,12 @@ public class LogTaskTime
             try
             {
                 await context.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                // Another write to this week (the editor in another tab, a second log)
+                // landed since the sheet was read. A retry, not a fault.
+                return Result<LogTaskTimeResult>.Conflict(ConcurrencyError.Message);
             }
             catch (DbUpdateException) when (isNewSheet)
             {
