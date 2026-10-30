@@ -27,6 +27,7 @@ import {
 } from './components'
 import ProtectedRoute from './components/auth/ProtectedRoute'
 import { API_ERROR_EVENT } from './lib/api/error-events'
+import { SESSION_EXPIRED_EVENT } from './lib/api/session-expiry'
 import { apiBaseUrl } from './lib/api/client'
 import { useStore } from './lib/mobx'
 import { LEAVE_AND_TIME_ROLES, SYSTEM_ADMINISTRATOR_ROLES, TASK_ROLES, isAdministrator } from './lib/roles'
@@ -211,6 +212,21 @@ const AppInner = observer(function AppInner() {
         window.addEventListener(API_ERROR_EVENT, onApiError as EventListener)
         return () => window.removeEventListener(API_ERROR_EVENT, onApiError as EventListener)
     }, [])
+
+    // A 401 on an ordinary request: the session expired, or the account was
+    // deactivated. Sign out locally and forget everything cached for that user;
+    // the route guard takes it to the sign-in screen.
+    useEffect(() => {
+        const onSessionExpired = () => {
+            if (!authStore.user) return
+            authStore.expireSession()
+            queryClient.clear()
+            setApiErrorMessage('Your session has expired. Please sign in again.')
+            setApiErrorOpen(true)
+        }
+        window.addEventListener(SESSION_EXPIRED_EVENT, onSessionExpired)
+        return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onSessionExpired)
+    }, [authStore, queryClient])
 
     useEffect(() => {
         if (!authStore.user) return

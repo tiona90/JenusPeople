@@ -1,6 +1,7 @@
 import axios, { isAxiosError } from 'axios'
 import { getApiErrorMessage } from './error-utils'
 import { emitApiError } from './error-events'
+import { emitSessionExpired, isSessionExpiry } from './session-expiry'
 
 export const apiBaseUrl =
     import.meta.env.VITE_API_BASE_URL?.trim() || '/api'
@@ -28,7 +29,11 @@ apiClient.interceptors.response.use(
             const isValidationStatus = status === 400 || status === 422
             const isValidationError = isValidationStatus && hasValidationErrors
 
-            if (!suppressGlobal && !isAuthBootstrap && !isValidationError) {
+            // The cookie no longer signs anyone in: hand over to the app, which
+            // signs the user out, rather than raising a snackbar per failed poll.
+            if (!suppressGlobal && isSessionExpiry(status, url)) {
+                emitSessionExpired()
+            } else if (!suppressGlobal && !isAuthBootstrap && !isValidationError) {
                 emitApiError({
                     message: error.message,
                     status,
