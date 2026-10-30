@@ -1,4 +1,4 @@
-using Application.AdminUsers.DTOs;
+﻿using Application.AdminUsers.DTOs;
 using Application.AdminUsers.Support;
 using Application.Core;
 using Domain;
@@ -11,6 +11,9 @@ namespace Application.AdminUsers.Commands;
 
 public class SetAdminUserRoles
 {
+    public const string LastSystemAdministratorMessage =
+        "This is the only active System Administrator. Give the role to someone else first.";
+
     public class Command : IRequest<Result<AdminUserDto>>
     {
         public required string Id { get; set; }
@@ -39,6 +42,16 @@ public class SetAdminUserRoles
             var currentRoles = await userManager.GetRolesAsync(user);
 
             var rolesToRemove = currentRoles.Except(selectedRoles, StringComparer.OrdinalIgnoreCase).ToArray();
+
+            // The workspace always keeps an active System Administrator: without one
+            // nobody can manage users or settings, and on the deployed host — where
+            // the seeder does not run — only a hand edit of the database gets it back.
+            if (rolesToRemove.Contains(AppRoles.SystemAdministrator, StringComparer.OrdinalIgnoreCase))
+            {
+                var others = await userManager.GetUsersInRoleAsync(AppRoles.SystemAdministrator);
+                if (!others.Any(other => other.Id != user.Id && other.IsActive))
+                    return Result<AdminUserDto>.Conflict(LastSystemAdministratorMessage);
+            }
             if (rolesToRemove.Length > 0)
             {
                 var removeResult = await userManager.RemoveFromRolesAsync(user, rolesToRemove);
