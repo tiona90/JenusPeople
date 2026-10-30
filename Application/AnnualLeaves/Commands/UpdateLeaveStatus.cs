@@ -10,6 +10,8 @@ namespace Application.AnnualLeaves.Commands;
 
 public class UpdateLeaveStatus
 {
+    public const string OwnLeaveMessage = "You cannot approve, reject or cancel your own leave request.";
+
     public class Command : IRequest<Result<Unit>>
     {
         public required string LeaveId { get; set; }
@@ -39,6 +41,15 @@ public class UpdateLeaveStatus
 
             if (!request.IsAdmin && !request.IsManager)
                 return Result<Unit>.Failure("Only admins or managers can change leave status.");
+
+            // Nobody decides their own leave — the same rule as OwnTimesheetMessage.
+            // A Manager's own request sits inside their own department scope, and an
+            // HR Administrator's own is department-less and so inside every HR
+            // Administrator's reach, so scope alone would let either approve
+            // themselves. An HR Administrator's own request waits for another one,
+            // and the owner withdraws an open request through DeleteAnnualLeave.
+            if (annualLeave.EmployeeId == request.ChangedByUserId)
+                return Result<Unit>.Failure(OwnLeaveMessage);
 
             // IsAdmin here is the HR Administrator acting on somebody's behalf, and
             // their reach is their assigned departments — the same resolver, the same

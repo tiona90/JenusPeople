@@ -122,7 +122,7 @@ const TD = {
 const TeamLeavePage = observer(function TeamLeavePage({ user }: { user: UserInfo }) {
     const isAdmin = isAdministrator(user.roles)
     const isManager = user.roles.includes('Manager')
-    const viewer = { isHrAdministrator: isHrAdministrator(user.roles) }
+    const viewer = { isHrAdministrator: isHrAdministrator(user.roles), userId: user.id }
     const queryClient = useQueryClient()
 
     const defaultTab: StatusTab = isManager && !isAdmin ? 'pending' : 'all'

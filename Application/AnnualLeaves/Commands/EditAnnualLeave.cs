@@ -197,6 +197,10 @@ public class EditAnnualLeave
 
             if (request.AnnualLeave.Status.HasValue && request.AnnualLeave.Status.Value != annualLeave.Status)
             {
+                // Nobody decides their own leave — see UpdateLeaveStatus.
+                if (annualLeave.EmployeeId == request.ChangedByUserId)
+                    return Result<Unit>.Failure(UpdateLeaveStatus.OwnLeaveMessage);
+
                 var changedByUserId = request.ChangedByUserId;
                 var userExists = await context.Users
                     .AnyAsync(u => u.Id == changedByUserId, cancellationToken);
