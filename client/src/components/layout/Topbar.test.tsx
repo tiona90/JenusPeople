@@ -228,7 +228,8 @@ describe("An employee's bell", () => {
             await waitFor(() => expect(api.getWorkTasks).toHaveBeenCalledTimes(1))
             const leavePolls = api.getAnnualLeaves.mock.calls.length
 
-            await vi.advanceTimersByTimeAsync(16_000)
+            // Past one poll of the rest of the bell (Topbar's notificationRefreshMs).
+            await vi.advanceTimersByTimeAsync(61_000)
 
             await waitFor(() => expect(api.getAnnualLeaves.mock.calls.length).toBeGreaterThan(leavePolls))
             expect(api.getWorkTasks).toHaveBeenCalledTimes(1)

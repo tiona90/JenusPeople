@@ -42,7 +42,12 @@ const employeeTsReadPrefix = 'employee-read-timesheet-status-notifications:'
 // last occurrence, so a fault that comes back after being read is unread again.
 const systemReadPrefix = 'system-read-error-notifications:'
 const systemErrorReadKey = (id: number, lastOccurredAtUtc: string) => `${id}@${lastOccurredAtUtc}`
-const notificationRefreshMs = 15000
+// A fallback, not the primary signal: SignalR's notificationsUpdated refreshes
+// the bell the moment something changes (and keepConnected keeps it connected
+// through an API restart). The lists behind the bell are unpaged, so polling
+// them every 15 seconds — in hidden tabs too — cost far more than it bought.
+// Hidden tabs no longer poll at all; React Query refetches on focus.
+const notificationRefreshMs = 60_000
 
 function getStoredIds(key: string): string[] {
     const raw = window.localStorage.getItem(key)
@@ -100,7 +105,6 @@ const Topbar = observer(function Topbar() {
         queryFn: getLeaveStatusHistories,
         enabled: authStore.isAuthenticated && shouldUseEmployeeNotifications,
         refetchInterval: authStore.isAuthenticated && shouldUseEmployeeNotifications ? notificationRefreshMs : false,
-        refetchIntervalInBackground: true,
     })
 
     const { data: tsStatusHistories, isLoading: isLoadingTsStatus } = useQuery({
@@ -108,7 +112,6 @@ const Topbar = observer(function Topbar() {
         queryFn: getTimesheetStatusHistories,
         enabled: authStore.isAuthenticated && shouldUseEmployeeNotifications,
         refetchInterval: authStore.isAuthenticated && shouldUseEmployeeNotifications ? notificationRefreshMs : false,
-        refetchIntervalInBackground: true,
     })
 
     const { data: annualLeaves, isLoading: isLoadingLeaves } = useQuery({
@@ -116,7 +119,6 @@ const Topbar = observer(function Topbar() {
         queryFn: getAnnualLeaves,
         enabled: authStore.isAuthenticated && shouldUseManagerNotifications,
         refetchInterval: authStore.isAuthenticated && shouldUseManagerNotifications ? notificationRefreshMs : false,
-        refetchIntervalInBackground: true,
     })
 
     const { data: timesheets, isLoading: isLoadingTimesheets } = useQuery({
@@ -124,13 +126,12 @@ const Topbar = observer(function Topbar() {
         queryFn: () => getTimesheets(),
         enabled: authStore.isAuthenticated && shouldUseManagerNotifications,
         refetchInterval: authStore.isAuthenticated && shouldUseManagerNotifications ? notificationRefreshMs : false,
-        refetchIntervalInBackground: true,
     })
 
     // The Tasks page's key, so its mutations and the SignalR notificationsUpdated
     // invalidation (sent on every task write) refresh the bell. Not polled like the
     // rest: the list is every task in scope with its logged hours, heavy to fetch
-    // every 15 seconds for the few rows the bell shows. Not fetched for an Employee:
+    // on a timer for the few rows the bell shows. Not fetched for an Employee:
     // they have no Tasks page for a task notification to open.
     const shouldFetchTasks = shouldUseManagerNotifications
     const { data: workTasks, isLoading: isLoadingTasks } = useQuery({
@@ -144,7 +145,6 @@ const Topbar = observer(function Topbar() {
         queryFn: getSystemErrors,
         enabled: authStore.isAuthenticated && shouldUseSystemNotifications,
         refetchInterval: authStore.isAuthenticated && shouldUseSystemNotifications ? notificationRefreshMs : false,
-        refetchIntervalInBackground: true,
     })
 
     const tsTime = (s: string) => parseServerDate(s)?.getTime() ?? 0
