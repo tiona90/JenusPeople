@@ -1,4 +1,4 @@
-using Application.AnnualLeaves.Commands;
+﻿using Application.AnnualLeaves.Commands;
 using Domain;
 using Xunit;
 
@@ -159,6 +159,37 @@ public class ApprovalStageRuleTests
 
         Assert.Null(outcome.Error);
         Assert.Equal(AnnualLeaveStatus.Cancelled, outcome.Status);
+    }
+
+    /// <summary>
+    /// Pending is where a request is filed, never where a decision sends it. Putting
+    /// an approved leave back to Pending dodged CancellationRule — the employee could
+    /// then withdraw a leave already taken and have the days handed back.
+    /// </summary>
+    [Theory]
+    [InlineData(AnnualLeaveStatus.Approved, true)]
+    [InlineData(AnnualLeaveStatus.Approved, false)]
+    [InlineData(AnnualLeaveStatus.Rejected, false)]
+    [InlineData(AnnualLeaveStatus.AwaitingHrApproval, true)]
+    public void Nothing_is_put_back_to_pending(AnnualLeaveStatus current, bool isHr)
+    {
+        var outcome = ApprovalStageRule.Resolve(Type(true, false), current, AnnualLeaveStatus.Pending, isHr);
+
+        Assert.Null(outcome.Status);
+        Assert.Equal(ApprovalStageRule.BackToPendingMessage, outcome.Error);
+    }
+
+    /// <summary>A cancelled request is closed: nobody reopens it, the employee files again.</summary>
+    [Theory]
+    [InlineData(AnnualLeaveStatus.Approved, true)]
+    [InlineData(AnnualLeaveStatus.Approved, false)]
+    [InlineData(AnnualLeaveStatus.Rejected, false)]
+    public void A_cancelled_request_is_not_reopened(AnnualLeaveStatus requested, bool isHr)
+    {
+        var outcome = ApprovalStageRule.Resolve(Type(true, false), AnnualLeaveStatus.Cancelled, requested, isHr);
+
+        Assert.Null(outcome.Status);
+        Assert.Equal(ApprovalStageRule.CancelledIsFinalMessage, outcome.Error);
     }
 
     /// <summary>

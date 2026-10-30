@@ -1,3 +1,4 @@
+﻿using Application.Core;
 using System.Text.Json;
 using API.Extensions;
 using Application.SystemErrors;
@@ -205,21 +206,24 @@ public class GlobalExceptionMiddleware(
     private static bool IsOAuthCallback(PathString path) =>
         OAuthCallbackPaths.Any(p => path.StartsWithSegments(p, StringComparison.OrdinalIgnoreCase));
 
+    /* Only an exception thrown *as* a refusal is the caller's fault.
+       ArgumentException, InvalidOperationException and KeyNotFoundException used to
+       map to 400/409/404, but they are mostly what EF and the BCL throw for bugs —
+       "could not be translated", "Sequence contains no elements" — so those reached
+       the client as a 4xx with their internals in the details and never reached the
+       System Log. They are server errors now; a deliberate refusal throws
+       RequestRefusedException, whose message is written for the user. */
     private static int MapStatusCode(Exception ex) => ex switch
     {
+        RequestRefusedException => StatusCodes.Status400BadRequest,
         UnauthorizedAccessException => StatusCodes.Status403Forbidden,
-        KeyNotFoundException => StatusCodes.Status404NotFound,
-        ArgumentException => StatusCodes.Status400BadRequest,
-        InvalidOperationException => StatusCodes.Status409Conflict,
         _ => StatusCodes.Status500InternalServerError,
     };
 
     private static string MapMessage(Exception ex) => ex switch
     {
+        RequestRefusedException refused => refused.Message,
         UnauthorizedAccessException => "You do not have permission to perform this action.",
-        KeyNotFoundException => "The requested resource was not found.",
-        ArgumentException => "The request contains invalid data.",
-        InvalidOperationException => "The requested operation could not be completed.",
         _ => "An unexpected server error occurred.",
     };
 }

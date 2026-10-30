@@ -1,4 +1,4 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using API.Hubs;
 using API.Models;
 using Application.Timesheets.Commands;
@@ -63,7 +63,7 @@ namespace API.Controllers
 
             var dispatch = new List<Task>
             {
-                _notificationsHub.Clients.Group(NotificationsHub.AdminGroup).SendAsync("notificationsUpdated", cancellationToken),
+                _notificationsHub.Clients.Group(NotificationsHub.AdminGroup).SendAsync("notificationsUpdated", NotificationKind.Timesheet, cancellationToken),
             };
 
             // No department means no department-manager group to notify — the
@@ -72,7 +72,7 @@ namespace API.Controllers
             {
                 dispatch.Add(_notificationsHub.Clients
                     .Group(NotificationsHub.DepartmentManagerGroup(departmentId))
-                    .SendAsync("notificationsUpdated", cancellationToken));
+                    .SendAsync("notificationsUpdated", NotificationKind.Timesheet, cancellationToken));
             }
             else
             {
@@ -82,12 +82,12 @@ namespace API.Controllers
                 // group has to hear it live too.
                 dispatch.Add(_notificationsHub.Clients
                     .Group(NotificationsHub.HrAdministratorGroup)
-                    .SendAsync("notificationsUpdated", cancellationToken));
+                    .SendAsync("notificationsUpdated", NotificationKind.Timesheet, cancellationToken));
             }
 
             if (!string.IsNullOrWhiteSpace(audience.EmployeeUserId))
             {
-                dispatch.Add(_notificationsHub.Clients.User(audience.EmployeeUserId).SendAsync("notificationsUpdated", cancellationToken));
+                dispatch.Add(_notificationsHub.Clients.User(audience.EmployeeUserId).SendAsync("notificationsUpdated", NotificationKind.Timesheet, cancellationToken));
             }
 
             await Task.WhenAll(dispatch);
@@ -100,7 +100,8 @@ namespace API.Controllers
             [FromQuery] bool myOnly = false,
             [FromQuery] int? page = null,
             [FromQuery] int? pageSize = null,
-            [FromQuery] bool includeAttendance = false)
+            [FromQuery] bool includeAttendance = false,
+            [FromQuery] bool openOnly = false)
         {
             var userId = ResolveUserId();
             var isAdmin = User.IsSystemAdministrator();
@@ -115,6 +116,7 @@ namespace API.Controllers
                 Page = page,
                 PageSize = pageSize,
                 IncludeAttendanceComparison = includeAttendance,
+                OpenOnly = openOnly,
             });
             return Paged(result);
         }

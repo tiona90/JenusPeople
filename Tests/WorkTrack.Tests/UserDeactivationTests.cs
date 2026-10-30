@@ -1,4 +1,4 @@
-using API.Controllers;
+﻿using API.Controllers;
 using API.Security;
 using Application.AdminUsers.Commands;
 using Application.Accounts.DTOs;
@@ -109,6 +109,53 @@ public class UserDeactivationTests
             StatusCodeResult statusCodeResult => statusCodeResult.StatusCode,
             _ => 0,
         };
+    }
+
+    private static async Task<(int Status, string? Message)> AttemptLoginWith(AccountController controller, string password)
+    {
+        var result = await controller.Login(new LoginDto { Email = Email, Password = password });
+        var objectResult = Assert.IsAssignableFrom<ObjectResult>(result);
+        var message = objectResult.Value?.GetType().GetProperty("message")?.GetValue(objectResult.Value) as string;
+        return (objectResult.StatusCode ?? StatusCodes.Status200OK, message);
+    }
+
+    /// <summary>
+    /// "Deactivated" and "not verified" are decided before Identity looks at the
+    /// password, so they used to be told to anyone who typed the email — a way to
+    /// list which addresses belong to leavers or to unfinished invites. They are
+    /// now said only to a caller who also has the right password; everyone else
+    /// hears what a wrong password always hears.
+    /// </summary>
+    [Fact]
+    public async Task A_deactivated_account_with_the_wrong_password_is_just_a_wrong_password()
+    {
+        using var db = TestDb.Create();
+        await using var provider = BuildIdentity(db);
+        var user = await CreateConfirmedUser(provider.GetRequiredService<UserManager<User>>());
+        await Handler(provider).Handle(
+            new SetAdminUserActive.Command { Id = user.Id, IsActive = false, RequestingUserId = "some-admin" },
+            CancellationToken.None);
+
+        var (status, message) = await AttemptLoginWith(LoginController(provider, db), "not-the-password-1!");
+
+        Assert.Equal(StatusCodes.Status401Unauthorized, status);
+        Assert.Equal("Invalid email or password.", message);
+    }
+
+    [Fact]
+    public async Task An_unconfirmed_account_with_the_wrong_password_is_just_a_wrong_password()
+    {
+        using var db = TestDb.Create();
+        await using var provider = BuildIdentity(db);
+        var userManager = provider.GetRequiredService<UserManager<User>>();
+        var user = await CreateConfirmedUser(userManager);
+        user.EmailConfirmed = false;
+        await userManager.UpdateAsync(user);
+
+        var (status, message) = await AttemptLoginWith(LoginController(provider, db), "not-the-password-1!");
+
+        Assert.Equal(StatusCodes.Status401Unauthorized, status);
+        Assert.Equal("Invalid email or password.", message);
     }
 
     private static SetAdminUserActive.Handler Handler(ServiceProvider provider) =>

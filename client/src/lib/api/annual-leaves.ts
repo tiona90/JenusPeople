@@ -9,6 +9,15 @@ export async function getAnnualLeaves() {
     return response.data
 }
 
+/**
+ * Only requests still waiting on a decision — what the notification bell lists.
+ * No parameters on purpose: it is passed bare as a queryFn.
+ */
+export async function getOpenAnnualLeaves() {
+    const response = await apiClient.get<AnnualLeave[]>('/annualleaves', { params: { openOnly: true } })
+    return response.data
+}
+
 // Paged variant: returns items + total (read from the X-Total-Count header).
 export async function getAnnualLeavesPaged(params: PageParams): Promise<Paged<AnnualLeave>> {
     const response = await apiClient.get<AnnualLeave[]>('/annualleaves', { params })

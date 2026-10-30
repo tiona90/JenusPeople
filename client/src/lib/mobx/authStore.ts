@@ -59,6 +59,16 @@ class AuthStore {
         }
     }
 
+    /**
+     * The server stopped recognising the session (an ordinary request answered
+     * 401): drop the user without calling logout, which would only 401 too. The
+     * route guard then shows the sign-in screen.
+     */
+    expireSession() {
+        this.user = null
+        this.hasCheckedAuth = true
+    }
+
     async signOut() {
         try {
             await logout()

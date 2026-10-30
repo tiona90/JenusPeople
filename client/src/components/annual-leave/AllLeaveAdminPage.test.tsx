@@ -508,10 +508,14 @@ describe('AllLeaveAdminPage — a required document holds approval', () => {
         for (const box of screen.getAllByRole('checkbox')) fireEvent.click(box)
         fireEvent.click(await screen.findByRole('button', { name: /Approve Selected/ }))
 
-        await waitFor(() => expect(api.updateLeaveStatus).toHaveBeenCalledTimes(PENDING.length))
+        // The viewer's own request (p3, admin-1's) is skipped too: nobody decides
+        // their own leave (UpdateLeaveStatus.OwnLeaveMessage).
+        const othersPending = PENDING.filter((l) => l.employeeId !== ADMIN.id)
+        await waitFor(() => expect(api.updateLeaveStatus).toHaveBeenCalledTimes(othersPending.length))
         const approvedIds = api.updateLeaveStatus.mock.calls.map(([id]) => id)
         expect(approvedIds).not.toContain(UNDOCUMENTED.id)
-        expect(approvedIds).toEqual(expect.arrayContaining(PENDING.map((l) => l.id)))
+        expect(approvedIds).not.toContain('p3')
+        expect(approvedIds).toEqual(expect.arrayContaining(othersPending.map((l) => l.id)))
     })
 })
 

@@ -26,7 +26,11 @@ import {
     TeamTimesheetPage,
 } from './components'
 import ProtectedRoute from './components/auth/ProtectedRoute'
+import ErrorBoundary from './components/ui/ErrorBoundary'
 import { API_ERROR_EVENT } from './lib/api/error-events'
+import { SESSION_EXPIRED_EVENT } from './lib/api/session-expiry'
+import { keepConnected, reconnectPolicy } from './lib/notifications-hub'
+import { coalesce, keysForKinds } from './lib/notification-kinds'
 import { apiBaseUrl } from './lib/api/client'
 import { useStore } from './lib/mobx'
 import { LEAVE_AND_TIME_ROLES, SYSTEM_ADMINISTRATOR_ROLES, TASK_ROLES, isAdministrator } from './lib/roles'
@@ -90,6 +94,7 @@ const AuthGate = observer(function AuthGate() {
 
 const AppShell = observer(function AppShell() {
     const { authStore } = useStore()
+    const location = useLocation()
 
     if (!authStore.user) return null
 
@@ -99,7 +104,12 @@ const AppShell = observer(function AppShell() {
             <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
                 <Topbar />
                 <Container component="main" maxWidth="lg" sx={{ pt: 3, pb: 4 }}>
-                    <Outlet />
+                    {/* Keyed by route: a page that crashes is replaced by a message
+                        while the sidebar and topbar stay, and navigating away
+                        recovers. */}
+                    <ErrorBoundary resetKey={location.pathname}>
+                        <Outlet />
+                    </ErrorBoundary>
                 </Container>
             </Box>
         </Box>
@@ -212,32 +222,51 @@ const AppInner = observer(function AppInner() {
         return () => window.removeEventListener(API_ERROR_EVENT, onApiError as EventListener)
     }, [])
 
+    // A 401 on an ordinary request: the session expired, or the account was
+    // deactivated. Sign out locally and forget everything cached for that user;
+    // the route guard takes it to the sign-in screen.
     useEffect(() => {
-        if (!authStore.user) return
+        const onSessionExpired = () => {
+            if (!authStore.user) return
+            authStore.expireSession()
+            queryClient.clear()
+            setApiErrorMessage('Your session has expired. Please sign in again.')
+            setApiErrorOpen(true)
+        }
+        window.addEventListener(SESSION_EXPIRED_EVENT, onSessionExpired)
+        return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onSessionExpired)
+    }, [authStore, queryClient])
+
+    // Keyed on the id, not the user object: editing your own profile replaces
+    // the object, and used to tear the connection down and build it again.
+    const signedInUserId = authStore.user?.id
+    useEffect(() => {
+        if (!signedInUserId) return
 
         const hubBaseUrl = apiBaseUrl.endsWith('/api') ? apiBaseUrl.slice(0, -4) : apiBaseUrl
         const connection = new HubConnectionBuilder()
             .withUrl(`${hubBaseUrl}/hubs/notifications`, { withCredentials: true })
-            .withAutomaticReconnect()
+            .withAutomaticReconnect(reconnectPolicy)
             .configureLogging(LogLevel.Warning)
             .build()
 
-        connection.on('notificationsUpdated', () => {
-            void queryClient.invalidateQueries({ queryKey: ['leaveStatusHistories'] })
-            void queryClient.invalidateQueries({ queryKey: ['annualLeaves'] })
-            void queryClient.invalidateQueries({ queryKey: ['teamAwayThisWeekCount'] })
-            void queryClient.invalidateQueries({ queryKey: ['timesheets'] })
-            void queryClient.invalidateQueries({ queryKey: ['timesheetStatusHistories'] })
-            void queryClient.invalidateQueries({ queryKey: ['work-tasks'] })
-        })
+        // The event says what changed (leave, timesheet or task), and a burst —
+        // a bulk approve sends one per row — is folded into one refresh of just
+        // those query families. No kind (an older API) refreshes everything.
+        const refresh = coalesce((kinds) => {
+            for (const queryKey of keysForKinds(kinds)) void queryClient.invalidateQueries({ queryKey })
+        }, 300)
+        connection.on('notificationsUpdated', (kind?: string) => refresh(kind))
 
-        void connection.start().catch(() => { /* polling fallback */ })
+        // Retries a failed start and a closed connection for as long as it takes,
+        // and refreshes everything after every gap, since events sent meanwhile are lost.
+        const stop = keepConnected(connection, () => refresh(undefined))
 
         return () => {
             connection.off('notificationsUpdated')
-            void connection.stop()
+            stop()
         }
-    }, [authStore.user, queryClient])
+    }, [signedInUserId, queryClient])
 
     if (!authStore.hasCheckedAuth && authStore.isLoadingUser) {
         return (

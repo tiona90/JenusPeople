@@ -108,6 +108,8 @@ public class EditAnnualLeave
                 : null;
 
             annualLeave.Reason = request.AnnualLeave.Reason;
+            var evidenceBeforeEdit = annualLeave.EvidenceUrl;
+            var handoverBeforeEdit = annualLeave.CoverageAttachmentUrl;
             annualLeave.EvidenceUrl = request.AnnualLeave.EvidenceUrl;
 
             if (editedLeaveType is not null)
@@ -148,6 +150,15 @@ public class EditAnnualLeave
 
             // Same rule as on create: a handover with nobody to hand over to is dropped.
             CoverageHandover.Apply(annualLeave, request.AnnualLeave);
+
+            // A link the leave already carries passes; a new one must name a file
+            // the editor or the employee uploaded, for this purpose.
+            string[] uploaders = [request.ChangedByUserId, annualLeave.EmployeeId];
+            var attachmentRefError =
+                await LeaveAttachmentRule.CheckAsync(context, annualLeave.EvidenceUrl, evidenceBeforeEdit, StoredFilePurpose.LeaveEvidence, uploaders, cancellationToken)
+                ?? await LeaveAttachmentRule.CheckAsync(context, annualLeave.CoverageAttachmentUrl, handoverBeforeEdit, StoredFilePurpose.CoverageHandover, uploaders, cancellationToken);
+            if (attachmentRefError is not null)
+                return Result<Unit>.Failure(attachmentRefError);
 
             var employeeProfile = await context.EmployeeProfiles
                 .FirstOrDefaultAsync(ep => ep.Id == annualLeave.EmployeeProfileId, cancellationToken);
@@ -197,6 +208,10 @@ public class EditAnnualLeave
 
             if (request.AnnualLeave.Status.HasValue && request.AnnualLeave.Status.Value != annualLeave.Status)
             {
+                // Nobody decides their own leave — see UpdateLeaveStatus.
+                if (annualLeave.EmployeeId == request.ChangedByUserId)
+                    return Result<Unit>.Failure(UpdateLeaveStatus.OwnLeaveMessage);
+
                 var changedByUserId = request.ChangedByUserId;
                 var userExists = await context.Users
                     .AnyAsync(u => u.Id == changedByUserId, cancellationToken);
@@ -219,7 +234,11 @@ public class EditAnnualLeave
 
                 // An approved leave is cancellable only until it starts — measured
                 // against the dates as edited, since those are what will be stored.
-                var cancellationError = CancellationRule.Check(oldStatus, newStatus, request.AnnualLeave.StartDate, DateTime.UtcNow);
+                // Asked of the stored start as well: dates and status arrive in one
+                // save, and moving a started leave's start into the future in the
+                // same edit must not make it cancellable.
+                var cancellationError = CancellationRule.Check(oldStatus, newStatus, startDateBeforeEdit, DateTime.UtcNow)
+                    ?? CancellationRule.Check(oldStatus, newStatus, request.AnnualLeave.StartDate, DateTime.UtcNow);
                 if (cancellationError is not null)
                     return Result<Unit>.Failure(cancellationError);
 
@@ -277,6 +296,8 @@ public class EditAnnualLeave
                     cancellationToken);
                 if (balanceError is not null)
                     return Result<Unit>.Failure(balanceError);
+
+                AnnualLeaveBalanceCalculator.ClaimLedger(employeeProfile);
             }
 
             // One transaction over both saves: the balance sync reads approved leave

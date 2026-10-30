@@ -220,3 +220,23 @@ describe('statusPhrase', () => {
         expect(statusPhrase('Cancelled')).toBe('cancelled')
     })
 })
+
+describe("nobody decides their own leave (UpdateLeaveStatus.OwnLeaveMessage)", () => {
+    const self = 'u-me'
+    const MANAGER_ME = { isHrAdministrator: false, userId: self }
+    const HR_ME = { isHrAdministrator: true, userId: self }
+
+    it('offers no Approve or Reject on the viewer\'s own open request', () => {
+        expect(canDecide({ status: 'Pending', employeeId: self }, MANAGER_ME, managerOnly)).toBe(false)
+        expect(canDecide({ status: 'AwaitingHrApproval', employeeId: self }, HR_ME, hrOnly)).toBe(false)
+        expect(canApproveInDialog({ status: 'Rejected', employeeId: self }, MANAGER_ME, managerOnly)).toBe(false)
+        expect(canRejectInDialog({ status: 'Approved', employeeId: self }, MANAGER_ME, managerOnly)).toBe(false)
+    })
+
+    it('still offers them on somebody else\'s request', () => {
+        expect(canDecide({ status: 'Pending', employeeId: 'u-other' }, MANAGER_ME, managerOnly)).toBe(true)
+        expect(canDecide({ status: 'AwaitingHrApproval', employeeId: 'u-other' }, HR_ME, hrOnly)).toBe(true)
+        expect(canApproveInDialog({ status: 'Rejected', employeeId: 'u-other' }, MANAGER_ME, managerOnly)).toBe(true)
+        expect(canRejectInDialog({ status: 'Approved', employeeId: 'u-other' }, MANAGER_ME, managerOnly)).toBe(true)
+    })
+})

@@ -1,4 +1,4 @@
-using Application.AnnualLeaves.Commands;
+﻿using Application.AnnualLeaves.Commands;
 using Application.Core;
 using Application.LeaveTypes.DTOs;
 using AutoMapper;
@@ -114,8 +114,23 @@ public class UpdateLeaveType
                                 || (everythingOff && al.Status == AnnualLeaveStatus.Pending)))
                         .ToListAsync(cancellationToken);
 
+                    /* Every row clears what an ordinary approval clears: the
+                       attachment policy, the pooled balance and the per-child ledger.
+                       The two ledgers are read from the database, where nothing this
+                       sweep has approved is saved yet, so what it has approved so far
+                       is handed to them — otherwise one employee's several pending
+                       requests each pass on their own and together overspend. Any
+                       refusal refuses the whole save, as the balance check always has:
+                       with every switch off, a row left behind would have nobody to
+                       approve it. */
+                    var sweptApproved = new List<AnnualLeave>();
+
                     foreach (var annualLeave in toApprove)
                     {
+                        var attachmentError = AttachmentPolicyRule.Check(leaveType, annualLeave.EvidenceUrl);
+                        if (attachmentError is not null)
+                            return Result<LeaveTypeDto>.Conflict(attachmentError);
+
                         var employeeProfile = await context.EmployeeProfiles
                             .FirstOrDefaultAsync(ep => ep.Id == annualLeave.EmployeeProfileId, cancellationToken);
 
@@ -126,12 +141,26 @@ public class UpdateLeaveType
                                 employeeProfile,
                                 annualLeave,
                                 excludeLeaveId: annualLeave.Id,
-                                cancellationToken);
+                                cancellationToken,
+                                alsoApproved: sweptApproved);
                             if (balanceError is not null)
                                 return Result<LeaveTypeDto>.Conflict(balanceError);
 
+                            var perChildError = await PerChildLeaveBalanceCalculator.CheckPerChildEntitlementAsync(
+                                context,
+                                annualLeave,
+                                employeeProfile,
+                                excludeLeaveId: annualLeave.Id,
+                                cancellationToken,
+                                alsoApproved: sweptApproved);
+                            if (perChildError is not null)
+                                return Result<LeaveTypeDto>.Conflict(perChildError);
+
+                            AnnualLeaveBalanceCalculator.ClaimLedger(employeeProfile);
                             affectedProfiles[employeeProfile.Id] = employeeProfile;
                         }
+
+                        sweptApproved.Add(annualLeave);
 
                         var previous = annualLeave.Status;
                         annualLeave.Status = AnnualLeaveStatus.Approved;
@@ -194,7 +223,22 @@ public class UpdateLeaveType
                 }
             }
 
-            await context.SaveChangesAsync(cancellationToken);
+            // One transaction over both saves, as every leave handler that syncs a
+            // balance has: the sync reads the swept approvals back out of the
+            // database, so it must follow the first save, and a failure on the
+            // second must not leave them approved against stale balances.
+            await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+
+            try
+            {
+                await context.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                // An approval for one of the swept employees committed since their
+                // balance was checked (EmployeeProfile.LedgerVersion).
+                return Result<LeaveTypeDto>.Conflict(ConcurrencyError.Message);
+            }
 
             foreach (var employeeProfile in affectedProfiles.Values)
             {
@@ -205,6 +249,8 @@ public class UpdateLeaveType
             {
                 await context.SaveChangesAsync(cancellationToken);
             }
+
+            await transaction.CommitAsync(cancellationToken);
 
             return Result<LeaveTypeDto>.Success(mapper.Map<LeaveTypeDto>(leaveType));
         }

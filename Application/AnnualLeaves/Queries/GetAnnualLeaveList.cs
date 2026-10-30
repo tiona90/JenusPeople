@@ -26,6 +26,13 @@ public class GetAnnualLeaveList
         public bool IsHrAdministrator { get; set; }
         public int? Page { get; set; }
         public int? PageSize { get; set; }
+
+        /// <summary>
+        /// Only requests still waiting on a decision (Pending, AwaitingHrApproval).
+        /// The notification bell lists nothing else, and polling every leave in
+        /// scope, for all time, to find them cost far more than the bell showed.
+        /// </summary>
+        public bool OpenOnly { get; set; }
     }
 
     public class Handler(AppDbContext context, IMapper mapper) : IRequestHandler<Query, PagedResult<AnnualLeaveDto>>
@@ -67,6 +74,12 @@ public class GetAnnualLeaveList
             else
             {
                 annualLeavesQuery = annualLeavesQuery.Where(_ => false);
+            }
+
+            if (request.OpenOnly)
+            {
+                annualLeavesQuery = annualLeavesQuery.Where(al =>
+                    al.Status == AnnualLeaveStatus.Pending || al.Status == AnnualLeaveStatus.AwaitingHrApproval);
             }
 
             // Filtering above runs in SQL. Count the filtered set, then apply a

@@ -1,4 +1,4 @@
-using Domain;
+﻿using Domain;
 using Microsoft.EntityFrameworkCore;
 using Persistence;
 
@@ -32,7 +32,10 @@ public static class ManagerNotificationRecipients
                 .AsNoTracking()
                 .FirstOrDefaultAsync(mp => mp.Id == employeeProfile.ManagerId, cancellationToken);
 
-            if (directManager?.User is { } du && !string.IsNullOrWhiteSpace(du.Email))
+            // A deactivated manager has left: they are nobody's reviewer, and
+            // counting them would file a request Pending against someone who can
+            // never decide it (ManagerAvailability reads this same set).
+            if (directManager?.User is { IsActive: true } du && !string.IsNullOrWhiteSpace(du.Email))
                 byUserId[du.Id] = new ManagerContact(du.Id, du.Email!, du.DisplayName);
         }
 
@@ -56,7 +59,7 @@ public static class ManagerNotificationRecipients
                 join ur in context.UserRoles on ep.UserId equals ur.UserId
                 where ur.RoleId == managerRoleId
                 join u in context.Users on ep.UserId equals u.Id
-                where u.Email != null && u.Email != ""
+                where u.IsActive && u.Email != null && u.Email != ""
                 select new { u.Id, u.Email, u.DisplayName }
             ).Distinct().ToListAsync(cancellationToken);
 

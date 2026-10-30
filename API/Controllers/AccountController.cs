@@ -1,4 +1,4 @@
-using API.DTOs;
+﻿using API.DTOs;
 using API.Security;
 using API.Services;
 using Application.Accounts.DTOs;
@@ -30,6 +30,8 @@ public class AccountController(
     AppDbContext context,
     IAccountEmailSender accountEmailSender) : BaseApiController
 {
+    public const string EmailChangeNeedsPasswordMessage = "Enter your current password to change your email.";
+
     // There is deliberately no public registration endpoint. Accounts are
     // created only by an administrator via POST /api/AdminUsers, which is
     // gated by [Authorize(Roles = AppRoles.AdministratorRoles)].
@@ -151,8 +153,18 @@ public class AccountController(
             // administrator sends them to a colleague who can do nothing, so the
             // two are separated. Looked up by name, because that is what
             // PasswordSignInAsync above resolved the submitted email against.
+            //
+            // Both are decided before Identity checks the password, so they are
+            // said only to a caller who also has the right one. Telling anyone
+            // who typed the email would list which addresses belong to leavers or
+            // to invites nobody accepted.
             var user = await userManager.FindByNameAsync(request.Email);
-            if (user is not null && !user.IsActive)
+            if (user is null || !await userManager.CheckPasswordAsync(user, request.Password))
+            {
+                return Unauthorized(new { message = "Invalid email or password." });
+            }
+
+            if (!user.IsActive)
             {
                 return StatusCode(StatusCodes.Status403Forbidden, new
                 {
@@ -220,6 +232,16 @@ public class AccountController(
         var requestedEmail = request.Email.Trim();
         var normalizedRequestedEmail = userManager.NormalizeEmail(requestedEmail);
         var emailChanged = !string.Equals(user.NormalizedEmail, normalizedRequestedEmail, StringComparison.Ordinal);
+
+        // A changed email is a takeover step — whoever holds the address can reset
+        // the password, and the confirmation link goes to the new one — so the
+        // session alone is not enough: the current password is asked for too.
+        if (emailChanged
+            && (string.IsNullOrEmpty(request.CurrentPassword)
+                || !await userManager.CheckPasswordAsync(user, request.CurrentPassword)))
+        {
+            return BadRequest(new { message = EmailChangeNeedsPasswordMessage });
+        }
 
         if (emailChanged)
         {

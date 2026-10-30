@@ -1,3 +1,4 @@
+﻿using System.ComponentModel.DataAnnotations;
 using Domain.Interfaces;
 
 namespace Domain;
@@ -40,6 +41,18 @@ public class EmployeeProfile : ISoftDeletable, IAuditable
     /// set it, all of them from the allowance.
     /// </summary>
     public decimal LeaveBalance { get; set; }
+
+    /// <summary>
+    /// Bumped by every approval that charges this employee's leave, in the same
+    /// save as the approval, and checked on it — so two approvals racing for one
+    /// person's days cannot both commit. Each checks the balance against the rows
+    /// it can see, and neither sees the other until it commits; without a token
+    /// on the ledger they share, both passed and the days were charged twice.
+    /// <c>AnnualLeave.RowVersion</c> protects one row only. An int rather than a
+    /// rowversion so the SQLite tests can exercise it too.
+    /// </summary>
+    [ConcurrencyCheck]
+    public int LedgerVersion { get; set; }
 
     /// <summary>
     /// Whether this employee has declared having children — a genuine tri-state:

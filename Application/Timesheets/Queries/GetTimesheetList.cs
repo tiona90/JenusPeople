@@ -1,4 +1,4 @@
-using Application.Core;
+﻿using Application.Core;
 using Application.Timesheets.DTOs;
 using Application.Timesheets.Support;
 using MediatR;
@@ -33,6 +33,13 @@ namespace Application.Timesheets.Queries
 
             /// <summary>Test seam for the clock; the controller leaves it null.</summary>
             public DateTime? NowUtc { get; init; }
+
+            /// <summary>
+            /// Only sheets waiting on a review (Submitted, Resubmitted) — all the
+            /// notification bell lists. Without it the bell loaded every sheet in
+            /// scope, with every entry, on each poll.
+            /// </summary>
+            public bool OpenOnly { get; init; }
         }
 
         public class Handler : IRequestHandler<Query, PagedResult<TimesheetDto>>
@@ -57,6 +64,12 @@ namespace Application.Timesheets.Queries
                     request.IsManager,
                     cancellationToken,
                     isHrAdministrator: request.IsHrAdministrator);
+
+                if (request.OpenOnly)
+                {
+                    query = query.Where(t =>
+                        t.Status == Domain.TimesheetStatus.Submitted || t.Status == Domain.TimesheetStatus.Resubmitted);
+                }
 
                 // Filtering above runs in SQL. Count the filtered set, then order +
                 // optionally page (in SQL) before materializing the entries.

@@ -38,15 +38,15 @@ public class AnnualLeavesController : BaseApiController
     {
         var dispatch = new List<Task>
         {
-            _notificationsHub.Clients.User(employeeUserId).SendAsync("notificationsUpdated", cancellationToken),
-            _notificationsHub.Clients.Group(NotificationsHub.AdminGroup).SendAsync("notificationsUpdated", cancellationToken),
+            _notificationsHub.Clients.User(employeeUserId).SendAsync("notificationsUpdated", NotificationKind.Leave, cancellationToken),
+            _notificationsHub.Clients.Group(NotificationsHub.AdminGroup).SendAsync("notificationsUpdated", NotificationKind.Leave, cancellationToken),
         };
 
         if (departmentId.HasValue)
         {
             dispatch.Add(_notificationsHub.Clients
                 .Group(NotificationsHub.DepartmentManagerGroup(departmentId.Value))
-                .SendAsync("notificationsUpdated", cancellationToken));
+                .SendAsync("notificationsUpdated", NotificationKind.Leave, cancellationToken));
         }
         else
         {
@@ -55,7 +55,7 @@ public class AnnualLeavesController : BaseApiController
             // isUnscopedAdminLeave), so their own group has to hear it live.
             dispatch.Add(_notificationsHub.Clients
                 .Group(NotificationsHub.HrAdministratorGroup)
-                .SendAsync("notificationsUpdated", cancellationToken));
+                .SendAsync("notificationsUpdated", NotificationKind.Leave, cancellationToken));
         }
 
         await Task.WhenAll(dispatch);
@@ -80,7 +80,8 @@ public class AnnualLeavesController : BaseApiController
     // Visibility is role-scoped: System Administrator all, Manager by assigned departments, Employee own requests.
     [HttpGet]
     [Authorize(Policy = "AnnualLeaveRead")]
-    public async Task<ActionResult<List<AnnualLeaveDto>>> GetAnnualLeaves([FromQuery] int? page = null, [FromQuery] int? pageSize = null)
+    public async Task<ActionResult<List<AnnualLeaveDto>>> GetAnnualLeaves(
+        [FromQuery] int? page = null, [FromQuery] int? pageSize = null, [FromQuery] bool openOnly = false)
     {
         var result = await Mediator.Send(new GetAnnualLeaveList.Query
         {
@@ -91,6 +92,7 @@ public class AnnualLeavesController : BaseApiController
             IsHrAdministrator = User.IsHrAdministrator(),
             Page = page,
             PageSize = pageSize,
+            OpenOnly = openOnly,
         });
         return Paged(result);
     }

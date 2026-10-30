@@ -1,3 +1,4 @@
+﻿using Application.Core;
 using System.Security.Claims;
 using API.Controllers;
 using Domain;
@@ -106,7 +107,7 @@ public class TimesheetEntryComponentScopeTests
     {
         using var db = SeedWorld();
 
-        var error = await Assert.ThrowsAsync<ArgumentException>(() =>
+        var error = await Assert.ThrowsAsync<RequestRefusedException>(() =>
             ControllerFor(db).AddEntry(TimesheetId, EntryOn(NarrowedProjectId, JDocsId), CancellationToken.None));
 
         Assert.Contains("component", error.Message, StringComparison.OrdinalIgnoreCase);
@@ -165,7 +166,7 @@ public class TimesheetEntryComponentScopeTests
 
         await controller.AddEntry(TimesheetId, EntryOn(NarrowedProjectId, DmId, 3m), CancellationToken.None);
 
-        var error = await Assert.ThrowsAsync<ArgumentException>(() =>
+        var error = await Assert.ThrowsAsync<RequestRefusedException>(() =>
             controller.AddEntry(TimesheetId, EntryOn(NarrowedProjectId, DmId, 2m), CancellationToken.None));
 
         Assert.Contains("already exists", error.Message, StringComparison.OrdinalIgnoreCase);

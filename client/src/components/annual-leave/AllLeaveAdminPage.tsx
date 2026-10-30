@@ -105,7 +105,7 @@ function overlaps(a: AnnualLeave, b: AnnualLeave) {
 const AllLeaveAdminPage = observer(function AllLeaveAdminPage({ user }: { user: UserInfo }) {
     const queryClient = useQueryClient()
     const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d }, [])
-    const viewer = { isHrAdministrator: isHrAdministrator(user.roles) }
+    const viewer = { isHrAdministrator: isHrAdministrator(user.roles), userId: user.id }
 
     const [statusTab, setStatusTab] = useState<StatusTab>('all')
     const [deptFilter, setDeptFilter] = useState<string>('all')
@@ -694,7 +694,7 @@ const AllLeaveAdminPage = observer(function AllLeaveAdminPage({ user }: { user: 
                     onApprove={() => approveMut.mutate(l.id)}
                     onReject={() => openRejectDialog(l)}
                     onCancel={() => openCancelDialog(l)}
-                    canCancel={isHr && canCancelApproved(l, today)}
+                    canCancel={isHr && l.employeeId !== user.id && canCancelApproved(l, today)}
                     disabled={isWorking}
                     hideCheckbox
                 />

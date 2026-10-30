@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -19,6 +19,7 @@ vi.mock('../../lib/api')
 vi.mock('../../lib/mobx')
 
 const mobx = vi.mocked(await import('../../lib/mobx'))
+const api = vi.mocked(await import('../../lib/api'))
 
 const ADMIN: UserInfo = {
     id: 'u-admin',
@@ -50,7 +51,7 @@ beforeEach(() => {
 /** Renders the sidebar as `user` and opens the Edit profile dialog. */
 function openEditProfile(user: UserInfo) {
     mobx.useStore.mockReturnValue({
-        authStore: { user },
+        authStore: { user, setUserProfile: vi.fn() },
         uiStore: { sidebarMode: 'light' },
     } as never)
 
@@ -66,6 +67,51 @@ function openEditProfile(user: UserInfo) {
     fireEvent.click(screen.getByText(user.displayName))
     fireEvent.click(screen.getByText('Edit profile'))
 }
+
+/**
+ * A changed email is a takeover step, so the server asks for the current
+ * password with it (AccountController.EmailChangeNeedsPasswordMessage). The field
+ * appears only once the email is edited, and is sent with the save.
+ */
+// The profile form requires a date of birth, so the save needs one on file.
+const EMPLOYEE_WITH_DOB: UserInfo = { ...EMPLOYEE, dateOfBirth: '1990-04-12' }
+
+describe('Changing the email asks for the current password', () => {
+    it('does not ask while the email is unchanged', () => {
+        openEditProfile(EMPLOYEE_WITH_DOB)
+
+        expect(screen.queryByLabelText(/Current password/)).toBeNull()
+    })
+
+    it('asks once the email is edited, and sends it with the save', async () => {
+        api.updateProfile.mockResolvedValue({
+            message: 'ok', displayName: EMPLOYEE.displayName, email: EMPLOYEE.email, phoneNumber: null,
+            dateOfBirth: null, departmentId: 2, departmentName: 'Finance', hasChildren: null,
+        })
+        openEditProfile(EMPLOYEE_WITH_DOB)
+
+        fireEvent.change(screen.getByLabelText(/^Email/), { target: { value: 'maria.new@worktrack.com' } })
+        fireEvent.change(await screen.findByLabelText(/Current password/), { target: { value: 'Secret-1!' } })
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+        await waitFor(() => expect(api.updateProfile).toHaveBeenCalled())
+        expect(api.updateProfile.mock.calls[0][0]).toMatchObject({
+            email: 'maria.new@worktrack.com',
+            currentPassword: 'Secret-1!',
+        })
+    })
+
+    it('holds the save until the password is given', async () => {
+        openEditProfile(EMPLOYEE_WITH_DOB)
+
+        fireEvent.change(screen.getByLabelText(/^Email/), { target: { value: 'maria.new@worktrack.com' } })
+        await screen.findByLabelText(/Current password/)
+        fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+        expect(await screen.findByText('Enter your current password to change your email.')).toBeTruthy()
+        expect(api.updateProfile).not.toHaveBeenCalled()
+    })
+})
 
 describe('Edit profile asks about children only where the answer is used', () => {
     it('does not ask a System Administrator about their own children', () => {

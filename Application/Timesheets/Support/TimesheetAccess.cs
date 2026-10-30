@@ -104,6 +104,20 @@ public static class TimesheetAccess
         return Forbidden();
     }
 
+    public const string NotEditableMessage =
+        "This timesheet has been submitted and can no longer be changed.";
+
+    /// <summary>Whether the sheet's entries may be written: Draft or Rejected only.</summary>
+    /// <remarks>
+    /// Submitted, Resubmitted and Approved weeks are locked for everyone: hours
+    /// change after submission only by going back through a rejection
+    /// (UpdateTimesheetStatus, or HR's ReopenTimesheet), so what a reviewer signed
+    /// off is what stays. Mirrors LogTaskTime's WeekSubmittedMessage and the
+    /// editor's own lock.
+    /// </remarks>
+    public static bool IsEditable(TimesheetStatus status) =>
+        status is TimesheetStatus.Draft or TimesheetStatus.Rejected;
+
     private static Result<Timesheet> Forbidden() =>
         Result<Timesheet>.Forbidden("You are not authorized to modify this timesheet.");
 }

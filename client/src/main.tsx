@@ -7,6 +7,7 @@ import CssBaseline from '@mui/material/CssBaseline'
 import { ThemeProvider } from '@mui/material/styles'
 import './index.css'
 import App from './App.tsx'
+import ErrorBoundary from './components/ui/ErrorBoundary'
 import { StoreProvider, useStore } from './lib/mobx'
 import { queryClient } from './lib/react-query'
 import { buildTheme } from './lib/theme'
@@ -17,7 +18,10 @@ const ThemedApp = observer(function ThemedApp() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <App />
+      {/* Last resort, for a crash outside the shell's own per-page boundary. */}
+      <ErrorBoundary resetKey="app">
+        <App />
+      </ErrorBoundary>
     </ThemeProvider>
   )
 })

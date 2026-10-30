@@ -1,4 +1,4 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using API.Extensions;
 using API.Models;
 using Application.Core;
@@ -57,7 +57,14 @@ public class TimesheetEntriesController : ControllerBase
             cancellationToken,
             isHrAdministrator: User.IsHrAdministrator());
 
-        if (access.IsSuccess) return null;
+        if (access.IsSuccess)
+        {
+            if (TimesheetAccess.IsEditable(access.Value!.Status)) return null;
+
+            return StatusCode(
+                StatusCodes.Status409Conflict,
+                ApiErrorResponseExtensions.Create(HttpContext, StatusCodes.Status409Conflict, TimesheetAccess.NotEditableMessage));
+        }
 
         // Same Result<T> → ApiErrorResponse shape BaseApiController.HandleResult
         // produces; this controller talks to the DbContext directly rather than
@@ -99,17 +106,49 @@ public class TimesheetEntriesController : ControllerBase
             .Select(a => a.ComponentId)
             .ToListAsync(cancellationToken);
 
-    private async Task RecalculateTotalHoursAsync(string timesheetId)
+    /// <summary>
+    /// Saves the pending entry change and the sheet's recalculated TotalHours as
+    /// one transaction — the total is summed from the database, so it has to follow
+    /// the entry's own save, and a failure on it must not leave the entry written
+    /// against a stale total. A concurrency conflict (another write to the sheet
+    /// since this request read it) answers 409 and writes nothing; anything else
+    /// propagates to GlobalExceptionMiddleware. Null on success.
+    /// </summary>
+    private async Task<ActionResult?> SaveWithTotalAsync(string timesheetId, CancellationToken cancellationToken)
     {
-        var timesheet = await _context.Timesheets.FindAsync(timesheetId);
-        if (timesheet == null) return;
+        await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
 
-        var totalHours = await _context.TimesheetEntries
-            .Where(e => e.TimesheetId == timesheetId)
-            .SumAsync(e => e.HoursWorked);
+            var timesheet = await _context.Timesheets.FindAsync([timesheetId], cancellationToken);
+            if (timesheet is not null)
+            {
+                timesheet.TotalHours = await _context.TimesheetEntries
+                    .Where(e => e.TimesheetId == timesheetId)
+                    .SumAsync(e => e.HoursWorked, cancellationToken);
+                await _context.SaveChangesAsync(cancellationToken);
+            }
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return StatusCode(
+                StatusCodes.Status409Conflict,
+                ApiErrorResponseExtensions.Create(HttpContext, StatusCodes.Status409Conflict, ConcurrencyError.Message));
+        }
 
-        timesheet.TotalHours = totalHours;
-        await _context.SaveChangesAsync();
+        await transaction.CommitAsync(cancellationToken);
+        return null;
+    }
+
+    private async Task<(DateTime Start, DateTime End)> PeriodOfAsync(string timesheetId, CancellationToken cancellationToken)
+    {
+        var sheet = await _context.Timesheets
+            .AsNoTracking()
+            .Where(t => t.Id == timesheetId)
+            .Select(t => new { t.PeriodStart, t.PeriodEnd })
+            .FirstAsync(cancellationToken);
+        return (sheet.PeriodStart, sheet.PeriodEnd);
     }
 
     // POST: api/timesheets/{timesheetId}/entries
@@ -145,26 +184,18 @@ public class TimesheetEntriesController : ControllerBase
             today: null,
             assignedActivityTypeIds: await AssignedActivityTypeIdsAsync(entry.ProjectId, cancellationToken),
             assignedProjectTypeIds: await AssignedProjectTypeIdsAsync(entry.ProjectId, cancellationToken),
-            assignedComponentIds: await AssignedComponentIdsAsync(entry.ProjectId, cancellationToken));
+            assignedComponentIds: await AssignedComponentIdsAsync(entry.ProjectId, cancellationToken),
+            period: await PeriodOfAsync(timesheetId, cancellationToken));
         if (!validation.IsValid)
-            throw new ArgumentException(validation.Error);
+            throw new RequestRefusedException(validation.Error);
 
         var taskRefusal = await TimesheetEntryTaskRule.CheckAsync(_context, timesheetId, entry, stored: null, cancellationToken);
         if (taskRefusal is not null)
-            throw new ArgumentException(taskRefusal);
+            throw new RequestRefusedException(taskRefusal);
 
         _context.TimesheetEntries.Add(entry);
-        try
-        {
-            await _context.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateException ex)
-        {
-            var inner = ex.InnerException != null ? ex.InnerException.Message : ex.Message;
-            return StatusCode(500, new { error = "Database error", details = inner });
-        }
-
-        await RecalculateTotalHoursAsync(timesheetId);
+        var conflict = await SaveWithTotalAsync(timesheetId, cancellationToken);
+        if (conflict is not null) return conflict;
 
         return CreatedAtAction(null, new { timesheetId, entryId = entry.Id }, entry);
     }
@@ -198,28 +229,26 @@ public class TimesheetEntriesController : ControllerBase
             today: null,
             assignedActivityTypeIds: await AssignedActivityTypeIdsAsync(entry.ProjectId, cancellationToken),
             assignedProjectTypeIds: await AssignedProjectTypeIdsAsync(entry.ProjectId, cancellationToken),
-            assignedComponentIds: await AssignedComponentIdsAsync(entry.ProjectId, cancellationToken));
+            assignedComponentIds: await AssignedComponentIdsAsync(entry.ProjectId, cancellationToken),
+            period: await PeriodOfAsync(timesheetId, cancellationToken));
         if (!validation.IsValid)
-            throw new ArgumentException(validation.Error);
+            throw new RequestRefusedException(validation.Error);
 
         var taskRefusal = await TimesheetEntryTaskRule.CheckAsync(
             _context, timesheetId, entry, existing.Single(e => e.Id == entryId), cancellationToken);
         if (taskRefusal is not null)
-            throw new ArgumentException(taskRefusal);
+            throw new RequestRefusedException(taskRefusal);
 
         _context.Entry(entry).State = EntityState.Modified;
-        try
+        var conflict = await SaveWithTotalAsync(timesheetId, cancellationToken);
+        if (conflict is not null)
         {
-            await _context.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateConcurrencyException)
-        {
+            // The entry itself may have gone since it was read.
+            _context.ChangeTracker.Clear();
             if (!await _context.TimesheetEntries.AnyAsync(e => e.Id == entryId && e.TimesheetId == timesheetId, cancellationToken))
                 return NotFound();
-            throw;
+            return conflict;
         }
-
-        await RecalculateTotalHoursAsync(timesheetId);
 
         return NoContent();
     }
@@ -239,9 +268,8 @@ public class TimesheetEntriesController : ControllerBase
         if (entry == null) return NotFound();
 
         _context.TimesheetEntries.Remove(entry);
-        await _context.SaveChangesAsync(cancellationToken);
-
-        await RecalculateTotalHoursAsync(timesheetId);
+        var conflict = await SaveWithTotalAsync(timesheetId, cancellationToken);
+        if (conflict is not null) return conflict;
 
         return NoContent();
     }

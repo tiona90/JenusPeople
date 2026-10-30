@@ -1,4 +1,4 @@
-using Domain;
+﻿using Domain;
 
 namespace Application.Timesheets.Support;
 
@@ -10,6 +10,8 @@ namespace Application.Timesheets.Support;
 public static class TimesheetEntryValidator
 {
     public const decimal MaxHoursPerDay = 24m;
+
+    public const string OutsideWeekMessage = "That date is outside this timesheet's week.";
 
     public readonly record struct ValidationResult(bool IsValid, string? Error)
     {
@@ -53,7 +55,8 @@ public static class TimesheetEntryValidator
         DateTime? today = null,
         IReadOnlyCollection<int>? assignedActivityTypeIds = null,
         IReadOnlyCollection<int>? assignedProjectTypeIds = null,
-        IReadOnlyCollection<int>? assignedComponentIds = null)
+        IReadOnlyCollection<int>? assignedComponentIds = null,
+        (DateTime Start, DateTime End)? period = null)
     {
         if (candidate.HoursWorked <= 0)
             return ValidationResult.Fail("Hours worked must be greater than zero.");
@@ -64,6 +67,12 @@ public static class TimesheetEntryValidator
         var todayDate = (today ?? DateTime.UtcNow).Date;
         if (candidate.Date.Date > todayDate)
             return ValidationResult.Fail("Entries for future dates are not allowed.");
+
+        // An entry belongs to its sheet's week. One dated outside it counted in
+        // TotalHours but showed nowhere — not in the daily breakdown, not in the
+        // editor — and the editor's next save deleted it.
+        if (period is { } week && (candidate.Date.Date < week.Start.Date || candidate.Date.Date > week.End.Date))
+            return ValidationResult.Fail(OutsideWeekMessage);
 
         // A project that has narrowed the activity catalogue accepts only what it
         // assigned. One that has assigned nothing accepts any activity, which is

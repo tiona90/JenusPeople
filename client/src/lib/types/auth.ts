@@ -21,4 +21,6 @@ export interface UpdateProfileRequest {
     phoneNumber?: string | null
     dateOfBirth?: string | null // ISO date "yyyy-MM-dd" or null to clear
     hasChildren?: boolean | null
+    /** Required by the server when `email` differs from the stored address. */
+    currentPassword?: string | null
 }

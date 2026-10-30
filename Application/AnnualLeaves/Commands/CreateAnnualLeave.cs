@@ -48,6 +48,15 @@ public class CreateAnnualLeave
                nominated they go nowhere and are not kept. Whitespace is neither. */
             CoverageHandover.Apply(annualLeave, request.AnnualLeave);
 
+            // The links must name files the filer or the employee uploaded, for
+            // this purpose (LeaveAttachmentRule) — not any file whose id is known.
+            string[] uploaders = [request.RequestingUserId, request.AnnualLeave.EmployeeId];
+            var attachmentRefError =
+                await LeaveAttachmentRule.CheckAsync(context, annualLeave.EvidenceUrl, null, StoredFilePurpose.LeaveEvidence, uploaders, cancellationToken)
+                ?? await LeaveAttachmentRule.CheckAsync(context, annualLeave.CoverageAttachmentUrl, null, StoredFilePurpose.CoverageHandover, uploaders, cancellationToken);
+            if (attachmentRefError is not null)
+                return Result<string>.Failure(attachmentRefError);
+
             var leaveType = await context.LeaveTypes
                 .AsNoTracking()
                 .FirstOrDefaultAsync(
@@ -176,6 +185,8 @@ public class CreateAnnualLeave
                 if (balanceError is not null)
                     return Result<string>.Failure(balanceError);
 
+                AnnualLeaveBalanceCalculator.ClaimLedger(employeeProfile);
+
                 context.LeaveStatusHistories.Add(new LeaveStatusHistory
                 {
                     Id = Guid.NewGuid().ToString(),
@@ -196,7 +207,17 @@ public class CreateAnnualLeave
             // against a leave that has already been written.
             await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
 
-            await context.SaveChangesAsync(cancellationToken);
+            try
+            {
+                await context.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                // Another approval for this employee committed since the balance was
+                // checked (EmployeeProfile.LedgerVersion). Nothing is committed, so
+                // disposing the transaction rolls the attempted write back.
+                return Result<string>.Failure(ConcurrencyError.Message);
+            }
 
             if (initialStatus == AnnualLeaveStatus.Approved)
             {

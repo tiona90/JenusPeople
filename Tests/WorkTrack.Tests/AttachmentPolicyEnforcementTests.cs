@@ -1,6 +1,7 @@
-using Application.AnnualLeaves.Commands;
+﻿using Application.AnnualLeaves.Commands;
 using Application.AnnualLeaves.DTOs;
 using Application.Core;
+using Application.Files;
 using AutoMapper;
 using Domain;
 using MediatR;
@@ -106,6 +107,15 @@ public class AttachmentPolicyEnforcementTests
         // caller needs a UserDepartment row over the employee's department to reach
         // the leave under test at all.
         db.UserDepartments.Add(new UserDepartment { UserId = AdminId, DepartmentId = DepartmentId });
+
+        // The file EvidenceUrl names, uploaded by the employee: a link has to name a
+        // stored evidence file the filer or the employee uploaded (LeaveAttachmentRule).
+        db.StoredFiles.Add(new StoredFile
+        {
+            Id = StoredFilePath.TryParseId(EvidenceUrl)!, Content = [1], FileName = "note.pdf",
+            ContentType = "application/pdf", Sha256 = "h", SizeBytes = 1,
+            Purpose = StoredFilePurpose.LeaveEvidence, UploadedById = UserId,
+        });
 
         // Named for its policy rather than "Sick Leave": the rule has to follow the
         // admin's setting, not a word in the type's name, which is what the apply

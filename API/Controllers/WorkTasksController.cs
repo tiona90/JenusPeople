@@ -1,4 +1,4 @@
-using API.Hubs;
+﻿using API.Hubs;
 using Application.WorkTasks.Commands;
 using Application.WorkTasks.DTOs;
 using Application.WorkTasks.Queries;
@@ -165,10 +165,10 @@ public class WorkTasksController(IHubContext<NotificationsHub> notificationsHub)
         await NotifyDepartmentAsync(task.DepartmentId, cancellationToken);
         var assignees = task.Assignees.Select(a => a.UserId).ToList();
         if (assignees.Count > 0)
-            await notificationsHub.Clients.Users(assignees).SendAsync("notificationsUpdated", cancellationToken);
+            await notificationsHub.Clients.Users(assignees).SendAsync("notificationsUpdated", NotificationKind.Task, cancellationToken);
     }
 
     private Task NotifyDepartmentAsync(int departmentId, CancellationToken cancellationToken) =>
         notificationsHub.Clients.Group(NotificationsHub.DepartmentManagerGroup(departmentId))
-            .SendAsync("notificationsUpdated", cancellationToken);
+            .SendAsync("notificationsUpdated", NotificationKind.Task, cancellationToken);
 }

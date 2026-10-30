@@ -21,6 +21,15 @@ export async function getTimesheets(options?: TimesheetListOptions): Promise<Tim
     return res.data;
 }
 
+/**
+ * Only sheets waiting on a review — what the notification bell lists. No
+ * parameters on purpose: it is passed bare as a queryFn.
+ */
+export async function getOpenTimesheets(): Promise<Timesheet[]> {
+    const res = await apiClient.get('/timesheets', { params: { openOnly: true } });
+    return res.data;
+}
+
 // Paged variant: returns items + total (read from the X-Total-Count header).
 export async function getTimesheetsPaged(params: PageParams): Promise<Paged<Timesheet>> {
     const res = await apiClient.get<Timesheet[]>('/timesheets', { params });

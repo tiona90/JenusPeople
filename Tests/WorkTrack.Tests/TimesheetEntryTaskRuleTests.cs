@@ -1,3 +1,4 @@
+﻿using Application.Core;
 using System.Security.Claims;
 using API.Controllers;
 using Application.Timesheets.Support;
@@ -85,7 +86,7 @@ public class TimesheetEntryTaskRuleTests
     };
 
     private static async Task<string> RefusalAsync(AppDbContext db, CreateEntryRequest request) =>
-        (await Assert.ThrowsAsync<ArgumentException>(() =>
+        (await Assert.ThrowsAsync<RequestRefusedException>(() =>
             ControllerFor(db).AddEntry(TimesheetId, request, CancellationToken.None))).Message;
 
     private static async Task SeedEntryAsync(AppDbContext db, int taskId)
@@ -180,7 +181,7 @@ public class TimesheetEntryTaskRuleTests
         {
             Id = "e-1", TimesheetId = TimesheetId, ProjectId = ProjectB, Date = Day, HoursWorked = 2m, WorkTaskId = OpenTask,
         };
-        var error = await Assert.ThrowsAsync<ArgumentException>(() =>
+        var error = await Assert.ThrowsAsync<RequestRefusedException>(() =>
             ControllerFor(db).UpdateEntry(TimesheetId, "e-1", moved, CancellationToken.None));
         Assert.Equal(TimesheetEntryTaskRule.OtherProjectMessage, error.Message);
     }

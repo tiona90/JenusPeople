@@ -1,8 +1,9 @@
-using Application.Core;
+﻿using Application.Core;
 using Application.WorkTasks.Commands;
 using Application.WorkTasks.DTOs;
 using Domain;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Persistence;
 using Xunit;
 using static WorkTrack.Tests.WorkTasks.WorkTaskWorld;
@@ -94,6 +95,40 @@ public class LogTaskTimeTests
         Assert.Equal("Morning\nAfternoon", entry.Notes);
         Assert.Equal(3.5m, result.Value!.HoursOnEntry);
         Assert.Equal(3.5m, (await db.Timesheets.AsNoTracking().SingleAsync()).TotalHours);
+    }
+
+    private sealed class ConflictOnNextSave : SaveChangesInterceptor
+    {
+        public bool Armed { get; set; }
+
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (Armed) { Armed = false; throw new DbUpdateConcurrencyException("the sheet moved"); }
+            return ValueTask.FromResult(result);
+        }
+    }
+
+    /// <summary>
+    /// Two writes to one existing week at once (the editor in another tab, a second
+    /// log) collide on the sheet's row version. That used to surface as a raw 500
+    /// and an email to every System Administrator; it is a retry, not a fault.
+    /// </summary>
+    [Fact]
+    public async Task A_conflict_on_an_existing_week_answers_conflict()
+    {
+        var interceptor = new ConflictOnNextSave();
+        await using var db = await TransactionalTestDb.CreateAsync(interceptor);
+        await SeedAsync(db);
+        var id = await Seeded(db, NewTask(Sales, Hr, Employee, status: WorkTaskStatus.InProgress));
+        await SheetFor(db, Employee, TimesheetStatus.Draft);
+        interceptor.Armed = true;
+
+        var result = await Log(db, id, Employee, Monday, 2m, assignedOnly: true);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ResultErrorKind.Conflict, result.ErrorKind);
+        Assert.Equal(ConcurrencyError.Message, result.Error);
     }
 
     [Fact]

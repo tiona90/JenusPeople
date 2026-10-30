@@ -1,4 +1,4 @@
-using API.Hubs;
+﻿using API.Hubs;
 using Application.TaskSettings;
 using Application.TaskSettings.Commands;
 using Application.TaskSettings.Queries;
@@ -29,7 +29,7 @@ public class WorkTaskSettingsController(IHubContext<NotificationsHub> notificati
         var result = await Mediator.Send(new UpdateWorkTaskSettings.Command { Settings = settings }, cancellationToken);
         // Rare, and it can close waiting tasks: every open task page refetches.
         if (result.IsSuccess)
-            await notificationsHub.Clients.All.SendAsync("notificationsUpdated", cancellationToken);
+            await notificationsHub.Clients.All.SendAsync("notificationsUpdated", NotificationKind.Task, cancellationToken);
         return HandleResult(result);
     }
 }

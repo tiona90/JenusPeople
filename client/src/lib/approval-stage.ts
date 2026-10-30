@@ -20,6 +20,14 @@ export type ApprovalFlags = Pick<LeaveType, 'requiresManagerApproval'> & Partial
 
 export interface ApprovalViewer {
     isHrAdministrator: boolean
+    /** The viewer's user id. When given, the viewer's own request is never theirs to decide (`UpdateLeaveStatus.OwnLeaveMessage`). */
+    userId?: string
+}
+
+type DecidableLeave = Pick<AnnualLeave, 'status'> & Partial<Pick<AnnualLeave, 'employeeId'>>
+
+function isOwnLeave(leave: DecidableLeave, viewer: ApprovalViewer): boolean {
+    return !!viewer.userId && leave.employeeId === viewer.userId
 }
 
 export type ApproveOutcome = 'approved' | 'awaiting-hr'
@@ -84,7 +92,8 @@ export function isTimesheetWithManager(
 }
 
 /** Whether this viewer may approve or reject the request at its current stage. */
-export function canDecide(leave: Pick<AnnualLeave, 'status'>, viewer: ApprovalViewer, type: ApprovalFlags | undefined): boolean {
+export function canDecide(leave: DecidableLeave, viewer: ApprovalViewer, type: ApprovalFlags | undefined): boolean {
+    if (isOwnLeave(leave, viewer)) return false
     if (leave.status === 'Pending') return !isWithManager(leave, type, viewer)
     if (leave.status === 'AwaitingHrApproval') return viewer.isHrAdministrator
     return false
@@ -123,13 +132,15 @@ export function approveButtonLabel(outcome: ApproveOutcome): string {
 }
 
 /** The view dialog's Approve: an open row this viewer may decide, or a rejected one being reopened — never a row already approved or cancelled. */
-export function canApproveInDialog(leave: Pick<AnnualLeave, 'status'>, viewer: ApprovalViewer, type: ApprovalFlags | undefined): boolean {
+export function canApproveInDialog(leave: DecidableLeave, viewer: ApprovalViewer, type: ApprovalFlags | undefined): boolean {
+    if (isOwnLeave(leave, viewer)) return false
     if (leave.status === 'Rejected') return true
     return canDecide(leave, viewer, type)
 }
 
 /** The view dialog's Reject: an open row this viewer may decide, or an approval being taken back — never a row already rejected or cancelled. */
-export function canRejectInDialog(leave: Pick<AnnualLeave, 'status'>, viewer: ApprovalViewer, type: ApprovalFlags | undefined): boolean {
+export function canRejectInDialog(leave: DecidableLeave, viewer: ApprovalViewer, type: ApprovalFlags | undefined): boolean {
+    if (isOwnLeave(leave, viewer)) return false
     if (leave.status === 'Approved') return true
     return canDecide(leave, viewer, type)
 }

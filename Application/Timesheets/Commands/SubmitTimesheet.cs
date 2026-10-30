@@ -1,4 +1,4 @@
-using Application.AnnualLeaves.Commands;
+﻿using Application.AnnualLeaves.Commands;
 using Application.Core;
 using Application.Timesheets.Support;
 using Domain;
@@ -12,6 +12,7 @@ namespace Application.Timesheets.Commands;
 
 public class SubmitTimesheet
 {
+    public const string AlreadySubmittedMessage = "This timesheet has already been submitted.";
     public class Command : IRequest<Result<Unit>>
     {
         public required string Id { get; set; }
@@ -75,6 +76,12 @@ public class SubmitTimesheet
                         "You are not authorized to submit this timesheet.");
                 }
             }
+
+            // Draft → Submitted and Rejected → Resubmitted are the only ways in; a
+            // repeat submit re-sent every email, and submitting an Approved sheet put
+            // it back in the queue with its approval stamp still on it.
+            if (timesheet.Status is not (TimesheetStatus.Draft or TimesheetStatus.Rejected))
+                return Result<Unit>.Conflict(AlreadySubmittedMessage);
 
             var isResubmission = timesheet.Status == TimesheetStatus.Rejected;
             var submittedStatus = isResubmission ? TimesheetStatus.Resubmitted : TimesheetStatus.Submitted;
