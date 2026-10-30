@@ -9,6 +9,9 @@ namespace Application.AnnualLeaves.Commands;
 
 public class DeleteAnnualLeave
 {
+    public const string DecidedRequestMessage =
+        "Only a request still awaiting a decision can be withdrawn; an approved leave is cancelled instead.";
+
     public class Command : IRequest<Result<Unit>>
     {
         public required string Id { get; set; }
@@ -62,6 +65,14 @@ public class DeleteAnnualLeave
             {
                 return Result<Unit>.Failure("You are not allowed to cancel this leave request.");
             }
+
+            // Deleting is withdrawing a request nobody has decided yet, for every
+            // role. A decided one is taken back through its status (UpdateLeaveStatus
+            // → Cancelled), which applies CancellationRule, writes history and tells
+            // the delegate and the managers; deleting an approved leave instead would
+            // hand days already taken back to the balance with no trace of them.
+            if (!ApprovalStageRule.IsOpen(annualLeave.Status))
+                return Result<Unit>.Failure(DecidedRequestMessage);
 
             var employeeProfile = await context.EmployeeProfiles
                 .FirstOrDefaultAsync(ep => ep.Id == annualLeave.EmployeeProfileId, cancellationToken);

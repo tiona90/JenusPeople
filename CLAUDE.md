@@ -508,7 +508,11 @@ Eight things about it that are deliberate:
   Management (a reason dialog, `updateLeaveStatus(id, 'Cancelled', reason)`; the
   delegate is stood down and the employee emailed as before). A System
   Administrator gets no such button — they neither file nor decide leave, and the
-  server refuses them anyway.
+  server refuses them anyway. **Deleting is not a way round it**: `DeleteAnnualLeave`
+  withdraws only an open request, for every role (`DecidedRequestMessage`) — its
+  Manager and HR branches used to delete in any status, so a Manager could erase
+  leave they had already taken and have the days handed back. `LeaveDeletionTests`
+  pins it.
 - **Balance, per-child ledger, coverage announcement, `ApprovedAt`/`ApprovedById`
   move only into `Approved`.** `AwaitingHrApproval` charges nothing and tells the
   delegate nothing. The attachment policy runs on *both* steps out of `Pending`,
