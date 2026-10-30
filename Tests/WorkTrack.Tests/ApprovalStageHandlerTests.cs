@@ -374,6 +374,38 @@ public class ApprovalStageHandlerTests
         Assert.Equal(startedOn, stored.StartDate);
     }
 
+    /// <summary>
+    /// A rejected request left the overlap checks behind — the validators skip
+    /// Rejected rows — so the employee could file the same dates again, have that
+    /// approved, and then the rejected one re-approved from the view dialog: two
+    /// approved leaves over the same days, charged twice.
+    /// </summary>
+    [Fact]
+    public async Task Re_approving_a_rejected_request_is_refused_when_its_dates_are_taken()
+    {
+        using var db = await WorldAsync();
+        await SeedLeaveAsync(db, ManagerOnlyType, AnnualLeaveStatus.Rejected, id: "L1");
+        await SeedLeaveAsync(db, ManagerOnlyType, AnnualLeaveStatus.Approved, id: "L2");
+
+        var result = await DecideAsync(db, new FakeEmailService(), "L1", AnnualLeaveStatus.Approved, asHr: false);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(LeaveOverlapRule.Message, result.Error);
+        Assert.Equal(AnnualLeaveStatus.Rejected, (await StoredAsync(db, "L1")).Status);
+    }
+
+    [Fact]
+    public async Task Re_approving_a_rejected_request_with_free_dates_still_works()
+    {
+        using var db = await WorldAsync();
+        await SeedLeaveAsync(db, ManagerOnlyType, AnnualLeaveStatus.Rejected, id: "L1");
+
+        var result = await DecideAsync(db, new FakeEmailService(), "L1", AnnualLeaveStatus.Approved, asHr: false);
+
+        Assert.True(result.IsSuccess, result.Error);
+        Assert.Equal(AnnualLeaveStatus.Approved, (await StoredAsync(db, "L1")).Status);
+    }
+
     [Fact]
     public async Task Hr_approving_from_the_hr_stage_finishes_the_request()
     {

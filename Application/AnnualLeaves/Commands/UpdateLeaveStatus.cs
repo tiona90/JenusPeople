@@ -110,6 +110,13 @@ public class UpdateLeaveStatus
                     return Result<Unit>.Failure(attachmentError);
             }
 
+            // Reopening a rejected request puts its dates back in play, and they
+            // may since have been filed and approved again — Rejected rows count
+            // for no overlap.
+            if (isApprovalStep && !ApprovalStageRule.IsOpen(oldStatus) && oldStatus != AnnualLeaveStatus.Approved
+                && await LeaveOverlapRule.OverlapsAsync(context, annualLeave, cancellationToken))
+                return Result<Unit>.Failure(LeaveOverlapRule.Message);
+
             var employeeProfile = await context.EmployeeProfiles
                 .FirstOrDefaultAsync(ep => ep.Id == annualLeave.EmployeeProfileId, cancellationToken);
 
