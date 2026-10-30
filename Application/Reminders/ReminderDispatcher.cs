@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using Application.Attendance.Support;
 using Application.Holidays.Support;
 using Application.Settings.Support;
@@ -505,7 +505,7 @@ public class ReminderDispatcher(
     {
         var low = await context.EmployeeProfiles
             .Where(p => p.AnnualLeaveEntitlement > 0 && p.LeaveBalance < LowBalanceThreshold
-                        && p.User != null && p.User.Email != null && p.User.Email != "")
+                        && p.User != null && p.User.IsActive && p.User.Email != null && p.User.Email != "")
             .Select(p => new { Email = p.User!.Email!, Name = p.User.DisplayName, p.LeaveBalance })
             .ToListAsync(ct);
 
@@ -546,7 +546,7 @@ public class ReminderDispatcher(
     private async Task BirthdayRemindersAsync(AppSettings settings, CancellationToken ct)
     {
         var people = await context.EmployeeProfiles
-            .Where(p => p.User != null && p.User.DateOfBirth != null)
+            .Where(p => p.User != null && p.User.IsActive && p.User.DateOfBirth != null)
             .Select(p => new { Name = p.User!.DisplayName, Dob = p.User.DateOfBirth!.Value, p.DepartmentId })
             .ToListAsync(ct);
 
@@ -1028,7 +1028,7 @@ public class ReminderDispatcher(
     private async Task<AttendanceSnapshot> LoadAttendanceTodayAsync(CancellationToken ct)
     {
         var employees = await AttendanceDay.ExcludeAdmins(context.EmployeeProfiles)
-            .Where(p => p.User != null && p.User.Email != null && p.User.Email != "")
+            .Where(p => p.User != null && p.User.IsActive && p.User.Email != null && p.User.Email != "")
             .Select(p => new EmployeeContact(p.Id, p.UserId, p.User!.Email!, p.User.DisplayName))
             .ToListAsync(ct);
 
@@ -1170,7 +1170,7 @@ public class ReminderDispatcher(
             from ur in context.UserRoles
             where roleIds.Contains(ur.RoleId)
             join u in context.Users on ur.UserId equals u.Id
-            where u.Email != null && u.Email != ""
+            where u.IsActive && u.Email != null && u.Email != ""
             select new UserContact(u.Id, u.Email!, u.DisplayName)
         ).Distinct().ToListAsync(ct);
     }
@@ -1185,7 +1185,7 @@ public class ReminderDispatcher(
             join ur in context.UserRoles on ep.UserId equals ur.UserId
             where ur.RoleId == roleId
             join u in context.Users on ep.UserId equals u.Id
-            where u.Email != null && u.Email != ""
+            where u.IsActive && u.Email != null && u.Email != ""
             // Every digest below is "what is pending in your department", so a
             // manager without one has nothing to be told about.
             where ep.DepartmentId != null
