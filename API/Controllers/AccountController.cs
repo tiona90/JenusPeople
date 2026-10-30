@@ -1,4 +1,4 @@
-using API.DTOs;
+﻿using API.DTOs;
 using API.Security;
 using API.Services;
 using Application.Accounts.DTOs;
@@ -151,8 +151,18 @@ public class AccountController(
             // administrator sends them to a colleague who can do nothing, so the
             // two are separated. Looked up by name, because that is what
             // PasswordSignInAsync above resolved the submitted email against.
+            //
+            // Both are decided before Identity checks the password, so they are
+            // said only to a caller who also has the right one. Telling anyone
+            // who typed the email would list which addresses belong to leavers or
+            // to invites nobody accepted.
             var user = await userManager.FindByNameAsync(request.Email);
-            if (user is not null && !user.IsActive)
+            if (user is null || !await userManager.CheckPasswordAsync(user, request.Password))
+            {
+                return Unauthorized(new { message = "Invalid email or password." });
+            }
+
+            if (!user.IsActive)
             {
                 return StatusCode(StatusCodes.Status403Forbidden, new
                 {
