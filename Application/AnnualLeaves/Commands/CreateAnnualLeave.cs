@@ -48,6 +48,15 @@ public class CreateAnnualLeave
                nominated they go nowhere and are not kept. Whitespace is neither. */
             CoverageHandover.Apply(annualLeave, request.AnnualLeave);
 
+            // The links must name files the filer or the employee uploaded, for
+            // this purpose (LeaveAttachmentRule) — not any file whose id is known.
+            string[] uploaders = [request.RequestingUserId, request.AnnualLeave.EmployeeId];
+            var attachmentRefError =
+                await LeaveAttachmentRule.CheckAsync(context, annualLeave.EvidenceUrl, null, StoredFilePurpose.LeaveEvidence, uploaders, cancellationToken)
+                ?? await LeaveAttachmentRule.CheckAsync(context, annualLeave.CoverageAttachmentUrl, null, StoredFilePurpose.CoverageHandover, uploaders, cancellationToken);
+            if (attachmentRefError is not null)
+                return Result<string>.Failure(attachmentRefError);
+
             var leaveType = await context.LeaveTypes
                 .AsNoTracking()
                 .FirstOrDefaultAsync(

@@ -1,4 +1,4 @@
-using Application.AnnualLeaves.Commands;
+﻿using Application.AnnualLeaves.Commands;
 using Application.AnnualLeaves.DTOs;
 using Application.AnnualLeaves.Validators;
 using Application.Core;
@@ -258,15 +258,31 @@ public class CoverageRequiredTests
         Assert.Null(stored.CoverageAttachmentUrl);
     }
 
+    /// <summary>
+    /// A link can only be saved naming a file that exists (LeaveAttachmentRule),
+    /// so "missing" means it went after filing — the request is approved later and
+    /// the file is no longer there.
+    /// </summary>
     [Fact]
     public async Task A_missing_handover_file_does_not_stop_the_email()
     {
-        await using var db = await SeedWorldAsync(requiresApproval: false);
+        await using var db = await SeedWorldAsync(requiresApproval: true);
         var mail = new FakeEmailService();
+        db.AnnualLeaves.Add(new AnnualLeave
+        {
+            Id = "L-gone", EmployeeId = EmployeeUserId, EmployeeProfileId = EmployeeProfileId,
+            DepartmentId = DepartmentId, LeaveTypeId = LeaveTypeId, Status = AnnualLeaveStatus.Pending,
+            StartDate = new DateTime(2024, 3, 4), EndDate = new DateTime(2024, 3, 8), Reason = "Family trip",
+            DelegateId = DelegateUserId, CoverageNote = "Note only", CoverageAttachmentUrl = StoredFilePath.For("no-such-file"),
+        });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
 
-        var result = await new CreateAnnualLeave.Handler(db, BuildMapper(), mail).Handle(
-            CreateCmd(EmployeeUserId, DelegateUserId, note: "Note only", attachmentUrl: StoredFilePath.For("no-such-file")),
-            CancellationToken.None);
+        var result = await new UpdateLeaveStatus.Handler(db, mail).Handle(new UpdateLeaveStatus.Command
+        {
+            LeaveId = "L-gone", ChangedByUserId = ManagerUserId, IsManager = true,
+            Request = new UpdateLeaveStatusRequest { Status = AnnualLeaveStatus.Approved },
+        }, CancellationToken.None);
 
         Assert.True(result.IsSuccess, result.Error);
         var toDelegate = Assert.Single(mail.Sent, sent => sent.Recipient == DelegateEmail);

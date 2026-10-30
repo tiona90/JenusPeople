@@ -108,6 +108,8 @@ public class EditAnnualLeave
                 : null;
 
             annualLeave.Reason = request.AnnualLeave.Reason;
+            var evidenceBeforeEdit = annualLeave.EvidenceUrl;
+            var handoverBeforeEdit = annualLeave.CoverageAttachmentUrl;
             annualLeave.EvidenceUrl = request.AnnualLeave.EvidenceUrl;
 
             if (editedLeaveType is not null)
@@ -148,6 +150,15 @@ public class EditAnnualLeave
 
             // Same rule as on create: a handover with nobody to hand over to is dropped.
             CoverageHandover.Apply(annualLeave, request.AnnualLeave);
+
+            // A link the leave already carries passes; a new one must name a file
+            // the editor or the employee uploaded, for this purpose.
+            string[] uploaders = [request.ChangedByUserId, annualLeave.EmployeeId];
+            var attachmentRefError =
+                await LeaveAttachmentRule.CheckAsync(context, annualLeave.EvidenceUrl, evidenceBeforeEdit, StoredFilePurpose.LeaveEvidence, uploaders, cancellationToken)
+                ?? await LeaveAttachmentRule.CheckAsync(context, annualLeave.CoverageAttachmentUrl, handoverBeforeEdit, StoredFilePurpose.CoverageHandover, uploaders, cancellationToken);
+            if (attachmentRefError is not null)
+                return Result<Unit>.Failure(attachmentRefError);
 
             var employeeProfile = await context.EmployeeProfiles
                 .FirstOrDefaultAsync(ep => ep.Id == annualLeave.EmployeeProfileId, cancellationToken);

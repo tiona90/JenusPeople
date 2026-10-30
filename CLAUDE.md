@@ -379,7 +379,14 @@ Six things about it that are deliberate:
   therefore a hard stop for the approver, not a warning. That is the rule as
   chosen, not an oversight.
 - **Whitespace is not an attachment.** `AnnualLeave.EvidenceUrl` is free text, so
-  the check trims before believing it.
+  the check trims before believing it. Nor is any other text: on create and edit
+  `LeaveAttachmentRule` accepts a new `EvidenceUrl` or `CoverageAttachmentUrl` only
+  when it names a stored file of that purpose (`LeaveEvidence` / `CoverageHandover`)
+  uploaded by the filer or the employee, and passes a link the leave already
+  carries unchanged (an older request keeps its Cloudinary URL). `GetStoredFile`
+  grants access by finding the file on a leave, so an unchecked link let anyone
+  who knew a file id read it — or have it mailed to their delegate.
+  `LeaveAttachmentReferenceTests` pins it.
 
 **A half day is stored and charged, not just offered.** `AnnualLeave.Duration`
 (`Full`/`HalfDayMorning`/`HalfDayAfternoon`) is what makes the apply page's
