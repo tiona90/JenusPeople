@@ -57,7 +57,14 @@ public class TimesheetEntriesController : ControllerBase
             cancellationToken,
             isHrAdministrator: User.IsHrAdministrator());
 
-        if (access.IsSuccess) return null;
+        if (access.IsSuccess)
+        {
+            if (TimesheetAccess.IsEditable(access.Value!.Status)) return null;
+
+            return StatusCode(
+                StatusCodes.Status409Conflict,
+                ApiErrorResponseExtensions.Create(HttpContext, StatusCodes.Status409Conflict, TimesheetAccess.NotEditableMessage));
+        }
 
         // Same Result<T> → ApiErrorResponse shape BaseApiController.HandleResult
         // produces; this controller talks to the DbContext directly rather than
