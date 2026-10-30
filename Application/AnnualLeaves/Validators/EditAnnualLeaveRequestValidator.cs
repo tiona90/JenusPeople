@@ -53,10 +53,24 @@ public class EditAnnualLeaveRequestValidator : AbstractValidator<EditAnnualLeave
 
             When(x => x.AnnualLeave is not null && !string.IsNullOrWhiteSpace(x.AnnualLeave.DelegateId), () =>
             {
-                RuleFor(x => x.AnnualLeave.DelegateId)
-                    .MustAsync(async (delegateId, cancellationToken) =>
-                        await context.Users.AnyAsync(u => u.Id == delegateId, cancellationToken))
-                    .WithMessage("Selected delegate does not exist.");
+                // A delegate the leave already names passes: the dialog sends it back
+                // untouched, and somebody who has since moved department must not
+                // stop a typo fix. A new one must be somebody the picker offers.
+                RuleFor(x => x)
+                    .MustAsync(async (command, cancellationToken) =>
+                    {
+                        var existing = await context.AnnualLeaves
+                            .AsNoTracking()
+                            .Where(al => al.Id == command.AnnualLeave.Id)
+                            .Select(al => new { al.EmployeeId, al.DelegateId })
+                            .FirstOrDefaultAsync(cancellationToken);
+                        if (existing is null) return true;
+                        if (existing.DelegateId == command.AnnualLeave.DelegateId) return true;
+                        if (existing.EmployeeId == command.AnnualLeave.DelegateId) return true; // the self rule below says so
+                        return await CoverageRule.IsEligibleDelegateAsync(
+                            context, existing.EmployeeId, command.AnnualLeave.DelegateId!, cancellationToken);
+                    })
+                    .WithMessage(CoverageRule.DelegateNotEligibleMessage);
 
                 RuleFor(x => x)
                     .MustAsync(async (command, cancellationToken) =>

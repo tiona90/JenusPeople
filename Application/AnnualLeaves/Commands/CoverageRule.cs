@@ -1,4 +1,4 @@
-using Domain;
+﻿using Domain;
 using Microsoft.EntityFrameworkCore;
 using Persistence;
 
@@ -26,6 +26,40 @@ namespace Application.AnnualLeaves.Commands;
 public static class CoverageRule
 {
     public const string RequiredMessage = "Please nominate a colleague to cover for you while you are away.";
+
+    public const string DelegateNotEligibleMessage =
+        "Choose an active colleague from your department to cover for you.";
+
+    /// <summary>
+    /// Whether <paramref name="delegateId"/> may cover <paramref name="employeeId"/>'s
+    /// leave: an active colleague in the employee's department who is not an
+    /// administrator — exactly whom the picker (<c>GetTeammateList</c>) offers. The
+    /// delegate is told about the absence and handed the note and the handover
+    /// file, so anyone else was a way to send those outside the team. An unknown id
+    /// reads the same as an ineligible one, so the message confirms no account.
+    /// </summary>
+    public static async Task<bool> IsEligibleDelegateAsync(
+        AppDbContext context, string? employeeId, string delegateId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(employeeId)) return false;
+
+        var departmentId = await context.EmployeeProfiles
+            .AsNoTracking()
+            .Where(ep => ep.UserId == employeeId)
+            .Select(ep => ep.DepartmentId)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (departmentId is null) return false;
+
+        return await context.EmployeeProfiles
+            .AsNoTracking()
+            .AnyAsync(ep =>
+                ep.UserId == delegateId
+                && ep.DepartmentId == departmentId
+                && ep.User != null
+                && ep.User.IsActive
+                && !ep.User.UserRoles.Any(ur => ur.Role != null && AppRoles.Administrators.Contains(ur.Role.Name!)),
+                cancellationToken);
+    }
 
     /// <summary>True unless the employee holds the System Administrator role.</summary>
     public static async Task<bool> IsRequiredForAsync(

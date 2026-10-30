@@ -64,6 +64,9 @@ public class GetTeammateList
                 .Where(ep =>
                     ep.DepartmentId == myDepartmentId
                     && ep.UserId != subjectUserId
+                    // A leaver covers nothing, and the server refuses one
+                    // (CoverageRule.IsEligibleDelegateAsync).
+                    && (ep.User == null || ep.User.IsActive)
                     && (ep.User == null || !ep.User.UserRoles.Any(ur => ur.Role != null && AppRoles.Administrators.Contains(ur.Role.Name!))))
                 .Select(ep => new TeammateDto
                 {

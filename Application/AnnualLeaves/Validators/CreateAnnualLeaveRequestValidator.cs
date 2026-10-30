@@ -49,10 +49,11 @@ public class CreateAnnualLeaveRequestValidator : AbstractValidator<CreateAnnualL
 
             When(x => x.AnnualLeave is not null && !string.IsNullOrWhiteSpace(x.AnnualLeave.DelegateId), () =>
             {
-                RuleFor(x => x.AnnualLeave.DelegateId)
-                    .MustAsync(async (delegateId, cancellationToken) =>
-                        await context.Users.AnyAsync(u => u.Id == delegateId, cancellationToken))
-                    .WithMessage("Selected delegate does not exist.");
+                RuleFor(x => x.AnnualLeave)
+                    .MustAsync((annualLeave, cancellationToken) =>
+                        CoverageRule.IsEligibleDelegateAsync(context, annualLeave.EmployeeId, annualLeave.DelegateId!, cancellationToken))
+                    .When(x => x.AnnualLeave.DelegateId != x.AnnualLeave.EmployeeId)
+                    .WithMessage(CoverageRule.DelegateNotEligibleMessage);
 
                 RuleFor(x => x.AnnualLeave)
                     .Must(annualLeave => annualLeave.DelegateId != annualLeave.EmployeeId)

@@ -831,6 +831,15 @@ Keep the two in step, the same way `AttachmentPolicyRule` and
 - **A department with no other non-admin member cannot file leave.** That is the
   rule as chosen, not an oversight; the empty picker says so and points at the
   admin.
+- **The delegate is somebody the picker offers, and nobody else.**
+  `CoverageRule.IsEligibleDelegateAsync` accepts only an active, non-administrator
+  colleague in the employee's own department — what `GetTeammateList` lists, which
+  now also leaves out deactivated colleagues — with one message for every refusal
+  (`DelegateNotEligibleMessage`; the old "does not exist" confirmed which user ids
+  were real). The delegate receives the coverage email, the note and the handover
+  file, so naming anyone in the company sent those outside the team. On edit a
+  delegate the leave already names passes unchanged, so one who has since moved
+  department does not block a typo fix. `LeaveDelegateTests` pins it.
 - **The handover — `AnnualLeave.CoverageNote` (1000 chars) and
   `CoverageAttachmentUrl` — is written to the delegate, so a request naming
   nobody keeps neither.** `CoverageHandover.Apply` drops both on create and edit
