@@ -72,7 +72,12 @@ const profileSchema = z.object({
             const message = dateOfBirthError(v ?? '')
             if (message) ctx.addIssue({ code: 'custom', message })
         }),
+    // Asked for only when the email changes — see onEditSubmit.
+    currentPassword: z.string().optional(),
 })
+
+/** Mirrors AccountController.EmailChangeNeedsPasswordMessage. */
+const EMAIL_CHANGE_NEEDS_PASSWORD = 'Enter your current password to change your email.'
 type ProfileFormValues = z.infer<typeof profileSchema>
 
 type NavSection = { kind: 'section'; label: string; sub?: boolean }
@@ -132,10 +137,13 @@ const Sidebar = observer(function Sidebar() {
     // Not part of the react-hook-form schema: it's a checkbox seeded from and
     // saved back to authStore.user, alongside the text fields but not driven by them.
     const [hasChildren, setHasChildren] = useState<boolean | null>(null)
-    const { register, handleSubmit, reset, formState: { errors } } = useForm<ProfileFormValues>({
+    const { register, handleSubmit, reset, watch, setError, formState: { errors } } = useForm<ProfileFormValues>({
         resolver: zodResolver(profileSchema),
-        defaultValues: { displayName: '', email: '', phoneNumber: '', dateOfBirth: '' },
+        defaultValues: { displayName: '', email: '', phoneNumber: '', dateOfBirth: '', currentPassword: '' },
     })
+    // A changed email is a takeover step, so the server wants the current
+    // password with it; the field appears only then.
+    const emailChanged = (watch('email') ?? '').trim().toLowerCase() !== (authStore.user?.email ?? '').trim().toLowerCase()
 
     const uploadImageMutation = useMutation({
         mutationFn: (file: File) => uploadProfileImage(file),
@@ -165,6 +173,7 @@ const Sidebar = observer(function Sidebar() {
             email: authStore.user?.email ?? '',
             phoneNumber: authStore.user?.phoneNumber ?? '',
             dateOfBirth: authStore.user?.dateOfBirth ?? '',
+            currentPassword: '',
         })
         setHasChildren(authStore.user?.hasChildren ?? null)
         updateProfileMutation.reset()
@@ -180,6 +189,7 @@ const Sidebar = observer(function Sidebar() {
             email: authStore.user?.email ?? '',
             phoneNumber: authStore.user?.phoneNumber ?? '',
             dateOfBirth: authStore.user?.dateOfBirth ?? '',
+            currentPassword: '',
         })
         setHasChildren(authStore.user?.hasChildren ?? null)
         // We intentionally re-init only when the dialog opens — reset is stable.
@@ -187,12 +197,17 @@ const Sidebar = observer(function Sidebar() {
     }, [isEditOpen])
 
     const onEditSubmit = handleSubmit(async (values) => {
+        if (emailChanged && !values.currentPassword) {
+            setError('currentPassword', { message: EMAIL_CHANGE_NEEDS_PASSWORD })
+            return
+        }
         await updateProfileMutation.mutateAsync({
             displayName: values.displayName.trim(),
             email: values.email.trim(),
             phoneNumber: values.phoneNumber?.trim() || null,
             dateOfBirth: values.dateOfBirth || null,
             hasChildren,
+            currentPassword: emailChanged ? values.currentPassword : null,
         })
     })
 
@@ -510,6 +525,19 @@ const Sidebar = observer(function Sidebar() {
                             required
                             fullWidth
                         />
+
+                        {emailChanged && (
+                            <TextField
+                                label="Current password"
+                                type="password"
+                                autoComplete="current-password"
+                                {...register('currentPassword')}
+                                error={!!errors.currentPassword}
+                                helperText={errors.currentPassword?.message ?? 'Needed to change the email you sign in with.'}
+                                required
+                                fullWidth
+                            />
+                        )}
 
                         <TextField
                             label="Phone number"

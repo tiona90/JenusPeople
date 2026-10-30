@@ -31,4 +31,12 @@ public class UpdateProfileDto
     /// cannot be allowed to disagree.
     /// </summary>
     public bool? HasChildren { get; set; }
+
+    /// <summary>
+    /// The caller's current password — required when <see cref="Email"/> differs
+    /// from the stored address, and ignored otherwise. A changed email is a takeover
+    /// step (whoever holds the address can reset the password), so a session alone
+    /// is not enough to make it.
+    /// </summary>
+    public string? CurrentPassword { get; set; }
 }
