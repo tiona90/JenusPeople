@@ -1,4 +1,4 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using API.Extensions;
 using API.Models;
 using Application.Core;
@@ -119,6 +119,16 @@ public class TimesheetEntriesController : ControllerBase
         await _context.SaveChangesAsync();
     }
 
+    private async Task<(DateTime Start, DateTime End)> PeriodOfAsync(string timesheetId, CancellationToken cancellationToken)
+    {
+        var sheet = await _context.Timesheets
+            .AsNoTracking()
+            .Where(t => t.Id == timesheetId)
+            .Select(t => new { t.PeriodStart, t.PeriodEnd })
+            .FirstAsync(cancellationToken);
+        return (sheet.PeriodStart, sheet.PeriodEnd);
+    }
+
     // POST: api/timesheets/{timesheetId}/entries
     [HttpPost]
     [ProducesResponseType(typeof(TimesheetEntry), StatusCodes.Status201Created)]
@@ -152,7 +162,8 @@ public class TimesheetEntriesController : ControllerBase
             today: null,
             assignedActivityTypeIds: await AssignedActivityTypeIdsAsync(entry.ProjectId, cancellationToken),
             assignedProjectTypeIds: await AssignedProjectTypeIdsAsync(entry.ProjectId, cancellationToken),
-            assignedComponentIds: await AssignedComponentIdsAsync(entry.ProjectId, cancellationToken));
+            assignedComponentIds: await AssignedComponentIdsAsync(entry.ProjectId, cancellationToken),
+            period: await PeriodOfAsync(timesheetId, cancellationToken));
         if (!validation.IsValid)
             throw new ArgumentException(validation.Error);
 
@@ -205,7 +216,8 @@ public class TimesheetEntriesController : ControllerBase
             today: null,
             assignedActivityTypeIds: await AssignedActivityTypeIdsAsync(entry.ProjectId, cancellationToken),
             assignedProjectTypeIds: await AssignedProjectTypeIdsAsync(entry.ProjectId, cancellationToken),
-            assignedComponentIds: await AssignedComponentIdsAsync(entry.ProjectId, cancellationToken));
+            assignedComponentIds: await AssignedComponentIdsAsync(entry.ProjectId, cancellationToken),
+            period: await PeriodOfAsync(timesheetId, cancellationToken));
         if (!validation.IsValid)
             throw new ArgumentException(validation.Error);
 
