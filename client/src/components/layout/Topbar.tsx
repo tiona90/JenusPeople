@@ -19,7 +19,7 @@ import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import { getAnnualLeaves, getLeaveStatusHistories, getSystemErrors, getTimesheets, getTimesheetStatusHistories, getWorkTasks } from '../../lib/api'
+import { getOpenAnnualLeaves, getLeaveStatusHistories, getSystemErrors, getOpenTimesheets, getTimesheetStatusHistories, getWorkTasks } from '../../lib/api'
 import { canDecide, isTimesheetWithManager, statusPhrase } from '../../lib/approval-stage'
 import { useStore } from '../../lib/mobx'
 import { isAdministrator, isHrAdministrator, isSystemAdministrator } from '../../lib/roles'
@@ -115,15 +115,17 @@ const Topbar = observer(function Topbar() {
     })
 
     const { data: annualLeaves, isLoading: isLoadingLeaves } = useQuery({
-        queryKey: ['annualLeaves'],
-        queryFn: getAnnualLeaves,
+        // Open rows only, under their own key — still under the 'annualLeaves'
+        // prefix every mutation and the SignalR refresh invalidate.
+        queryKey: ['annualLeaves', 'open'],
+        queryFn: getOpenAnnualLeaves,
         enabled: authStore.isAuthenticated && shouldUseManagerNotifications,
         refetchInterval: authStore.isAuthenticated && shouldUseManagerNotifications ? notificationRefreshMs : false,
     })
 
     const { data: timesheets, isLoading: isLoadingTimesheets } = useQuery({
-        queryKey: ['timesheets'],
-        queryFn: () => getTimesheets(),
+        queryKey: ['timesheets', 'open'],
+        queryFn: getOpenTimesheets,
         enabled: authStore.isAuthenticated && shouldUseManagerNotifications,
         refetchInterval: authStore.isAuthenticated && shouldUseManagerNotifications ? notificationRefreshMs : false,
     })

@@ -1,4 +1,4 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using API.Hubs;
 using API.Models;
 using Application.Timesheets.Commands;
@@ -100,7 +100,8 @@ namespace API.Controllers
             [FromQuery] bool myOnly = false,
             [FromQuery] int? page = null,
             [FromQuery] int? pageSize = null,
-            [FromQuery] bool includeAttendance = false)
+            [FromQuery] bool includeAttendance = false,
+            [FromQuery] bool openOnly = false)
         {
             var userId = ResolveUserId();
             var isAdmin = User.IsSystemAdministrator();
@@ -115,6 +116,7 @@ namespace API.Controllers
                 Page = page,
                 PageSize = pageSize,
                 IncludeAttendanceComparison = includeAttendance,
+                OpenOnly = openOnly,
             });
             return Paged(result);
         }

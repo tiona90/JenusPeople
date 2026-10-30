@@ -79,8 +79,8 @@ beforeEach(() => {
     api.getSystemErrors.mockResolvedValue(ERRORS)
     api.getLeaveStatusHistories.mockResolvedValue(HISTORY)
     api.getTimesheetStatusHistories.mockResolvedValue([])
-    api.getAnnualLeaves.mockResolvedValue([])
-    api.getTimesheets.mockResolvedValue([])
+    api.getOpenAnnualLeaves.mockResolvedValue([])
+    api.getOpenTimesheets.mockResolvedValue([])
     api.getWorkTasks.mockResolvedValue([])
 })
 
@@ -133,19 +133,19 @@ describe("An HR Administrator's bell", () => {
     }
 
     it('lists the requests awaiting HR approval, not the ones with the manager or the status feed', async () => {
-        api.getAnnualLeaves.mockResolvedValue([
+        api.getOpenAnnualLeaves.mockResolvedValue([
             { ...base, id: 'l-hr', employeeName: 'Maria Georgiou', status: 'AwaitingHrApproval' },
             { ...base, id: 'l-mgr', employeeName: 'Andreas Georgiou', status: 'Pending' },
         ] as never)
         // Timesheets follow the same rule: the one a manager is available for stays off.
         const sheet = { departmentId: 2, periodStart: '2026-09-14T00:00:00', periodEnd: '2026-09-20T00:00:00', totalHours: 40, submittedAt: recent, createdAt: recent, status: 'Submitted' }
-        api.getTimesheets.mockResolvedValue([
+        api.getOpenTimesheets.mockResolvedValue([
             { ...sheet, id: 't-hr', employeeId: 'p-mgr', employeeName: 'Nikos Manager', awaitingManager: false },
             { ...sheet, id: 't-mgr', employeeId: 'p-emp', employeeName: 'Andreas Georgiou', awaitingManager: true },
         ] as never)
         renderTopbarAs(HR)
 
-        await waitFor(() => expect(api.getAnnualLeaves).toHaveBeenCalled())
+        await waitFor(() => expect(api.getOpenAnnualLeaves).toHaveBeenCalled())
         // One leave awaiting HR plus one timesheet nobody but HR can review.
         await waitFor(() => expect(screen.getByText('2')).toBeInTheDocument())
 
@@ -156,11 +156,10 @@ describe("An HR Administrator's bell", () => {
         expect(screen.queryByText(/Leave approved/)).not.toBeInTheDocument()
         expect(api.getLeaveStatusHistories).not.toHaveBeenCalled()
         expect(api.getSystemErrors).not.toHaveBeenCalled()
-        // The bell polls every 15 seconds and renders no mismatch chip, so it never
-        // asks the server for the attendance comparison.
-        for (const call of api.getTimesheets.mock.calls) {
-            expect((call[0] as { includeAttendance?: boolean } | undefined)?.includeAttendance).not.toBe(true)
-        }
+        // The bell asks for the open rows only — never the full lists, which it
+        // polled before, every one with its entries.
+        expect(api.getAnnualLeaves).not.toHaveBeenCalled()
+        expect(api.getTimesheets).not.toHaveBeenCalled()
     })
 })
 
@@ -226,12 +225,12 @@ describe("An employee's bell", () => {
         try {
             renderTopbarAs(MANAGER)
             await waitFor(() => expect(api.getWorkTasks).toHaveBeenCalledTimes(1))
-            const leavePolls = api.getAnnualLeaves.mock.calls.length
+            const leavePolls = api.getOpenAnnualLeaves.mock.calls.length
 
             // Past one poll of the rest of the bell (Topbar's notificationRefreshMs).
             await vi.advanceTimersByTimeAsync(61_000)
 
-            await waitFor(() => expect(api.getAnnualLeaves.mock.calls.length).toBeGreaterThan(leavePolls))
+            await waitFor(() => expect(api.getOpenAnnualLeaves.mock.calls.length).toBeGreaterThan(leavePolls))
             expect(api.getWorkTasks).toHaveBeenCalledTimes(1)
         } finally {
             vi.useRealTimers()

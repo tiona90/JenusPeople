@@ -80,7 +80,8 @@ public class AnnualLeavesController : BaseApiController
     // Visibility is role-scoped: System Administrator all, Manager by assigned departments, Employee own requests.
     [HttpGet]
     [Authorize(Policy = "AnnualLeaveRead")]
-    public async Task<ActionResult<List<AnnualLeaveDto>>> GetAnnualLeaves([FromQuery] int? page = null, [FromQuery] int? pageSize = null)
+    public async Task<ActionResult<List<AnnualLeaveDto>>> GetAnnualLeaves(
+        [FromQuery] int? page = null, [FromQuery] int? pageSize = null, [FromQuery] bool openOnly = false)
     {
         var result = await Mediator.Send(new GetAnnualLeaveList.Query
         {
@@ -91,6 +92,7 @@ public class AnnualLeavesController : BaseApiController
             IsHrAdministrator = User.IsHrAdministrator(),
             Page = page,
             PageSize = pageSize,
+            OpenOnly = openOnly,
         });
         return Paged(result);
     }

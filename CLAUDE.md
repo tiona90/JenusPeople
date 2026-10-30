@@ -1184,8 +1184,12 @@ Two more traps worth knowing, both found the hard way:
   — an absentee is under "Did not check in" there instead. **The comparison is
   opt-in**: `GET /api/timesheets?includeAttendance=true`
   (`GetTimesheetList.Query.IncludeAttendanceComparison`); without it the four
-  fields stay null / 0 and no attendance is loaded, because the notification
-  bell polls the unpaged list every 15 seconds and renders no chip. On the
+  fields stay null / 0 and no attendance is loaded. The notification bell asks
+  for neither: it reads `?openOnly=true` on both lists (`GetAnnualLeaveList` /
+  `GetTimesheetList.Query.OpenOnly` — Pending and AwaitingHrApproval, Submitted
+  and Resubmitted) through `getOpenAnnualLeaves` / `getOpenTimesheets` under
+  `['annualLeaves', 'open']` and `['timesheets', 'open']`, once a minute and only
+  while the tab is visible, SignalR doing the rest (`OpenOnlyListTests`). On the
   client `getTimesheets({ includeAttendance: true })` / `getMyTimesheets(…)` are
   called by All Timesheets and Team Timesheets under
   `['timesheets', 'with-attendance']` and by My Timesheets under
