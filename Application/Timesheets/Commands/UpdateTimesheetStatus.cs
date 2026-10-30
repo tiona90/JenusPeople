@@ -1,4 +1,4 @@
-using Application.Core;
+﻿using Application.Core;
 using Application.Timesheets.Support;
 using Domain;
 using Domain.Interfaces;
@@ -11,6 +11,7 @@ namespace Application.Timesheets.Commands;
 
 public class UpdateTimesheetStatus
 {
+    public const string NotAwaitingReviewMessage = "Only a submitted timesheet can be approved or rejected.";
     public class Command : IRequest<Result<Unit>>
     {
         public required string Id { get; set; }
@@ -120,6 +121,12 @@ public class UpdateTimesheetStatus
                     }
                 }
             }
+
+            // A reviewer decides only a sheet in front of them for review. Taking an
+            // approval back is HR's ReopenTimesheet, and a Draft is still the
+            // employee's to finish.
+            if (!TimesheetReviewRule.IsOpen(timesheet.Status))
+                return Result<Unit>.Conflict(NotAwaitingReviewMessage);
 
             var fromStatus = (int)timesheet.Status;
             timesheet.Status = request.NewStatus;

@@ -1,4 +1,4 @@
-using Application.Timesheets.Commands;
+﻿using Application.Timesheets.Commands;
 using Application.Timesheets.Validators;
 using Domain;
 using FluentValidation;
@@ -112,6 +112,59 @@ public class TimesheetStatusTransitionTests
         Assert.Equal(UpdateTimesheetStatus.OwnTimesheetMessage, result.Error);
         Assert.Equal(TimesheetStatus.Submitted, (await db.Timesheets.FindAsync(ts.Id))!.Status);
         Assert.False(await db.TimesheetStatusHistories.AnyAsync());
+    }
+
+    /// <summary>
+    /// A reviewer decides only what is in front of them for review. Approving a
+    /// Draft locked the employee out of a week they were still filling in;
+    /// rejecting an Approved one took an approval back without HR's
+    /// ReopenTimesheet; re-approving an Approved one re-stamped and re-emailed.
+    /// </summary>
+    [Theory]
+    [InlineData(TimesheetStatus.Draft, TimesheetStatus.Approved)]
+    [InlineData(TimesheetStatus.Draft, TimesheetStatus.Rejected)]
+    [InlineData(TimesheetStatus.Approved, TimesheetStatus.Rejected)]
+    [InlineData(TimesheetStatus.Approved, TimesheetStatus.Approved)]
+    [InlineData(TimesheetStatus.Rejected, TimesheetStatus.Approved)]
+    public async Task Only_a_submitted_sheet_is_approved_or_rejected(TimesheetStatus from, TimesheetStatus target)
+    {
+        using var db = TestDb.Create();
+        var ts = SeedTimesheet(db, from);
+
+        var result = await StatusHandler(db).Handle(
+            new UpdateTimesheetStatus.Command
+            {
+                Id = ts.Id, NewStatus = target, RequestingUserId = "admin", IsAdmin = true, Comment = "Reason",
+            },
+            CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(UpdateTimesheetStatus.NotAwaitingReviewMessage, result.Error);
+        Assert.Equal(from, (await db.Timesheets.FindAsync(ts.Id))!.Status);
+        Assert.False(await db.TimesheetStatusHistories.AnyAsync());
+    }
+
+    /// <summary>
+    /// Submitting is a Draft's or a Rejected sheet's next step, nothing else's: a
+    /// repeat submit re-sent every email, and submitting an Approved sheet put it
+    /// back in the queue with its approval stamp still on it.
+    /// </summary>
+    [Theory]
+    [InlineData(TimesheetStatus.Submitted)]
+    [InlineData(TimesheetStatus.Resubmitted)]
+    [InlineData(TimesheetStatus.Approved)]
+    public async Task Only_a_draft_or_rejected_sheet_is_submitted(TimesheetStatus from)
+    {
+        using var db = TestDb.Create();
+        var ts = SeedTimesheet(db, from);
+
+        var result = await SubmitHandler(db).Handle(
+            new SubmitTimesheet.Command { Id = ts.Id, RequestingUserId = "admin", IsAdmin = true },
+            CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(SubmitTimesheet.AlreadySubmittedMessage, result.Error);
+        Assert.Equal(from, (await db.Timesheets.FindAsync(ts.Id))!.Status);
     }
 
     [Fact]
