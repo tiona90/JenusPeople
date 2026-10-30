@@ -30,6 +30,7 @@ import ErrorBoundary from './components/ui/ErrorBoundary'
 import { API_ERROR_EVENT } from './lib/api/error-events'
 import { SESSION_EXPIRED_EVENT } from './lib/api/session-expiry'
 import { keepConnected, reconnectPolicy } from './lib/notifications-hub'
+import { coalesce, keysForKinds } from './lib/notification-kinds'
 import { apiBaseUrl } from './lib/api/client'
 import { useStore } from './lib/mobx'
 import { LEAVE_AND_TIME_ROLES, SYSTEM_ADMINISTRATOR_ROLES, TASK_ROLES, isAdministrator } from './lib/roles'
@@ -249,19 +250,17 @@ const AppInner = observer(function AppInner() {
             .configureLogging(LogLevel.Warning)
             .build()
 
-        const refresh = () => {
-            void queryClient.invalidateQueries({ queryKey: ['leaveStatusHistories'] })
-            void queryClient.invalidateQueries({ queryKey: ['annualLeaves'] })
-            void queryClient.invalidateQueries({ queryKey: ['teamAwayThisWeekCount'] })
-            void queryClient.invalidateQueries({ queryKey: ['timesheets'] })
-            void queryClient.invalidateQueries({ queryKey: ['timesheetStatusHistories'] })
-            void queryClient.invalidateQueries({ queryKey: ['work-tasks'] })
-        }
-        connection.on('notificationsUpdated', refresh)
+        // The event says what changed (leave, timesheet or task), and a burst —
+        // a bulk approve sends one per row — is folded into one refresh of just
+        // those query families. No kind (an older API) refreshes everything.
+        const refresh = coalesce((kinds) => {
+            for (const queryKey of keysForKinds(kinds)) void queryClient.invalidateQueries({ queryKey })
+        }, 300)
+        connection.on('notificationsUpdated', (kind?: string) => refresh(kind))
 
         // Retries a failed start and a closed connection for as long as it takes,
-        // and refreshes after every gap, since events sent meanwhile are lost.
-        const stop = keepConnected(connection, refresh)
+        // and refreshes everything after every gap, since events sent meanwhile are lost.
+        const stop = keepConnected(connection, () => refresh(undefined))
 
         return () => {
             connection.off('notificationsUpdated')

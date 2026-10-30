@@ -63,7 +63,7 @@ namespace API.Controllers
 
             var dispatch = new List<Task>
             {
-                _notificationsHub.Clients.Group(NotificationsHub.AdminGroup).SendAsync("notificationsUpdated", cancellationToken),
+                _notificationsHub.Clients.Group(NotificationsHub.AdminGroup).SendAsync("notificationsUpdated", NotificationKind.Timesheet, cancellationToken),
             };
 
             // No department means no department-manager group to notify — the
@@ -72,7 +72,7 @@ namespace API.Controllers
             {
                 dispatch.Add(_notificationsHub.Clients
                     .Group(NotificationsHub.DepartmentManagerGroup(departmentId))
-                    .SendAsync("notificationsUpdated", cancellationToken));
+                    .SendAsync("notificationsUpdated", NotificationKind.Timesheet, cancellationToken));
             }
             else
             {
@@ -82,12 +82,12 @@ namespace API.Controllers
                 // group has to hear it live too.
                 dispatch.Add(_notificationsHub.Clients
                     .Group(NotificationsHub.HrAdministratorGroup)
-                    .SendAsync("notificationsUpdated", cancellationToken));
+                    .SendAsync("notificationsUpdated", NotificationKind.Timesheet, cancellationToken));
             }
 
             if (!string.IsNullOrWhiteSpace(audience.EmployeeUserId))
             {
-                dispatch.Add(_notificationsHub.Clients.User(audience.EmployeeUserId).SendAsync("notificationsUpdated", cancellationToken));
+                dispatch.Add(_notificationsHub.Clients.User(audience.EmployeeUserId).SendAsync("notificationsUpdated", NotificationKind.Timesheet, cancellationToken));
             }
 
             await Task.WhenAll(dispatch);

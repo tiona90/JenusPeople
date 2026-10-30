@@ -100,7 +100,7 @@ The two roles also open on different dashboards. `DashboardHome` sends a System 
 
 **State split:** MobX (`authStore`, `uiStore`) holds client-only UI/auth state. React Query handles all server state (fetching, caching, invalidation).
 
-**Real-time:** SignalR hub at `/hubs/notifications` sends `notificationsUpdated` events. `App.tsx` listens and calls `queryClient.invalidateQueries()` to refresh relevant caches.
+**Real-time:** SignalR hub at `/hubs/notifications` sends `notificationsUpdated` events carrying what changed — `API.Hubs.NotificationKind` (`leave`, `timesheet`, `task`). `App.tsx` folds a burst into one refresh (`coalesce`, 300 ms) and invalidates only that kind's query families (`keysForKinds` in `lib/notification-kinds.ts`, kept in step with the server constants); an event with no kind, or the refresh after a reconnect, invalidates everything. The connection is kept up by `keepConnected` in `lib/notifications-hub.ts`, which retries a failed start and a closed connection on a backoff capped at a minute and never gives up.
 
 **API client:** Axios instance at `client/src/lib/api/client.ts` (base URL `http://localhost:5000/api`, includes credentials). API modules in `client/src/lib/api/` are thin wrappers returning typed responses.
 

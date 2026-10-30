@@ -38,15 +38,15 @@ public class AnnualLeavesController : BaseApiController
     {
         var dispatch = new List<Task>
         {
-            _notificationsHub.Clients.User(employeeUserId).SendAsync("notificationsUpdated", cancellationToken),
-            _notificationsHub.Clients.Group(NotificationsHub.AdminGroup).SendAsync("notificationsUpdated", cancellationToken),
+            _notificationsHub.Clients.User(employeeUserId).SendAsync("notificationsUpdated", NotificationKind.Leave, cancellationToken),
+            _notificationsHub.Clients.Group(NotificationsHub.AdminGroup).SendAsync("notificationsUpdated", NotificationKind.Leave, cancellationToken),
         };
 
         if (departmentId.HasValue)
         {
             dispatch.Add(_notificationsHub.Clients
                 .Group(NotificationsHub.DepartmentManagerGroup(departmentId.Value))
-                .SendAsync("notificationsUpdated", cancellationToken));
+                .SendAsync("notificationsUpdated", NotificationKind.Leave, cancellationToken));
         }
         else
         {
@@ -55,7 +55,7 @@ public class AnnualLeavesController : BaseApiController
             // isUnscopedAdminLeave), so their own group has to hear it live.
             dispatch.Add(_notificationsHub.Clients
                 .Group(NotificationsHub.HrAdministratorGroup)
-                .SendAsync("notificationsUpdated", cancellationToken));
+                .SendAsync("notificationsUpdated", NotificationKind.Leave, cancellationToken));
         }
 
         await Task.WhenAll(dispatch);
